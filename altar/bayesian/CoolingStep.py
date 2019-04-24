@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -49,7 +49,6 @@ class CoolingStep:
         return self.theta.columns
 
 
-    # factories
     @classmethod
     def start(cls, annealer):
         """
@@ -70,6 +69,13 @@ class CoolingStep:
         # return the initialized state
         return step
 
+    @classmethod    
+    def allocate(cls, annealer):
+        # get the model
+        model = annealer.model
+        # build an uninitialized step
+        step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
+        return step
 
     @classmethod
     def alloc(cls, samples, parameters):
@@ -100,6 +106,16 @@ class CoolingStep:
         # make one and return it
         return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma)
 
+    def computePosterior(self):
+        """                                                                                                                                                            
+        (Re-)Compute the posterior from prior, data, and (updated) beta                                                                                                
+        """
+        # prime the posterior                                                                                                                                          
+        self.posterior.copy(self.prior)
+        # compute it; this expression reduces to Bayes' theorem for β->1                                                                                               
+        altar.blas.daxpy(self.beta, self.data, self.posterior)
+        # all done                                                                                                                                                     
+        return self
 
     # meta-methods
     def __init__(self, beta, theta, likelihoods, sigma=None, **kwds):
@@ -160,6 +176,13 @@ class CoolingStep:
             Σ = self.sigma
             channel.line(f"{indent}Σ: {Σ.rows} x {Σ.columns}")
             channel.line("\n".join(Σ.print(interactive=False, indent=indent*2)))
+            
+            
+        # print statistics (axis=0 average over samples) 
+        mean, sd = θ.mean_sd(axis=0)
+        channel.line(f"{indent}parameters (mean, sd):")
+        for i in range(min(50, parameters)):
+            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
 
         # flush
         channel.log()
@@ -167,5 +190,47 @@ class CoolingStep:
         # all done
         return channel
 
+    def save_hdf5(self, path=None, iteration=None):
+        """
+        Save Coolinging Step to HDF5 file
+        Args:
+            step altar.bayesian.CoolingStep
+            path altar.primitives.path
+        Returns:
+            None
+        """
+        import os
+        import h5py
+        import numpy
 
+        # determine the output name as "{path}/step_{iteration}.h5"
+        str_iteration = 'final' if iteration is None else str(iteration).zfill(3)
+        if path is not None:
+            str_path = path.path if isinstance(path, altar.primitives.path) else path
+            if not os.path.exists(str_path):
+                os.makedirs(str_path)
+        else:
+            str_path = '.'
+        suffix = '.h5'
+        filename = os.path.join(str_path, "step_"+str_iteration+suffix)
+
+        f=h5py.File(filename, 'w')
+        f.create_dataset('beta', data=numpy.asarray(self.beta))
+        f.create_dataset('covariance', data=self.sigma.ndarray())
+        f.create_dataset('theta', data=self.theta.ndarray())
+        f.create_dataset('prior', data=self.prior.ndarray())
+        f.create_dataset('likelihood', data=self.data.ndarray())
+        f.create_dataset('posterior', data=self.posterior.ndarray())
+        f.close()
+
+        # all done
+        return
+
+    def load_hdf5(self, path=None, iteration=0):
+        """
+        load CoolingStep from HDF5 file
+        """
+        # to be done
+        return
+        
 # end of file

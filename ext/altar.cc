@@ -2,8 +2,8 @@
 //
 // michael a.g. aïvázis <michael.aivazis@para-sim.com>
 //
-// (c) 2013-2018 parasim inc
-// (c) 2010-2018 california institute of technology
+// (c) 2013-2019 parasim inc
+// (c) 2010-2019 california institute of technology
 // all rights reserved
 //
 
@@ -17,6 +17,8 @@
 #include "exceptions.h"
 #include "metadata.h"
 #include "dbeta.h"
+#include "condition.h"
+#include "distributions.h"
 
 
 // put everything in my private namespace
@@ -35,6 +37,19 @@ namespace altar {
             // annealing schedule
             { cov__name__, cov, METH_VARARGS, cov__doc__},
             { dbeta__name__, dbeta, METH_VARARGS, dbeta__doc__},
+
+            // matrix condition for positive definite                                                                                                                                                   
+            { matrix_condition__name__, matrix_condition, METH_VARARGS, matrix_condition__doc__},
+
+            // distributions
+            // uniform
+            { uniform::sample__name__, uniform::sample, METH_VARARGS, uniform::sample__doc__},
+            { uniform::verify__name__, uniform::verify, METH_VARARGS, uniform::verify__doc__},
+            { uniform::logpdf__name__, uniform::logpdf, METH_VARARGS, uniform::logpdf__doc__},
+            // gaussian
+            { gaussian::sample__name__, gaussian::sample, METH_VARARGS, gaussian::sample__doc__},
+            { gaussian::logpdf__name__, gaussian::logpdf, METH_VARARGS, gaussian::logpdf__doc__},
+
 
             // sentinel
             {0, 0, 0, 0}

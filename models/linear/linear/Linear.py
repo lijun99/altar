@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -179,7 +179,8 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
             # extract it
             residual = residuals.getColumn(idx)
             # compute its norm, normalize, and store it as the data log likelihood
-            dataLLK[idx] = normalization - self.norm.eval(v=residual, sigma_inv=Cd_inv)/2
+            norm = self.norm.eval(v=residual, sigma_inv=Cd_inv)
+            dataLLK[idx] = normalization - norm*norm/2
 
         # all done
         return self

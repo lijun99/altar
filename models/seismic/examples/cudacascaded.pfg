@@ -1,0 +1,161 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the cascaded static/kinematic uoᴉsɹǝʌuᴉ
+cudacascaded:
+    ; test case configuration
+    
+    model:
+        ; the path of input files 
+        case = kinematicG_9patch
+        
+        patches = 9 ; Nas*Ndd (along strike/down dip) 
+        
+        ; parameters to be simulated     
+        psets:
+            strikeslip = altar.cuda.models.parameterset
+            dipslip = altar.cuda.models.parameterset
+            hypocenter = altar.cuda.models.parameterset
+            rupturetime = altar.cuda.models.parameterset
+            rupturevelocity = altar.cuda.models.parameterset
+
+            ; variables for patches are arranged along dip direction at first [Nas][Ndd]
+            strikeslip:
+                offset = 0 
+                count = {cudacascaded.model.patches}
+                prep = altar.cuda.distributions.preset
+                prep.input_file = kinematicG_9patch/theta_cascaded.h5
+                prep.input_offset = 0
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+            
+            dipslip:
+                offset = {cudacascaded.model.patches}
+                count = {cudacascaded.model.patches}
+                prep = altar.cuda.distributions.preset
+                prep.input_file = {cudacascaded.model.case}/theta_cascaded.h5
+                prep.input_offset = {cudacascaded.model.patches}
+                prior = altar.cuda.distributions.uniform 
+                prior.support = (-0.5, 20.0)
+
+            rupturetime:
+                offset = 2*{cudacascaded.model.patches}
+                count = {cudacascaded.model.patches}
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 10.0
+                prior.sigma = 30.0
+
+            rupturevelocity:
+                offset = 3*{cudacascaded.model.patches}
+                count = {cudacascaded.model.patches}
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 1.0
+                prior.sigma = 6.0
+                
+            ; along strike(frist), dip directions
+            ; could be sperated into 2 for dip and strike direction
+            hypocenter:
+                offset = 4*{cudacascaded.model.patches}
+                count = 2 
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 20.0
+                prior.sigma = 5.0
+
+        ; the model ensemble
+        models:
+            kinematic = altar.models.seismic.cuda.kinematicg
+            static = altar.models.seismic.cuda.static
+            
+            static:
+                cascaded = True
+                case = {cudacascaded.model.case}
+                ; parameters to be simulated
+                psets:
+                    strikeslip = {cudacascaded.model.psets.strikeslip}
+                    strikeslip.offset = 0
+                    strikeslip.count = {cudacascaded.model.patches}
+                    dipslip = {cudacascaded.model.psets.dipslip}
+                    dipslip.offset = {cudacascaded.model.patches}
+                    dipslip.count = {cudacascaded.model.patches}
+                ; other static-only parameters should be added to cudacascaded.model.psets at first
+                ; then provide offset/count here
+
+                dataobs = altar.cuda.data.datal2
+                dataobs:
+                    observations = 108
+                    data_file = static.data.txt
+                    cd_file = static.Cd.txt
+
+                ; fixed model parameters
+                green = static.gf.txt
+                ; patches are provided by the total number of parameters/2
+            
+            kinematic:
+                cascaded = False ; default
+                case =  {cudacascaded.model.case}
+                psets:
+                    strikeslip = {cudacascaded.model.psets.strikeslip}
+                    strikeslip.offset = 0
+                    strikeslip.count = {cudacascaded.model.patches}
+                    dipslip = {cudacascaded.model.psets.dipslip}
+                    dipslip.offset = {cudacascaded.model.patches}
+                    dipslip.count = {cudacascaded.model.patches}
+                    rupturetime = {cudacascaded.model.psets.rupturetime}
+                    rupturetime.offset = 2*{cudacascaded.model.patches}
+                    rupturetime.count = {cudacascaded.model.patches}
+                    rupturevelocity = {cudacascaded.model.psets.rupturevelocity}
+                    rupturevelocity.offset = 3*{cudacascaded.model.patches}
+                    rupturevelocity.count = {cudacascaded.model.patches}   
+                    hypocenter = {cudacascaded.model.psets.hypocenter}
+                    hypocenter.offset = 4*{cudacascaded.model.patches}
+                    hypocenter.count = 2
+
+                dataobs: 
+                    observations = 14148
+                    data_file = kinematicG.data.txt
+                    cd_std = 5.0e-1
+                
+                ; fixed model parameters
+                green = kinematicG.gf.bin
+                
+                Ndd = 3 ; patches along dipslip
+                Nas = 3 ; patches along strikeslip
+                Nmesh = 30 ; mesh points for each patch
+                dsp = 20.0 ; length for each patch, km
+                Nt = 90 ; number of time intervals
+                Npt = 2 ; mesh points for each time interval
+                dt = 1.0 ; time unit for each interval, second
+                ; initial starting time for each patch
+                t0s = [0.0] * {cudacascaded.model.patches}
+
+    ; controller/annealer
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+        archiver:
+            output_dir = results/cascaded ; results output directory
+            output_freq = 3 ; output frequency of annealing steps 
+
+    monitors:
+        prof = altar.bayesian.profiler
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task
+    job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 100
+
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+
+; for parallel runs
+mpi.shells.mpirun # altar.plexus.shell:
+    extra = -mca btl self,tcp
+
+; end of file

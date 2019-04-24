@@ -1,0 +1,61 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the linear app
+cudalinear:
+    ; test case configuration
+    model:
+    
+        ; the path of input files 
+        case = input
+        
+        ; the number of free parameters
+        parameters = 8
+        
+        ; data observations
+        dataobs = altar.cuda.data.datal2
+        dataobs:
+            observations = 8
+            data_file = data.txt
+            cd_file = cd.txt
+        
+        ; parameters to be simulated     
+        psets:
+            ps1 = altar.cuda.models.parameterset
+            ps1:
+                offset = 0
+                count = 8
+                prep = altar.cuda.distributions.gaussian
+                prep.sigma = 0.5
+                prior = altar.cuda.distributions.gaussian 
+                prior.sigma = 0.5
+                
+        ; other fixed parameters
+        green = green.txt
+
+    monitors:
+        prof = altar.bayesian.profiler
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task
+
+    job.gpuprecision = float64 ; double(float64) or single(float32) precision for gpu computations
+    job.chains = 2**12 ; number of chains per task (<=2**16 for gpu)
+    job.steps = 100
+
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+;    extra = -mca btl self,tcp
+
+; end of file

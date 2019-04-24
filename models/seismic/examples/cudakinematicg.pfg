@@ -1,0 +1,111 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the kinematicg uoᴉsɹǝʌuᴉ
+cudakinematicg:
+    ; test case configuration
+    
+    model = altar.models.seismic.cuda.kinematicg
+    model:
+        ; the path of input files 
+        case = kinematicG_9patch
+
+        ; fixed model parameters
+        green = kinematicG.gf.bin
+
+        Ndd = 3 ; patches along dip
+        Nas = 3 ; patches along strike
+        Nmesh = 30 ; mesh points for each patch
+        dsp = 20.0 ; length for each patch, km
+        Nt = 90 ; number of time intervals
+        Npt = 2 ; mesh points for each time interval
+        dt = 1.0 ; time unit for each interval, second
+        ; initial starting time for each patch
+        t0s = [0.0] * ({cudakinematicg.model.Nas}*{cudakinematicg.model.Nas}) 
+        
+        ; data  
+        dataobs: 
+            observations = 14148
+            data_file = kinematicG.data.txt
+            cd_std = 5.0e-3
+                
+        ; parameters to be simulated     
+        psets:
+            strikeslip = altar.cuda.models.parameterset
+            dipslip = altar.cuda.models.parameterset
+            hypocenter = altar.cuda.models.parameterset
+            rupturetime = altar.cuda.models.parameterset
+            rupturevelocity = altar.cuda.models.parameterset
+            
+            ; variables for patches are along dip direction first [Nas][Ndd] 
+            strikeslip: 
+                offset = 0 
+                count = 9 
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+            
+            dipslip:
+                offset = 9
+                count = 9
+                prep = altar.models.seismic.cuda.moment
+                prep:
+                    support = (-0.5, 20)
+                    Mw_mean = 7.3
+                    Mw_sigma = 0.2
+                    Mu = 30 ; GPa
+                    area = 400 ; km^2
+                prior = altar.cuda.distributions.uniform
+                prior:
+                    support = (-0.5, 20)
+
+            rupturetime:
+                offset = 18
+                count = 9
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 10.0
+                prior.sigma = 30.0
+
+            rupturevelocity:
+                offset = 27
+                count = 9
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 1.0
+                prior.sigma = 6.0
+            
+            hypocenter:
+                offset = 36
+                count = 2 ;
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 20.0
+                prior.sigma = 5.0
+
+
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+        archiver:
+            output_dir = results/kinematicg
+            output_freq = 3
+
+    monitors:
+        prof = altar.bayesian.profiler
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task
+    job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 10
+
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+; for parallel runs
+mpi.shells.mpirun # altar.plexus.shell:
+    extra = -mca btl self,tcp
+
+; end of file

@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -70,6 +70,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         Push {step} forward along the annealing schedule
         """
+
         # get the new temperature and store it
         β = self.updateTemperature(step=step)
         # compute the new parameter covariance matrix
@@ -83,7 +84,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.sigma.copy(Σ)
         step.prior.copy(prior)
         step.data.copy(data)
-        step.posterior.copy(posterior)
+        #step.posterior.copy(posterior)
+        # instead of copying posterior, recompute it with new beta
+        step.computePosterior()    
 
         # and return it
         return step
@@ -96,6 +99,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         # grab the data log-likelihood
         dataLikelihood  = step.data
+
 
         # initialize the vector of weights
         self.w = altar.vector(shape=step.samples).zero()
@@ -223,6 +227,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         # no need to symmetrize it since it is symmetric by construction
         # NYI: check the eigenvalues to verify positive definiteness
+        # all done
+        altar.libaltar.matrix_condition(Σ.data)
         # all done
         return Σ
 

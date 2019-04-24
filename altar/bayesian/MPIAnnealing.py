@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -96,11 +96,11 @@ class MPIAnnealing(AnnealingMethod):
         # partition and synchronize my state
         self.partition()
         # all workers walk their chains
-        stats = self.worker.walk(annealer=annealer)
+        self.stats = self.worker.walk(annealer=annealer)
         # collect my state
-        self.step = self.collect()
+        self.step, self.stats = self.collect()
         # return the statistics
-        return stats
+        return self.stats
 
 
     def resample(self, annealer, statistics):
@@ -138,6 +138,15 @@ class MPIAnnealing(AnnealingMethod):
         # otherwise, do nothing
         return self
 
+    def archive(self, annealer):
+        """
+        Notify archiver to record annealer information
+        """
+        # if i am the manager
+        if self.rank == self.manager:
+            return super().archive(annealer=annealer)
+        # otherwise, do nothing
+        return self
 
     def finish(self, annealer):
         """
@@ -209,16 +218,22 @@ class MPIAnnealing(AnnealingMethod):
         posterior = altar.vector.collect(
             vector=step.posterior, communicator=communicator, destination=manager)
 
+        # the stats
+        accepted, rejected, invalid = self.stats
+        accepted_sum = communicator.sum(destination=self.manager, item=accepted)
+        rejected_sum = communicator.sum(destination=self.manager, item=rejected)
+        invalid_sum = communicator.sum(destination=self.manager, item=invalid)
+
         # if I am not the manager task
         if self.rank != self.manager:
             # just return the local state
-            return step
+            return step, (accepted_sum, rejected_sum, invalid_sum)
 
         # the manager packs the state of the problem and returns it; everybody has the same
         # covariance matrix, so the local copy is good enough
         return self.CoolingStep(
             beta=β, theta=θ,
-            likelihoods=(prior,data,posterior), sigma=step.sigma)
+            likelihoods=(prior,data,posterior), sigma=step.sigma), (accepted_sum, rejected_sum, invalid_sum)
 
 
     def partition(self):

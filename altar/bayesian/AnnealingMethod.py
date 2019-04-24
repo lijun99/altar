@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -22,6 +22,7 @@ class AnnealingMethod:
 
     # public data
     step = None # the current state of the solver
+    stats = None # statistics 
     iteration = 0 # my iteration counter
 
     wid = 0 # my worker id
@@ -105,9 +106,9 @@ class AnnealingMethod:
         # get the sampler
         sampler = annealer.sampler
         # ask it to sample the posterior pdf
-        stats = sampler.samplePosterior(annealer=annealer, step=self.step)
+        self.stats = sampler.samplePosterior(annealer=annealer, step=self.step)
         # return the acceptance statistics
-        return stats
+        return self.stats
 
 
     def resample(self, annealer, statistics):
@@ -118,9 +119,9 @@ class AnnealingMethod:
         # get the sampler
         sampler = annealer.sampler
         # ask it to adjust the sample statistics
-        sampler.resample(annealer=annealer, statistics=statistics)
+        scaling=sampler.resample(annealer=annealer, statistics=statistics)
         # all done
-        return self
+        return scaling
 
 
     def bottom(self, annealer):
@@ -132,6 +133,13 @@ class AnnealingMethod:
         # all done
         return self
 
+    def archive(self, annealer):
+        """
+        Notify archiver to record
+        """
+        annealer.archiver.recordstep(step=self.step, stats=annealer.statistics)
+        # all done
+        return self
 
     def finish(self, annealer):
         """
@@ -142,7 +150,8 @@ class AnnealingMethod:
         # ask it to render itself to the screen
         step.print(channel=annealer.info)
         # ask the recorder to record it
-        annealer.archiver.record(step=step)
+        annealer.archiver.record(step=step, iteration=annealer.worker.iteration)
+        
         # all done
         return self
 

@@ -1,12 +1,11 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# michael a.g. aïvázis <michael.aivazis@para-sim.com>
-#
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
+# Author(s): michael a.g. aïvázis, Lijun Zhu
 
 
 # the package
@@ -21,7 +20,6 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
     Recorder stores the intermediate simulation state in memory
     """
 
-
     # user configurable state
     theta = altar.properties.path(default="theta.txt")
     theta.doc = "the path to the file with the final posterior sample"
@@ -32,6 +30,13 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
     llk = altar.properties.path(default="llk.txt")
     llk.doc = "the path to the file with the final posterior log likelihood"
 
+    output_dir = altar.properties.path(default="results")
+    output_dir.doc = "the directory to save results"
+
+    output_freq = altar.properties.int(default=1)
+    output_freq.doc = "the frequency to write step data to files"
+
+    statistics = None
 
     # protocol obligations
     @altar.export
@@ -39,22 +44,63 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
         """
         Initialize me given an {application} context
         """
+
+        # create a statistics list
+        self.statistics= []
+        
         # all done
         return self
 
 
     @altar.export
-    def record(self, step, **kwds):
+    def record(self, step, iteration, **kwds):
         """
         Record the final state of the calculation
         """
         # record the samples
-        step.theta.save(filename=self.theta)
+        #step.theta.save(filename=self.theta)
         # the covariance matrix
-        step.sigma.save(filename=self.sigma)
+        #step.sigma.save(filename=self.sigma)
         # and the posterior log likelihood
-        step.posterior.save(filename=self.llk)
+        #step.posterior.save(filename=self.llk)
+
+        # save the statistics
+        self.saveStats()
+        # save the last step
+        step.save_hdf5(path=self.output_dir, iteration=None)
         # all done
+        return self
+
+    def recordstep(self, step, stats):
+        """
+        Record step to file for ce 
+        """
+        iteration = stats['iteration']
+        # output CoolingStep 
+        if iteration%self.output_freq == 0:
+            step.save_hdf5(path=self.output_dir, iteration=iteration)
+        # record statistics information
+        statcopy = stats.copy()
+        self.statistics.append(statcopy)
+        return self
+
+    def saveStats(self):
+        """
+        Save the statistics information to file
+        """
+        # output filename
+        filename = "BetaStatistics.txt"
+        # open the file
+        statfile = open(filename, "w")
+        # write the header
+        statfile.write("iteration, beta, scaling, (accepted, rejected, invalid)\n")
+        # write the statistics
+        for item in self.statistics:
+            stats = [str(k) for k in item.values()]
+            statfile.writelines(", ".join(stats) + "\n")
+        # close the file
+        statfile.close()
+        #return
         return self
 
 

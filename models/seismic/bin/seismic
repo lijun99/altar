@@ -1,0 +1,38 @@
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
+# all rights reserved
+#
+# Author(s): Lijun Zhu
+
+# get the package
+import altar
+import altar.models.seismic
+
+# make a specialized app that uses this model by default
+class seismic(altar.shells.cudaapplication, family='altar.applications.cudaseismic'):
+    """
+    A specialized AlTar application that exercises the static inversion model
+    """
+
+    # user configurable state
+    model = altar.cuda.models.model(default='cudastatic')
+    model.doc = "the AlTar model to sample"
+    pass
+
+
+# bootstrap
+if __name__ == "__main__":
+
+    # ask for a model
+    # build an instance of the default app    
+    app = seismic(name='cudastatic')
+
+    # invoke the main entry point
+    status = app.run()
+    # share
+    raise SystemExit(status)
+
+# end of file

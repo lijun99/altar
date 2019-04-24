@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -56,6 +56,20 @@ class AlTar(altar.plexus, family="altar.shells.altar", namespace="altar"):
         # chain up
         return super().main(*args, **kwds)
 
+    def initialize(self):
+        """
+        Initialize without running, for debug purpose only
+        """
+        # initialize the job parameters
+        self.job.initialize(application=self)
+        # the random number generator
+        self.rng.initialize()
+        # the controller
+        self.controller.initialize(application=self)
+        # and the model; attach whatever the model initialization returns, just in case the
+        # model selects an implementation strategy based on my context
+        self.model = self.model.initialize(application=self)
+        return self
 
     # pyre framework hooks
     # support for the help system

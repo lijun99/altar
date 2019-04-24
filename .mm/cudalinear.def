@@ -1,0 +1,28 @@
+# -*- Makefile -*-
+#
+# lijun zhu (ljzhu@gps.caltech.edu)
+#
+# (c) 1998-2019 all rights reserved
+#
+
+# add me to the pile
+projects += cudalinear
+
+# project meta-data
+cudalinear.major := 1
+cudalinear.minor := 0
+
+# use the altar area for build temporaries
+cudalinear.tmpdir = ${builder.dest.staging}altar/models/cudalinear/
+
+# cudalinear consists of a python package
+cudalinear.packages := cudalinear.pkg
+
+# the cudalinear package meta-data
+cudalinear.pkg.stem := cudalinear
+cudalinear.pkg.root := models/cudalinear/cudalinear/
+cudalinear.pkg.bin := models/cudalinear/bin/
+cudalinear.pkg.pycdir := $(builder.dest.pyc)altar/models/cudalinear/
+cudalinear.pkg.drivers := cudalinear
+
+# end of file

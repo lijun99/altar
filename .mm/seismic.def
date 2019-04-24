@@ -1,0 +1,64 @@
+# -*- Makefile -*-
+#
+# Lijun Zhu
+# Caltech
+# (c) 2018-2019 all rights reserved
+#
+
+# add me to the pile
+projects += seismic
+
+# project meta-data
+seismic.major := 2
+seismic.minor := 0
+
+# use the altar area for build temporaries
+seismic.tmpdir = ${builder.dest.staging}altar/models/seismic/
+
+# seismic consists of a python package
+seismic.packages := seismic.pkg 
+# a library
+seismic.libraries = ${if ${value cuda.dir}, seismic.cudalib}
+# and an extension
+seismic.extensions := ${if ${value cuda.dir}, seismic.cudaext}
+
+
+# the seismic package meta-data
+seismic.pkg.stem := seismic
+seismic.pkg.root := models/seismic/seismic/
+seismic.pkg.bin := models/seismic/bin/
+seismic.pkg.pycdir := $(builder.dest.pyc)altar/models/seismic/
+seismic.pkg.drivers := seismic
+
+# the seismic extension meta-data
+seismic.ext.stem := seismic
+seismic.ext.root := models/seismic/ext/seismic/
+seismic.ext.pkg := seismic.pkg
+seismic.ext.wraps := seismic.lib
+seismic.ext.extern := seismic.lib gsl pyre python
+# compile options for the sources
+seismic.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
+
+# the seismic CUDA library metadata
+seismic.cudalib.stem := cudaseismic
+seismic.cudalib.root := models/seismic/lib/libcudaseismic/
+seismic.cudalib.incdir := $(builder.dest.inc)altar/models/seismic/cuda/
+seismic.cudalib.extern := gsl pyre cuda
+# compile options for the sources
+seismic.cudalib.c++.flags += $($(compiler.c++).std.c++17)
+seismic.cudalib.cuda.flags += $(nvcc.std.c++14)
+
+# the seismic CUDA extension meta-data
+seismic.cudaext.stem := cudaseismic
+seismic.cudaext.root := models/seismic/ext/cudaseismic/
+seismic.cudaext.pkg := seismic.pkg
+seismic.cudaext.wraps := seismic.cudalib
+seismic.cudaext.extern := seismic.cudalib gsl pyre python cuda
+# compile options for the sources
+seismic.cudaext.lib.c++.flags += $($(compiler.c++).std.c++17)
+seismic.cudaext.lib.cuda.flags += $(nvcc.std.c++14)
+
+# specify the CUDA libraries
+cuda.libraries += cudart cudadevrt
+
+# end of file

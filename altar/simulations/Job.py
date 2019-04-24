@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -35,6 +35,10 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
 
     gpus = altar.properties.int(default=0)
     gpus.doc = "the number of gpus per task"
+
+    gpuprecision = altar.properties.str(default="float64")
+    gpuprecision.doc = "the precision of gpu computations"
+    gpuprecision.validators = altar.constraints.isMember("float64", "float32")
 
     chains = altar.properties.int(default=1)
     chains.doc = "the number of chains per worker"

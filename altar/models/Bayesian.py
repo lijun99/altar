@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2018 parasim inc
-# (c) 2010-2018 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -75,8 +75,6 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
         # i don't know what to do, so...
-        raise NotImplementedError(
-            f"model '{type(self).__name__}' must implement 'initializeSample'")
 
 
     @altar.export
@@ -86,8 +84,6 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         distribution
         """
         # i don't know what to do, so...
-        raise NotImplementedError(
-            f"model '{type(self).__name__}' must implement 'priorLikelihood'")
 
 
     @altar.export
@@ -97,8 +93,6 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         data. This is what is usually referred to as the "forward model"
         """
         # i don't know what to do, so...
-        raise NotImplementedError(
-            f"model '{type(self).__name__}' must implement 'dataLikelihood'")
 
 
     @altar.export
