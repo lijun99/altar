@@ -93,7 +93,7 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
         # open the file
         statfile = open(filename, "w")
         # write the header
-        statfile.write("iteration, beta, scaling, (accepted, rejected, invalid)\n")
+        statfile.write("iteration, beta, scaling, (accepted, invalid, rejected)\n")
         # write the statistics
         for item in self.statistics:
             stats = [str(k) for k in item.values()]

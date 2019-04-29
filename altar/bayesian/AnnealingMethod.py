@@ -22,7 +22,6 @@ class AnnealingMethod:
 
     # public data
     step = None # the current state of the solver
-    stats = None # statistics 
     iteration = 0 # my iteration counter
 
     wid = 0 # my worker id
@@ -106,9 +105,9 @@ class AnnealingMethod:
         # get the sampler
         sampler = annealer.sampler
         # ask it to sample the posterior pdf
-        self.stats = sampler.samplePosterior(annealer=annealer, step=self.step)
+        stats = sampler.samplePosterior(annealer=annealer, step=self.step)
         # return the acceptance statistics
-        return self.stats
+        return stats
 
 
     def resample(self, annealer, statistics):
@@ -119,9 +118,24 @@ class AnnealingMethod:
         # get the sampler
         sampler = annealer.sampler
         # ask it to adjust the sample statistics
-        scaling=sampler.resample(annealer=annealer, statistics=statistics)
+        sampler.resample(annealer=annealer, statistics=statistics)
         # all done
-        return scaling
+        return self
+
+    def archive(self, annealer, scaling, stats):
+        """
+        Notify archiver to record
+        """
+        info={'iteration': self.iteration,
+                    'beta' : self.beta,
+                    'scaling' : scaling,
+                    'stats' : stats}
+        channel = annealer.info;
+        channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
+        channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
+        annealer.archiver.recordstep(step=self.step, stats=info)
+        # all done
+        return self
 
 
     def bottom(self, annealer):
@@ -133,13 +147,6 @@ class AnnealingMethod:
         # all done
         return self
 
-    def archive(self, annealer):
-        """
-        Notify archiver to record
-        """
-        annealer.archiver.recordstep(step=self.step, stats=annealer.statistics)
-        # all done
-        return self
 
     def finish(self, annealer):
         """
@@ -150,8 +157,7 @@ class AnnealingMethod:
         # ask it to render itself to the screen
         step.print(channel=annealer.info)
         # ask the recorder to record it
-        annealer.archiver.record(step=step, iteration=annealer.worker.iteration)
-        
+        annealer.archiver.record(step=step, iteration=self.iteration)
         # all done
         return self
 

@@ -17,6 +17,7 @@
 // my dependencies
 #include <pyre/cuda.h>
 #include <algorithm>
+#include <iostream>
 
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // calculate the forward model
@@ -33,7 +34,7 @@ forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const
     int good_samples = batch;
     const TYPE * const gM_candidate_queued = theta;
 
-    // set distance/time for 4x4 mesh grids around hypocenter
+    // set distance/time for 2x2 mesh grids around hypocenter
     _initT0(gM_candidate_queued, parameters, good_samples, stream); 
     // find 4 nearest mesh grids close to hypocenter, set their arrival time 
     _setT0(gM_candidate_queued, parameters, good_samples, stream); 
@@ -130,6 +131,18 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     cudaKinematicG_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
         gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);
     cudaSafeCall(cudaGetLastError());
+
+    /*
+    TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));
+    cudaMemcpy(hT0, _gpu_T0, _Nddf*_Nasf*Ns_good*sizeof(TYPE), cudaMemcpyDeviceToHost);
+    for(int i=0; i< _Nasf; ++i)
+    {
+        for(int j =0; j< _Nddf; ++j)
+           std::cout << hT0[i*_Nddf+j] << " ";
+        std::cout << "\n";
+    }
+    free(hT0);
+    */
 }
 
 /// @par Main functionality
@@ -149,6 +162,18 @@ _setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStre
     cudaKinematicG_kernels::setT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(
         _gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, _dsp, _it0);
     cudaSafeCall(cudaGetLastError());
+
+    /*
+    TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));
+    cudaMemcpy(hT0, _gpu_T0, _Nddf*_Nasf*Ns_good*sizeof(TYPE), cudaMemcpyDeviceToHost);
+    for(int i=0; i< _Nasf; ++i)
+    {
+        for(int j =0; j< _Nddf; ++j)
+           std::cout << hT0[i*_Nddf+j] << " ";
+        std::cout << "\n";
+    }
+    free(hT0);
+    */
 }
 
 /// @par Main functionality
@@ -179,6 +204,17 @@ _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, c
     cudaKinematicG_kernels::fastSweeping_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
         (_gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, dspf, _sweep_iter);
     cudaSafeCall(cudaGetLastError());
+    /*
+        TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));
+    cudaMemcpy(hT0, _gpu_T0, _Nddf*_Nasf*Ns_good*sizeof(TYPE), cudaMemcpyDeviceToHost);
+    for(int i=0; i< _Nasf; ++i)
+    {
+        for(int j =0; j< _Nddf; ++j)
+           std::cout << hT0[i*_Nddf+j] << " ";
+        std::cout << "\n";
+    }
+    free(hT0);
+    */
 }
 
 /// @par Main functionali// wrap the cudaInterpolateT0 function by a C++ interface for the ginematic data part

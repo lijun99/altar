@@ -117,9 +117,11 @@ template void altar::cuda::distributions::cudaUniform::logpdf<double>(const doub
  
 //random_generation_kernel 
 // double precision version
+
+namespace cudaUniform_kernels {
+
 template <>
 __global__ void
-cudaUniform_kernels::
 _sample<double>(curandState_t * curand_states, 
     double * const theta, const size_t samples, const size_t parameters, 
     const size_t idx_begin, const size_t idx_end, 
@@ -145,7 +147,6 @@ _sample<double>(curandState_t * curand_states,
 //single precision version
 template <>
 __global__ void
-cudaUniform_kernels::
 _sample<float>(curandState_t * curand_states, 
     float * const theta, const size_t samples, const size_t parameters, 
     const size_t idx_begin, const size_t idx_end, 
@@ -168,6 +169,8 @@ _sample<float>(curandState_t * curand_states,
         theta_sample[i] = curand_uniform(&curand_states[sample])*range + low;
     }
 }
+
+} // of namespace cudaUniform_kernels
 
 //verify_kernel 
 template <typename real_type>

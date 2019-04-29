@@ -40,6 +40,10 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
     gpuprecision.doc = "the precision of gpu computations"
     gpuprecision.validators = altar.constraints.isMember("float64", "float32")
 
+    gpuids = altar.properties.list(schema=altar.properties.int())
+    gpuids.default = None
+    gpuids.doc = "the list of gpu ids for parallel jobs"
+
     chains = altar.properties.int(default=1)
     chains.doc = "the number of chains per worker"
 
@@ -115,6 +119,12 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
             requested = tasks * gpus
             # get the total GPU count on this node
             available = cuda.manager.count
+            # get the gpu ids requested
+            if self.gpuids is None:
+                self.gpuids = list(range(requested))
+            
+            requested = max(self.gpuids)
+            
             # if the user asked for more than we have
             if requested > available:
                 # be civilized

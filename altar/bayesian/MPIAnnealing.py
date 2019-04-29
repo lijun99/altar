@@ -40,6 +40,9 @@ class MPIAnnealing(AnnealingMethod):
         # seed the rng
         rng.rng.seed(seed=seed)
 
+        # initialize worker
+        self.worker.wid = self.rank
+        self.worker.initialize(application=application)
         # grab a channel
         channel = self.debug
         # show me
@@ -96,11 +99,11 @@ class MPIAnnealing(AnnealingMethod):
         # partition and synchronize my state
         self.partition()
         # all workers walk their chains
-        self.stats = self.worker.walk(annealer=annealer)
+        stats = self.worker.walk(annealer=annealer)
         # collect my state
-        self.step, self.stats = self.collect()
+        self.step = self.collect()
         # return the statistics
-        return self.stats
+        return stats
 
 
     def resample(self, annealer, statistics):
@@ -126,6 +129,15 @@ class MPIAnnealing(AnnealingMethod):
         # all done
         return self
 
+    def archive(self, annealer, scaling, stats):
+        """
+        Notify archiver to record annealer information
+        """
+        # if i am the manager
+        if self.rank == self.manager:
+            return super().archive(annealer=annealer, scaling=scaling, stats=stats)
+        # otherwise, do nothing
+        return self
 
     def bottom(self, annealer):
         """
@@ -138,15 +150,6 @@ class MPIAnnealing(AnnealingMethod):
         # otherwise, do nothing
         return self
 
-    def archive(self, annealer):
-        """
-        Notify archiver to record annealer information
-        """
-        # if i am the manager
-        if self.rank == self.manager:
-            return super().archive(annealer=annealer)
-        # otherwise, do nothing
-        return self
 
     def finish(self, annealer):
         """
@@ -162,6 +165,15 @@ class MPIAnnealing(AnnealingMethod):
 
         # all done
         return self
+
+    # for cuda worker
+    @property
+    def device(self):
+        return self.worker.device
+
+    @property
+    def gstep(self):
+        return self.worker.gstep
 
 
     # meta-methods
@@ -218,22 +230,16 @@ class MPIAnnealing(AnnealingMethod):
         posterior = altar.vector.collect(
             vector=step.posterior, communicator=communicator, destination=manager)
 
-        # the stats
-        accepted, rejected, invalid = self.stats
-        accepted_sum = communicator.sum(destination=self.manager, item=accepted)
-        rejected_sum = communicator.sum(destination=self.manager, item=rejected)
-        invalid_sum = communicator.sum(destination=self.manager, item=invalid)
-
         # if I am not the manager task
         if self.rank != self.manager:
             # just return the local state
-            return step, (accepted_sum, rejected_sum, invalid_sum)
+            return step
 
         # the manager packs the state of the problem and returns it; everybody has the same
         # covariance matrix, so the local copy is good enough
         return self.CoolingStep(
             beta=β, theta=θ,
-            likelihoods=(prior,data,posterior), sigma=step.sigma), (accepted_sum, rejected_sum, invalid_sum)
+            likelihoods=(prior,data,posterior), sigma=step.sigma)
 
 
     def partition(self):

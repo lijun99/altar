@@ -32,7 +32,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
 
 
     # user configurable state
-    scaling = altar.properties.float(default=.3)
+    scaling = altar.properties.float(default=.1)
     scaling.doc = 'the parameter covariance Σ is scaled by the square of this'
 
     acceptanceWeight = altar.properties.float(default=8)
@@ -100,9 +100,9 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         Update my statistics based on the results of walking my Markov chains
         """
         # update the scaling of the parameter covariance matrix
-        scaling = self.adjustCovarianceScaling(*statistics)
+        self.adjustCovarianceScaling(*statistics)
         # all done
-        return scaling
+        return
 
 
     # implementation details
@@ -128,7 +128,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         self.gsigma_chol.copy_from_host(source=step.sigma)
 
         # scale it
-        self.gsigma_chol *= self.scaling**2
+        self.gsigma_chol *= self.scaling
         
         # compute its Cholesky decomposition
         self.gsigma_chol.Cholesky(uplo=cublas.FillModeUpper)
@@ -232,19 +232,9 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
                     break
             # get the invalid samples count
             invalid += invalid_step
-            
-            #if valid == samples:
-            #    valid = samples 
-            #    cθ.copy(θproposal)
-            #    seq = numpy.arange(samples, dtype='int32')
-            #    valid_indices.copy_from_host(source=seq) 
-            #else:
-                # queue the valid samples
-                # copy valid samples (theta/likelihood) to the first valid rows of candidate step
 
+            # queue valid samples to first rows of cθ
             libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
-
-
             
             # notify that the verification process is finished
             dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
@@ -278,8 +268,8 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
         # all done
-        print(f'stats: accepted {accepted}, rejected {rejected}, invalid {invalid}')
-        return accepted, rejected, invalid
+        # print(f'stats: accepted {accepted}, invalid {invalid}, rejected {rejected}')
+        return accepted, invalid, rejected
 
 
     def displace(self, displacement):
@@ -301,7 +291,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         return displacement
 
 
-    def adjustCovarianceScaling(self, accepted, rejected, invalid):
+    def adjustCovarianceScaling(self, accepted, invalid, rejected):
         """
         Compute a new value for the covariance sacling factor based on the acceptance/rejection
         ratio
@@ -314,14 +304,14 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # the fudge factor
         kc = (aw*acceptance + rw)/(aw+rw)
         # don't let it get too small
-        if kc < .1: kc = .1
+        if kc < .01: kc = .01
         # or too big
         if kc > 1.: kc = 1.
         # store it
-        self.scaling = kc
-        print(f'scaling {self.scaling}')
+        self.scaling = kc*kc
+        #print(f'scaling {self.scaling}')
         # and return
-        return self.scaling
+        return self
 
     def allocateGPUData(self, samples, parameters):
         """
@@ -350,16 +340,11 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
     # private data
     mcsteps = 1          # the length of each Markov chain
     dispatcher = None  # a reference to the event dispatcher
-
-    
     ginit = False     # whether gpu data are allocated
-
     gstep = None # cuda/gpu step for keeping sampling states
     gcandidate = None # cuda/gpu candidate state
     gproposal = None # save theta jumps
-    
     gsigma_chol = None  # placeholder for the scaled and decomposed parameter covariance matrix
-
     gvalid_indices = None
     gvalid_samples = None
     ginvalid_flags = None

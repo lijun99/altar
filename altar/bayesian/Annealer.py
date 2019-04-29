@@ -1,11 +1,12 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
+# michael a.g. aïvázis <michael.aivazis@para-sim.com>
+#
 # (c) 2013-2019 parasim inc
 # (c) 2010-2019 california institute of technology
 # all rights reserved
 #
-# Author(s): michael a.g. aïvázis, Lijun Zhu
 
 # the package
 import altar
@@ -16,7 +17,7 @@ from .Notifier import Notifier
 
 
 # my declaration
-class Annealer(altar.component, family="altar.controllers.cudaannealer", implements=controller):
+class Annealer(altar.component, family="altar.controllers.annealer", implements=controller):
     """
     A Bayesian controller that uses an annealing schedule and MCMC to approximate the posterior
     distribution of a model
@@ -28,7 +29,6 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
     sampler.doc = "the sampler of the posterior distribution"
 
     scheduler = altar.bayesian.scheduler()
-    scheduler.default = altar.bayesian.cov()
     scheduler.doc = "the generator of the annealing schedule"
 
     dispatcher = altar.simulations.dispatcher(default=Notifier)
@@ -37,7 +37,6 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
     archiver = altar.simulations.archiver()
     archiver.doc = "the archiver of simulation state"
 
-    statistics = None
 
     # protocol obligations
     @altar.export
@@ -54,19 +53,16 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
 
         # initialize the dispatcher
         self.dispatcher.initialize(application=application)
+
         # deduce my annealing method
         self.worker = self.deduceAnnealingMethod(job=application.job)
         # and initialize it
-        
         self.worker.initialize(application=application)
+
         # initialize my other parts
         self.sampler.initialize(application=application)
         self.scheduler.initialize(application=application)
         self.archiver.initialize(application=application)
-
-        # create a dictionary of statistics info
-        self.statistics = dict.fromkeys(['iteration',
-            'beta', 'scaling', 'stats'])
 
         # go through the registered monitors
         for monitor in application.monitors.values():
@@ -97,12 +93,7 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
         dispatcher.notify(event=dispatcher.start, controller=self)
         # start the process
         worker.start(annealer=self)
-        # record statistics information
-        self.statistics['iteration'] = worker.iteration
-        self.statistics['beta'] = worker.beta
-        self.statistics['scaling'] = self.sampler.scaling
-        self.statistics['stats'] = (0,0,0)
-        worker.archive(annealer=self)
+        worker.archive(annealer=self, scaling=self.sampler.scaling, stats=(0,0,0))
 
         # iterate until β is sufficiently close to one
         while worker.beta + tolerance < 1:
@@ -113,33 +104,28 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
 
             # compute a new temperature
             worker.cool(annealer=self)
+
             # notify we are about to walk the chains
             dispatcher.notify(event=dispatcher.walkChainsStart, controller=self)
             # walk the chains
-            stats = worker.walk(annealer=self)
+            statistics = worker.walk(annealer=self)
             # notify we are done walking the chains
             dispatcher.notify(event=dispatcher.walkChainsFinish, controller=self)
 
             # notify we are about to resample
             dispatcher.notify(event=dispatcher.resampleStart, controller=self)
             # resample
-            scaling = worker.resample(annealer=self, statistics=stats)
+            worker.resample(annealer=self, statistics=statistics)
             # notify we are done resampling
             dispatcher.notify(event=dispatcher.resampleFinish, controller=self)
 
-            # record statistics information
-            self.statistics['iteration'] = worker.iteration
-            self.statistics['beta'] = worker.beta
-            self.statistics['scaling'] = scaling
-            self.statistics['stats'] = stats
-            # and ask archiver to record
-            worker.archive(annealer=self)
+            # ask archiver to record statistics information
+            worker.archive(annealer=self, scaling=self.sampler.scaling, stats=statistics)
 
             # notify the worker we are at the bottom of the current step
             worker.bottom(annealer=self)
             # and dispatch the matching event
             dispatcher.notify(event=dispatcher.betaFinish, controller=self)
-
 
         # and finish up
         worker.finish(annealer=self)
@@ -164,7 +150,6 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
         hosts = job.hosts
         tasks = job.tasks
         gpus = job.gpus
-        #gpuids = job.gpuids (need a method to pass this info to worker)
 
         # first let's figure out the base worker factory: if the user asked for gpus and we
         # have them, go CUDA, else use plain vanilla sequential
@@ -211,7 +196,7 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
         Instantiate the plain sequential annealing method
         """
         # import the sequential annealer
-        from altar.bayesian.SequentialAnnealing import SequentialAnnealing
+        from .SequentialAnnealing import SequentialAnnealing
         # instantiate it and return it
         return SequentialAnnealing(annealer=self)
 
@@ -231,7 +216,7 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
         Instantiate the multi-threaded annealing method
         """
         # get the threaded annealer
-        from altar.bayesian.ThreadedAnnealing import ThreadedAnnealing
+        from .ThreadedAnnealing import ThreadedAnnealing
         # instantiate it and return it
         return ThreadedAnnealing(annealer=self, threads=threads, worker=worker)
 
@@ -240,7 +225,7 @@ class Annealer(altar.component, family="altar.controllers.cudaannealer", impleme
         """
         Instantiate the MPI aware annealing method
         """
-        from altar.bayesian.MPIAnnealing import MPIAnnealing
+        from .MPIAnnealing import MPIAnnealing
         # instantiate it and return it
         return MPIAnnealing(annealer=self, worker=worker)
 

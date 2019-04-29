@@ -88,9 +88,12 @@ template void altar::cuda::distributions::cudaGaussian::logpdf<double>(const dou
  
 //random_generation_kernel 
 // double precision version
+
+// put specialization in a namespace due to a bug in gcc6
+namespace cudaGaussian_kernels {
+
 template <>
 __global__ void
-cudaGaussian_kernels::
 _sample<double>(curandState_t * curand_states, 
     double * const theta, const size_t samples, const size_t parameters, 
     const size_t idx_begin, const size_t idx_end, 
@@ -116,7 +119,6 @@ _sample<double>(curandState_t * curand_states,
 //single precision version
 template <>
 __global__ void
-cudaGaussian_kernels::
 _sample<float>(curandState_t * curand_states, 
     float * const theta, const size_t samples, const size_t parameters, 
     const size_t idx_begin, const size_t idx_end, 
@@ -138,6 +140,8 @@ _sample<float>(curandState_t * curand_states,
         theta_sample[i] = curand_normal(&curand_states[sample])*sigma + mean;
     }
 }
+
+} // of namespace cudaGaussian_kernels
 
 //log_pdf kernel
 template <typename real_type>

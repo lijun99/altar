@@ -41,8 +41,7 @@ initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE h
     // find the meshgrid of hypocenter
     int id_hypo_strike = int(hypo_strike/dspf);
     int id_hypo_dip = int(hypo_dip/dspf);
-    // if meshgrid is not among the nearest 4x4 grids close to hypocenter
-    // Comment by Lijun: why 4x4? 2x2 seems to be enough
+    // if meshgrid is not among the nearest 2x2 grids close to hypocenter
     if (id_strike>id_hypo_strike-2 && id_strike<id_hypo_strike+2
         && id_dip > id_hypo_dip-2 && id_dip<id_hypo_dip+2) {
        // distance to hypocenter
@@ -101,7 +100,7 @@ setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
 
     int Nddf = (Ndd+2)*Nmesh;
     
-    // search the 4x4 window near the hypocenter for nearest 4 points
+    // search the 2x2 window near the hypocenter for nearest 4 points
     TYPE previous_min_distance, min_distance = 0.0, current_distance;
     int iD[4]; // recording the meshgrid index of nearest 4 points
     for (int n=0; n<4; ++n)

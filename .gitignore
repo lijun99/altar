@@ -33,6 +33,8 @@ __pycache__
 /doc/**/*.pdf
 # but not those that are figures
 !doc/**/figures/*.pdf
+
+# example outputs
 pro*.csv
 **/examples/sigma.txt
 **/examples/theta.txt
@@ -40,5 +42,7 @@ pro*.csv
 **/results/
 BetaStatistics.txt
 
+# availabel upon request, due to large sizes
+models/seismic/examples/kinematicG_9patch/
 
 # end of file

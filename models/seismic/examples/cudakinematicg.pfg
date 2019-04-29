@@ -66,16 +66,14 @@ cudakinematicg:
             rupturetime:
                 offset = 18
                 count = 9
-                prior = altar.cuda.distributions.gaussian
-                prior.mean = 10.0
-                prior.sigma = 30.0
+                prior = altar.cuda.distributions.uniform
+                prior.support = (10.0, 30.0)
 
             rupturevelocity:
                 offset = 27
                 count = 9
-                prior = altar.cuda.distributions.gaussian
-                prior.mean = 1.0
-                prior.sigma = 6.0
+                prior = altar.cuda.distributions.uniform
+                prior.support = (1.0, 6.0)
             
             hypocenter:
                 offset = 36
@@ -95,17 +93,18 @@ cudakinematicg:
         prof = altar.bayesian.profiler
 
     ; run configuration
-    job.tasks = 1 ; number of tasks per host
+    job.tasks = 4 ; number of tasks per host
     job.gpus = 1  ; number of gpus per task
+    job.gpuids = [4,5,6,7]
     job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
-    job.chains = 2**8 ; number of chains per task
-    job.steps = 10
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 1000
 
     ; shell
-    ; shell = mpi.shells.mpirun ; for running with mpi
+    shell = mpi.shells.mpirun ; for running with mpi
 
 ; for parallel runs
-mpi.shells.mpirun # altar.plexus.shell:
+; mpi.shells.mpirun # altar.plexus.shell:
     extra = -mca btl self,tcp
 
 ; end of file
