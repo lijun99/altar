@@ -19,6 +19,7 @@ import altar.cuda
 from altar.cuda import cublas
 from altar.cuda import libcuda
 from altar.cuda.models.cudaBayesian import cudaBayesian
+import numpy
 
 # declaration
 class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
@@ -122,10 +123,17 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
             raise
         # if all goes well
         else:
-            # allocate the matrix
-            green = altar.matrix(shape=(self.observations, self.parameters))
-            # and load the file contents into memory
-            green.load(gf.uri)
+            # get the suffix to determine if binary
+            suffix = gf.uri.suffix
+            # if non-binary
+            if suffix == ".txt":
+                green = numpy.loadtxt(gf.uri.path, dtype=self.precision)
+            # if binary
+            else:
+                green = numpy.fromfile(gf.uri.path, dtype=self.precision)
+            # reshape the matrix
+            green = green.reshape(self.observations, self.parameters)
+
         # all done
         return green
 
@@ -138,12 +146,15 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
 
         # merge cd with Green's function
         cd_inv = self.dataobs.gcd_inv
-        green = self.gGF        
-        # (obsxobs) x (obsxparameters) = (obsxparameters)
-        cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft, uplo=cublas.FillModeUpper,
-            transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
-            handle = self.cublas_handle)
-        #cublas.gemm(cd_inv, green, out=green)
+        green = self.gGF
+        # check whether cd is a constant or a matrix
+        if isinstance(cd_inv, float):
+            green *= cd_inv
+        elif isinstance(cd_inv, altar.cuda.matrix):
+            # (obsxobs) x (obsxparameters) = (obsxparameters)
+            cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft, uplo=cublas.FillModeUpper,
+                transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
+                handle = self.cublas_handle)
         # all done
         return
 

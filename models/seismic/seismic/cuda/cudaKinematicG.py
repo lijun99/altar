@@ -146,10 +146,17 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
             raise
         # if all goes well
         else:
-            # allocate the matrix
-            green = altar.matrix(shape=(self.NGbparameters, self.observations))
-            # and load the file contents into memory
-            green.load(gf.uri, binary=True)
+            # get the suffix to determine if binary
+            suffix = gf.uri.suffix
+            # if non-binary
+            if suffix == ".txt":
+                green = numpy.loadtxt(gf.uri.path, dtype=self.precision)
+            # if binary
+            else:
+                green = numpy.fromfile(gf.uri.path, dtype=self.precision)
+            # reshape the matrix
+            green = green.reshape(self.NGbparameters, self.observations)
+
         # all done
         return green
 
@@ -162,9 +169,10 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
         # merge cd with Green's function
         cd_inv = self.dataobs.gcd_inv
         green = self.gGF
+        # check whether cd is a constant or a matrix
         if isinstance(cd_inv, float):
             green *= cd_inv
-        elif isinstance(cd_inv, altar.matrix):
+        elif isinstance(cd_inv, altar.cuda.matrix):
             # (obsxobs) x (obsxparameters) = (obsxparameters)
             cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft, uplo=cublas.FillModeUpper,
                 transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,

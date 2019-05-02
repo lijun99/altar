@@ -10,7 +10,7 @@
 #if !defined(cualtar_extensions_capsules_h)
 #define cualtar_extensions_capsules_h
 
-// get pyre.cuda capsules 
+// get pyre.cuda capsules
 #include <pyre/cuda/capsules.h>
 
 

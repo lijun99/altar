@@ -14,6 +14,7 @@ import altar.cuda
 from altar.cuda import libcuda
 from altar.cuda import cublas
 
+import numpy
 
 # my protocol
 from altar.data.DataL2 import DataL2
@@ -134,10 +135,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             raise
         # if all goes well
         else:
-            # allocate the vector
-            self.dataobs= altar.vector(shape=self.observations)
-            # and load the file contents into memory
-            self.dataobs.load(df.uri)
+            # get the suffix to determine if binary
+            suffix = df.uri.suffix
+            if suffix == ".txt":
+                self.dataobs = numpy.loadtxt(df.uri.path, dtype=self.precision)
+            else: # binary
+                self.dataobs= numpy.fromfile(df.uri.path, dtype=self.precision)
 
         if self.cd_file is not None:
             # finally, the data covariance
@@ -154,10 +157,16 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
                 raise
             # if all goes well
             else:
-                # allocate the matrix
-                self.cd = altar.matrix(shape=(self.observations, self.observations))
-                # and load the file contents into memory
-                self.cd.load(cf.uri)
+                # get the suffix to determine if binary
+                suffix = cf.uri.suffix
+                # if non-binary
+                if suffix == ".txt":
+                    self.cd = numpy.loadtxt(cf.uri.path, dtype=self.precision)
+                # if binary
+                else:
+                    self.cd = numpy.fromfile(cf.uri.path, dtype=self.precision)
+                # reshape the matrix
+                self.cd = self.cd.reshape(self.observations, self.observations)
         else:
             # use a constant covariance
             self.cd = self.cd_std
@@ -167,6 +176,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
     def initializeCovariance(self):
         """
+        initialize gpu data and data covariance
         """
         from math import log, pi as π
 
@@ -178,7 +188,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # process cd info
         cd = self.cd
         observations = self.observations
-        if isinstance(cd, altar.matrix):
+        if isinstance(cd, numpy.ndarray):
             # copy cd to gpu
             self.gcd = altar.cuda.matrix(source=cd, dtype=self.precision)
             # inverse and Cholesky

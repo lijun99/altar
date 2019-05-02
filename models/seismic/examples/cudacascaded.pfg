@@ -28,8 +28,9 @@ cudacascaded:
                 offset = 0 
                 count = {cudacascaded.model.patches}
                 prep = altar.cuda.distributions.preset
-                prep.input_file = kinematicG_9patch/theta_cascaded.h5
+                prep.input_file = kinematicG_9patch/theta_cascaded.dat
                 prep.input_offset = 0
+                prep.input_parameters = 18
                 prior = altar.cuda.distributions.gaussian
                 prior.mean = 0
                 prior.sigma = 0.5
@@ -38,8 +39,9 @@ cudacascaded:
                 offset = {cudacascaded.model.patches}
                 count = {cudacascaded.model.patches}
                 prep = altar.cuda.distributions.preset
-                prep.input_file = {cudacascaded.model.case}/theta_cascaded.h5
+                prep.input_file = kinematicG_9patch/theta_cascaded.dat
                 prep.input_offset = {cudacascaded.model.patches}
+                prep.input_parameters = 18
                 prior = altar.cuda.distributions.uniform 
                 prior.support = (-0.5, 20.0)
 

@@ -141,7 +141,7 @@ kinematicg_forward(PyObject *, PyObject * args)
     PyObject * modelCap, *handleCap;
     PyObject * thetaCap, * GbCap, *DpredCap; 
     size_t batch, parameters;
-    bool return_residual;
+    int return_residual;
     
     int status = PyArg_ParseTuple(args,
                             "O!O!O!O!O!kkp:kinematicg_forward",
