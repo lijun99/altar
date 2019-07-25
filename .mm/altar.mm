@@ -8,7 +8,7 @@
 builder.dest = products
 
 # project meta-data
-altar.major := 1
+altar.major := 2
 altar.minor := 0
 
 # altar consists of a python package
@@ -69,5 +69,5 @@ tests.altar.application_run.clean = \
 
 
 # models
-include emhp.def gaussian.def cdm.def linear.def ${if ${value cuda.dir}, cudalinear.def seismic.def}
+include emhp.def gaussian.def cdm.def linear.def mogi.def ${if ${value cuda.dir}, cudalinear.def seismic.def}
 # end of file

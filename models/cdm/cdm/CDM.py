@@ -86,6 +86,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
 
         # compute the normalization
         self.normalization = self.computeNormalization()
+        print("normalization", self.normalization)
         # compute the inverse of the covariance matrix
         self.cd_inv = self.computeCovarianceInverse()
 
@@ -237,12 +238,12 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         self.yIdx = self.xIdx + 1
         self.dIdx = psets["depth"].offset
         self.openingIdx = psets["opening"].offset
-        self.aXIdx = psets["a"].offset
-        self.aYIdx = self.aXIdx + 1
-        self.aZIdx = self.aXIdx + 2
-        self.omegaXIdx = psets["omega"].offset
-        self.omegaYIdx = self.omegaXIdx + 1
-        self.omegaZIdx = self.omegaXIdx + 2
+        self.aXIdx = psets["aX"].offset
+        self.aYIdx = psets["aY"].offset
+        self.aZIdx = psets["aZ"].offset
+        self.omegaXIdx = psets["omegaX"].offset
+        self.omegaYIdx = psets["omegaY"].offset
+        self.omegaZIdx = psets["omegaZ"].offset
         self.offsetIdx = psets["offsets"].offset
 
         # all done
@@ -319,6 +320,8 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
             covariance = altar.matrix(shape=[self.observations]*2)
             # and load the contents into memory
             covariance.load(node.uri)
+            print("test", covariance.shape)
+            #covariance.print()
 
         # all done
         return data, covariance
@@ -346,6 +349,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         """
         # make a copy of the covariance matrix
         cd = self.cd.clone()
+        altar.libaltar.matrix_condition(cd.data)
         # perform an LU decomposition
         lu = altar.lapack.LU_decomposition(cd)
         # invert it

@@ -21,13 +21,10 @@ from altar.cuda import libcuda
 from altar.cuda.models.cudaBayesianEnsemble import cudaBayesianEnsemble
 
 # declaration
-class cudaCascaded(cudaBayesianEnsemble, family="altar.models.seismic.cudacascaded"):
+class cudaCascaded(cudaBayesianEnsemble, family="altar.cuda.models.seismic.cascaded"):
     """
-    cascaded static/kinematic inversion
+    cascaded inversion of a model ensemble
     """
 
-    Npatches = altar.properties.int(default=1)
-    Npatches.doc = "The total number of patches {Nas x Ndd}"
-    
 
 # end of file

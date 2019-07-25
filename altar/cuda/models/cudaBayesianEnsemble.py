@@ -29,6 +29,9 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
     parameters = altar.properties.int(default=1)
     parameters.doc = "the number of model degrees of freedom"
 
+    psets_list = altar.properties.list(default=None)
+    psets_list.doc = "list of parameter sets, used to set orders"
+
     psets = altar.properties.dict(schema=altar.cuda.models.parameters())
     psets.doc = "an ensemble of parameter sets in the model"
 
@@ -45,22 +48,27 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # chain up
         super().initialize(application=application)
 
+        # mount my input data space
+        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+
         # find out how many samples I will be working with; this equal to the number of chains
         self.samples = application.job.chains
 
         # cuda method
         self.device = application.controller.worker.device
         self.precision = application.job.gpuprecision
-        
+
         # initialize the parametersets
-        psets = self.psets
         # initialize the offset
         parameters = 0
         # go through my parameter sets
-        for name, pset in psets.items():
-            # initialize the parameter set
+        for name in self.psets_list:
+            # get the parameter set from psets dictionary
+            pset = self.psets[name]
+            # set the offset
+            pset.offset = parameters
+            # initialize the pset
             parameters += pset.cuInitialize(application=application)
-        # the total number of parameters is now known, so record it
         self.parameters = parameters
 
         # go through my models
@@ -70,7 +78,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             model.initialize(application=application)
 
         self.cuInitialize(application=application)
-        
+
         self.datallk = altar.cuda.vector(shape=self.samples, dtype=self.precision)
         # all done
         return self
@@ -97,9 +105,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         for name, pset in self.psets.items():
             # and ask each one to verify the sample
             pset.prep.cuInitSample(theta=theta)
-            #print("initialize sample", theta.shape, pset.prep.offset)
-            #theta.print()
-        
+
         # all done
         return self
 
@@ -137,10 +143,10 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask each of my models
         for name, model in self.models.items():
             # to contribute to the computation of the data likelihood
-            # make a local copy of theta
+
+            # make a local copy of theta if needed
             # mtheta = model.restricted(theta=step.theta, batch=batch)
-            #print("datallk", name)
-            #mtheta.print()
+
             model.cuEvalLikelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
             if model.cascaded:
                 step.prior += datallk
@@ -149,17 +155,15 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             #datallk.print()
             #step.prior.print()
             #step.data.print()
-        
-        
+
         # all done
         return self
-        
+
     def cuEvalPosterior(self, step, batch):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
         """
-        batch = batch if batch is not None else step.samples
         # prime the posterior
         step.posterior.copy(step.prior)
         # compute it; this expression reduces to Bayes' theorem for β->1
@@ -167,6 +171,20 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return self
 
+    def updateModel(self, annealer):
+        """
+        Update model parameters if needed
+        :param annealer:
+        :return:
+        """
+        # default is not updated
+        out = False
+        # iterate over embedded models
+        for name, model in self.models.item():
+            updated = model.updateModel(annealer=annealer)
+            out = out or updated
+        # all done
+        return out
 
     @altar.export
     def likelihoods(self, annealer, step, batch):

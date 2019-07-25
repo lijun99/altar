@@ -16,13 +16,13 @@
 # the package
 import altar
 import altar.cuda
-from altar.cuda import cublas
+from altar.cuda import cublas as cublas
 from altar.cuda import libcuda
 from altar.cuda.models.cudaBayesian import cudaBayesian
 import numpy
 
 # declaration
-class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
+class cudaStatic(cudaBayesian, family="altar.cuda.models.seismic.static"):
     """
     cudaLinear with the new cuda framework
     """
@@ -33,7 +33,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
     dataobs.doc = "the observed data"
 
     # the file based inputs
-    green = altar.properties.path(default="green.txt")
+    green = altar.properties.path(default="static.gf.h5")
     green.doc = "the name of the file with the Green functions"
 
     # protocol obligations
@@ -42,19 +42,25 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
         """
         Initialize the state of the model given a {problem} specification
         """
-        super().initialize(application=application)
         # chain up
+        super().initialize(application=application)
+        # get a cublas handle
         self.cublas_handle = self.device.get_cublas_handle()
-        # convert the input filenames into data
-        self.GF = self.loadGF()
-        self.prepareGF()
 
+        # load green's function to CPU
+        self.GF = self.loadFile(filename=self.green, shape=(self.observations, self.parameters))
+        # make a gpu copy of Green's function
+        self.gGF = altar.cuda.matrix(shape=self.GF.shape, dtype=self.precision)
         # prepare the residuals matrix
-        self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+        self.gDataPred = altar.cuda.matrix(shape=(self.samples, self.observations),
+                                           dtype=self.precision)
+        # merge covariance to green's function
+        self.mergeCovarianceToGF()
+
         # all done
         return self
 
-    def _forwardModel(self, theta, prediction, batch, observation=None):
+    def forwardModelBatched(self, theta, green, prediction, batch, observation=None):
         """
         Linear Forward Model prediction= G theta
         """
@@ -70,100 +76,121 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cudastatic"):
 
         # forward model
         # prediction = Green * theta
-        # in c/python pred (samplesxobs), green (obsxparameters), theta (samplesxparams)  
-        # translated to cublas/fortran, pred (obsxsamples) green(param obs) theta (params x samples)
+        # in c/python pred (samples, obs), green (obs, parameters), theta (samples, params)
+
+        cublas.gemm(A=theta, B=green, transa=0, transb=1,
+                        out=prediction,
+                        handle=self.cublas_handle,
+                        alpha=1.0, beta=beta,
+                        rows=batch)
+
+        # if using cublas interface directly, which uses column major
+        # translated to pred (obsxsamples) green(param obs) theta (params x samples)
         # we therefore use pred = G^T x theta
-        green = self.gGF
-        libcuda.cublas_gemm(self.cublas_handle, 
-                            1, 0, # transa, transb 
-                            prediction.shape[1], batch, green.shape[1], # m, n, k 
-                            1.0,   # alpha
-                            green.data, green.shape[1], # A, lda
-                            theta.data, theta.shape[1], # B, ldb
-                            beta,
-                            prediction.data, prediction.shape[1])
+
+        #libcuda.cublas_gemm(self.cublas_handle,
+        #                    1, 0, # transa, transb
+        #                    prediction.shape[1], batch, green.shape[1], # m, n, k
+        #                    1.0,   # alpha
+        #                    green.data, green.shape[1], # A, lda
+        #                    theta.data, theta.shape[1], # B, ldb
+        #                    beta,
+        #                    prediction.data, prediction.shape[1])
 
         # all done
         return self
-        
-    
-    def cuEvalLikelihood(self, theta, likelihood, batch):
-        """
-        to be loaded by super class cuEvalLikelihood which already decides where the local likelihood is added to
-        """
-        residuals = self.gDprediction
-        # call forward to caculate the data prediction or its difference between dataobs
-        self._forwardModel(theta=theta, prediction=residuals, batch=batch,
-                observation= self.dataobs.gdataObsBatch)  
-        # call data to calculate the l2 norm
-        self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
-            residual=True, batch=batch)
-        # return the likelihood        
-        return likelihood
 
 
-    def loadGF(self):
+    def forwardModel(self, theta, green, prediction, observation=None):
         """
-        Load the data in the input files into memory
+        Static/Linear forward model prediction = green * theta
+        :param theta: a parameter set, vector with size parameters
+        :param green: green's function, matrix with size (observations, parameters)
+        :param prediction: data prediction, vector with size observations
+        :return: data prediction if observation is none; otherwise return residual
         """
-        # grab the input dataspace
-        ifs = self.ifs
 
-        # first the green functions
-        try:
-            # get the path to the file
-            gf = ifs[self.green]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing Green functions: no '{self.green}' in '{self.case}'")
-            # and raise the exception again
-            raise
-        # if all goes well
+        if observation is None:
+            beta = 0.0
         else:
-            # get the suffix to determine if binary
-            suffix = gf.uri.suffix
-            # if non-binary
-            if suffix == ".txt":
-                green = numpy.loadtxt(gf.uri.path, dtype=self.precision)
-            # if binary
-            else:
-                green = numpy.fromfile(gf.uri.path, dtype=self.precision)
-            # reshape the matrix
-            green = green.reshape(self.observations, self.parameters)
+            # make a copy
+            prediction.copy(observation)
+            # to be subtracted in gemm
+            beta = -1.0
+
+        # green (obs, params) theta (params) predic(obs)
+        cublas.gemv(handle=self.cublas_handle,
+                    A=green, trans=cublas.OpNoTrans, x=theta,
+                    out=prediction,
+                    alpha=1.0, beta=beta)
+
+        # cublas uses column major, geenf is treated as  (params, obs)
+        #libcuda.cublas_gemv(self.cublas_handle,
+        #                    1, # transa = transpose
+        #                    green.shape[1], green.shape[0], # m, n, or param, obs
+        #                    1.0, # alpha
+        #                    green.data, green.shape[1], # A, lda
+        #                    theta.data, 1, # x, incx
+        #                    beta, # beta
+        #                    prediction.data, 1 # y, incy
+        #                    )
 
         # all done
-        return green
+        return self
 
-    def prepareGF(self):
-        """
-        copy green function to gpu and merge cd with green function
-        """
-        # make a gpu copy
-        self.gGF = altar.cuda.matrix(source=self.GF, dtype=self.precision)
 
-        # merge cd with Green's function
+    def cuEvalLikelihood(self, theta, likelihood, batch):
+        """
+        Compute data likelihood from the forward model,
+        :param theta: parameters, matrix [samples, parameters]
+        :param likelihood: data likelihood P(d|theta), vector [samples]
+        :param batch: the number of samples to be computed, batch <=samples
+        :return: likelihood, in case of model ensembles, data likelihood of this model
+        is added to the input likelihood
+        """
+
+        residuals = self.gDataPred
+        # call forward to caculate the data prediction or its difference between dataobs
+        self.forwardModelBatched(theta=theta, green=self.gGF,
+                                 prediction=residuals, batch=batch,
+                                 observation= self.dataobs.gdataObsBatch)
+        # compute the data likelihood with l2 norm
+        self.dataobs.cuEvalLikelihood(prediction=residuals,
+                                      likelihood=likelihood,
+                                      residual=True, batch=batch)
+
+        # return the likelihood
+        return likelihood
+
+    def mergeCovarianceToGF(self):
+        """
+        merge data covariance (cd) with green function
+        """
+        # get references for data covariance
         cd_inv = self.dataobs.gcd_inv
+        # get a reference for green's function
         green = self.gGF
+        # copy from CPU
+        green.copy_from_host(source=self.GF)
         # check whether cd is a constant or a matrix
         if isinstance(cd_inv, float):
             green *= cd_inv
         elif isinstance(cd_inv, altar.cuda.matrix):
             # (obsxobs) x (obsxparameters) = (obsxparameters)
-            cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft, uplo=cublas.FillModeUpper,
-                transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
-                handle = self.cublas_handle)
+            cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft,
+                        uplo=cublas.FillModeUpper,
+                        transa = cublas.OpNoTrans,
+                        diag=cublas.DiagNonUnit,
+                        alpha=1.0,
+                        handle = self.cublas_handle)
         # all done
         return
-
 
     # private data
     # inputs
     GF = None # the Green functions
     gGF = None
-    gDprediction = None
+    gDataPred = None
     cublas_handle=None
 
 # end of file

@@ -20,7 +20,7 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
     Recorder stores the intermediate simulation state in memory
     """
 
-    # user configurable state
+    # user configurable traits
     theta = altar.properties.path(default="theta.txt")
     theta.doc = "the path to the file with the final posterior sample"
 
@@ -36,8 +36,6 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
     output_freq = altar.properties.int(default=1)
     output_freq.doc = "the frequency to write step data to files"
 
-    statistics = None
-
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -47,7 +45,7 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
 
         # create a statistics list
         self.statistics= []
-        
+
         # all done
         return self
 
@@ -73,12 +71,14 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
 
     def recordstep(self, step, stats):
         """
-        Record step to file for ce 
+        Record step to file for ce
         """
         iteration = stats['iteration']
-        # output CoolingStep 
+
+        # output CoolingStep
         if iteration%self.output_freq == 0:
             step.save_hdf5(path=self.output_dir, iteration=iteration)
+
         # record statistics information
         statcopy = stats.copy()
         self.statistics.append(statcopy)
@@ -103,5 +103,7 @@ class Recorder(altar.component, family="altar.simulations.archivers.recorder", i
         #return
         return self
 
+    # unconfigurable traits
+    statistics = None
 
 # end of file

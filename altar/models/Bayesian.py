@@ -157,7 +157,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # notifications
     @altar.export
-    def top(self, step):
+    def top(self, annealer):
         """
         Notification that a β step is about to start
         """
@@ -166,7 +166,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def bottom(self, step):
+    def bottom(self, annealer):
         """
         Notification that a β step just ended
         """
@@ -175,6 +175,29 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     # implementation details
+    def mountInputDataspace(self, pfs):
+        """
+        Mount the directory with my input files
+        """
+        # attempt to
+        try:
+            # mount the directory with my input data
+            ifs = altar.filesystem.local(root=self.case)
+        # if it fails
+        except altar.filesystem.MountPointError as error:
+            # grab my error channel
+            channel = self.error
+            # complain
+            channel.log(f"bad case name: '{self.case}'")
+            channel.log(str(error))
+            # and bail
+            raise SystemExit(1)
+
+        # if all goes well, explore it and mount it
+        pfs["inputs"] = ifs.discover()
+        # all done
+        return ifs
+
     def restrict(self, theta):
         """
         Return my portion of the sample matrix {theta}

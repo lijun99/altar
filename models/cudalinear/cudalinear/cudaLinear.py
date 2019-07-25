@@ -18,7 +18,8 @@ from altar.cuda.models.cudaBayesian import cudaBayesian
 # declaration
 class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
     """
-    cudaLinear with the new cuda framework
+    Cuda implementation of a linear model 
+    A linear model is defined as data = G theta
     """
 
     # data observations
@@ -44,7 +45,7 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
         self.prepareGF()
 
         # prepare the residuals matrix
-        self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+        self.gDataPred = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
         # all done
         return self
 
@@ -85,7 +86,7 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
         """
         to be loaded by super class cuEvalLikelihood which already decides where the local likelihood is added to
         """
-        residuals = self.gDprediction
+        residuals = self.gDataPred
         # call forward to caculate the data prediction or its difference between dataobs
         self._forwardModel(theta=theta, prediction=residuals, batch=batch,
                 observation= self.dataobs.gdataObsBatch)  
@@ -147,7 +148,7 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
     # private data
     GF = None # the Green functions
     gGF = None
-    gDprediction = None
+    gDataPred = None
     cublas_handle=None
 
 # end of file

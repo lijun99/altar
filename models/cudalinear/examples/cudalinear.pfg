@@ -25,8 +25,8 @@ cudalinear:
         
         ; parameters to be simulated     
         psets:
-            ps1 = altar.cuda.models.parameterset
-            ps1:
+            pset = altar.cuda.models.parameterset
+            pset:
                 offset = 0
                 count = 8
                 prep = altar.cuda.distributions.gaussian
@@ -34,7 +34,7 @@ cudalinear:
                 prior = altar.cuda.distributions.gaussian 
                 prior.sigma = 0.5
                 
-        ; other fixed parameters
+        ; fixed model parameters
         green = green.txt
 
     monitors:

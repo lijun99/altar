@@ -10,7 +10,7 @@
 
 # the package
 import altar
-import altar.cuda 
+import altar.cuda
 
 # declaration
 class cudaCoolingStep:
@@ -56,14 +56,17 @@ class cudaCoolingStep:
         model = annealer.model
         samples = model.job.chains
         precision = model.job.gpuprecision
-        
+
         # build an uninitialized step
         step = cls.alloc(samples=samples, parameters=model.parameters, dtype=precision)
 
+
+        # run model here is a bad idea, moved to cudaannealing
         # initialize it
-        model.cuInitSample(theta=step.theta)
+        # model.cuInitSample(theta=step.theta)
         # compute the likelihoods
-        model.likelihoods(annealer=annealer, step=step, batch=samples)
+        #model.updateModel(annealer=annealer)
+        #model.likelihoods(annealer=annealer, step=step, batch=samples)
 
         # return the initialized state
         return step
@@ -75,7 +78,7 @@ class cudaCoolingStep:
         Allocate storage for the parts of a cooling step
         """
         # dtype must be given to avoid unmatched precisions
-        
+
         # allocate the initial sample set
         theta = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
         # allocate the likelihood vectors
@@ -108,7 +111,7 @@ class cudaCoolingStep:
         self.posterior.copy(self.prior)
         # add beta*dataLikelihood
         altar.cuda.cublas.axpy(alpha=self.beta, x=self.data, y=self.posterior, batch=batch)
-        
+
         # all done
         return self
 
@@ -119,10 +122,10 @@ class cudaCoolingStep:
         self.beta = step.beta
         self.theta.copy_from_host(source=step.theta)
         self.prior.copy_from_host(source=step.prior)
-        self.data.copy_from_host(source=step.data)    
-        self.posterior.copy_from_host(source=step.posterior)        
+        self.data.copy_from_host(source=step.data)
+        self.posterior.copy_from_host(source=step.posterior)
         return self
-        
+
     def copyToCPU(self, step):
         """
         copy gpu step to cpu step
@@ -130,9 +133,9 @@ class cudaCoolingStep:
         step.beta = self.beta
         self.theta.copy_to_host(target=step.theta)
         self.prior.copy_to_host(target=step.prior)
-        self.data.copy_to_host(target=step.data)    
+        self.data.copy_to_host(target=step.data)
         self.posterior.copy_to_host(target=step.posterior)
-        
+
         return self
 
     # meta-methods

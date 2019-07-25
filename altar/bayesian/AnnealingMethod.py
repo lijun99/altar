@@ -77,9 +77,10 @@ class AnnealingMethod:
         # get the state of the solution
         step = self.step
         # notify the model
-        annealer.model.top(step=step)
+        annealer.model.top(annealer=annealer)
         # ask my step to render itself
-        step.print(channel=annealer.info)
+        if self.wid == 0: # only master
+            step.print(channel=annealer.info)
         # all done
         return self
 
@@ -133,7 +134,7 @@ class AnnealingMethod:
         channel = annealer.info;
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
-        annealer.archiver.recordstep(step=self.step, stats=info)
+        annealer.archiver.recordstep(step=self.step, stats=info, psets=annealer.model.psets)
         # all done
         return self
 
@@ -143,7 +144,7 @@ class AnnealingMethod:
         Notification that we are at the bottom of an update
         """
         # notify the model
-        annealer.model.bottom(step=self.step)
+        annealer.model.bottom(annealer=annealer)
         # all done
         return self
 
@@ -157,7 +158,7 @@ class AnnealingMethod:
         # ask it to render itself to the screen
         step.print(channel=annealer.info)
         # ask the recorder to record it
-        annealer.archiver.record(step=step, iteration=self.iteration)
+        annealer.archiver.record(step=step, iteration=self.iteration, psets=annealer.model.psets)
         # all done
         return self
 

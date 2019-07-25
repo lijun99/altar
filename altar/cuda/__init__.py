@@ -28,6 +28,7 @@ from cuda import (
     cublas,
     Device,
     manager,
+    stats,
     cuda as libcuda,
     )
 
@@ -49,7 +50,7 @@ def use_device(id):
 
 def curand_generator():
     device = get_current_device()
-    
+
     return device.get_curand_generator()
 
 def cublas_handle():

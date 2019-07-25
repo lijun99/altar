@@ -1,0 +1,114 @@
+#!/usr/bin/env python3
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+#
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
+# all rights reserved
+#
+# Author(s): Lijun Zhu
+
+# the framework
+import altar
+# externals
+import h5py
+import numpy
+import os
+
+# app
+class H5Converter(altar.application, family="altar.applications.h5converter"):
+    """
+    A tool to convert static input files from altar-1.1 (text or binary) to altar2 (hdf5)
+    """
+
+    # user configurable state
+    case = altar.properties.path(default='./')
+    case.doc = "the directory of input files, default is current directory"
+
+    precision = altar.properties.str(default='float32')
+    precision.doc = "input/output data precision in hdf5 (float32/float64), default is float32"
+    precision.validators = altar.constraints.isMember("float64", "float32")
+
+    inputs = altar.properties.list(schema=altar.properties.path())
+    inputs.default = "input.txt"
+    inputs.doc = "the list of input file names"
+
+    output = altar.properties.path(default=None)
+    output.doc = "the output h5 file name, default will be set as the first filename + .h5"
+
+    shape = altar.properties.list(schema=altar.properties.int())
+    shape.default = []
+    shape.doc = "the shape of the data"
+
+    # protocol obligation
+    @altar.export
+    def main(self, *args, **kwds):
+        """
+        The main entry point
+        """
+
+        # mount input fs
+        try:
+            # mount the directory with my input data
+            ifs = altar.filesystem.local(root=self.case)
+        # if it fails
+        except altar.filesystem.MountPointError as error:
+            # grab my error channel
+            channel = self.error
+            # complain
+            channel.log(f"bad case name: '{self.case}'")
+            channel.log(str(error))
+            # and bail
+            raise SystemExit(1)
+
+        # assign it to application.pfs
+        self.pfs["inputs"] = ifs.discover()
+
+        # check output filename
+        if self.output is None:
+            self.output = altar.primitives.path(self.inputs[0].stems+'.h5')
+
+        # open h5 file
+        h5file = h5py.File(name=self.output.path, mode='w')
+
+        for filename in self.inputs:
+            # get the file info
+            file = ifs[filename]
+            stem = file.uri.stems
+            suffix = file.uri.suffix
+
+            print(f"Loading {file.uri.name} ...")
+
+            if suffix == '.txt': # text file
+                # load to a numpy array
+                data = numpy.loadtxt(file.uri, dtype=self.precision)
+            else: # assume binary otherwise
+                # load, as a 1d numpy array
+                data = numpy.fromfile(file.uri.path, dtype=self.precision)
+            # reshape if shape is provided
+            if self.shape:
+                data=data.reshape(self.shape)
+
+            # write to h5 dataset
+            print(f"Creating dataset {stem} with shape={data.shape}, precision={self.precision}")
+            h5file.create_dataset(name=stem, data=data)
+
+        h5file.close()
+        print(f"Created a h5 file {self.output.path}")
+        # all done
+        return 0
+
+
+
+# bootstrap
+if __name__ == "__main__":
+    # instantiate
+    app = H5Converter(name="h5converter")
+    # invoke
+    status = app.run()
+    # share
+    raise SystemExit(status)
+
+
+# end of file

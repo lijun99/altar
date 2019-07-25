@@ -77,13 +77,13 @@ class Model(altar.protocol, family="altar.models"):
 
     # notifications
     @altar.provides
-    def top(self, step):
+    def top(self, annealer):
         """
         Notification that a β step is about to start
         """
 
     @altar.provides
-    def bottom(self, step):
+    def bottom(self, annealer):
         """
         Notification that a β step just ended
         """

@@ -73,7 +73,7 @@ queueValidSamples(realtype_t * const theta_candidate, const realtype_t * const t
     cudaCheckError("cudaMetropolis:queueValidSamples Error");
 } 
 
-// explicit specialization
+// explicit instantiation
 template void altar::cuda::bayesian::cudaMetropolis::queueValidSamples<float>(float * const, const float * const, const int * const, 
     const size_t, const size_t, cudaStream_t);
 template void altar::cuda::bayesian::cudaMetropolis::queueValidSamples<double>(double * const, const double * const, const int * const, 
@@ -105,7 +105,7 @@ metropolisUpdate(realtype_t * const theta, realtype_t * const prior,
     cudaCheckError("cudaMetropolis:metropolisUpdate Error");
 }
   
-// explicit specialization
+// explicit instantiation
 template void altar::cuda::bayesian::cudaMetropolis::
     metropolisUpdate<float>(float * const, float * const, float * const, float * const,  
                             const float * const, const float * const, const float * const, const float * const,

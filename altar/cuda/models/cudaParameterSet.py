@@ -30,9 +30,10 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
 
     prep = altar.cuda.distributions.distribution(default=None)
     prep.doc = "the distribution to use to initialize this parameter set"
-    
-    offset = altar.properties.int(default=0)
 
+    # parameter set offset in theta
+    # determined by cudaBayesian.psets
+    offset = 0
 
     def cuInitialize(self, application):
         """
@@ -46,7 +47,7 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
         # adjust the number of parameters of my distributions
         self.prior.parameters = count
         self.prior.offset = offset
-        
+
         # initialize my distributions
         self.prior.cuInitialize(application=application)
         if self.prep is not None:
@@ -58,7 +59,7 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
 
         # return my parameter count so the next set can be initialized properly
         return count
-        
+
     def cuInitSample(self, theta, batch=None):
         """
         Fill {theta} with an initial random sample from my prior distribution.
@@ -111,5 +112,7 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
         # rows, starting in the column indicated by my {offset}, and the width of my block is
         # determined by my parameter count
         return theta.submatrix(start=start, size=shape)
+
+
 
 # end of file

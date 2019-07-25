@@ -33,23 +33,26 @@ namespace altar { namespace cuda {
             { version__name__, version, METH_VARARGS, version__doc__ },
 
             // distributions
+            { cudaRanged::verify__name__, cudaRanged::verify, METH_VARARGS, cudaRanged::verify__doc__},
             // cudaUniform
             { cudaUniform::sample__name__, cudaUniform::sample, METH_VARARGS, cudaUniform::sample__doc__},
-            { cudaUniform::verify__name__, cudaUniform::verify, METH_VARARGS, cudaUniform::verify__doc__},
             { cudaUniform::logpdf__name__, cudaUniform::logpdf, METH_VARARGS, cudaUniform::logpdf__doc__},
             // cudaGaussian
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
             { cudaGaussian::logpdf__name__, cudaGaussian::logpdf, METH_VARARGS, cudaGaussian::logpdf__doc__},
-            
+            // cudaTGaussian
+            { cudaTGaussian::sample__name__, cudaTGaussian::sample, METH_VARARGS, cudaTGaussian::sample__doc__},
+            { cudaTGaussian::logpdf__name__, cudaTGaussian::logpdf, METH_VARARGS, cudaTGaussian::logpdf__doc__},
+
             // norms
             { cudaL2::norm__name__, cudaL2::norm, METH_VARARGS, cudaL2::norm__doc__},
             { cudaL2::normllk__name__, cudaL2::normllk, METH_VARARGS, cudaL2::normllk__doc__},
-            
+
             // metropolis sampler
             { cudaMetropolis::setValidSampleIndices__name__, cudaMetropolis::setValidSampleIndices, METH_VARARGS, cudaMetropolis::setValidSampleIndices__doc__},
             { cudaMetropolis::queueValidSamples__name__, cudaMetropolis::queueValidSamples, METH_VARARGS, cudaMetropolis::queueValidSamples__doc__},
             { cudaMetropolis::metropolisUpdate__name__, cudaMetropolis::metropolisUpdate, METH_VARARGS, cudaMetropolis::metropolisUpdate__doc__},
-                
+
 
             // sentinel
             {0, 0, 0, 0}

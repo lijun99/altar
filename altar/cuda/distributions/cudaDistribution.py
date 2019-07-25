@@ -23,11 +23,12 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
     The base class for probability distributions
     """
 
-    # protocol obligations
-    # user configurable state from superclass
-    # parameters = altar.properties.int()
-    # offset = altar.properties.int(default=0)
+    # user configurable state from its cpu superclass
+    parameters = altar.properties.int()
+    parameters.doc = "the number of model parameters that belong to me"
 
+    offset = altar.properties.int(default=0)
+    offset.doc = "the starting point of my parameters in the overall model state"
 
     # configuration
     @altar.export
@@ -38,13 +39,13 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         # will recommand a framework change to use application instead of rng
         # some distribution might need info from application
         # e.g, cascaded need worker id
-        # so, use cuInitialize instead 
+        # so, use cuInitialize instead
         return self
-    
+
     @altar.export
     def verify(self, theta, mask):
         # to satisfy component requirement
-        # use cuVerify instead 
+        # use cuVerify instead
         return self
 
     # cuda methods

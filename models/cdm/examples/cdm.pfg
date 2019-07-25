@@ -1,7 +1,7 @@
 ;
 ; michael a.g. aïvázis
 ; orthologue
-; (c) 1998-2019 all rights reserved
+; (c) 1998-2018 all rights reserved
 ;
 
 cdm:
@@ -19,7 +19,7 @@ cdm:
     job:
         tasks = 1       ; number of tasks per host
         gpus = 0        ; number of gpus per task
-        chains = 2**2  ; number of chains per task
+        chains = 2**8  ; number of chains per task
         steps = 20      ; the length of each chain
 
     ; event handlers
@@ -45,49 +45,49 @@ cdm:
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (-5000, 5000)
+                    support = (-1000, 1000)
                 prior:
-                    support = (-5000, 5000)
+                    support = (-1000, 1000)
             depth:
                 count = 1
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (2000, 4000)
+                    support = (4000, 10000)
                 prior:
-                    support = (2000, 4000)
+                    support = (4000, 10000)
             opening:
                 count = 1
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (0, 1)
+                    support = (10, 80)
                 prior:
-                    support = (0, 1)
+                    support = (10, 80)
             a:
                 count = 3
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (0, 1)
+                    support = (100, 3000)
                 prior:
-                    support = (0, 1)
+                    support = (100, 3000)
             omega:
                 count = 3
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (0, 45)
+                    support = (-5, 5)
                 prior:
-                    support = (0, 45)
+                    support = (-5, 5)
             offsets:
-                count = 2
+                count = 1
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (-0.1, 0.1)
+                    support = (-1.0, 1.0)
                 prior:
-                    support = (-0.1, 0.1)
+                    support = (-1.0, 1.0)
 
 
 ; for parallel runs

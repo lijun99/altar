@@ -1,13 +1,11 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# michael a.g. aïvázis <michael.aivazis@para-sim.com>
-# Lijun Zhu <ljzhu@gps.caltech.edu>
-#
 # (c) 2013-2019 parasim inc
 # (c) 2010-2019 california institute of technology
 # all rights reserved
 #
+# Author(s): Lijun Zhu
 
 
 # the package
@@ -20,7 +18,7 @@ from altar.models.Bayesian import Bayesian
 import numpy
 
 # declaration
-class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
+class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     """
     The base class of AlTar models that are compatible with Bayesian explorations
     """
@@ -31,12 +29,16 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
     parameters.doc = "the number of model degrees of freedom"
 
     cascaded = altar.properties.bool(default=False)
-    cascaded.doc = "whether the model is cascaded, aka, annealing temperature always = 1"    
+    cascaded.doc = "whether the model is cascaded (annealing temperature is fixed at 1)"
 
     embedded = altar.properties.bool(default=False)
     embedded.doc = "whether the model is embedded in an ensemble of models"
 
+    psets_list = altar.properties.list(default=None)
+    psets_list.doc = "list of parameter sets, used to set orders"
+
     psets = altar.properties.dict(schema=altar.cuda.models.parameters())
+    psets.default = dict() # empty
     psets.doc = "an ensemble of parameter sets in the model"
 
     dataobs = altar.cuda.data.data()
@@ -50,7 +52,7 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
     idx_map=altar.properties.list(schema=altar.properties.int())
     idx_map.default = None
     idx_map.doc = "the indices for model parameters in whole theta set"
-    
+
 
     # protocol obligations
     @altar.export
@@ -76,31 +78,46 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
         self.observations = self.dataobs.observations
 
         # initialize the parametersets
-        psets = self.psets
         # initialize the offset
         parameters = 0
-        # go through my parameter sets
-        for name, pset in psets.items():
-            # initialize the parameter set
-            if self.embedded:
-                parameters += pset.count
-            else:
+
+        # standalone model (not embedded):
+        if self.embedded is False:
+            # iterate over a list of parameter sets
+            for name in self.psets_list:
+                # get the parameter set from psets dictionary
+                pset = self.psets[name]
+                # set the offset
+                pset.offset = parameters
+                # initialize the pset
                 parameters += pset.cuInitialize(application=application)
+        else: # embedded model
+            # get the psets from master
+            psets_master = application.model.psets
+            for name in self.psets_list:
+                pset = psets_master[name]
+                # add to dictionary
+                self.psets[name] = pset
+                #self.psets.update(name=pset)
+                # update parameters
+                parameters += pset.count
+
+        # print(self.psets, parameters)
 
             #print("name", name, pset.offset, pset.count, parameters)
         # the total number of parameters is now known, so record it
         self.parameters = parameters
-        
+
         # set up an idx_map
         if self.idx_map is None:
             idx_map = list()
-            for name, pset in psets.items():
+            for name, pset in self.psets.items():
                 idx_map += range(pset.offset, pset.offset+pset.count)
-            # sort idx in sequence   
+            # sort idx in sequence
             idx_map.sort()
-            self.idx_map = idx_map 
+            self.idx_map = idx_map
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
-        
+
         # all done
         return self
 
@@ -171,7 +188,6 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
         """
-        batch = batch if batch is not None else step.samples
         # prime the posterior
         step.posterior.copy(step.prior)
         # compute it; this expression reduces to Bayes' theorem for β->1
@@ -186,8 +202,8 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
         """
-        
-        batch = step.samples if batch is None else batch
+
+        batch = batch or step.samples
 
         # grab the dispatcher
         dispatcher = annealer.dispatcher
@@ -227,6 +243,15 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
         return self
 
 
+    def updateModel(self, annealer):
+        """
+        Update Model parameters if needed
+        :param annealer:
+        :return: default is False
+        """
+        return False
+
+
         # implementation details
     def mountInputDataspace(self, pfs):
         """
@@ -251,6 +276,102 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
         # all done
         return ifs
 
+    def loadFile(self, filename, shape=None, dataset=None):
+        """
+        Load an input file to a numpy array (for both float32/64 support)
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix,
+            the precision must be same as the desired gpuprecision,
+            and users must specify the shape of the data
+        3. (preferred) hdf5 file in '.h5' suffix (preferred)
+            the metadata of shape, precision is included in .h5 file
+        :param filename: str, the input file name
+        :param shape: list of int
+        :param dataset: str, name/key of dataset for h5 input only
+        :return: output numpy.array
+        """
+
+        ifs = self.ifs
+        channel = self.error
+        try:
+            # get the path to the file
+            file = ifs[filename]
+        except not ifs.NotFoundError:
+            channel.log(f"no file '{filename}' found in '{ifs.path()}'")
+            raise
+        else:
+            # get the suffix to determine type
+            suffix = file.uri.suffix
+            # use .txt for non-binary input
+            if suffix == '.txt':
+                # load to a cpu array
+                cpuData = numpy.loadtxt(file.uri.path, dtype = self.precision)
+            # binary data
+            elif suffix == '.bin' or suffix == '.dat':
+                # check shape
+                if shape is None:
+                    # check whether I can get shape from output
+                    if out is None:
+                        raise channel.log(f"must specify shape for binary input '{filename}'")
+                    else:
+                        shape = out.shape
+                # read and reshape, users need to check the precision
+                cpuData = numpy.fromfile(file.uri.path, dtype=self.precision).reshape(shape)
+            # hdf5 file
+            elif suffix == '.h5':
+                # get support
+                import h5py
+                # open
+                h5file = h5py.File(file.uri.path, 'r')
+                # get the desired dataset
+                if dataset is None:
+                    # if not provided, assume the only or first dataset as default
+                    dataset = list(h5file.keys())[0]
+                cpuData = numpy.asarray(h5file.get(dataset), dtype=self.precision)
+                h5file.close()
+
+        if shape is not None:
+            cpuData = cpuData.reshape(shape)
+        # all done
+        return cpuData
+
+
+    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None):
+        """
+        Load an input file to a gpu (for both float32/64 support)
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix,
+            the precision must be same as the desired gpuprecision,
+            and users must specify the shape of the data
+        3. (preferred) hdf5 file in '.h5' suffix (preferred)
+            the metadata of shape, precision is included in .h5 file
+        :param filename: str, the input file name
+        :param shape: list of int
+        :param dataset: str, name/key of dataset for h5 input only
+        :return: out altar.cuda.matrix/vector
+        """
+
+        # load to cpu as a numpy array at fist
+        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset)
+
+        # if output gpu matrix/vector is not pre-allocated
+        if out is None:
+            # if vector
+            if cpuData.ndim == 1:
+                out = altar.cuda.vector(shape=cpuData.shape[0], dtype=self.precision)
+            # if matrix
+            elif cpuData.ndim == 2:
+                out = altar.cuda.matrix(shape=cpuData.shape, dtype=self.precision)
+            else:
+                channel = self.error
+                raise channel.log(f"unsupported data dimension {cpuData.shape}")
+
+        out.copy_from_host(source=cpuData)
+        # all done
+        return out
+
     def restricted(self, theta, batch):
         """
         extract theta which contains model's own parameters
@@ -261,9 +382,9 @@ class cudaBayesian(Bayesian, family="altar.cuda.models.bayesian"):
 
         # extract theta according to idx_map
         theta.copycols(dst=self.gtheta, indices=self.gidx_map, batch=batch)
-        # all done 
+        # all done
         return self.gtheta
-            
+
     # private data
     observations = None
     device = None

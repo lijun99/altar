@@ -56,7 +56,16 @@ class CUDAAnnealing(AnnealingMethod):
         # create both cpu/gpu steps to hold the state of the problem
         self.step = self.CoolingStep.allocate(annealer=annealer)
         self.gstep = self.cudaCoolingStep.start(annealer=annealer)
-        self.gstep.copyToCPU(step=self.step)
+
+        # initialize it
+        model = annealer.model
+        gstep = self.gstep
+        model.cuInitSample(theta=gstep.theta)
+        # compute the likelihoods
+        model.updateModel(annealer=annealer)
+        model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
+        # return to cpu
+        gstep.copyToCPU(step=self.step)
 
         # all done
         return self

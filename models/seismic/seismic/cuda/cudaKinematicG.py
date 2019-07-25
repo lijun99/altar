@@ -11,7 +11,7 @@
 # the package
 import altar
 import altar.cuda
-# my base 
+# my base
 from altar.cuda.models.cudaBayesian import cudaBayesian
 # extensions
 from altar.cuda import cublas
@@ -20,7 +20,7 @@ from altar.models.seismic.ext import cudaseismic as libcudaseismic
 import numpy
 
 # declaration
-class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg"):
+class cudaKinematicG(cudaBayesian, family="altar.cuda.models.seismic.kinematicg"):
     """
     cudaLinear with the new cuda framework
     """
@@ -57,7 +57,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
 
     t0s = altar.properties.array(default=None)
     t0s.doc = "the start time for each patch"
-    
+
     cmodel = None
 
     # protocol obligations
@@ -66,34 +66,38 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
         """
         Initialize the state of the model given a {problem} specification
         """
-        super().initialize(application=application)
         # chain up
+        super().initialize(application=application)
+        # get a cublas handle
         self.cublas_handle = self.device.get_cublas_handle()
-        # convert the input filenames into data
+
+        # load the green's function
         self.NGbparameters = 2*self.Nas*self.Ndd*self.Nt
-        self.GF=self.loadGF()
-        self.prepareGF()
+        self.gGF=self.loadFileToGPU(filename=self.green, shape=(self.NGbparameters, self.observations))
+        # merge covariance to gf
+        self.mergeCovarianceToGF()
 
         # prepare the residuals matrix
         self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
 
+        # prepare the initial arrival time
         self.gt0s = altar.cuda.vector(source=numpy.asarray(self.t0s, dtype=self.precision))
-        
+
+        # create a cuda/c model object
         dtype = self.gGF.dtype.num
-        # create a cuda/c model
         self.cmodel = libcudaseismic.kinematicg_alloc(
-                self.Nas, self.Ndd, self.Nmesh, self.dsp, 
+                self.Nas, self.Ndd, self.Nmesh, self.dsp,
                 self.Nt, self.Npt, self.dt,
-                self.gt0s.data, 
+                self.gt0s.data,
                 self.samples, self.parameters, self.observations,
                 self.gidx_map.data, dtype)
-        
+
         # all done
         return self
 
     def _forwardModel(self, theta, prediction, batch, observation=None):
         """
-        KinematicG forward model: cast Mb(x,y,t)    
+        KinematicG forward model: cast Mb(x,y,t)
         """
         if observation is None:
             return_residual = False
@@ -105,11 +109,10 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
         libcudaseismic.kinematicg_forward(self.cublas_handle, self.cmodel,
             theta.data, self.gGF.data, prediction.data, theta.shape[1], batch, return_residual)
 
-        
         # all done
         return self
-        
-    
+
+
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
         to be loaded by super class cuEvalLikelihood which already decides where the local likelihood is added to
@@ -117,55 +120,19 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
         residuals = self.gDprediction
         # call forward to caculate the data prediction or its difference between dataobs
         self._forwardModel(theta=theta, prediction=residuals, batch=batch,
-                observation= self.dataobs.gdataObsBatch)  
+                observation= self.dataobs.gdataObsBatch)
         # call data to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
             residual=True, batch=batch)
-        # return the likelihood        
+        # return the likelihood
         return likelihood
 
 
-    def loadGF(self):
+    def mergeCovarianceToGF(self):
         """
-        Load the data in the input files into memory
+        merge cd with green function
         """
-        # grab the input dataspace
-        ifs = self.ifs
 
-        # first the green functions
-        try:
-            # get the path to the file
-            gf = ifs[self.green]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing Green functions: no '{self.green}' in '{self.case}'")
-            # and raise the exception again
-            raise
-        # if all goes well
-        else:
-            # get the suffix to determine if binary
-            suffix = gf.uri.suffix
-            # if non-binary
-            if suffix == ".txt":
-                green = numpy.loadtxt(gf.uri.path, dtype=self.precision)
-            # if binary
-            else:
-                green = numpy.fromfile(gf.uri.path, dtype=self.precision)
-            # reshape the matrix
-            green = green.reshape(self.NGbparameters, self.observations)
-
-        # all done
-        return green
-
-    def prepareGF(self):
-        """
-        copy green function to gpu and merge cd with green function
-        """
-        # make a gpu copy
-        self.gGF = altar.cuda.matrix(source=self.GF, dtype=self.precision)
         # merge cd with Green's function
         cd_inv = self.dataobs.gcd_inv
         green = self.gGF
@@ -173,13 +140,12 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cudakinematicg")
         if isinstance(cd_inv, float):
             green *= cd_inv
         elif isinstance(cd_inv, altar.cuda.matrix):
-            # (obsxobs) x (obsxparameters) = (obsxparameters)
-            cublas.trmm(cd_inv, green, out=green, side=cublas.SideLeft, uplo=cublas.FillModeUpper,
+            # (NGbparameters x obs) x (obsxobs)  = (NGbparameters x obs)
+            cublas.trmm(cd_inv, green, out=green, side=cublas.SideRight, uplo=cublas.FillModeUpper,
                 transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
                 handle = self.cublas_handle)
-        #cublas.gemm(cd_inv, green, out=green)
+        # all done
         return
-
 
     # private data
     # inputs

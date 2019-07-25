@@ -37,6 +37,16 @@ def static():
     return static
 
 # implementations
+@altar.foundry(implements=model, tip="static inversion model with Cp")
+def staticcp():
+    # grab the factory
+    from .cudaStaticCp import cudaStaticCp as staticcp
+    # attach its docstring
+    __doc__ = staticcp.__doc__
+    # and return it
+    return staticcp
+
+# implementations
 @altar.foundry(implements=model, tip="kinematic inversion model")
 def kinematicg():
     # grab the factory

@@ -56,7 +56,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         self.device = application.controller.worker.device
         self.curng = self.device.curand_generator
         self.precision = application.job.gpuprecision
-        
+
         # all done
         return self
 
@@ -72,15 +72,27 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
             annealer - the controller
             step - cpu CoolingStep
         Return:
-            statistics (accepted/rejected/invalid) or (accepted/unlikely/rejected)   
+            statistics (accepted/rejected/invalid) or (accepted/unlikely/rejected)
         """
         # grab the dispatcher
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
         dispatcher.notify(event=dispatcher.samplePosteriorStart, controller=annealer)
-        
+
         # prepare the sampling pdf, copy step to gpu step
         self.prepareSamplingPDF(annealer=annealer, step=step)
+
+        # check whether model parameters needed to be updated, e.g., Cp
+        model = annealer.model
+
+        model.likelihoods(annealer=annealer, step=self.gstep, batch=self.gstep.samples)
+
+        if model.updateModel(annealer=annealer):
+            # if updated, recompute datalikelihood and posterior
+            gstep = self.gstep
+            batch = gstep.samples
+            gstep.prior.zero(), gstep.data.zero(), gstep.posterior.zero()
+            model.likelihoods(annealer=annealer, step=gstep, batch=batch)
 
         # walk the chains
         statistics = self.walkChains(annealer=annealer, step=self.gstep)
@@ -115,7 +127,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         dispatcher = annealer.dispatcher
         # notify we have started preparing the sampling PDF
         dispatcher.notify(event=dispatcher.prepareSamplingPDFStart, controller=annealer)
-        
+
         # allocate local gpu data if not allocated
         self.gstep = annealer.worker.gstep
         if self.ginit is not True:
@@ -123,13 +135,13 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
 
         # copy cpu step state
         self.gstep.copyFromCPU(step=step)
-        
+
         # unpack what i need
         self.gsigma_chol.copy_from_host(source=step.sigma)
 
         # scale it
         self.gsigma_chol *= self.scaling
-        
+
         # compute its Cholesky decomposition
         self.gsigma_chol.Cholesky(uplo=cublas.FillModeUpper)
         # notify we are done preparing the sampling PDF
@@ -187,7 +199,7 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         cdata = candidate.data
         cpost = candidate.posterior
         cθ = candidate.theta
-        
+
         # the mask of samples rejected due to model constraint violations
         invalid_flags = self.ginvalid_flags
         valid_indices = self.gvalid_indices
@@ -208,14 +220,14 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
             dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
 
             # make a loop to make sure there is at least one new sample,
-            # or certain numbers of new samples       
+            # or certain numbers of new samples
             while True:
                 # the random displacement may have generated candidates that are outside the
                 # support of the model, so we must give it an opportunity to reject them;
                 # initialize the candidate sample by randomly displacing the current one
                 self.displace(displacement=θproposal)
                 θproposal += θ
-                
+
                 # reset the mask and ask the model to verify the sample validity
                 # note that I have redefined model.verify to use theta as input
 
@@ -235,13 +247,13 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
 
             # queue valid samples to first rows of cθ
             libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
-            
+
             # notify that the verification process is finished
             dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
 
             # initialize the likelihoods
             likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
-            
+
             # compute the probabilities/likelihoods
             model.likelihoods(annealer=annealer, step=candidate, batch=valid)
 
@@ -254,9 +266,9 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
             # accept/reject: go through all the samples
             libcudaaltar.cudaMetropolis_metropolisUpdate(
                 θ.data, prior.data, data.data, posterior.data, # original
-                cθ.data, cprior.data, cdata.data, cpost.data,  # candidate 
+                cθ.data, cprior.data, cdata.data, cpost.data,  # candidate
                 dice.data, acceptance_flags.zero().data, valid_indices.data, valid)
-             
+
             # counting the acceptance/rejection
             accepted_step = int(acceptance_flags.sum())
             accepted += accepted_step
@@ -325,18 +337,18 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # allocate sigma_chol
         self.gsigma_chol = altar.cuda.matrix(shape=(parameters, parameters), dtype=precision)
 
-        # allocate local  
+        # allocate local
         self.ginvalid_flags = altar.cuda.vector(shape=samples, dtype='int32')
         self.gacceptance_flags = altar.cuda.vector(shape=samples, dtype='int32')
         self.gvalid_indices = altar.cuda.vector(shape=samples, dtype='int32')
         self.gvalid_samples = altar.cuda.vector(shape=1, dtype='int32')
-        
+
         self.gdice = altar.cuda.vector(shape=samples, dtype=precision)
 
         # set initialized flag = 1
         self.ginit = True
-        return 
-        
+        return
+
     # private data
     mcsteps = 1          # the length of each Markov chain
     dispatcher = None  # a reference to the event dispatcher
@@ -352,5 +364,5 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
     precision = None
     gdice = None
     curng = None
-    
+
 # end of file

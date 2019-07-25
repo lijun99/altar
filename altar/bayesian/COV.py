@@ -86,7 +86,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.data.copy(data)
         #step.posterior.copy(posterior)
         # instead of copying posterior, recompute it with new beta
-        step.computePosterior()    
+        step.computePosterior()
 
         # and return it
         return step

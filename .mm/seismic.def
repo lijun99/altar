@@ -16,7 +16,7 @@ seismic.minor := 0
 seismic.tmpdir = ${builder.dest.staging}altar/models/seismic/
 
 # seismic consists of a python package
-seismic.packages := seismic.pkg 
+seismic.packages := seismic.pkg
 # a library
 seismic.libraries = ${if ${value cuda.dir}, seismic.cudalib}
 # and an extension
@@ -28,7 +28,7 @@ seismic.pkg.stem := seismic
 seismic.pkg.root := models/seismic/seismic/
 seismic.pkg.bin := models/seismic/bin/
 seismic.pkg.pycdir := $(builder.dest.pyc)altar/models/seismic/
-seismic.pkg.drivers := seismic
+seismic.pkg.drivers := cudaStatic cudaStaticCp cudaJointStaticKinematicG cudaCascaded H5Converter
 
 # the seismic extension meta-data
 seismic.ext.stem := seismic

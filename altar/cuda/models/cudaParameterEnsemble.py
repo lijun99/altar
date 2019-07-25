@@ -7,6 +7,8 @@
 #
 # Author(s): Lijun Zhu
 
+# currently not used; use psets in cudaBayesian instead
+
 # the package
 import altar
 import altar.cuda
@@ -20,7 +22,7 @@ class cudaParameterEnsemble(cudaParameter, family="altar.models.parameters.cudae
     """
 
     psets = altar.properties.dict(schema=altar.cuda.models.parameters())
-    psets.doc = "an ensemble of parameter sets in the model" 
+    psets.doc = "an ensemble of parameter sets in the model"
 
     # interface
     @altar.export
@@ -49,7 +51,7 @@ class cudaParameterEnsemble(cudaParameter, family="altar.models.parameters.cudae
 
         # return my parameter count so the next set can be initialized properly
         return parameters
-        
+
 
     def cuInitSample(self, theta, batch=None):
         """

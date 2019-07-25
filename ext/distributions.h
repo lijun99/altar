@@ -15,6 +15,14 @@
 namespace altar {
     namespace extensions {
 
+        // for all ranged distribution
+        namespace distribution {
+            // verify whether parameters within the given range
+            extern const char * const verify__name__;
+            extern const char * const verify__doc__;
+            PyObject * verify(PyObject *, PyObject *);
+        }
+
         // uniform distribution        
         namespace uniform {
             extern const char * const sample__name__;
@@ -25,9 +33,6 @@ namespace altar {
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
 
-            extern const char * const verify__name__;
-            extern const char * const verify__doc__;
-            PyObject * verify(PyObject *, PyObject *);
         } // of namespace uniform
 
         // gaussian distribution

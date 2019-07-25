@@ -9,6 +9,9 @@ __pycache__
 /builds
 /products
 
+# the developer
+.idea
+
 # the synthetic data from the mogi model
 /models/mogi/examples/**/*.txt
 /models/mogi/examples/**/*.csv

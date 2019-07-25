@@ -69,7 +69,7 @@ class CoolingStep:
         # return the initialized state
         return step
 
-    @classmethod    
+    @classmethod
     def allocate(cls, annealer):
         # get the model
         model = annealer.model
@@ -107,14 +107,14 @@ class CoolingStep:
         return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma)
 
     def computePosterior(self):
-        """                                                                                                                                                            
-        (Re-)Compute the posterior from prior, data, and (updated) beta                                                                                                
         """
-        # prime the posterior                                                                                                                                          
+        (Re-)Compute the posterior from prior, data, and (updated) beta
+        """
+        # prime the posterior
         self.posterior.copy(self.prior)
-        # compute it; this expression reduces to Bayes' theorem for β->1                                                                                               
+        # compute it; this expression reduces to Bayes' theorem for β->1
         altar.blas.daxpy(self.beta, self.data, self.posterior)
-        # all done                                                                                                                                                     
+        # all done
         return self
 
     # meta-methods
@@ -184,13 +184,20 @@ class CoolingStep:
         for i in range(min(50, parameters)):
             channel.line(f"{indent} ({mean[i]}, {sd[i]})")
 
+
+        # print statistics (axis=0 average over samples)
+        mean, sd = θ.mean_sd(axis=0)
+        channel.line(f"{indent}parameters (mean, sd):")
+        for i in range(min(50, parameters)):
+            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+
         # flush
         channel.log()
 
         # all done
         return channel
 
-    def save_hdf5(self, path=None, iteration=None):
+    def save_hdf5(self, path=None, iteration=None, psets=None):
         """
         Save Coolinging Step to HDF5 file
         Args:
@@ -214,16 +221,38 @@ class CoolingStep:
         suffix = '.h5'
         filename = os.path.join(str_path, "step_"+str_iteration+suffix)
 
+        # create a hdf5 file
         f=h5py.File(filename, 'w')
-        f.create_dataset('beta', data=numpy.asarray(self.beta))
-        f.create_dataset('covariance', data=self.sigma.ndarray())
-        f.create_dataset('theta', data=self.theta.ndarray())
-        f.create_dataset('prior', data=self.prior.ndarray())
-        f.create_dataset('likelihood', data=self.data.ndarray())
-        f.create_dataset('posterior', data=self.posterior.ndarray())
+        # save annealer info
+        annealergrp = f.create_group('Annealer')
+        annealergrp.create_dataset('beta', data=numpy.asarray(self.beta))
+        annealergrp.create_dataset('covariance', data=self.sigma.ndarray())
+        # save parameter sets
+        psetsgrp = f.create_group('ParameterSets')
+        if psets is None:
+            # no parameter sets info provided, save as theta
+            psetsgrp.create_dataset('theta', data=self.theta.ndarray())
+        else:
+            # get a ndarray reference for theta
+            theta = self.theta.ndarray()
+            # iterate over all psets
+            for name, pset in psets.items():
+                psetsgrp.create_dataset(name, data=theta[:, pset.offset:pset.offset+pset.count])
+        # save Bayesian likelihoods/probabilities
+        bayesiangrp = f.create_group('Bayesian')
+        bayesiangrp.create_dataset('prior', data=self.prior.ndarray())
+        bayesiangrp.create_dataset('likelihood', data=self.data.ndarray())
+        bayesiangrp.create_dataset('posterior', data=self.posterior.ndarray())
         f.close()
 
         # all done
+        return
+
+    def load_hdf5(self, path=None, iteration=0):
+        """
+        load CoolingStep from HDF5 file
+        """
+        # to be done
         return
 
     def load_hdf5(self, path=None, iteration=0):

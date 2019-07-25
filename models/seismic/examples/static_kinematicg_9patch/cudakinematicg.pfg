@@ -1,0 +1,111 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the kinematicg uoᴉsɹǝʌuᴉ (kinematicG model only)
+cudakinematicg:
+    ; test case configuration
+
+    model = altar.models.seismic.cuda.kinematicg
+    model:
+        ; the path of input files
+        case = input
+
+        ; the total number of patches
+        patches = 9
+
+        ; fixed model parameters
+        green = kinematicG.gf.h5
+
+        Ndd = 3 ; patches down dip
+        Nas = 3 ; patches along strike
+        Nmesh = 30 ; mesh points for each patch
+        dsp = 20.0 ; length for each patch, km
+        Nt = 90 ; number of time intervals
+        Npt = 2 ; mesh points for each time interval
+        dt = 1.0 ; time unit for each interval, second
+        ; initial starting time for each patch
+        t0s = [0.0] * ({cudakinematicg.model.Nas}*{cudakinematicg.model.Nas})
+
+        ; data
+        dataobs:
+            observations = 14148
+            data_file = kinematicG.data.h5
+            cd_std = 5.0e-3
+
+        ; parameters to be simulated
+        psets_list = [strikeslip, dipslip, hypocenter, risetime, rupturevelocity]
+
+        psets:
+            strikeslip = altar.cuda.models.parameterset
+            dipslip = altar.cuda.models.parameterset
+            hypocenter = altar.cuda.models.parameterset
+            risetime = altar.cuda.models.parameterset
+            rupturevelocity = altar.cuda.models.parameterset
+
+            ; variables for patches are arranged along dip direction at first [Nas][Ndd]
+            strikeslip:
+                count = {cudacascaded.model.patches}
+                prep = altar.cuda.distributions.preset ; load preset samples
+                prep.input_file = theta_cascaded.h5 ; file name
+                prep.dataset = ParameterSets/strikeslip ; dataset name in h5
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+
+            dipslip:
+                count = {cudacascaded.model.patches}
+                prep = altar.cuda.distributions.preset
+                prep.input_file = theta_cascaded.h5 ; file name
+                prep.dataset = ParameterSets/dipslip ; dataset name in h5
+                prep.input_parameters = 18
+                prior = altar.cuda.distributions.uniform
+                prior.support = (-0.5, 20.0)
+
+            risetime:
+                count = {cudacascaded.model.patches}
+                prior = altar.cuda.distributions.uniform
+                prior.support = (10.0, 30.0)
+
+            rupturevelocity:
+                count = {cudacascaded.model.patches}
+                prior = altar.cuda.distributions.uniform
+                prior.support= (1.0, 6.0)
+
+            ; along strike(frist), dip directions
+            ; could be sperated into 2 for dip and strike direction
+            hypocenter:
+                count = 2
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 20.0
+                prior.sigma = 5.0
+
+
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+        archiver:
+            output_dir = results/kinematicg
+            output_freq = 3
+
+    monitors:
+        prof = altar.bayesian.profiler
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task
+    ; job.gpuids = [4,5,6,7]
+    job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 1000
+
+    ; shell
+    ;shell = mpi.shells.mpirun ; for running with mpi
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+    extra = -mca btl self,tcp
+
+; end of file

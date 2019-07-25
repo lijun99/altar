@@ -14,6 +14,8 @@ import altar
 from .Controller import Controller as controller
 # my event dispatcher
 from .Notifier import Notifier
+# my archiver
+from .Recorder import Recorder
 
 
 # my declaration
@@ -34,7 +36,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
     dispatcher = altar.simulations.dispatcher(default=Notifier)
     dispatcher.doc = "the event dispatcher that activates the registered handlers"
 
-    archiver = altar.simulations.archiver()
+    archiver = altar.simulations.archiver(default=Recorder)
     archiver.doc = "the archiver of simulation state"
 
 

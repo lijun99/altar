@@ -41,6 +41,7 @@ class MPIAnnealing(AnnealingMethod):
         rng.rng.seed(seed=seed)
 
         # initialize worker
+        print("mpi annealing", self.wid, self.worker.wid, self.worker)
         self.worker.wid = self.rank
         self.worker.initialize(application=application)
         # grab a channel
@@ -67,17 +68,17 @@ class MPIAnnealing(AnnealingMethod):
         # all done
         return self
 
-
-    def top(self, annealer):
-        """
-        Notification that we are at the beginning of a β update
-        """
-        # if i am the manager
-        if self.rank == self.manager:
-            # chain up
-            return super().top(annealer=annealer)
-        # otherwise, do nothing
-        return self
+    # use super class method
+    #def top(self, annealer):
+    #    """
+    #    Notification that we are at the beginning of a β update
+    #    """
+    #    # if i am the manager
+    #    if self.rank == self.manager:
+    #        # chain up
+    #        return super().top(annealer=annealer)
+    #    # otherwise, do nothing
+    #    return self
 
 
     def cool(self, annealer):
@@ -135,7 +136,7 @@ class MPIAnnealing(AnnealingMethod):
         """
         # if i am the manager
         if self.rank == self.manager:
-            return super().archive(annealer=annealer, scaling=scaling, stats=stats)
+            super().archive(annealer=annealer, scaling=scaling, stats=stats)
         # otherwise, do nothing
         return self
 
@@ -146,7 +147,7 @@ class MPIAnnealing(AnnealingMethod):
         # if i am the manager
         if self.rank == self.manager:
             # chain up
-            return super().bottom(annealer=annealer)
+            super().bottom(annealer=annealer)
         # otherwise, do nothing
         return self
 
@@ -194,6 +195,7 @@ class MPIAnnealing(AnnealingMethod):
         self.worker = worker
         # assign them a worker id
         self.worker.wid = self.rank
+        self.wid = self.rank
 
         # compute the total number workers
         workers = comm.sum(destination=self.manager, item=worker.workers)

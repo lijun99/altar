@@ -22,6 +22,19 @@ namespace cudaGaussian_kernels {
         real_type * const theta, const size_t samples, const size_t parameters,  
         const size_t idx_begin, const size_t idx_end, 
         const real_type mean, const real_type sigma);
+
+    template <>
+    __global__ void _sample<double>(curandState_t * curand_states,
+        double * const theta, const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end,
+        const double mean, const double sigma);
+
+    template <>
+    __global__ void _sample<float>(curandState_t * curand_states,
+        float * const theta, const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end,
+        const float mean, const float sigma);
+
     // log pdf
     template<typename real_type> 
     __global__ void _logpdf(const real_type * const theta, real_type * const probability,
@@ -30,7 +43,7 @@ namespace cudaGaussian_kernels {
         const real_type mean, const real_type sigma);
 }  
  
-// generate uniform random samples
+// generate random samples
 template<typename real_type> 
 void altar::cuda::distributions::cudaGaussian::
 sample(real_type * const theta, const size_t samples, const size_t parameters, 
@@ -55,7 +68,7 @@ sample(real_type * const theta, const size_t samples, const size_t parameters,
     cudaSafeCall(cudaFree(curand_states));
 } 
 
-// explicit specialization
+// explicit instantiation
 template void altar::cuda::distributions::cudaGaussian::sample<float>(float * const, const size_t, const size_t, 
                     const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaGaussian::sample<double>(double * const, const size_t, const size_t, 
@@ -80,18 +93,17 @@ logpdf(const real_type * const theta, real_type * const probability,
     cudaCheckError("cudaGaussian:: log_pdf error");
 }
 
-// explicit specialization
+// explicit instantiation
 template void altar::cuda::distributions::cudaGaussian::logpdf<float>(const float * const, float * const, const size_t, const size_t, 
                     const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaGaussian::logpdf<double>(const double * const, double * const, const size_t, const size_t, 
                     const size_t, const size_t, const double, const double, cudaStream_t);
- 
-//random_generation_kernel 
-// double precision version
 
-// put specialization in a namespace due to a bug in gcc6
+// put explicit specialization in a namespace due to a bug in gcc6
 namespace cudaGaussian_kernels {
 
+//random_generation_kernel
+// double precision version
 template <>
 __global__ void
 _sample<double>(curandState_t * curand_states, 

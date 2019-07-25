@@ -27,13 +27,11 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
 
     cd_file = altar.properties.path(default=None)
     cd_file.doc = "the name of the file with the data covariance matrix"
-    
-    cd_constant = altar.properties.float(default=1.0)
-    cd_constant = "the constant covariance for data"
 
-    # the norm to use for computing the data log likelihood
-    norm = altar.norms.norm()
-    norm.default = altar.norms.l2()
+    cd_std = altar.properties.float(default=1.0)
+    cd_std = "the constant covariance for data"
+
+    norm = altar.norms.l2()
     norm.doc = "the norm to use when computing the data log likelihood"
 
     @altar.export
@@ -50,7 +48,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         self.ifs = application.pfs["inputs"]
         self.loadData()
         # compute inverse of covariance, normalization
-        self.initializeCovariance()
+        self.initializeCovariance(cd=self.cd)
         # all done
         return self
 
@@ -60,7 +58,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         """
 
         #depending on convenience, users can
-        # copy dataobs to their model and use the residual as input of prediction 
+        # copy dataobs to their model and use the residual as input of prediction
         # or compute prediction from forward model and subtract the dataobs here
 
         batch = batch if batch is not None else likelihood.size
@@ -70,23 +68,23 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
             # extract it
             dp = prediction.getColumn(idx)
             # subtract the dataobs if residual is not pre-calculated
-            if not residual: 
+            if not residual:
                 dp -= self.dataobs
-            likelihood[idx] = self.normalization - 0.5*self.norm.eval(v=dp)   
+            likelihood[idx] = self.normalization - 0.5*self.norm.eval(v=dp)
         # all done
         return self
 
-    @property
+
     def dataobsBatch(self):
         """
         Get a batch of duplicated dataobs
         """
         if self.dataobs_batch is None:
             self.dataobs_batch = altar.matrix(shape=(self.samples, self.observations))
-            # for each sample
-            for sample in range(self.samples):
-                # make the corresponding column a copy of the data vector
-                self.dataobs_batch.setColumn(sample, self.dataobs)
+        # for each sample
+        for sample in range(self.samples):
+            # make the corresponding column a copy of the data vector
+            self.dataobs_batch.setColumn(sample, self.dataobs)
         return self.dataobs_batch
 
 
@@ -94,7 +92,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         """
         load data and covariance
         """
-        
+
         # grab the input dataspace
         ifs = self.ifs
         # next, the observations
@@ -137,14 +135,17 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
                 self.cd.load(cf.uri)
         else:
             # use a constant covariance
-            self.cd = self.cd_constant
+            self.cd = self.cd_std
         return
 
 
-    def initializeCovariance(self):
+    def initializeCovariance(self, cd):
         """
+        For a given data covariance cd, compute L2 likelihood normalization, inverse of cd in Cholesky decomposed form,
+        and merge cd with data observation, d-> L*d with cd^{-1} = L L*
+        :param cd:
+        :return:
         """
-        cd = self.cd
         if isinstance(cd, altar.matrix):
             # normalization
             self.normalization = self.computeNormalization(observations=self.observations, cd=cd)
@@ -155,9 +156,8 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
             self.dataobs = altar.blas.dtrmv( Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
                 Cd_inv, self.dataobs)
 
-            
         elif isinstance(cd, float):
-            # cd is standard deviation 
+            # cd is standard deviation
             from math import log, pi as π
             self.normalization = -0.5*log(2*π*cd)*observations;
             self.cd_inv = 1.0/self.cd
@@ -165,8 +165,21 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
 
         # prepare the residuals matrix
         self.residuals = self.initializeResiduals(samples=samples, data=self.d)
-            
-        # all done 
+
+        # all done
+        return self
+
+    def updateCovariance(self, cp):
+        """
+        Update data covariance with cp, cd -> cd + cp
+        :param cp: a matrix with shape (obs, obs)
+        :return:
+        """
+        # make a copy of cp
+        cchi = cp.clone()
+        # add cd (scalar or matrix)
+        cchi += self.cd
+        self.initializeCovariance(cd=cchi)
         return self
 
     def computeNormalization(self, observations, cd):
@@ -183,9 +196,9 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         logdet = altar.lapack.LU_lndet(*decomposition)
 
         # all done
-        return - (log(2*π)*observations + logdet) / 2;    
+        return - (log(2*π)*observations + logdet) / 2;
 
-    
+
     def computeCovarianceInverse(self, cd):
         """
         Compute the inverse of the data covariance matrix
@@ -210,5 +223,5 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
     cd = None
     cd_inv = None
     error = None
-    
+
 # end of file

@@ -29,13 +29,13 @@
 const char * const altar::cuda::extensions::cudaMetropolis::setValidSampleIndices__name__ = "cudaMetropolis_setValidSampleIndices";
 const char * const altar::cuda::extensions::cudaMetropolis::setValidSampleIndices__doc__ =
     "cudaMetropolis label valid samples";
-    
+
 PyObject *
 altar::cuda::extensions::cudaMetropolis::setValidSampleIndices(PyObject *, PyObject * args)
 {
     PyObject * indicesCapsule, *flagsCapsule, *validCountCap;
-    
-    int status = PyArg_ParseTuple(args, "O!O!O!:cudaMetropolis_setValidSampleIndices", 
+
+    int status = PyArg_ParseTuple(args, "O!O!O!:cudaMetropolis_setValidSampleIndices",
                                     &PyCapsule_Type, &indicesCapsule,
                                     &PyCapsule_Type, &flagsCapsule,
                                     &PyCapsule_Type, &validCountCap);
@@ -55,15 +55,15 @@ altar::cuda::extensions::cudaMetropolis::setValidSampleIndices(PyObject *, PyObj
         (PyCapsule_GetPointer(validCountCap, altar::cuda::extensions::vector::capsule_t));
 
     /* void altar::cuda::bayesian::cudaMetropolis::
-    setValidSampleIndices(int * const valid_sample_indices, const int * const invalid, 
+    setValidSampleIndices(int * const valid_sample_indices, const int * const invalid,
     const int samples, int valid_counts, cudaStream_t stream)
     */
     const size_t samples = flags->size;
     altar::cuda::bayesian::cudaMetropolis::setValidSampleIndices((int * const)indices->data,
         (const int * const)flags->data, samples, (int *)validCount->data);
-        
+
     // all done
-    // return 
+    // return
     Py_RETURN_NONE;
 }
 
@@ -71,14 +71,14 @@ altar::cuda::extensions::cudaMetropolis::setValidSampleIndices(PyObject *, PyObj
 const char * const altar::cuda::extensions::cudaMetropolis::queueValidSamples__name__ = "cudaMetropolis_queueValidSamples";
 const char * const altar::cuda::extensions::cudaMetropolis::queueValidSamples__doc__ =
     "cudaMetropolis label valid samples";
-    
+
 PyObject *
 altar::cuda::extensions::cudaMetropolis::queueValidSamples(PyObject *, PyObject * args)
 {
     PyObject * candidateCapsule, *proposalCapsule, *indicesCapsule;
-    size_t validCount; 
-    
-    int status = PyArg_ParseTuple(args, "O!O!O!k:cudaMetropolis_queueValidSamples", 
+    size_t validCount;
+
+    int status = PyArg_ParseTuple(args, "O!O!O!k:cudaMetropolis_queueValidSamples",
                                     &PyCapsule_Type, &candidateCapsule,
                                     &PyCapsule_Type, &proposalCapsule,
                                     &PyCapsule_Type, &indicesCapsule,
@@ -100,18 +100,15 @@ altar::cuda::extensions::cudaMetropolis::queueValidSamples(PyObject *, PyObject 
         (PyCapsule_GetPointer(proposalCapsule, altar::cuda::extensions::matrix::capsule_t));
 
 
-    /* 
+    /*
     template <typename realtype_t>
     void altar::cuda::bayesian::cudaMetropolis::
-    queueValidSamples(realtype_t * const theta_candidate, const realtype_t * const theta_proposal, 
+    queueValidSamples(realtype_t * const theta_candidate, const realtype_t * const theta_proposal,
         const int * const validSample_indices,
-        const size_t valid_samples, const size_t parameters, 
+        const size_t valid_samples, const size_t parameters,
         cudaStream_t stream)
     */
-    const double * p = (const double *)proposal->data;
-    double *hp = (double *)malloc(proposal->nbytes);
-    cudaMemcpy(hp, p, indices->size*sizeof(double), cudaMemcpyDefault);
-    
+
     const size_t parameters = candidate->size2;
     switch(candidate->dtype) {
     case PYCUDA_FLOAT:
@@ -138,16 +135,16 @@ altar::cuda::extensions::cudaMetropolis::queueValidSamples(PyObject *, PyObject 
 const char * const altar::cuda::extensions::cudaMetropolis::metropolisUpdate__name__ = "cudaMetropolis_metropolisUpdate";
 const char * const altar::cuda::extensions::cudaMetropolis::metropolisUpdate__doc__ =
     "cudaMetropolis accept/reject procedure and update original state with accepted samples";
-    
+
 PyObject *
 altar::cuda::extensions::cudaMetropolis::metropolisUpdate(PyObject *, PyObject * args)
 {
     PyObject *thetaCapsule, *priorCapsule, *dataCapsule, *posteriorCapsule;
     PyObject *cthetaCapsule, *cpriorCapsule, *cdataCapsule, *cposteriorCapsule;
-    PyObject *diceCapsule, *acceptFlagsCapsule, *validIndicesCapsule; 
-    size_t validCount; 
-    
-    int status = PyArg_ParseTuple(args, "O!O!O!O!O!O!O!O!O!O!O!k:cudaMetropolis_metropolisUpdate", 
+    PyObject *diceCapsule, *acceptFlagsCapsule, *validIndicesCapsule;
+    size_t validCount;
+
+    int status = PyArg_ParseTuple(args, "O!O!O!O!O!O!O!O!O!O!O!k:cudaMetropolis_metropolisUpdate",
                                     &PyCapsule_Type, &thetaCapsule,
                                     &PyCapsule_Type, &priorCapsule,
                                     &PyCapsule_Type, &dataCapsule,
@@ -201,16 +198,16 @@ altar::cuda::extensions::cudaMetropolis::metropolisUpdate(PyObject *, PyObject *
         (PyCapsule_GetPointer(acceptFlagsCapsule, altar::cuda::extensions::vector::capsule_t));
     cuda_vector * validIndices= static_cast<cuda_vector *>
         (PyCapsule_GetPointer(validIndicesCapsule, altar::cuda::extensions::vector::capsule_t));
-        
-    /* 
+
+    /*
     template <typename realtype_t>
     void altar::cuda::bayesian::cudaMetropolis::
-    metropolisUpdate(realtype_t * const theta, realtype_t * const prior, 
-        realtype_t * const data, realtype_t * const posterior,  
-        const realtype_t * const theta_candidate, const realtype_t * const prior_candidate, 
+    metropolisUpdate(realtype_t * const theta, realtype_t * const prior,
+        realtype_t * const data, realtype_t * const posterior,
+        const realtype_t * const theta_candidate, const realtype_t * const prior_candidate,
         const realtype_t * const data_candidate, const realtype_t * const posterior_candidate,
         const realtype_t * const dices, int * const acceptance_flag, const int * const valid_sample_indices,
-        const int samples, const int parameters, 
+        const int samples, const int parameters,
         cudaStream_t stream)
     */
     const size_t parameters = theta->size2;
@@ -220,7 +217,7 @@ altar::cuda::extensions::cudaMetropolis::metropolisUpdate(PyObject *, PyObject *
             (float *)data->data, (float *)posterior->data,
             (const float *)ctheta->data, (const float *)cprior->data,
             (const float *)cdata->data, (const float *)cposterior->data,
-            (const float *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,            
+            (const float *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,
             validCount, parameters);
     else
         altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<double>(
@@ -228,7 +225,7 @@ altar::cuda::extensions::cudaMetropolis::metropolisUpdate(PyObject *, PyObject *
             (double *)data->data, (double *)posterior->data,
             (const double *)ctheta->data, (const double *)cprior->data,
             (const double *)cdata->data, (const double *)cposterior->data,
-            (const double *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,            
+            (const double *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,
             validCount, parameters);
 
     // all done

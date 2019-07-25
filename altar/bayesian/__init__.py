@@ -15,7 +15,8 @@ import altar
 from .Controller import Controller as controller
 from .Sampler import Sampler as sampler
 from .Scheduler import Scheduler as scheduler
-
+from altar.simulations.Monitor import Monitor as monitor
+from altar.simulations.Archiver import Archiver as archiver
 
 # implementations
 @altar.foundry(
@@ -50,7 +51,7 @@ def metropolis():
     return metropolis
 
 
-@altar.foundry(implements=sampler, tip="a monitor that times the various simulation phases")
+@altar.foundry(implements=monitor, tip="a monitor that times the various simulation phases")
 def profiler():
     # grab the factory
     from .Profiler import Profiler as profiler
@@ -59,5 +60,13 @@ def profiler():
     # and return it
     return profiler
 
+@altar.foundry(implements=archiver, tip="an archiver to record the results and progress")
+def recorder():
+    # grab the factory
+    from .Recorder import Recorder as recorder
+    # attach its docstring
+    __doc__ = recorder.__doc__
+    # and return it
+    return recorder
 
 # end of file

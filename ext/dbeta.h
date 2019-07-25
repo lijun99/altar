@@ -25,6 +25,11 @@ namespace altar {
         extern const char * const dbeta__doc__;
         PyObject * dbeta(PyObject *, PyObject *);
 
+        // dbeta_gsl
+        extern const char * const dbeta_gsl__name__;
+        extern const char * const dbeta_gsl__doc__;
+        PyObject * dbeta_gsl(PyObject *, PyObject *);
+
     } // of namespace extensions
 } // of namespace altar
 

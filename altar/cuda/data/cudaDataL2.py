@@ -12,7 +12,7 @@
 import altar
 import altar.cuda
 from altar.cuda import libcuda
-from altar.cuda import cublas
+from altar.cuda import cublas as cublas
 
 import numpy
 
@@ -26,12 +26,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     """
     The observed data with L2 norm
     """
-    # configuration states from cpu counterpart
-    # data_file = altar.properties.path(default="data.txt")
-    # observations = altar.properties.int(default=1)
-    # cd_file = altar.properties.path(default=None)
-    # cd_std = altar.properties.float(default=1.0)
 
+    # configuration states copied from cpu counterpart
     data_file = altar.properties.path(default="data.txt")
     data_file.doc = "the name of the file with the observations"
 
@@ -40,16 +36,19 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
     cd_file = altar.properties.path(default=None)
     cd_file.doc = "the name of the file with the data covariance matrix"
-    
+
     cd_std = altar.properties.float(default=1.0)
     cd_std.doc = "the constant covariance for data, sigma^2"
 
-    # the norm to use for computing the data log likelihood
-    norm = altar.norms.norm()
-    norm.default = altar.cuda.norms.l2()
-    norm.doc = "the norm used to compute likelihood"
+    merge_cd_to_data = altar.properties.bool(default=True)
+    merge_cd_to_data.doc = "whether to merge Cd with observed data"
 
-    #ifs = None
+
+    # the norm to use for computing the data log likelihood
+    # the only implementation that works for now
+    norm = altar.cuda.norms.norm()
+    norm.default = altar.cuda.norms.l2()
+    norm.doc = "l2 norm for calculating likelihood"
 
     @altar.export
     def initialize(self, application):
@@ -61,16 +60,25 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         self.device = application.controller.worker.device
         self.precision = application.job.gpuprecision
 
-
         # get the input path from model
         self.ifs = application.pfs["inputs"]
         self.error = application.error
         # get the number of samples
         self.samples = application.job.chains
-        # load the data and covariance
-        self.loadData()
+
+        # load the observed data
+        self.dataobs = self.loadFile(filename=self.data_file, shape=self.observations)
+
+        # load the data covariance
+        if self.cd_file is not None:
+            self.cd = self.loadFile(filename=self.cd_file, shape=(self.observations, self.observations))
+        else:
+            # use a constant covariance
+            self.cd = self.cd_std
+
         # compute inverse of covariance, normalization
         self.initializeCovariance()
+
         # all done
         return self
 
@@ -80,24 +88,24 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         compute the datalikelihood for prediction (samples x observations)
         """
 
+        # get the batch / number of samples
+        batch = batch or prediction.shape[0]
+
         # depending on convenience, users can
         # either copy dataobs to their model and use the residual as input of prediction
-        # 
+        #
         # or compute prediction from forward model and subtract the dataobs here
 
-        # subtract dataobs from prediction to get residualt
+        # subtract dataobs from prediction to get residual
         if not residual:
             prediction -= self.gdataObsBatch
 
         # call L2 norm to calculate the likelihood
         likelihood = self.norm.cuEvalLikelihood(data=prediction, constant=self.normalization,
             out=likelihood, batch=batch)
-   
+
         # all done
         return likelihood
-
-    #def loadData(self):
-    #use cpu routine to loadData
 
     @property
     def cd_inv(self):
@@ -105,126 +113,164 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         Inverse of data covariance, in Cholesky decomposed form
         """
         return self.gcd_inv
-        
+
     @property
     def dataobsBatch(self):
         """
         A batch of duplicated observations
         """
         return self.gdataObsBatch
-        
-        
-    def loadData(self):
+
+    def loadFile(self, filename, shape, dataset=None):
         """
-        load data and covariance
+        Load an input file to a numpy array (for both float32/64 support)
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix,
+            the precision must be same as the desired gpuprecision,
+            and users must specify the shape of the data
+        3. (preferred) hdf5 file in '.h5' suffix (preferred)
+            the metadata of shape, precision is included in .h5 file
+        :param filename: str, the input file name
+        :param shape: list of int
+        :param dataset: str, name/key of dataset for h5 input only
+        :return: output numpy.array
         """
-        
-        # grab the input dataspace
+
         ifs = self.ifs
-        # next, the observations
+        channel = self.error
         try:
             # get the path to the file
-            df = ifs[self.data_file]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing observations: no '{self.data_file}' {ifs.path()}")
-            # and raise the exception again
+            file = ifs[filename]
+        except not ifs.NotFoundError:
+            channel.log(f"no file '{filename}' found in '{ifs.path()}'")
             raise
-        # if all goes well
         else:
-            # get the suffix to determine if binary
-            suffix = df.uri.suffix
-            if suffix == ".txt":
-                self.dataobs = numpy.loadtxt(df.uri.path, dtype=self.precision)
-            else: # binary
-                self.dataobs= numpy.fromfile(df.uri.path, dtype=self.precision)
-
-        if self.cd_file is not None:
-            # finally, the data covariance
-            try:
-                # get the path to the file
-                cf = ifs[self.cd_file]
-            # if the file doesn't exist
-            except ifs.NotFoundError:
-                # grab my error channel
-                channel = self.error
-                # complain
-                channel.log(f"missing data covariance matrix: no '{self.cd_file}'")
-                # and raise the exception again
-                raise
-            # if all goes well
-            else:
-                # get the suffix to determine if binary
-                suffix = cf.uri.suffix
-                # if non-binary
-                if suffix == ".txt":
-                    self.cd = numpy.loadtxt(cf.uri.path, dtype=self.precision)
-                # if binary
-                else:
-                    self.cd = numpy.fromfile(cf.uri.path, dtype=self.precision)
-                # reshape the matrix
-                self.cd = self.cd.reshape(self.observations, self.observations)
-        else:
-            # use a constant covariance
-            self.cd = self.cd_std
+            # get the suffix to determine type
+            suffix = file.uri.suffix
+            # use .txt for non-binary input
+            if suffix == '.txt':
+                # load to a cpu array
+                cpuData = numpy.loadtxt(file.uri.path, dtype = self.precision).reshape(shape)
+            # binary data
+            elif suffix == '.bin' or suffix == '.dat':
+                # read and reshape, users need to check the precision
+                cpuData = numpy.fromfile(file.uri.path, dtype=self.precision).reshape(shape)
+            # hdf5 file
+            elif suffix == '.h5':
+                # get support
+                import h5py
+                # open
+                h5file = h5py.File(file.uri.path, 'r')
+                # get the desired dataset
+                if dataset is None:
+                    # if not provided, assume the first dataset available
+                    dataset = list(h5file.keys())[0]
+                cpuData = numpy.asarray(h5file.get(dataset), dtype=self.precision).reshape(shape)
+                h5file.close()
         # all done
-        return self
+        return cpuData
 
 
     def initializeCovariance(self):
         """
         initialize gpu data and data covariance
         """
-        from math import log, pi as π
 
         # copy dataobs from cpu to gpu
         self.gdataObs = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
-        # make a temp copy
-        gDataVec = self.gdataObs.clone()
-        
+        # allocate an array of duplicated dataobs
+        self.gdataObsBatch = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+
         # process cd info
         cd = self.cd
         observations = self.observations
-        if isinstance(cd, numpy.ndarray):
+        if isinstance(cd, float):
+            # cd is standard deviation/scalar
+            cd_mat = numpy.zeros(shape=(observations, observations))
+            numpy.fill_diagonal(cd_mat, cd)
+            self.gcd = altar.cuda.matrix(source=cd_mat, dtype=self.precision)
+        # cd is a matrix
+        elif isinstance(cd, numpy.ndarray):
             # copy cd to gpu
             self.gcd = altar.cuda.matrix(source=cd, dtype=self.precision)
-            # inverse and Cholesky
-            self.gcd_inv = self.gcd.clone()
 
-            gCd_inv = self.gcd_inv
-            # inverse
-            gCd_inv.inverse()
-            # Cholesky factorization/decomposition
-            gCd_inv.Cholesky()
-            # normalization
-            logdet = libcuda.matrix_logdet_triangular(gCd_inv.data)
-            self.normalization = -0.5*log(2*π)*observations + logdet
+        self.gcd_inv = altar.cuda.matrix(shape=self.gcd.shape, dtype=self.precision)
 
-            # merge cd to data
-            altar.cuda.cublas.trmv(A=gCd_inv, x=gDataVec)
-            
-        elif isinstance(cd, float):
-            # cd is standard deviation 
-            self.normalization = -0.5*log(2*π*cd)*observations;
-            self.gcd_inv = 1.0/self.cd # a scaler
-            gDataVec *= self.gcd_inv
+        # initialize with Cd only
+        self.updateCovariance()
 
-        # make duplicates of data vector to a matrix
-        self.gdataObsBatch = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
-        self.gdataObsBatch.duplicateVector(src=gDataVec)
-
-        # all done 
+        # all done
         return self
 
+    def updateCovariance(self, cp=None):
+        """
+        Update the data covariance C_chi = Cd + Cp
+        :param cp: cuda matrix with shape(obs, obs), data covariance due to model uncertainty
+        :return:
+        """
+
+        from math import log, pi as π
+
+        # get references
+        observations = self.observations
+        Cchi = self.gcd_inv
+
+        # copy Cd
+        Cchi.copy(self.gcd)
+        # add Cp if
+        if cp is not None:
+            Cchi += cp
+        # inverse
+        Cchi.inverse()
+        # Cholesky decomposition
+        Cchi.Cholesky(uplo=cublas.FillModeUpper)
+        # normalization
+        logdet = libcuda.matrix_logdet_triangular(Cchi.data)
+        self.normalization = -0.5*log(2*π)*observations + logdet
+
+        # merge Cchi to data
+        if self.merge_cd_to_data:
+            gDataVec = self.mergeCdtoData(cd_inv=Cchi, data=self.gdataObs)
+        else:
+            gDataVec = self.gdataObs
+
+        # make duplicates of data vector to a matrix
+        self.gdataObsBatch.duplicateVector(src=gDataVec)
+
+        # all done
+        return self
+
+    def mergeCdtoData(self, cd_inv, data):
+        """
+        Merge the data covariance matrix to observed data
+        :param cd_inv: the inverse of covariance matrix in Cholesky-decomposed form, with Lower matrix filled
+        :param data: raw observed data
+        :return:  cd_inv*data, a cuda vector
+        """
+
+        # make a copy of observed data
+        gDataVec = data.clone()
+
+        # cd is a constant
+        if isinstance(cd_inv, float):
+            gDataVec *= cd_inv
+        elif isinstance(cd_inv, altar.cuda.matrix):
+            # Cd^{-1} = LL^T
+            # d -> d (1, obs) x L (obs, obs)
+            cublas.trmv(A=cd_inv, x=gDataVec,
+                        uplo=cublas.FillModeUpper,
+                        transa = cublas.OpTrans
+                        )
+        # all done
+        return gDataVec
 
     # local variables
     # from cpu
     # dataobs = None
     # cd = None
     # cd_inv = None
+    normalization = 0
     precision = None
     gdataObs = None
     gdataObsBatch = None
