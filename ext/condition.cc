@@ -1,13 +1,11 @@
 // -*- C++ -*-
-//
-// Lijun Zhu (ljzhu@caltech.edu)
+// -*- coding: utf-8 -*-
 //
 // (c) 2013-2019 parasim inc
 // (c) 2010-2019 california institute of technology
 // all rights reserved
 //
-
-// modified from altar-1
+// Author(s): AlTar-1 team, rearranged by Lijun Zhu
 
 #include <portinfo>
 #include <Python.h>
@@ -34,24 +32,30 @@
 #include "condition.h"
 #include "capsules.h"
 
-// uniform distribution
-// uniform_sample
+
+// condition a matrix to be positive definite
+// replace negative or small eigen-values with ratio*max_eigenvalue
 const char * const altar::extensions::matrix_condition__name__ = "matrix_condition";
 const char * const altar::extensions::matrix_condition__doc__ =
-    "check/adjust a matrix to be well-conditioned";
+    "condition a matrix to be positive definite";
 
 PyObject *
-altar::extensions::matrix_condition(PyObject *, PyObject * args) {
+altar::extensions::matrix_condition(PyObject *, PyObject * args)
+{
     // the arguments
     PyObject * matrixCapsule;
+
+     // set minimum eigenvalue ratio
+    double eval_ratio_min;
 
     // build my debugging channel
     pyre::journal::debug_t debug("altar.matrix_condition");
 
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!:matrix_condition",
-                                  &PyCapsule_Type, &matrixCapsule
+                                  args, "O!d:matrix_condition",
+                                  &PyCapsule_Type, &matrixCapsule,
+                                  &eval_ratio_min
                                   );
     // if something went wrong
     if (!status) return 0;
@@ -67,8 +71,6 @@ altar::extensions::matrix_condition(PyObject *, PyObject * args) {
 
     // get matrix size
     size_t m = sigma->size1;
-    // set minimum eigenvalue ratio
-    double eval_ratio_min = 0.001;
 
     // solve the eigen value problem
     gsl_vector *eval = gsl_vector_alloc (m);
@@ -87,7 +89,7 @@ altar::extensions::matrix_condition(PyObject *, PyObject * args) {
 
     // allocate a matrix for conditioned eigen values
     gsl_matrix *diagM = gsl_matrix_calloc(m,m);
-    
+
     // set the minimum eigen value as the max * ratio
     double eval_min = eval_ratio_min*gsl_vector_get(eval,m-1);
     double eval_i;
@@ -98,7 +100,7 @@ altar::extensions::matrix_condition(PyObject *, PyObject * args) {
         if (eval_i<eval_min) gsl_matrix_set(diagM, i, i, eval_min);
         else gsl_matrix_set(diagM, i, i, eval_i);
     }
-    
+
     // reconstruct sigma from the conditioned eigen values
     gsl_matrix *tmp = gsl_matrix_alloc(m,m);
     gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, diagM, evecT, 0.0, tmp);
@@ -108,7 +110,7 @@ altar::extensions::matrix_condition(PyObject *, PyObject * args) {
     gsl_matrix_transpose_memcpy(tmp, sigma);
     gsl_matrix_add(sigma,tmp);
     gsl_matrix_scale(sigma, 0.5);
-    
+
     // free temporary data
     gsl_vector_free (eval);
     gsl_matrix_free (evec);

@@ -41,7 +41,7 @@ class MPIAnnealing(AnnealingMethod):
         rng.rng.seed(seed=seed)
 
         # initialize worker
-        print("mpi annealing", self.wid, self.worker.wid, self.worker)
+        print(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
         self.worker.wid = self.rank
         self.worker.initialize(application=application)
         # grab a channel

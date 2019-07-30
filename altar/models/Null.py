@@ -26,7 +26,6 @@ class Null(Bayesian, family="altar.models.null"):
     parameters = altar.properties.int(default=1)
     parameters.doc = "the number of model degrees of freedom"
 
-
     # protocol obligations
     @altar.export
     def initializeSample(self, step):

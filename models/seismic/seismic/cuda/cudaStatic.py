@@ -22,7 +22,7 @@ from altar.cuda.models.cudaBayesian import cudaBayesian
 import numpy
 
 # declaration
-class cudaStatic(cudaBayesian, family="altar.cuda.models.seismic.static"):
+class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
     """
     cudaLinear with the new cuda framework
     """
@@ -78,24 +78,24 @@ class cudaStatic(cudaBayesian, family="altar.cuda.models.seismic.static"):
         # prediction = Green * theta
         # in c/python pred (samples, obs), green (obs, parameters), theta (samples, params)
 
-        cublas.gemm(A=theta, B=green, transa=0, transb=1,
-                        out=prediction,
-                        handle=self.cublas_handle,
-                        alpha=1.0, beta=beta,
-                        rows=batch)
+        # cublas.gemm(A=theta, B=green, transa=0, transb=1,
+        #                out=prediction,
+        #                handle=self.cublas_handle,
+        #                alpha=1.0, beta=beta,
+        #                rows=batch)
 
-        # if using cublas interface directly, which uses column major
-        # translated to pred (obsxsamples) green(param obs) theta (params x samples)
+        # use cublas interface directly, as in cascaded problem, only the first few parameters are used
+        # in column major: translated to pred (obsxsamples) green(param obs) theta (params x samples)
         # we therefore use pred = G^T x theta
 
-        #libcuda.cublas_gemm(self.cublas_handle,
-        #                    1, 0, # transa, transb
-        #                    prediction.shape[1], batch, green.shape[1], # m, n, k
-        #                    1.0,   # alpha
-        #                    green.data, green.shape[1], # A, lda
-        #                    theta.data, theta.shape[1], # B, ldb
-        #                    beta,
-        #                    prediction.data, prediction.shape[1])
+        libcuda.cublas_gemm(self.cublas_handle,
+                            1, 0, # transa, transb
+                            prediction.shape[1], batch, green.shape[1], # m, n, k
+                            1.0,   # alpha
+                            green.data, green.shape[1], # A, lda
+                            theta.data, theta.shape[1], # B, ldb
+                            beta,
+                            prediction.data, prediction.shape[1])
 
         # all done
         return self
@@ -119,21 +119,21 @@ class cudaStatic(cudaBayesian, family="altar.cuda.models.seismic.static"):
             beta = -1.0
 
         # green (obs, params) theta (params) predic(obs)
-        cublas.gemv(handle=self.cublas_handle,
-                    A=green, trans=cublas.OpNoTrans, x=theta,
-                    out=prediction,
-                    alpha=1.0, beta=beta)
+        # cublas.gemv(handle=self.cublas_handle,
+        #            A=green, trans=cublas.OpNoTrans, x=theta,
+        #            out=prediction,
+        #            alpha=1.0, beta=beta)
 
         # cublas uses column major, geenf is treated as  (params, obs)
-        #libcuda.cublas_gemv(self.cublas_handle,
-        #                    1, # transa = transpose
-        #                    green.shape[1], green.shape[0], # m, n, or param, obs
-        #                    1.0, # alpha
-        #                    green.data, green.shape[1], # A, lda
-        #                    theta.data, 1, # x, incx
-        #                    beta, # beta
-        #                    prediction.data, 1 # y, incy
-        #                    )
+        libcuda.cublas_gemv(self.cublas_handle,
+                            1, # transa = transpose
+                            green.shape[1], green.shape[0], # m, n, or param, obs
+                            1.0, # alpha
+                            green.data, green.shape[1], # A, lda
+                            theta.data, 1, # x, incx
+                            beta, # beta
+                            prediction.data, 1 # y, incy
+                            )
 
         # all done
         return self

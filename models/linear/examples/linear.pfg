@@ -7,6 +7,7 @@
 ; the linear app
 linear:
     ; test case configuration
+    moodel = altar.models.linear
     model:
         ; the name of the test case
         case = patch-9

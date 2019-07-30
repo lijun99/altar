@@ -140,36 +140,36 @@ kinematicg_forward(PyObject *, PyObject * args)
     //inputs
     PyObject * modelCap, *handleCap;
     PyObject * thetaCap, * GbCap, *DpredCap; 
-    size_t batch, parameters;
+    size_t parameters, batch=1;
     int return_residual;
     
     int status = PyArg_ParseTuple(args,
-                            "O!O!O!O!O!kkp:kinematicg_forward",
+                            "O!O!O!O!O!kp:kinematicg_forward",
                             &PyCapsule_Type, &handleCap,
                             &PyCapsule_Type, &modelCap,
                             &PyCapsule_Type, &thetaCap,
                             &PyCapsule_Type, &GbCap,
                             &PyCapsule_Type, &DpredCap,
-                            &parameters, &batch, &return_residual);
+                            &parameters, &return_residual);
     if (!status) {
         // complain
         return 0;
     }
     
     
-    if (!PyCapsule_IsValid(thetaCap, matrix::capsule_t) || !PyCapsule_IsValid(GbCap, matrix::capsule_t)
-        || !PyCapsule_IsValid(DpredCap, matrix::capsule_t))
+    if (!PyCapsule_IsValid(thetaCap, vector::capsule_t) || !PyCapsule_IsValid(GbCap, matrix::capsule_t)
+        || !PyCapsule_IsValid(DpredCap, vector::capsule_t))
     {
-        PyErr_SetString(PyExc_TypeError, "invalid input matrix capsule for kinematicg_forward");
+        PyErr_SetString(PyExc_TypeError, "invalid input vector/matrix capsule for kinematicg_forward");
         return 0;
     }
 
     cublasHandle_t handle = static_cast<cublasHandle_t>(PyCapsule_GetPointer(handleCap, pyre::extensions::cuda::cublas::capsule_t));
     
     // get c objects from capsules
-    cuda_matrix * theta = static_cast<cuda_matrix *> (PyCapsule_GetPointer(thetaCap, matrix::capsule_t));
+    cuda_vector * theta = static_cast<cuda_vector *> (PyCapsule_GetPointer(thetaCap, vector::capsule_t));
     cuda_matrix * Gb = static_cast<cuda_matrix *> (PyCapsule_GetPointer(GbCap, matrix::capsule_t));
-    cuda_matrix * dpred = static_cast<cuda_matrix *> (PyCapsule_GetPointer(DpredCap, matrix::capsule_t));
+    cuda_vector * dpred = static_cast<cuda_vector *> (PyCapsule_GetPointer(DpredCap, vector::capsule_t));
 
         // bail out if the capsule is not valid
     if (PyCapsule_IsValid(modelCap, kgSmodel_capsule)) 
@@ -189,6 +189,70 @@ kinematicg_forward(PyObject *, PyObject * args)
         return 0;
     }
     
+    // return none
+    Py_RETURN_NONE;
+}
+
+// forward model batched
+const char * const altar::extensions::models::cudaseismic::kinematicg_forward_batched__name__ = "kinematicg_forward_batched";
+const char * const altar::extensions::models::cudaseismic::kinematicg_forward_batched__doc__ = "forward kinematicg model in batch";
+
+PyObject *
+altar::extensions::models::cudaseismic::
+kinematicg_forward_batched(PyObject *, PyObject * args)
+{
+    //inputs
+    PyObject * modelCap, *handleCap;
+    PyObject * thetaCap, * GbCap, *DpredCap;
+    size_t batch, parameters;
+    int return_residual;
+
+    int status = PyArg_ParseTuple(args,
+                            "O!O!O!O!O!kkp:kinematicg_forward_batched",
+                            &PyCapsule_Type, &handleCap,
+                            &PyCapsule_Type, &modelCap,
+                            &PyCapsule_Type, &thetaCap,
+                            &PyCapsule_Type, &GbCap,
+                            &PyCapsule_Type, &DpredCap,
+                            &parameters, &batch, &return_residual);
+    if (!status) {
+        // complain
+        return 0;
+    }
+
+
+    if (!PyCapsule_IsValid(thetaCap, matrix::capsule_t) || !PyCapsule_IsValid(GbCap, matrix::capsule_t)
+        || !PyCapsule_IsValid(DpredCap, matrix::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid input matrix capsule for kinematicg_forward_batched");
+        return 0;
+    }
+
+    cublasHandle_t handle = static_cast<cublasHandle_t>(PyCapsule_GetPointer(handleCap, pyre::extensions::cuda::cublas::capsule_t));
+
+    // get c objects from capsules
+    cuda_matrix * theta = static_cast<cuda_matrix *> (PyCapsule_GetPointer(thetaCap, matrix::capsule_t));
+    cuda_matrix * Gb = static_cast<cuda_matrix *> (PyCapsule_GetPointer(GbCap, matrix::capsule_t));
+    cuda_matrix * dpred = static_cast<cuda_matrix *> (PyCapsule_GetPointer(DpredCap, matrix::capsule_t));
+
+        // bail out if the capsule is not valid
+    if (PyCapsule_IsValid(modelCap, kgSmodel_capsule))
+    {
+        SModel_t * cmodel = static_cast<SModel_t *>(PyCapsule_GetPointer(modelCap, kgSmodel_capsule));
+        cmodel->forwardModel(handle, (const float * const)theta->data, (const float * const)Gb->data,
+                    (float * const)dpred->data, parameters, batch, return_residual);
+    }
+    else if (PyCapsule_IsValid(modelCap, kgDmodel_capsule))
+    {
+        DModel_t * cmodel = static_cast<DModel_t *>(PyCapsule_GetPointer(modelCap, kgDmodel_capsule));
+        cmodel->forwardModel(handle, (const double * const)theta->data, (const double * const)Gb->data,
+                    (double * const)dpred->data, parameters, batch, return_residual);
+    }
+    else {
+        PyErr_SetString(PyExc_TypeError, "invalid model capsule for kinematicg_forward_batched");
+        return 0;
+    }
+
     // return none
     Py_RETURN_NONE;
 }

@@ -34,7 +34,11 @@ class Mogi(altar.application, family="altar.applications.mogi"):
     d = altar.properties.float(default=3000)
     d.doc = "the depth of the Mogi source"
 
+<<<<<<< HEAD
     dV = altar.properties.float(default=1.e10)
+=======
+    dV = altar.properties.float(default=1e10)
+>>>>>>> pr2-dbeta
     dV.doc = "the strength of the Mogi source"
 
     nu = altar.properties.float(default=.25)

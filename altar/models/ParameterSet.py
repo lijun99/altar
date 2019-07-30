@@ -14,7 +14,7 @@ import altar
 
 
 # the parameter set protocol
-class ParameterSet(altar.protocol, family="altar.models.parameters"):
+class ParameterSet(altar.protocol, family="altar.models.parameterset"):
     """
     The protocol that all AlTar parameter sets must implement
     """

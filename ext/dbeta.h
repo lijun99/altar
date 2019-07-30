@@ -21,9 +21,14 @@ namespace altar {
         PyObject * cov(PyObject *, PyObject *);
 
         // dbeta
-        extern const char * const dbeta__name__;
-        extern const char * const dbeta__doc__;
-        PyObject * dbeta(PyObject *, PyObject *);
+        extern const char * const dbeta_gsl__name__;
+        extern const char * const dbeta_gsl__doc__;
+        PyObject * dbeta_gsl(PyObject *, PyObject *);
+
+        extern const char * const dbeta_grid__name__;
+        extern const char * const dbeta_grid__doc__;
+        PyObject * dbeta_grid(PyObject *, PyObject *);
+
 
         // dbeta_gsl
         extern const char * const dbeta_gsl__name__;

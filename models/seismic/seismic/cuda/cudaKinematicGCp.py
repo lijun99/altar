@@ -13,26 +13,27 @@ import altar
 import altar.cuda
 from altar.cuda import cublas
 from altar.cuda import libcuda
-from .cudaStatic import cudaStatic
+from .cudaKinematicG import cudaKinematicG
 import numpy
 
 # declaration
-class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
+class cudaKinematicGCp(cudaKinematicG, family="altar.models.seismic.cuda.kinematicgcp"):
     """
-    Static inversion with Cp (prediction error due to model parameter uncertainty)
+    KinematicG inversion with Cp (prediction error due to model parameter uncertainty)
     """
 
-    # extra configurable traits for cp
+    # extra traits for cp
 
-    # mu is shear modulus; we use it for any generic model parameter
+    # mu was used for studying shear modulus uncertainties
+    # here we use it for any generic model parameter
     nCmu = altar.properties.int(default=0)
     nCmu.doc = "the number of model parameters with uncertainties (or to be considered)"
 
-    cmu_file = altar.properties.path(default="static.Cmu.th5")
+    cmu_file = altar.properties.path(default="kinematicG.Cmu.th5")
     cmu_file.doc = "the covariance describing the uncertainty of model parameter, a nCmu x nCmu matrix"
 
     # kmu are a set sensitivity kernels (derivatives of Green's functions) with shape=(observations, parameters)
-    kmu_file = altar.properties.path(default="static.kernel.h5")
+    kmu_file = altar.properties.path(default="kinematicG.kernel.h5")
     kmu_file.doc = "the sensitivity kernel of model parameters, a hdf5 file including nCmu kernel data sets"
 
     # initial model
@@ -63,7 +64,6 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
     def initializeCp(self):
         """
-        Initialize Cp related
         :return:
         """
         self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu))
@@ -78,11 +78,12 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         """
         Model method called by Sampler before Metropolis sampling for each beta step starts,
         employed to compute Cp and merge Cp with data covariance
-        :param annealer: the annealer for application
+        :param step: cudaCoolingStep
         :return: True or False if model parameters are updated or remain the same
         """
         # check beta and decide whether to incorporate cp
         step = annealer.worker.gstep
+
         beta = step.beta
 
         if beta < self.beta_cp_start:
@@ -96,6 +97,8 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
             # mean_model is a matrix with size(1, parameters)
             mean_model = self.gMeanModel
             mean_model=theta.mean(axis=0, out=mean_model)
+            cputheta = theta.copy_to_host(type='numpy')
+
 
         # compute Cp with mean model
         Cp = self.Cp

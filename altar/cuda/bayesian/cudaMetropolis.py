@@ -85,8 +85,6 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # check whether model parameters needed to be updated, e.g., Cp
         model = annealer.model
 
-        model.likelihoods(annealer=annealer, step=self.gstep, batch=self.gstep.samples)
-
         if model.updateModel(annealer=annealer):
             # if updated, recompute datalikelihood and posterior
             gstep = self.gstep

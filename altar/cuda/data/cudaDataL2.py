@@ -187,7 +187,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
         if isinstance(cd, float):
             # cd is standard deviation/scalar
-            cd_mat = numpy.zeros(shape=(observations, observations))
+            cd_mat = numpy.zeros(shape=(observations, observations), dtype=self.precision)
             numpy.fill_diagonal(cd_mat, cd)
             self.gcd = altar.cuda.matrix(source=cd_mat, dtype=self.precision)
         # cd is a matrix

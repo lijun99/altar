@@ -17,7 +17,7 @@ from altar.models.ParameterSet import ParameterSet as parameters
 
 # implementations
 
-@altar.foundry(implements=model, tip="an cuda AlTar model")
+@altar.foundry(implements=model, tip="a cuda AlTar model")
 def bayesian():
     # grab the factory
     from .cudaBayesian import cudaBayesian as bayesian
@@ -44,15 +44,6 @@ def parameterset():
     __doc__ = parameterset.__doc__
     # and publish it
     return parameterset
-
-@altar.foundry(implements=parameters, tip="an ensemble of cuda parametersets")
-def parametersets():
-    # grab the factory
-    from .cudaParameterEnsemble import cudaParameterEnsemble as parametersets
-    # attach its docstring
-    __doc__ = parametersets.__doc__
-    # and publish it
-    return parametersets
 
 
 # end of file

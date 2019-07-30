@@ -30,6 +30,11 @@ namespace altar {
                   extern const char * const kinematicg_forward__name__;
                   extern const char * const kinematicg_forward__doc__;
                   PyObject * kinematicg_forward(PyObject *, PyObject *);
+
+                  // forward model batched
+                  extern const char * const kinematicg_forward_batched__name__;
+                  extern const char * const kinematicg_forward_batched__doc__;
+                  PyObject * kinematicg_forward_batched(PyObject *, PyObject *);
                   
                   using SModel_t = altar::models::seismic::cudaKinematicG<float>;
                   using DModel_t = altar::models::seismic::cudaKinematicG<double>;

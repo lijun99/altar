@@ -13,6 +13,7 @@
 import altar
 # my protocol
 from .Model import Model as model
+from .ParameterSet import ParameterSet as parameterset
 
 
 # declaration
@@ -29,6 +30,9 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     parameters = altar.properties.int(default=1)
     parameters.doc = "the number of model degrees of freedom"
 
+    psets = altar.properties.dict(schema=parameterset())
+    psets.default = dict() # empty
+    psets.doc = "an ensemble of parameter sets in the model"
 
     # public data
     rng = None

@@ -43,6 +43,15 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     maxiter = altar.properties.int(default=10**3)
     maxiter.doc = 'the maximum number of iterations while looking for a δβ'
 
+    check_positive_definiteness = altar.properties.bool(default=True)
+    check_positive_definiteness.doc = 'whether to check the positive definiteness of Σ matrix and condition it accordingly'
+
+    min_eigenvalue_ratio = altar.properties.float(default=0.001)
+    min_eigenvalue_ratio.doc = 'the desired minimal eigenvalue of Σ matrix, as a ratio to the max eigenvalue'
+
+    dbeta_solver_method = altar.properties.str(default='grid')
+    dbeta_solver_method.doc = 'the solver for beta increment: grid(grid search) or gsl(gsl minimizer)'
+    dbeta_solver_method.validators = altar.constraints.isMember("grid", "gsl")
 
     # public data
     w = None # the vector of re-sampling weights
@@ -59,6 +68,12 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         rng = application.rng.rng
         # instantiate my COV calculator; {beta.cov} needs the {rng} capsule
         self.minimizer = altar.libaltar.cov(rng.rng, self.maxiter, self.tolerance, self.target)
+        # instantiate my dbeta solver
+        if self.dbeta_solver_method == 'grid':
+            self.dbeta_solver = altar.libaltar.dbeta_grid
+        else:
+            self.dbeta_solver = altar.libaltar.dbeta_gsl
+
         # set up the distribution for building the sample multiplicities
         self.uniform = altar.pdf.uniform(support=(0,1), rng=rng)
         # all done
@@ -84,8 +99,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.sigma.copy(Σ)
         step.prior.copy(prior)
         step.data.copy(data)
-        #step.posterior.copy(posterior)
-        # instead of copying posterior, recompute it with new beta
+        # recompute posterior with updated beta
         step.computePosterior()
 
         # and return it
@@ -108,7 +122,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         median = dataLikelihood.clone().sort().median()
 
         # compute {δβ} and the normalized {w}
-        β, self.cov = altar.libaltar.dbeta(self.minimizer, dataLikelihood.data, median, self.w.data)
+        β, self.cov = self.dbeta_solver(self.minimizer, dataLikelihood.data, median, self.w.data)
 
         # and return the new temperature
         return β
@@ -162,7 +176,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
                 Σ[j,i] = Σ[i,j]
 
         # condition the covariance matrix
-        self.conditionCovariance(Σ=Σ)
+        if self.check_positive_definiteness:
+            self.conditionCovariance(Σ=Σ)
 
         # all done
         return Σ
@@ -225,8 +240,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         Make sure the covariance matrix Σ is symmetric and positive definite
         """
-        # no need to symmetrize it since it is symmetric by construction
-        # NYI: check the eigenvalues to verify positive definiteness
+        # replaces negative or small eigenvalues with min_eigenvalue_ratio*max_eigenvalue
+        altar.libaltar.matrix_condition(Σ.data, self.min_eigenvalue_ratio)
         # all done
         altar.libaltar.matrix_condition(Σ.data)
         # all done
@@ -268,6 +283,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     # private data
     uniform = None
     minimizer = None
+    dbeta_solver = None
 
 
 # end of file

@@ -40,6 +40,7 @@ module_methods[] = {
     // kinematicg model
     { kinematicg_alloc__name__, kinematicg_alloc, METH_VARARGS, kinematicg_alloc__doc__ },
     { kinematicg_forward__name__, kinematicg_forward, METH_VARARGS, kinematicg_forward__doc__ },
+    { kinematicg_forward_batched__name__, kinematicg_forward_batched, METH_VARARGS, kinematicg_forward_batched__doc__ },
 
     // sentinel
     {0, 0, 0, 0}

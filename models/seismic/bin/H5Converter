@@ -17,7 +17,7 @@ import numpy
 import os
 
 # app
-class H5Converter(altar.application, family="altar.applications.h5converter"):
+class H5Converter(altar.application, family="altar.shells.h5converter"):
     """
     A tool to convert static input files from altar-1.1 (text or binary) to altar2 (hdf5)
     """
@@ -38,7 +38,6 @@ class H5Converter(altar.application, family="altar.applications.h5converter"):
     output.doc = "the output h5 file name, default will be set as the first filename + .h5"
 
     shape = altar.properties.list(schema=altar.properties.int())
-    shape.default = []
     shape.doc = "the shape of the data"
 
     # protocol obligation
@@ -99,6 +98,31 @@ class H5Converter(altar.application, family="altar.applications.h5converter"):
         # all done
         return 0
 
+    # pyre framework hooks
+    # support for the help system
+    def pyre_banner(self):
+        """
+        Place the application banner in the {info} channel
+        """
+        # show the package header
+        return altar.meta.header
+
+
+    # interactive session management
+    def pyre_interactiveSessionContext(self, context):
+        """
+        Go interactive
+        """
+        # protect against bad context
+        if context is None:
+            # by initializing an empty one
+            context = {}
+
+        # add some symbols
+        context["h5converter"] = h5converter # my package
+
+        # and chain up
+        return super().pyre_interactiveSessionContext(context=context)
 
 
 # bootstrap

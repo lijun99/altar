@@ -23,7 +23,7 @@ altar.tests := altar.pkg.tests
 # the altar package meta-data
 altar.pkg.stem := altar
 altar.pkg.root := altar/
-altar.pkg.drivers := altar
+altar.pkg.drivers := altar cudaaltar
 
 # libaltar meta-data
 altar.lib.stem := altar

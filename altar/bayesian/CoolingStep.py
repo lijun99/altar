@@ -110,12 +110,15 @@ class CoolingStep:
         """
         (Re-)Compute the posterior from prior, data, and (updated) beta
         """
-        # prime the posterior
+
+        # in their log form, posterior = prior + beta * datalikelihood
+        # make a copy of prior at first
         self.posterior.copy(self.prior)
-        # compute it; this expression reduces to Bayes' theorem for β->1
+        # add the data likelihood
         altar.blas.daxpy(self.beta, self.data, self.posterior)
         # all done
         return self
+
 
     # meta-methods
     def __init__(self, beta, theta, likelihoods, sigma=None, **kwds):
@@ -191,6 +194,13 @@ class CoolingStep:
         for i in range(min(50, parameters)):
             channel.line(f"{indent} ({mean[i]}, {sd[i]})")
 
+
+        # print statistics (axis=0 average over samples)
+        mean, sd = θ.mean_sd(axis=0)
+        channel.line(f"{indent}parameters (mean, sd):")
+        for i in range(min(50, parameters)):
+            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+
         # flush
         channel.log()
 
@@ -246,6 +256,13 @@ class CoolingStep:
         f.close()
 
         # all done
+        return
+
+    def load_hdf5(self, path=None, iteration=0):
+        """
+        load CoolingStep from HDF5 file
+        """
+        # to be done
         return
 
     def load_hdf5(self, path=None, iteration=0):

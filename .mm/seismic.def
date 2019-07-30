@@ -28,7 +28,7 @@ seismic.pkg.stem := seismic
 seismic.pkg.root := models/seismic/seismic/
 seismic.pkg.bin := models/seismic/bin/
 seismic.pkg.pycdir := $(builder.dest.pyc)altar/models/seismic/
-seismic.pkg.drivers := cudaStatic cudaStaticCp cudaJointStaticKinematicG cudaCascaded H5Converter
+seismic.pkg.drivers := slipmodel cudaStatic cudaStaticCp cudaJointStaticKinematicG cudaCascaded H5Converter
 
 # the seismic extension meta-data
 seismic.ext.stem := seismic

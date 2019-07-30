@@ -74,7 +74,7 @@ update(state_t & state)
     // ok, now zero out w
     gsl_vector_set_zero(w);
     // compute the temperature increment
-    dbeta(dataLLK, median, w);
+    dbeta_gsl(dataLLK, median, w);
     // save the new temperature
     state.beta(_beta);
 
@@ -99,6 +99,9 @@ dbeta_gsl(vector_t *llk, double llkMedian, vector_t *w)
     // build my debugging channel
     pyre::journal::debug_t debug("altar.beta");
     
+    // turn off the err_handler (from Hailiang)
+    gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
+
     // turn off the err_handler (from Hailiang)
     gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
 
@@ -251,7 +254,7 @@ dbeta_gsl(vector_t *llk, double llkMedian, vector_t *w)
 /// @return The calculated beta value
 double
 altar::bayesian::COV::
-dbeta(vector_t *llk, double llkMedian, vector_t *w)
+dbeta_grid(vector_t *llk, double llkMedian, vector_t *w)
 {
     // build my debugging channel
     pyre::journal::debug_t debug("altar.beta");
@@ -282,16 +285,16 @@ dbeta(vector_t *llk, double llkMedian, vector_t *w)
     // initialize the COV target
     covargs.target = _target;
     // initialize the median of the log-likelihoods
-    covargs.llkMedian = llkMedian; 
+    covargs.llkMedian = llkMedian;
 
     // search bounds and initial guess
     double f_beta_high = cov::cov(beta_high, &covargs);
 
     // check whether we can skip straight to beta = 1
     if (covargs.cov < _target || std::abs(covargs.cov-_target) < _tolerance) {
-        debug 
+        debug
             << pyre::journal::at(__HERE__)
-            << " ** skipping to beta = " << _betaMax << " **" 
+            << " ** skipping to beta = " << _betaMax << " **"
             << pyre::journal::endl;
         // save my state
         _beta = _betaMax;
@@ -333,7 +336,7 @@ dbeta(vector_t *llk, double llkMedian, vector_t *w)
         }
         if (nbeta>Nbeta) beta_guess -= beta_step;
         if (debug) {
-            std::cout 
+            std::cout
                 <<"      dbeta_low: "<<std::setw(11)<<std::setprecision(8)<<beta_low
                 <<"      dbeta_high: "<<std::setw(11)<<beta_high
                 <<"      dbeta_guess: "<<std::setw(11)<<beta_guess
@@ -350,7 +353,7 @@ dbeta(vector_t *llk, double llkMedian, vector_t *w)
 
     // make sure that we are left with the COV and weights evaluated for this guess
     cov::cov(dbeta, &covargs);
-    
+
     // adjust my state
     _cov = covargs.cov;
     _beta += dbeta;
@@ -434,15 +437,15 @@ conditionCovariance(matrix_t * sigma) const
     size_t m = sigma->size1;
     // set minimum eigenvalue ratio
 	double eval_ratio_min = 0.001;
-    
+
     // solve the eigen value problem
     gsl_vector *eval = gsl_vector_alloc (m);
-    gsl_matrix *evec = gsl_matrix_alloc (m, m);     
+    gsl_matrix *evec = gsl_matrix_alloc (m, m);
     gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc (m);
 
     gsl_eigen_symmv (sigma, eval, evec, w);
     gsl_eigen_symmv_free (w);
-    
+
     // sort the eigen values in ascending order (magnitude)
     gsl_eigen_symmv_sort (eval, evec,  GSL_EIGEN_SORT_ABS_ASC);
 
@@ -452,7 +455,7 @@ conditionCovariance(matrix_t * sigma) const
 
     // allocate a matrix for conditioned eigen values
 	gsl_matrix *diagM = gsl_matrix_calloc(m,m);
-    
+
     // set the minimum eigen value as the max * ratio
 	double eval_min = eval_ratio_min*gsl_vector_get(eval,m-1);
     double eval_i;
@@ -463,7 +466,7 @@ conditionCovariance(matrix_t * sigma) const
 		if (eval_i<eval_min) gsl_matrix_set(diagM, i, i, eval_min);
 		else gsl_matrix_set(diagM, i, i, eval_i);
     }
-    
+
     // reconstruct sigma from the conditioned eigen values
 	gsl_matrix *tmp = gsl_matrix_alloc(m,m);
 	gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, diagM, evecT, 0.0, tmp);
@@ -473,14 +476,14 @@ conditionCovariance(matrix_t * sigma) const
 	gsl_matrix_transpose_memcpy(tmp, sigma);
 	gsl_matrix_add(sigma,tmp);
 	gsl_matrix_scale(sigma, 0.5);
-    
-    // free temporary data 
+
+    // free temporary data
     gsl_vector_free (eval);
     gsl_matrix_free (evec);
     gsl_matrix_free (evecT);
     gsl_matrix_free (diagM);
     gsl_matrix_free (tmp);
-    
+
     // all done
     return;
 }

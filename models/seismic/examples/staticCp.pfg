@@ -1,0 +1,91 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the static uoᴉsɹǝʌuᴉ with Cp example
+
+slipmodel:
+
+    model = altar.models.seismic.cuda.staticcp
+    model:
+
+        ; the name of the test case
+        case = 9patchCp
+
+        ; number of patches
+        patches = 9
+
+        ; green's function (observations, parameters)
+        green = static.gf.h5
+
+        dataobs = altar.cuda.data.datal2
+        dataobs:
+            observations = 168
+            data_file = static.data.h5
+            cd_file = static.Cd.h5
+
+        ; sensitivity kernels
+        nCmu = 2
+        cmu_file = static.Cmu.h5
+        kmu_file = static.kernel.h5
+        initial_model_file = static.initialModel.h5
+
+        beta_cp_start = 0.01
+        beta_use_initial_model = 0
+
+        ; list of parameterset (also used as the order parameters in theta)
+        psets_list = [strikeslip, dipslip]
+
+        ; define parametersets
+        psets:
+            strikeslip = altar.cuda.models.parameterset
+            dipslip = altar.cuda.models.parameterset
+
+            strikeslip:
+                count = {slipmodel.model.patches}
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 0
+                prior.sigma = 0.7
+
+            dipslip:
+                count = {slipmodel.model.patches}
+                prep = altar.models.seismic.cuda.moment
+                prep:
+                    Mw_mean = 7.0 ;5535
+                    Mw_sigma = 0.5
+                    Mu = [30] ; in GPa
+                    area = [3600] ; patch area in km^2
+                prior = altar.cuda.distributions.uniform
+                prior:
+                    support = (-0.5, 10)
+
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+        archiver:
+            output_dir = results/staticcp ; output directory
+            output_freq = 3 ; output frequency in beta steps
+
+    monitors:
+        ; profiling
+        prof = altar.bayesian.profiler
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task
+    job.gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
+    ;job.gpuids = [0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
+    job.chains = 2**12 ; number of chains per task
+    job.steps = 1000 ; MC burn-in steps for each beta step
+
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+    ; extra = -mca btl self,tcp
+
+; end of file

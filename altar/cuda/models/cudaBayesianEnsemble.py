@@ -51,7 +51,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # mount my input data space
         self.ifs = self.mountInputDataspace(pfs=application.pfs)
 
-        # find out how many samples I will be working with; this equal to the number of chains
+        # find out how many samples to work with; equal to the number of chains
         self.samples = application.job.chains
 
         # cuda method
@@ -180,7 +180,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # default is not updated
         out = False
         # iterate over embedded models
-        for name, model in self.models.item():
+        for name, model in self.models.items():
             updated = model.updateModel(annealer=annealer)
             out = out or updated
         # all done

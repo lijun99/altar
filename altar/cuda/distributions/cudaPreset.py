@@ -121,14 +121,16 @@ class cudaPreset(cudaDistribution, family="altar.cuda.distributions.preset"):
         parameter_end = parameter_start + self.parameters
 
         # read the data out as a ndarray
-        hmatrix = numpy.array(dataset[sample_start:sample_end, parameter_start:parameter_end], dtype=theta.dtype)
-        h5file.close()
+        hmatrix = numpy.asarray(dataset[sample_start:sample_end, parameter_start:parameter_end], dtype=theta.dtype)
+
 
         # copy data to a cuda matrix
         dmatrix = altar.cuda.matrix(source=hmatrix, dtype=hmatrix.dtype)
 
         # copy it to the assigned position (row = 0, column = distribution/pset offset in theta)
         theta.insert(src=dmatrix, start=(0, self.offset))
+
+        h5file.close()
         # all done
         return theta
 

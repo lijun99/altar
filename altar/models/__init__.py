@@ -15,7 +15,7 @@ import altar
 
 # the protocols
 from .Model import Model as model
-from .ParameterSet import ParameterSet as parameters
+from .ParameterSet import ParameterSet as parameterset
 
 
 # the model base class
@@ -43,7 +43,7 @@ def ensemble():
     return ensemble
 
 
-@altar.foundry(implements=parameters, tip="a contiguous parameter set")
+@altar.foundry(implements=parameterset, tip="a contiguous parameter set")
 def contiguous():
     # grab the factory
     from .Contiguous import Contiguous as contiguous
