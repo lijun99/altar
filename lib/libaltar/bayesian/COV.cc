@@ -105,6 +105,9 @@ dbeta_gsl(vector_t *llk, double llkMedian, vector_t *w)
     // turn off the err_handler (from Hailiang)
     gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
 
+    // turn off the err_handler (from Hailiang)
+    gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
+
     // consistency checks
     assert(_betaMin == 0);
     assert(_betaMax == 1);

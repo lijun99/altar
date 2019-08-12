@@ -243,8 +243,6 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # replaces negative or small eigenvalues with min_eigenvalue_ratio*max_eigenvalue
         altar.libaltar.matrix_condition(Σ.data, self.min_eigenvalue_ratio)
         # all done
-        altar.libaltar.matrix_condition(Σ.data)
-        # all done
         return Σ
 
 

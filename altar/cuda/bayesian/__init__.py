@@ -28,6 +28,25 @@ def metropolis():
     return metropolis
 
 
+# implementations
+@altar.foundry(implements=sampler, tip="the Metropolis sampler with targeted correlation")
+def metropolisvaryingsteps():
+    # grab the factory
+    from .cudaMetropolisVaryingSteps import cudaMetropolisVaryingSteps as metropolisvarysteps
+    # attach its docstring
+    __doc__ = metropolisvaryingsteps.__doc__
+    # and return it
+    return metropolisvaryingsteps
+
+# implementations
+@altar.foundry(implements=sampler, tip="the Metropolis sampler with a targeted acceptance rate")
+def adaptivemetropolis():
+    # grab the factory
+    from .cudaAdaptiveMetropolis import cudaAdaptiveMetropolis as adaptivemetropolis
+    # attach its docstring
+    __doc__ = adaptivemetropolis.__doc__
+    # and return it
+    return adaptivemetropolis
 
 
 # end of file

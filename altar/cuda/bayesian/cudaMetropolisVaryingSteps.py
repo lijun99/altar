@@ -22,7 +22,7 @@ from altar.bayesian.Sampler import Sampler
 
 
 # declaration
-class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implements=Sampler):
+class cudaMetropolisVaryingSteps(altar.component, family="altar.samplers.metropolis", implements=Sampler):
     """
     The Metropolis algorithm as a sampler of the posterior distribution
     """
@@ -40,6 +40,15 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
 
     rejectionWeight = altar.properties.float(default=1)
     rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
+
+    max_mc_steps = altar.properties.int(default=100000)
+    max_mc_steps.doc = 'the maximum Monte-Carlo steps for one beta step'
+
+    corr_check_steps = altar.properties.int(default=1000)
+    corr_check_steps.doc = 'the Monte-Carlo steps to compute the de'
+
+    target_correlation = altar.properties.float(default=0.6)
+    target_correlation.doc = 'the threshold of correlation to stop the chain'
 
 
     # protocol obligations
@@ -210,75 +219,86 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # copy the beta over
         candidate.beta = step.beta
 
-        # step all chains together
-        for ihop in range(self.mcsteps):
-            # notify we are advancing the chains
-            dispatcher.notify(event=dispatcher.chainAdvanceStart, controller=annealer)
+        # make a copy of the starting samples
+        θstart = θ.clone()
+        correlation = 1.0
+        mcsteps = 0
 
-            # notify we are starting the verification process
-            dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
+        while correlation > self.target_correlation and mcsteps < self.max_mc_steps:
 
-            # make a loop to make sure there is at least one new sample,
-            # or certain numbers of new samples
-            while True:
-                # the random displacement may have generated candidates that are outside the
-                # support of the model, so we must give it an opportunity to reject them;
-                # initialize the candidate sample by randomly displacing the current one
-                self.displace(displacement=θproposal)
-                θproposal += θ
+            for ihop in range(self.corr_check_steps):
+                # notify we are advancing the chains
+                dispatcher.notify(event=dispatcher.chainAdvanceStart, controller=annealer)
 
-                # reset the mask and ask the model to verify the sample validity
-                # note that I have redefined model.verify to use theta as input
+                # notify we are starting the verification process
+                dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
 
-                model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
+                # make a loop to make sure there is at least one new sample,
+                # or certain numbers of new samples
+                while True:
+                    # the random displacement may have generated candidates that are outside the
+                    # support of the model, so we must give it an opportunity to reject them;
+                    # initialize the candidate sample by randomly displacing the current one
+                    self.displace(displacement=θproposal)
+                    θproposal += θ
 
-                invalid_step = int(invalid_flags.sum())
-                valid = samples - invalid_step
-                # if valid > 0, continue; otherwise go back to repropose new samples
-                if valid > 1 :
-                    break
+                    # reset the mask and ask the model to verify the sample validity
+                    # note that I have redefined model.verify to use theta as input
 
-            # set indices for valid samples, return valid samples count
-            libcudaaltar.cudaMetropolis_setValidSampleIndices(valid_indices.data, invalid_flags.data,
-                                                              valid_samples.data)
+                    model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
 
-            # get the invalid samples count
-            invalid += invalid_step
+                    invalid_step = int(invalid_flags.sum())
+                    valid = samples - invalid_step
+                    # if valid > 0, continue; otherwise go back to repropose new samples
+                    if valid > 1 :
+                        break
 
-            # queue valid samples to first rows of cθ
-            libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
+                # set indices for valid samples, return valid samples count
+                libcudaaltar.cudaMetropolis_setValidSampleIndices(valid_indices.data, invalid_flags.data,
+                                                                  valid_samples.data)
 
-            # notify that the verification process is finished
-            dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
+                # get the invalid samples count
+                invalid += invalid_step
 
-            # initialize the likelihoods
-            likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
+                # queue valid samples to first rows of cθ
+                libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
 
-            # compute the probabilities/likelihoods
-            model.likelihoods(annealer=annealer, step=candidate, batch=valid)
+                # notify that the verification process is finished
+                dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
 
-            # randomize the Metropolis acceptance vector
-            dice = curand.uniform(self.curng, out=dice)
+                # initialize the likelihoods
+                likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
 
-            # notify we are starting accepting samples
-            dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
+                # compute the probabilities/likelihoods
+                model.likelihoods(annealer=annealer, step=candidate, batch=valid)
 
-            # accept/reject: go through all the samples
-            libcudaaltar.cudaMetropolis_metropolisUpdate(
-                θ.data, prior.data, data.data, posterior.data, # original
-                cθ.data, cprior.data, cdata.data, cpost.data,  # candidate
-                dice.data, acceptance_flags.zero().data, valid_indices.data, valid)
+                # randomize the Metropolis acceptance vector
+                dice = curand.uniform(self.curng, out=dice)
 
-            # counting the acceptance/rejection
-            accepted_step = int(acceptance_flags.sum())
-            accepted += accepted_step
-            rejected += valid - accepted_step
+                # notify we are starting accepting samples
+                dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
+
+                # accept/reject: go through all the samples
+                libcudaaltar.cudaMetropolis_metropolisUpdate(
+                    θ.data, prior.data, data.data, posterior.data, # original
+                    cθ.data, cprior.data, cdata.data, cpost.data,  # candidate
+                    dice.data, acceptance_flags.zero().data, valid_indices.data, valid)
+
+                # counting the acceptance/rejection
+                accepted_step = int(acceptance_flags.sum())
+                accepted += accepted_step
+                rejected += valid - accepted_step
 
             # notify we are done accepting samples
             dispatcher.notify(event=dispatcher.acceptFinish, controller=annealer)
 
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
+
+            correlation = altar.cuda.stats.correlation(θstart, θ, axis=0).amax()
+            mcsteps += self.corr_check_steps
+            print(f"correlation {correlation} at {mcsteps}")
+
         # all done
         # print(f'stats: accepted {accepted}, invalid {invalid}, rejected {rejected}')
         return accepted, invalid, rejected
