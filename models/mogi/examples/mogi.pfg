@@ -14,6 +14,7 @@ mogi:
             theta = theta.asc
             sigma = sigma.asc
             llk = posterior.asc
+    controller.scheduler.check_positive_definiteness = False
 
     ; job layout
     job:

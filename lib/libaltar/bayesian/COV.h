@@ -46,9 +46,8 @@ public:
 
     // interface
 public:
-    virtual void update(state_t & state);
+    virtual double dbeta_brent(vector_t * llk, double llkMedian, vector_t * w);
     virtual double dbeta_grid(vector_t * llk, double llkMedian, vector_t * w);
-    virtual double dbeta_gsl(vector_t * llk, double llkMedian, vector_t * w);
 
     // meta-methods
 public:
@@ -57,12 +56,6 @@ public:
                rng_t * rng,
                double tolerance=.001, size_t maxIterations=1000, double target=1.0
                );
-
-    // implementation details
-protected:
-    void computeCovariance(state_t & state, vector_t * weights) const;
-    void conditionCovariance(matrix_t * sigma) const;
-    void rankAndShuffle(state_t & state, vector_t * weights) const;
 
     // data
 private:

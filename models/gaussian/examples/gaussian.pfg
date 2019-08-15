@@ -33,7 +33,6 @@ gaussian:
         parameters = 2
         support = (-1, 1)
 
-
 ; for parallel runs
 mpi.shells.mpirun # altar.plexus.shell:
     ; extra flags to openmpi

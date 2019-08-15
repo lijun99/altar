@@ -38,7 +38,7 @@ namespace altar {
             { cov__name__, cov, METH_VARARGS, cov__doc__},
 
             { dbeta_grid__name__, dbeta_grid, METH_VARARGS, dbeta_grid__doc__},
-            { dbeta_gsl__name__, dbeta_gsl, METH_VARARGS, dbeta_gsl__doc__},
+            { dbeta_brent__name__, dbeta_brent, METH_VARARGS, dbeta_brent__doc__},
 
             // matrix condition for positive definite
             { matrix_condition__name__, matrix_condition, METH_VARARGS, matrix_condition__doc__},
@@ -52,7 +52,6 @@ namespace altar {
             // gaussian
             { gaussian::sample__name__, gaussian::sample, METH_VARARGS, gaussian::sample__doc__},
             { gaussian::logpdf__name__, gaussian::logpdf, METH_VARARGS, gaussian::logpdf__doc__},
-
 
             // sentinel
             {0, 0, 0, 0}
