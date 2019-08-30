@@ -110,7 +110,6 @@ class CoolingStep:
         """
         Compute the posterior from prior, data, and beta
         """
-
         # in their log form, posterior = prior + beta * datalikelihood
         # make a copy of prior at first
         self.posterior.copy(self.prior)
@@ -179,34 +178,6 @@ class CoolingStep:
             Σ = self.sigma
             channel.line(f"{indent}Σ: {Σ.rows} x {Σ.columns}")
             channel.line("\n".join(Σ.print(interactive=False, indent=indent*2)))
-            
-            
-        # print statistics (axis=0 average over samples) 
-        mean, sd = θ.mean_sd(axis=0)
-        channel.line(f"{indent}parameters (mean, sd):")
-        for i in range(min(50, parameters)):
-            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
-
-
-        # print statistics (axis=0 average over samples)
-        mean, sd = θ.mean_sd(axis=0)
-        channel.line(f"{indent}parameters (mean, sd):")
-        for i in range(min(50, parameters)):
-            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
-
-
-        # print statistics (axis=0 average over samples)
-        mean, sd = θ.mean_sd(axis=0)
-        channel.line(f"{indent}parameters (mean, sd):")
-        for i in range(min(50, parameters)):
-            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
-
-
-        # print statistics (axis=0 average over samples)
-        mean, sd = θ.mean_sd(axis=0)
-        channel.line(f"{indent}parameters (mean, sd):")
-        for i in range(min(50, parameters)):
-            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
 
 
         # print statistics (axis=0 average over samples)
@@ -279,11 +250,4 @@ class CoolingStep:
         # to be done
         return
 
-    def load_hdf5(self, path=None, iteration=0):
-        """
-        load CoolingStep from HDF5 file
-        """
-        # to be done
-        return
-        
 # end of file

@@ -1,12 +1,12 @@
 ;
 ; michael a.g. aïvázis
 ; orthologue
-; (c) 1998-2018 all rights reserved
+; (c) 1998-2019 all rights reserved
 ;
 
 cdm:
-    ; shell
-    ; shell = mpi.shells.mpirun ; for running with mpi
+    ; for running with MPI
+    ; shell = mpi.mpirun
 
     controller:
         ; saving the results of the calculation
@@ -17,9 +17,10 @@ cdm:
 
     ; job layout
     job:
+        hosts = 1       ; number of MPI hosts
         tasks = 1       ; number of tasks per host
         gpus = 0        ; number of gpus per task
-        chains = 2**8  ; number of chains per task
+        chains = 2**12  ; number of chains per task
         steps = 20      ; the length of each chain
 
     ; event handlers
@@ -45,53 +46,54 @@ cdm:
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (-1000, 1000)
+                    support = (-5000, 5000)
                 prior:
-                    support = (-1000, 1000)
+                    support = (-5000, 5000)
             depth:
                 count = 1
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (4000, 10000)
+                    support = (2000, 4000)
                 prior:
-                    support = (4000, 10000)
+                    support = (2000, 4000)
             opening:
                 count = 1
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (10, 80)
+                    support = (0, 1)
                 prior:
-                    support = (10, 80)
+                    support = (0, 1)
             a:
                 count = 3
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (100, 3000)
+                    support = (0, 1)
                 prior:
-                    support = (100, 3000)
+                    support = (0, 1)
             omega:
                 count = 3
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (-5, 5)
+                    support = (0, 45)
                 prior:
-                    support = (-5, 5)
+                    support = (0, 45)
             offsets:
-                count = 1
+                count = 2
                 prep = uniform
                 prior = uniform
                 prep:
-                    support = (-1.0, 1.0)
+                    support = (-0.1, 0.1)
                 prior:
-                    support = (-1.0, 1.0)
+                    support = (-0.1, 0.1)
 
 
 ; for parallel runs
-mpi.shells.mpirun # altar.plexus.shell:
+mpi.shells.mpirun # cdm.shell:
+    hostfile = localhost
     extra = -mca btl self,tcp
 
 ; end of file
