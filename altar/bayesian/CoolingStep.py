@@ -29,6 +29,10 @@ class CoolingStep:
 
     sigma = None # the parameter covariance matrix
 
+    # the statistics of samples (theta)
+    mean = None
+    std = None
+
 
     # read-only public data
     @property
@@ -110,6 +114,7 @@ class CoolingStep:
         """
         Compute the posterior from prior, data, and beta
         """
+
         # in their log form, posterior = prior + beta * datalikelihood
         # make a copy of prior at first
         self.posterior.copy(self.prior)
@@ -118,6 +123,17 @@ class CoolingStep:
         # all done
         return self
 
+    def statistics(self):
+        """
+        Compute the statistics of samples
+        :return:
+        """
+        # get the samples
+        θ = self.theta
+        # compute the mean, sd
+        self.mean, self.sd = θ.mean_sd(axis=0)
+        # all done
+        return self
 
     # meta-methods
     def __init__(self, beta, theta, likelihoods, sigma=None, **kwds):
@@ -181,11 +197,17 @@ class CoolingStep:
 
 
         # print statistics (axis=0 average over samples)
-        mean, sd = θ.mean_sd(axis=0)
+        mean, sd = self.mean, self.sd
         channel.line(f"{indent}parameters (mean, sd):")
-        for i in range(min(50, parameters)):
-            channel.line(f"{indent} ({mean[i]}, {sd[i]})")
-
+        if parameters <= 25:
+            for i in range(parameters):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+        else:
+            for i in range(20):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+            channel.line("... ...")
+            for i in range(parameter-5, parameters):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
         # flush
         channel.log()
 

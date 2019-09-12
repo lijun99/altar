@@ -314,6 +314,10 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
 
             correlation = altar.cuda.stats.correlation(θstart, θ, axis=0).amax()
+            if annealer.worker.workers > 1:
+                import mpi
+                comm = mpi.world
+                correlation = comm.max(item=correlation)
             mcsteps += self.corr_check_steps
             print(f"correlation {correlation} at {mcsteps}")
 

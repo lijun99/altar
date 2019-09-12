@@ -101,11 +101,14 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         while worker.beta + tolerance < 1:
             # notify that we are at the top of the current step
             dispatcher.notify(event=dispatcher.betaStart, controller=self)
-            # let the worker know
-            worker.top(annealer=self)
 
             # compute a new temperature
+            # resampling and distribute the samples
+            # compute new covariance matrix for proposal
             worker.cool(annealer=self)
+
+            # worker procedures before sampling starts
+            worker.top(annealer=self)
 
             # notify we are about to walk the chains
             dispatcher.notify(event=dispatcher.walkChainsStart, controller=self)
@@ -116,7 +119,8 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
             # notify we are about to resample
             dispatcher.notify(event=dispatcher.resampleStart, controller=self)
-            # resample
+            # resample: this only adjusts the scaling factor of proposal matrix
+            # better use another name
             worker.resample(annealer=self, statistics=statistics)
             # notify we are done resampling
             dispatcher.notify(event=dispatcher.resampleFinish, controller=self)
@@ -125,6 +129,8 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
             worker.archive(annealer=self, scaling=self.sampler.scaling, stats=statistics)
 
             # notify the worker we are at the bottom of the current step
+            # worker procedures after the sampling ends
+            # e.g., print out the statistics, calculate the mean model in Cp
             worker.bottom(annealer=self)
             # and dispatch the matching event
             dispatcher.notify(event=dispatcher.betaFinish, controller=self)

@@ -49,6 +49,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         self.steps = application.job.steps
         # get the capsule of the random number generator
         rng = application.rng.rng
+
         # set up the distribution for building the sample multiplicities; use a strictly
         # positive distribution to avoid generating candidates with zero displacement
         self.uniform = altar.pdf.uniform_pos(rng=rng)
@@ -272,7 +273,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # the fudge factor
         kc = (aw*acceptance + rw)/(aw+rw)
         # don't let it get too small
-        if kc < .1: kc = .1
+        # if kc < .1: kc = .1
         # or too big
         if kc > 1.: kc = 1.
         # store it

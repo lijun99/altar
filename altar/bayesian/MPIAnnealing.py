@@ -68,17 +68,17 @@ class MPIAnnealing(AnnealingMethod):
         # all done
         return self
 
-    # use super class method
-    #def top(self, annealer):
-    #    """
-    #    Notification that we are at the beginning of a β update
-    #    """
-    #    # if i am the manager
-    #    if self.rank == self.manager:
-    #        # chain up
-    #        return super().top(annealer=annealer)
-    #    # otherwise, do nothing
-    #    return self
+
+    def top(self, annealer):
+        """
+        Notification that we are at the beginning of a β update
+        """
+        # if i am the manager
+        if self.rank == self.manager:
+            # chain up
+            return super().top(annealer=annealer)
+        # otherwise, do nothing
+        return self
 
 
     def cool(self, annealer):
@@ -118,14 +118,12 @@ class MPIAnnealing(AnnealingMethod):
         accepted, rejected, unlikely = statistics
 
         # add up the acceptance/rejection statistics from all the nodes
-        accepted = self.communicator.sum(accepted, destination=manager)
-        rejected = self.communicator.sum(rejected, destination=manager)
-        unlikely = self.communicator.sum(unlikely, destination=manager)
+        accepted = self.communicator.sum(accepted)
+        rejected = self.communicator.sum(rejected)
+        unlikely = self.communicator.sum(unlikely)
 
-        # if I am the boss
-        if self.rank == manager:
-            # chain up
-            super().resample(annealer=annealer, statistics=(accepted,rejected,unlikely))
+        # chain up
+        super().resample(annealer=annealer, statistics=(accepted,rejected,unlikely))
 
         # all done
         return self
@@ -164,8 +162,14 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-        # all done
-        return self
+    # for cuda worker
+    @property
+    def device(self):
+        return self.worker.device
+
+    @property
+    def gstep(self):
+        return self.worker.gstep
 
     # for cuda worker
     @property
@@ -198,9 +202,9 @@ class MPIAnnealing(AnnealingMethod):
         self.wid = self.rank
 
         # compute the total number workers
-        workers = comm.sum(destination=self.manager, item=worker.workers)
+        workers = comm.sum(item=worker.workers)
         # the result is meaningful only on the manager task
-        self.workers = int(workers) if self.rank == self.manager else None
+        self.workers = int(workers)
 
         # all done
         return

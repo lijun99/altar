@@ -62,7 +62,6 @@ class CUDAAnnealing(AnnealingMethod):
         gstep = self.gstep
         model.cuInitSample(theta=gstep.theta)
         # compute the likelihoods
-        model.updateModel(annealer=annealer)
         model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
         # return to cpu
         gstep.copyToCPU(step=self.step)

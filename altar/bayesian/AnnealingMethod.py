@@ -74,13 +74,9 @@ class AnnealingMethod:
         """
         Notification that we are at the beginning of an update
         """
-        # get the state of the solution
-        step = self.step
         # notify the model
         annealer.model.top(annealer=annealer)
-        # ask my step to render itself
-        if self.wid == 0: # only master
-            step.print(channel=annealer.info)
+
         # all done
         return self
 
@@ -145,6 +141,15 @@ class AnnealingMethod:
         """
         # notify the model
         annealer.model.bottom(annealer=annealer)
+
+        if self.wid == 0: # only master
+            # get the state of the solution
+            step = self.step
+            # calculate the statistics of samples
+            step.statistics()
+            # print a summary of current state
+            step.print(channel=annealer.info)
+
         # all done
         return self
 

@@ -61,15 +61,6 @@ dbeta_brent(vector_t *llk, double llkMedian, vector_t *w)
 {
     // build my debugging channel
     pyre::journal::debug_t debug("altar.beta");
-    
-    // turn off the err_handler (from Hailiang)
-    gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
-
-    // turn off the err_handler (from Hailiang)
-    gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
-
-    // turn off the err_handler (from Hailiang)
-    gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off ();
 
     // turn off the err_handler, return previous handler
     gsl_error_handler_t * gsl_hdl = gsl_set_error_handler_off();

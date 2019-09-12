@@ -74,6 +74,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.precision)
         return self
 
+
     def updateModel(self, annealer):
         """
         Model method called by Sampler before Metropolis sampling for each beta step starts,
@@ -82,27 +83,40 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         :return: True or False if model parameters are updated or remain the same
         """
         # check beta and decide whether to incorporate cp
-        step = annealer.worker.gstep
+        step = annealer.worker.step
         beta = step.beta
 
         if beta < self.beta_cp_start:
             return False
 
-        if beta <= self.beta_use_initial_model:
-            mean_model = self.gInitModel
-        else:
-            # compute the mean model
-            theta = step.theta
-            # mean_model is a matrix with size(1, parameters)
-            mean_model = self.gMeanModel
-            mean_model=theta.mean(axis=0, out=mean_model)
+        # get the threads information
+        wid = annealer.worker.wid
+        workers = annealer.worker.workers
 
-        # compute Cp with mean model
-        Cp = self.Cp
-        self.computeCp(model=mean_model, cp=Cp)
+        print(f'thread {wid} with local samples {step.samples}')
+
+        # calculate cp on master thread only
+        # only master thread stores the mean_model for all samples (from previous beta step)
+        if wid == 0:
+            if beta <= self.beta_use_initial_model:
+                # use initial(input) model
+                mean_model = self.gInitModel
+            else:
+                # copy the current mean model from all samples
+                self.gMeanModel.copy_from_host(source=step.mean)
+                # use the mean model
+                mean_model = self.gMeanModel
+
+            # compute Cp with mean model
+            self.computeCp(model=mean_model, cp=self.Cp)
+
+        # if more than one workers, bcast Cp
+        if workers > 1:
+            self.Cp.bcast(communicator=annealer.worker.communicator, source=0)
+
         # recompute covariance = cp + cd,
         # and merge covariance with observed data
-        self.dataobs.updateCovariance(cp=Cp)
+        self.dataobs.updateCovariance(cp=self.Cp)
         # merge covariance with green's function
         self.mergeCovarianceToGF()
 
