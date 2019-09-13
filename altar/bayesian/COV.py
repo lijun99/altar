@@ -58,13 +58,13 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         Initialize me and my parts given an {application} context
         """
         # get the rng wrapper
-        rng = application.rng.rng
+        self.rng = application.rng.rng
 
         # initialize my solver
         self.solver.initialize(application=application, scheduler=self)
 
         # set up the distribution for building the sample multiplicities
-        self.uniform = altar.pdf.uniform(support=(0,1), rng=rng)
+        self.uniform = altar.pdf.uniform(support=(0,1), rng=self.rng)
         # all done
         return self
 
@@ -79,8 +79,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         β = self.updateTemperature(step=step)
         # compute the new parameter covariance matrix
         Σ = self.computeCovariance(step=step)
-        # rank the samples according to their likelihood
-        θ, (prior, data, posterior) = self.rank(step=step)
+        # resampling according to their likelihood
+        θ, (prior, data, posterior) = self.resampling(step=step)
 
         # update the step
         step.beta = β
@@ -219,6 +219,64 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # return the shuffled data
         return θ, (prior, data, posterior)
 
+    # important resampling: rank is not needed, shuffle is recommended
+    def resampling(self, step):
+        """
+        Rebuild the sample and its statistics sorted by the likelihood of the parameter values
+        """
+        θOld = step.theta
+        priorOld = step.prior
+        dataOld = step.data
+        postOld = step.posterior
+        # allocate the new entities
+        θ = altar.matrix(shape=θOld.shape)
+        prior = altar.vector(shape=priorOld.shape)
+        data = altar.vector(shape=dataOld.shape)
+        posterior = altar.vector(shape=postOld.shape)
+
+        # build a histogram for the new samples and convert it into a vector
+        multi = self.computeSampleMultiplicities(step=step).values()
+        # print("      histogram as vector:")
+        # print("        counts: {}".format(tuple(multi)))
+
+        # unique samples count
+        unique_samples = 0
+        # sample count
+        index = 0
+        # indices for kept samples
+        indices = altar.vector(shape=multi.shape)
+
+        # record kept sample indices
+        for i in range(multi.shape):
+            count = int(multi[i])
+            # if count is zero, skip
+            if count == 0: continue
+            # add the unique samples count
+            unique_samples += 1
+            # duplicate indices
+            for ic in range(count):
+                indices[index] = i
+                index += 1
+        # shuffle the indices
+        indices.shuffle(rng=self.rng)
+
+        print(f"resampling: unique samples {unique_samples} out of {multi.shape}")
+        # print("     kept sample indices: {}".format(tuple(indices[i] for i in range(indices.shape))))
+
+        # copy theta, (prior, data, posterior) over according to the indices
+        for i in range(indices.shape):
+            # get the index for old samples
+            old = int(indices[i])
+            # duplicate theta
+            for param in range(step.parameters):
+                θ[i, param] = θOld[old, param]
+            prior[i] = priorOld[old]
+            data[i] = dataOld[old]
+            posterior[i] = postOld[old]
+
+        # return the shuffled data
+        return θ, (prior, data, posterior)
+
 
     # implementation details
     def conditionCovariance(self, Σ):
@@ -265,6 +323,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
     # private data
     uniform = None
+    rng = None
 
 
 # end of file

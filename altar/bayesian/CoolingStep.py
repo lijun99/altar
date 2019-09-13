@@ -205,8 +205,8 @@ class CoolingStep:
         else:
             for i in range(20):
                 channel.line(f"{indent} ({mean[i]}, {sd[i]})")
-            channel.line("... ...")
-            for i in range(parameter-5, parameters):
+            channel.line(f"{indent} ... ...")
+            for i in range(parameters-5, parameters):
                 channel.line(f"{indent} ({mean[i]}, {sd[i]})")
         # flush
         channel.log()
