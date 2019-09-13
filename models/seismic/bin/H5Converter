@@ -66,7 +66,7 @@ class H5Converter(altar.application, family="altar.shells.h5converter"):
 
         # check output filename
         if self.output is None:
-            self.output = altar.primitives.path(self.inputs[0].stems+'.h5')
+            self.output = altar.primitives.path(self.inputs[0].stem+'.h5')
 
         # open h5 file
         h5file = h5py.File(name=self.output.path, mode='w')
@@ -74,7 +74,7 @@ class H5Converter(altar.application, family="altar.shells.h5converter"):
         for filename in self.inputs:
             # get the file info
             file = ifs[filename]
-            stem = file.uri.stems
+            stem = file.uri.stem
             suffix = file.uri.suffix
 
             print(f"Loading {file.uri.name} ...")
