@@ -25,7 +25,7 @@
 
 // cuda utilities
 #include <pyre/cuda.h>
-#include <pyre/cuda/cudaext.h>
+#include <pyre/cuda/capsules.h>
 
 
 // types
@@ -53,7 +53,7 @@ kinematicg_alloc(PyObject *, PyObject * args)
 {
     // parameters
     size_t Nas, Ndd, Nmesh;
-    double dsp; 
+    double dsp;
     size_t Nt, Npt;
     double dt;
     PyObject * gt0sCap;
@@ -63,20 +63,20 @@ kinematicg_alloc(PyObject *, PyObject * args)
     // we don't accept any arguments, so check that we didn't get any
     int status = PyArg_ParseTuple(args,
                                 "kkkdkkdO!kkkO!i:kinematicg_alloc",
-                                &Nas, &Ndd, &Nmesh, &dsp, 
+                                &Nas, &Ndd, &Nmesh, &dsp,
                                 &Nt, &Npt, &dt,
                                 &PyCapsule_Type, &gt0sCap,
-                                &samples, &parameters, &observations, 
+                                &samples, &parameters, &observations,
                                 &PyCapsule_Type, &gidxmapCap, &dtype);
     // if something went wrong
     if (!status) {
         // complain
         return 0;
     }
-    
+
     // bail out if the capsule is not valid
     if (!PyCapsule_IsValid(gt0sCap, vector::capsule_t) ||
-            !PyCapsule_IsValid(gidxmapCap, vector::capsule_t)) 
+            !PyCapsule_IsValid(gidxmapCap, vector::capsule_t))
     {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for kinematicg_alloc");
         return 0;
@@ -86,33 +86,33 @@ kinematicg_alloc(PyObject *, PyObject * args)
     cuda_vector * gt0s = static_cast<cuda_vector *>
         (PyCapsule_GetPointer(gt0sCap, vector::capsule_t));
     cuda_vector * gidxMap = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(gidxmapCap, vector::capsule_t));    
-        
+        (PyCapsule_GetPointer(gidxmapCap, vector::capsule_t));
+
     // make a cuda/c kinematicg model
     if (dtype == PYCUDA_FLOAT) {
         SModel_t * cmodel = new SModel_t(
-            Nas, Ndd, Nmesh, dsp, 
-            Nt, Npt, dt, 
+            Nas, Ndd, Nmesh, dsp,
+            Nt, Npt, dt,
             (const float * const)gt0s->data,
-            samples, parameters, observations, 
+            samples, parameters, observations,
             (const size_t * const)gidxMap->data);
         return PyCapsule_New(cmodel, kgSmodel_capsule, kinematicg_free);
     }
     else if ( dtype == PYCUDA_DOUBLE) {
         DModel_t * cmodel = new DModel_t(
-            Nas, Ndd, Nmesh, dsp, 
-            Nt, Npt, dt, 
+            Nas, Ndd, Nmesh, dsp,
+            Nt, Npt, dt,
             (const double * const)gt0s->data,
-            samples, parameters, observations, 
+            samples, parameters, observations,
             (const size_t * const)gidxMap->data);
         return PyCapsule_New(cmodel, kgDmodel_capsule, kinematicg_free);
     }
     else {
-        return NULL; //error 
+        return NULL; //error
     }
 }
 
-void 
+void
 altar::extensions::models::cudaseismic::
 kinematicg_free(PyObject * capsule)
 {
@@ -139,10 +139,10 @@ kinematicg_forward(PyObject *, PyObject * args)
 {
     //inputs
     PyObject * modelCap, *handleCap;
-    PyObject * thetaCap, * GbCap, *DpredCap; 
+    PyObject * thetaCap, * GbCap, *DpredCap;
     size_t parameters, batch=1;
     int return_residual;
-    
+
     int status = PyArg_ParseTuple(args,
                             "O!O!O!O!O!kp:kinematicg_forward",
                             &PyCapsule_Type, &handleCap,
@@ -155,8 +155,8 @@ kinematicg_forward(PyObject *, PyObject * args)
         // complain
         return 0;
     }
-    
-    
+
+
     if (!PyCapsule_IsValid(thetaCap, vector::capsule_t) || !PyCapsule_IsValid(GbCap, matrix::capsule_t)
         || !PyCapsule_IsValid(DpredCap, vector::capsule_t))
     {
@@ -165,30 +165,30 @@ kinematicg_forward(PyObject *, PyObject * args)
     }
 
     cublasHandle_t handle = static_cast<cublasHandle_t>(PyCapsule_GetPointer(handleCap, pyre::extensions::cuda::cublas::capsule_t));
-    
+
     // get c objects from capsules
     cuda_vector * theta = static_cast<cuda_vector *> (PyCapsule_GetPointer(thetaCap, vector::capsule_t));
     cuda_matrix * Gb = static_cast<cuda_matrix *> (PyCapsule_GetPointer(GbCap, matrix::capsule_t));
     cuda_vector * dpred = static_cast<cuda_vector *> (PyCapsule_GetPointer(DpredCap, vector::capsule_t));
 
         // bail out if the capsule is not valid
-    if (PyCapsule_IsValid(modelCap, kgSmodel_capsule)) 
+    if (PyCapsule_IsValid(modelCap, kgSmodel_capsule))
     {
         SModel_t * cmodel = static_cast<SModel_t *>(PyCapsule_GetPointer(modelCap, kgSmodel_capsule));
         cmodel->forwardModel(handle, (const float * const)theta->data, (const float * const)Gb->data,
                     (float * const)dpred->data, parameters, batch, return_residual);
-    }    
-    else if (PyCapsule_IsValid(modelCap, kgDmodel_capsule)) 
+    }
+    else if (PyCapsule_IsValid(modelCap, kgDmodel_capsule))
     {
         DModel_t * cmodel = static_cast<DModel_t *>(PyCapsule_GetPointer(modelCap, kgDmodel_capsule));
         cmodel->forwardModel(handle, (const double * const)theta->data, (const double * const)Gb->data,
                     (double * const)dpred->data, parameters, batch, return_residual);
-    }   
+    }
     else {
         PyErr_SetString(PyExc_TypeError, "invalid model capsule for kinematicg_forward");
         return 0;
     }
-    
+
     // return none
     Py_RETURN_NONE;
 }

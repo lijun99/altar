@@ -18,7 +18,7 @@
 
 // cuda utilities
 #include <pyre/cuda.h>
-#include <pyre/cuda/cudaext.h>
+#include <pyre/cuda/capsules.h>
 
 // my declaration
 #include "metropolis.h"

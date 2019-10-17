@@ -18,7 +18,7 @@
 
 // cuda utilities
 #include <pyre/cuda.h>
-#include <pyre/cuda/cudaext.h>
+#include <pyre/cuda/capsules.h>
 
 // my declaration
 #include "norm.h"
@@ -29,16 +29,16 @@
 const char * const altar::cuda::extensions::cudaL2::norm__name__ = "cudaL2_norm";
 const char * const altar::cuda::extensions::cudaL2::norm__doc__ =
     "cudaL2 norm of a batch of data";
-    
+
 PyObject *
 altar::cuda::extensions::cudaL2::norm(PyObject *, PyObject * args) {
-    // the args 
+    // the args
     // norm(data, , batch) batch <= samples
     // data (samples, parameters) proba
-    PyObject * dataCapsule, *resultCapsule;  
+    PyObject * dataCapsule, *resultCapsule;
     size_t batch;
-    
-    int status = PyArg_ParseTuple(args, "O!O!k:cudaL2_norm", 
+
+    int status = PyArg_ParseTuple(args, "O!O!k:cudaL2_norm",
                                     &PyCapsule_Type, &dataCapsule, &PyCapsule_Type, &resultCapsule,
                                     &batch);
     if(!status) return 0;
@@ -53,7 +53,7 @@ altar::cuda::extensions::cudaL2::norm(PyObject *, PyObject * args) {
     cuda_vector * result = static_cast<cuda_vector *>
         (PyCapsule_GetPointer(resultCapsule, altar::cuda::extensions::vector::capsule_t));
 
-    //       void norm(const real_type * const data, real_type * const probability, 
+    //       void norm(const real_type * const data, real_type * const probability,
     //                const size_t batch, const size_t parameters, cudaStream_t stream=0);
     size_t parameters = data->size2;
     switch(data->dtype) {
@@ -66,9 +66,9 @@ altar::cuda::extensions::cudaL2::norm(PyObject *, PyObject * args) {
         default:
             PyErr_SetString(PyExc_TypeError, "not a real type");
     }
-    
+
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -78,17 +78,17 @@ altar::cuda::extensions::cudaL2::norm(PyObject *, PyObject * args) {
 const char * const altar::cuda::extensions::cudaL2::normllk__name__ = "cudaL2_normllk";
 const char * const altar::cuda::extensions::cudaL2::normllk__doc__ =
     "cudaL2 normllk of a batch of data";
-    
+
 PyObject *
 altar::cuda::extensions::cudaL2::normllk(PyObject *, PyObject * args) {
-    // the args 
+    // the args
     // normllk(data, , batch) batch <= samples
     // data (samples, parameters) proba
-    PyObject * dataCapsule, *resultCapsule;  
+    PyObject * dataCapsule, *resultCapsule;
     size_t batch;
     double l2constant;
-    
-    int status = PyArg_ParseTuple(args, "O!O!kd:cudaL2_normllk", 
+
+    int status = PyArg_ParseTuple(args, "O!O!kd:cudaL2_normllk",
                                     &PyCapsule_Type, &dataCapsule, &PyCapsule_Type, &resultCapsule,
                                     &batch, &l2constant);
     if(!status) return 0;
@@ -123,9 +123,9 @@ normllk(const real_type* const data, // input data , matrix(samples, parameters)
         default:
             PyErr_SetString(PyExc_TypeError, "not a real type");
     }
-    
+
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 }

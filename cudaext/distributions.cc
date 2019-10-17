@@ -28,7 +28,7 @@
 
 // cuda utilities
 #include <pyre/cuda.h>
-#include <pyre/cuda/cudaext.h>
+#include <pyre/cuda/capsules.h>
 
 
 // cudaRanged distribution
@@ -105,7 +105,7 @@ altar::cuda::extensions::cudaUniform::sample(PyObject *, PyObject * args) {
     size_t idx_begin, idx_end; // parameter index
     double low, high; // support or range
     size_t samples;
-    
+
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
                                   args, "O!k(kk)(dd):cudaUniform_sample",
@@ -119,11 +119,11 @@ altar::cuda::extensions::cudaUniform::sample(PyObject *, PyObject * args) {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_sample");
         return 0;
     }
-    
+
     // convert PyObjects to C Objects
     cuda_matrix * theta = static_cast<cuda_matrix *>
         (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-        
+
     size_t parameters = theta->size2;
 
     // call c method
@@ -132,14 +132,14 @@ altar::cuda::extensions::cudaUniform::sample(PyObject *, PyObject * args) {
         altar::cuda::distributions::cudaUniform::sample<float>
             ((float *)theta->data, samples, parameters, idx_begin, idx_end, (float)low, (float)high);
     }
-    else //double precision 
+    else //double precision
     {
         altar::cuda::distributions::cudaUniform::sample<double>
             ((double *)theta->data, samples, parameters, idx_begin, idx_end, low, high);
     }
 
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 
@@ -162,26 +162,26 @@ altar::cuda::extensions::cudaUniform::logpdf(PyObject *, PyObject * args) {
     int status = PyArg_ParseTuple(
                                   args, "O!O!k(kk)(dd):cudaUniform_logpdf",
                                   &PyCapsule_Type, &thetaCapsule,
-                                  &PyCapsule_Type, &probabilityCapsule, 
+                                  &PyCapsule_Type, &probabilityCapsule,
                                   &samples, &idx_begin, &idx_end,
                                   &low, &high
                                   );
         // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t) 
-            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) ) 
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) )
     {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_logpdf");
         return 0;
     }
-    
+
     // convert PyObjects to C Objects
     cuda_matrix * theta = static_cast<cuda_matrix *>
         (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
     cuda_vector * prob = static_cast<cuda_vector *>
         (PyCapsule_GetPointer(probabilityCapsule, altar::cuda::extensions::vector::capsule_t));
-        
+
     size_t parameters = theta->size2;
 
     // call c method
@@ -191,14 +191,14 @@ altar::cuda::extensions::cudaUniform::logpdf(PyObject *, PyObject * args) {
             ((const float *)theta->data, (float *)prob->data,
             samples, parameters, idx_begin, idx_end, (float)low, (float)high);
     }
-    else //double precision 
+    else //double precision
     {
         altar::cuda::distributions::cudaUniform::logpdf<double>
             ((const double *)theta->data, (double *)prob->data,
             samples, parameters, idx_begin, idx_end, low, high);
     }
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 }
@@ -230,11 +230,11 @@ altar::cuda::extensions::cudaGaussian::sample(PyObject *, PyObject * args) {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaGaussian_sample");
         return 0;
     }
-    
+
     // convert PyObjects to C Objects
     cuda_matrix * theta = static_cast<cuda_matrix *>
         (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-        
+
     size_t parameters = theta->size2;
 
     // call c method
@@ -243,7 +243,7 @@ altar::cuda::extensions::cudaGaussian::sample(PyObject *, PyObject * args) {
         altar::cuda::distributions::cudaGaussian::sample<float>
             ((float *)theta->data, samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma);
         break;
-    case PYCUDA_DOUBLE: //double precision 
+    case PYCUDA_DOUBLE: //double precision
         altar::cuda::distributions::cudaGaussian::sample<double>
             ((double *)theta->data, samples, parameters, idx_begin, idx_end, mean, sigma);
         break;
@@ -252,7 +252,7 @@ altar::cuda::extensions::cudaGaussian::sample(PyObject *, PyObject * args) {
         return 0;
     }
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 
@@ -275,33 +275,33 @@ altar::cuda::extensions::cudaGaussian::logpdf(PyObject *, PyObject * args) {
     int status = PyArg_ParseTuple(
                                   args, "O!O!k(kk)(dd):cudaGaussian_logpdf",
                                   &PyCapsule_Type, &thetaCapsule,
-                                  &PyCapsule_Type, &probabilityCapsule, 
+                                  &PyCapsule_Type, &probabilityCapsule,
                                   &samples, &idx_begin, &idx_end,
                                   &mean, &sigma
                                   );
         // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t) 
-            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) ) 
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) )
     {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaGaussian_logpdf");
         return 0;
     }
-    
+
     // convert PyObjects to C Objects
     cuda_matrix * theta = static_cast<cuda_matrix *>
         (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
     cuda_vector * prob = static_cast<cuda_vector *>
         (PyCapsule_GetPointer(probabilityCapsule, altar::cuda::extensions::vector::capsule_t));
-        
+
     size_t parameters = theta->size2;
 
     // call c method
     /*  template <typename real_type>
         void altar::cuda::distributions::cudaGaussian::
-        logpdf(const real_type * const theta, real_type * const probability, 
-                    const size_t samples, const size_t parameters, 
+        logpdf(const real_type * const theta, real_type * const probability,
+                    const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
                     const real_type mean, const real_type sigma,
                     cudaStream_t stream)
@@ -312,14 +312,14 @@ altar::cuda::extensions::cudaGaussian::logpdf(PyObject *, PyObject * args) {
             ((const float *)theta->data, (float *)prob->data,
             samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma);
     }
-    else //double precision 
+    else //double precision
     {
         altar::cuda::distributions::cudaGaussian::logpdf<double>
             ((const double *)theta->data, (double *)prob->data,
             samples, parameters, idx_begin, idx_end, mean, sigma);
     }
     // all done
-    // return None                                                                                                                             
+    // return None
     Py_INCREF(Py_None);
     return Py_None;
 }
