@@ -58,8 +58,8 @@ slipmodel:
                 prior = altar.cuda.distributions.uniform
                 prior.support= (1.0, 6.0)
 
-            ; along strike(frist), dip directions
-            ; could be seperated into 2 for dip and strike direction
+            ; along strike(first), dip directions
+            ; could be separated into 2 for dip and strike direction
             hypocenter:
                 count = 2
                 prior = altar.cuda.distributions.gaussian
