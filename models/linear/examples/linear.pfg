@@ -30,15 +30,15 @@ linear:
         prof = altar.bayesian.profiler
 
     ; run configuration
-    job.tasks = 4 ; number of tasks per host
+    job.tasks = 1 ; number of tasks per host
     job.gpus = 0  ; number of gpus per task
     job.chains = 2**8 ; number of chains per task
 
     ; shell
-    shell = mpi.shells.mpirun ; for running with mpi
+    ; shell = mpi.shells.mpirun ; for running with mpi
 
 ; for parallel runs
-mpi.shells.mpirun # altar.plexus.shell:
-    extra = -mca btl self,tcp
+; mpi.shells.mpirun # altar.plexus.shell:
+;    extra = -mca btl self,tcp
 
 ; end of file

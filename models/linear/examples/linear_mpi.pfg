@@ -32,7 +32,6 @@ linear:
     job.tasks = 2 ; number of tasks per host
     job.gpus = 0  ; number of gpus per task
     job.chains = 2**8 ; number of chains per task
-    job.steps = 10
 
     ; shell
     shell = mpi.shells.mpirun ; for running with mpi
