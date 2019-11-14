@@ -8,8 +8,10 @@
 builder.dest = products
 
 # project meta-data
-altar.major := 2
-altar.minor := 0
+altar.major := $(repo.major)
+altar.minor := $(repo.minor)
+altar.micro := $(repo.micro)
+altar.revision := $(repo.revision)
 
 # altar consists of a python package
 altar.packages := altar.pkg

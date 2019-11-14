@@ -28,7 +28,7 @@ copyright = """
 """
 
 banner = f"""
-    altar {major}.{minor} revision {revision}
+    altar {major}.{minor}.{micro} revision {revision}
 """ + copyright
 
 header = banner + """

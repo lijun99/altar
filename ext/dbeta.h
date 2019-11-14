@@ -29,7 +29,6 @@ namespace altar {
         extern const char * const dbeta_grid__doc__;
         PyObject * dbeta_grid(PyObject *, PyObject *);
 
-
     } // of namespace extensions
 } // of namespace altar
 

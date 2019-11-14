@@ -102,13 +102,10 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         # grab the data log-likelihood
         dataLikelihood  = step.data
-
-
         # initialize the vector of weights
         self.w = altar.vector(shape=step.samples).zero()
         # compute {δβ} and the normalized {w}
         β, self.cov = self.solver.solve(dataLikelihood, self.w)
-
         # and return the new temperature
         return β
 
