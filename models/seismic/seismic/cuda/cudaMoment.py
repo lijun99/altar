@@ -141,7 +141,7 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
             dirichlet_D.vector(vector=theta_sample)
             # D_i = P * x_i /A_i
             for patch in range(parameters):
-                theta_sample[patch]*=Pentier*self.patches/(area_patches[patch]*mu_patches[patch])
+                theta_sample[patch]*=Pentier/(area_patches[patch]*mu_patches[patch])
             # set theta
             θ.setRow(sample, theta_sample)
 

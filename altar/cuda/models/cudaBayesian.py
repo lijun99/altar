@@ -276,7 +276,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return ifs
 
-    def loadFile(self, filename, shape=None, dataset=None):
+    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a numpy array (for both float32/64 support)
         Supported format:
@@ -292,6 +292,9 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         :return: output numpy.array
         """
 
+        # decide the data type of the loaded vector/matrix
+        dtype = dtype or self.precision
+
         ifs = self.ifs
         channel = self.error
         try:
@@ -306,7 +309,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             # use .txt for non-binary input
             if suffix == '.txt':
                 # load to a cpu array
-                cpuData = numpy.loadtxt(file.uri.path, dtype = self.precision)
+                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype)
             # binary data
             elif suffix == '.bin' or suffix == '.dat':
                 # check shape
@@ -328,7 +331,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
                 if dataset is None:
                     # if not provided, assume the only or first dataset as default
                     dataset = list(h5file.keys())[0]
-                cpuData = numpy.asarray(h5file.get(dataset), dtype=self.precision)
+                cpuData = numpy.asarray(h5file.get(dataset), dtype=dtype)
                 h5file.close()
 
         if shape is not None:
@@ -337,7 +340,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return cpuData
 
 
-    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None):
+    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None, dtype=None):
         """
         Load an input file to a gpu (for both float32/64 support)
         Supported format:
@@ -353,17 +356,19 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         :return: out altar.cuda.matrix/vector
         """
 
+        dtype = dtype or self.precision
+
         # load to cpu as a numpy array at fist
-        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset)
+        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
 
         # if output gpu matrix/vector is not pre-allocated
         if out is None:
             # if vector
             if cpuData.ndim == 1:
-                out = altar.cuda.vector(shape=cpuData.shape[0], dtype=self.precision)
+                out = altar.cuda.vector(shape=cpuData.shape[0], dtype=dtype)
             # if matrix
             elif cpuData.ndim == 2:
-                out = altar.cuda.matrix(shape=cpuData.shape, dtype=self.precision)
+                out = altar.cuda.matrix(shape=cpuData.shape, dtype=dtype)
             else:
                 channel = self.error
                 raise channel.log(f"unsupported data dimension {cpuData.shape}")

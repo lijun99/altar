@@ -45,6 +45,10 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
     beta_use_initial_model = altar.properties.float(default=0)
     beta_use_initial_model.doc = "for beta <= beta_use_initial_model, use initial_model instead of mean model"
 
+    dtype_cp = altar.properties.str(default='float32')
+    dtype_cp.validators = altar.constraints.isMember('float32', 'float64')
+    dtype_cp.doc = "single/double precision to compute Cp"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -66,12 +70,15 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         Initialize Cp related
         :return:
         """
-        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu))
+        # load Cmu
+        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu), dtype=self.dtype_cp)
+        # load initial model if provided
         if self.initial_model_file is not None:
-            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters)
-
-        self.gMeanModel = altar.cuda.vector(shape=self.parameters, dtype=self.precision)
-        self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.precision)
+            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters, dtype=self.dtype_cp)
+        # allocate a gpu vector to record mean model
+        self.gMeanModel = altar.cuda.vector(shape=self.parameters, dtype=self.dtype_cp)
+        # allocate a gpu matrix to record Cp
+        self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.dtype_cp)
         return self
 
 
@@ -92,8 +99,6 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         # get the threads information
         wid = annealer.worker.wid
         workers = annealer.worker.workers
-
-        print(f'thread {wid} with local samples {step.samples}')
 
         # calculate cp on master thread only
         # only master thread stores the mean_model for all samples (from previous beta step)
@@ -130,6 +135,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         :return:
         """
 
+        # force float64 computation
         import h5py
         import numpy
 
@@ -138,15 +144,18 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         observations = self.observations
         nCmu = self.nCmu
 
+        dtype_cp = 'float64'
+        dtype_model = model.dtype
+
         # allocate Cp if not pre-allocated
-        Cp = cp or altar.cuda.matrix(shape=(observations, observations), dtype=model.dtype)
+        Cp = cp or altar.cuda.matrix(shape=(observations, observations), dtype=self.dtype_cp)
 
         # get cmu, shape=(nCmu, nCmu); kmu are loaded on the fly
         Cmu = self.gCmu
 
         # allocate work arrays
-        kmu = altar.cuda.matrix(shape=self.gGF.shape, dtype=model.dtype)
-        Kp = altar.cuda.matrix(shape=(nCmu, observations), dtype = model.dtype)
+        kmu = altar.cuda.matrix(shape=self.gGF.shape, dtype=self.dtype_cp)
+        Kp = altar.cuda.matrix(shape=(nCmu, observations), dtype = self.dtype_cp)
         kpv = altar.cuda.vector(shape=observations, dtype=Kp.dtype)
 
         # check the existence of kernel h5 file
@@ -158,7 +167,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
         for i in range(nCmu):
             # load kmu_np(cpu) from h5, shape=(observations, parameters)
-            kmu_np = numpy.asarray(h5kernel.get(h5keys[i]), dtype=model.dtype).reshape(kmu.shape)
+            kmu_np = numpy.asarray(h5kernel.get(h5keys[i]), dtype=self.dtype_cp).reshape(kmu.shape)
             # copy it gpu
             kmu.copy_from_host(source=kmu_np)
             # call the forward model
@@ -191,7 +200,9 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
 
     # private data
-    mean_model = None
+    gCmu = None
+    gInitModel = None
+    gMeanModel = None
 
 
 

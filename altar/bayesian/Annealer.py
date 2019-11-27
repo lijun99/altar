@@ -94,8 +94,12 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         # notify all interested parties that the simulation is about to start
         dispatcher.notify(event=dispatcher.start, controller=self)
         # start the process
+        # initialize samples
         worker.start(annealer=self)
+        # collect and record samples
         worker.archive(annealer=self, scaling=self.sampler.scaling, stats=(0,0,0))
+        # bottom process: compute mean,sd and print a summary
+        worker.bottom(annealer=self)
 
         # iterate until β is sufficiently close to one
         while worker.beta + tolerance < 1:

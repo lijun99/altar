@@ -214,17 +214,36 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # get references
         observations = self.observations
-        Cchi = self.gcd_inv
+        # get the numerical precision
+        dtype = self.gcd_inv.dtype
 
-        # copy Cd
-        Cchi.copy(self.gcd)
-        # add Cp if
-        if cp is not None:
-            Cchi += cp
-        # inverse
+        # prepare Cchi, Cp
+        if dtype == 'float64':
+            Cchi = self.gcd_inv
+            Cp = cp
+        else:
+            Cchi = altar.cuda.matrix(shape=self.gcd_inv.shape, dtype='float64')
+            Cp = cp.copy_to_device(dtype='float64') if cp is not None else None
+
+        # copy cd over, convert dtype if neccesary
+        Cchi = self.gcd.copy_to_device(out=Cchi)
+        # self.checkPostivieDefiniteness(matrix=Cchi, name='Cd')
+        # add Cp
+        if Cp is not None:
+            Cchi += Cp
+        #   self.checkPostivieDefiniteness(matrix=Cp, name='Cp')
+        # Inverse and Choleseky decomposition
+        # self.checkPostivieDefiniteness(matrix=Cchi, name='Cchi')
         Cchi.inverse()
-        # Cholesky decomposition
+        # self.checkPostivieDefiniteness(matrix=Cchi, name='Cchi inverse')
         Cchi.Cholesky(uplo=cublas.FillModeUpper)
+
+        if dtype != 'float64':
+            # copy back to single precision version
+            self.gcd_inv = Cchi.copy_to_device(out=self.gcd_inv)
+
+        # use the new reference
+        Cchi = self.gcd_inv
         # normalization
         logdet = libcuda.matrix_logdet_triangular(Cchi.data)
         self.normalization = -0.5*log(2*π)*observations + logdet
@@ -240,6 +259,24 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # all done
         return self
+
+    def checkPostivieDefiniteness(self, matrix, name=None):
+        """
+        Check positive definiteness of a GPU matrix
+        :param matrix: a real symmetric (GPU) matrix
+        :return: true or false
+        """
+        import numpy
+        name = name or 'Matrix'
+        cm = matrix.copy_to_host(type='numpy')
+        eval= numpy.linalg.eigvalsh(cm)
+        n = eval.shape[0]
+        if eval[n-1] < 0:
+            print(name, " is not positive definite!")
+            print(eval)
+            return False
+        print(name, eval.min(), eval.max())
+        return True
 
     def mergeCdtoData(self, cd_inv, data):
         """
