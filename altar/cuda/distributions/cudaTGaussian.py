@@ -34,7 +34,7 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"
         """
         batch = theta.shape[0]
         # call cuda c extension
-        libcudaaltar.cudaTGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma))
+        libcudaaltar.cudaTGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma), self.support)
         # and return
         return self
 
@@ -43,7 +43,7 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         Arguments:
-            theta cuArray (samples x total_parameters)   
+            theta cuArray (samples x total_parameters)
         """
         # number of samples to be processed
         batch = theta.shape[0]
@@ -61,7 +61,7 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"
                                           (self.mean, self.sigma), self.support)
         # all done
         return self
-        
+
     # local variables
 
 # end of file
