@@ -127,9 +127,9 @@ slipmodel:
         prof = altar.bayesian.profiler
 
     ; run configuration
-    job.tasks = 8 ; number of tasks per host
+    job.tasks = 1 ; number of tasks per host
     job.gpus = 1  ; number of gpus per task/thread
-    job.gpuids = [0 0 1 ] ; gpu slots to be occupied
+    ;job.gpuids = [0 0 1 ] ; gpu slots to be occupied
     job.gpuprecision = float64 ; desired precision for gpu (float64 or float32)
     job.chains = 2**10 ; number of chains per task
     job.steps = 500

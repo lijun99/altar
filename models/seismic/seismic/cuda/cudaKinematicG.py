@@ -145,6 +145,42 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         # all done
         return prediction
 
+    def castSlipsOfTime(self, theta, Mb=None):
+        """
+        Compute Mb (slips of patches over time) from a given set of parameters
+        :param theta: a vector arranged in [slip (strike and dip), risetime, ...]
+        :param Mb:
+        :return: Mb
+        """
+        # allocate Mb if not provided
+        Mb = Mb or altar.cuda.vector(shape=self.NGbparameters, dtype=self.precision)
+        parameters = theta.shape
+        # call cuda/c extension method
+        libcudaseismic.kinematicg_castMb(self.cmodel, theta.data, Mb.data, parameters)
+        # all done
+        return Mb
+
+    def linearGM(self, gf, Mb, prediction=None, observation=None):
+        """
+        Perform prediction = Gb * Mb
+        :param Gb:
+        :param Mb:
+        :param prediction:
+        :return:  prediction
+        """
+        prediction = prediction or altar.cuda.vector(shape=gf.shape[1])
+        if observation is None :
+            return_residual = False
+        else :
+            prediction.copy(other=observation)
+            return_residual = True
+
+        # perform matrix vector multiplication
+        libcudaseismic.kinematicg_linearGM(self.cublas_handle, self.cmodel,
+                                           gf.data, Mb.data, prediction.data, return_residual)
+        # all done
+        return prediction
+
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """

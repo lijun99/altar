@@ -27,25 +27,40 @@
 template <typename TYPE>
 void
 altar::models::seismic::cudaKinematicG<TYPE>::
-forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const Gb, TYPE * const prediction, 
+forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const Gb, TYPE * const prediction,
     const size_t parameters, const size_t batch, bool return_residual, cudaStream_t stream) const
+{
+    // compute the bigM (gMb)
+    calculateBigM(theta, _gpu_Mb, parameters, batch, stream);
+    // compute data prediction or residual gRes=gMb*gGb-gObs
+    linearBigGM(handle, Gb, _gpu_Mb, prediction, batch, return_residual, stream);
+    // all done
+}
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+// calculate and return the bigM only
+//
+/////////////////////////////////////////////////////////////////////////////////////////////////////////
+template <typename TYPE>
+void
+altar::models::seismic::cudaKinematicG<TYPE>::
+calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters,
+    const size_t batch, cudaStream_t stream) const
 {
     // ... and number of good samples
     int good_samples = batch;
     const TYPE * const gM_candidate_queued = theta;
 
     // set distance/time for 2x2 mesh grids around hypocenter
-    _initT0(gM_candidate_queued, parameters, good_samples, stream); 
-    // find 4 nearest mesh grids close to hypocenter, set their arrival time 
-    _setT0(gM_candidate_queued, parameters, good_samples, stream); 
+    _initT0(gM_candidate_queued, parameters, good_samples, stream);
+    // find 4 nearest mesh grids close to hypocenter, set their arrival time
+    _setT0(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival times for all mesh grids
     _fastSweeping(gM_candidate_queued, parameters, good_samples, stream); // where idx_map comes to play
     // set arrival time for patches (average over mesh grids, but fine-tuned on time intervals Npt)
     _interpolateT0(good_samples, stream);
-    // cast to time dependent slips for patches; gMb[samples][Nt][2(strike,dip slips)][Nas][Ndd] 
-    _castBigM(gM_candidate_queued, parameters, good_samples, stream); // where idx_map comes to play
-    // compute data prediction or residual gRes=gMb*gGb-gObs
-    _linearBigGM(handle, Gb, prediction, good_samples, return_residual, stream);
+    // cast to time dependent slips for patches; gMb[samples][Nt][2(strike,dip slips)][Nas][Ndd]
+    _castBigM(gM_candidate_queued, gMb, parameters, good_samples, stream); // where idx_map comes to play
     // all done
 }
 
@@ -53,10 +68,10 @@ forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const
 template <typename TYPE>
 altar::models::seismic::cudaKinematicG<TYPE>::
 cudaKinematicG(
-            size_t  Nas, size_t Ndd, size_t Nmesh, double dsp, 
-            size_t Nt, size_t Npt, double dt, 
+            size_t  Nas, size_t Ndd, size_t Nmesh, double dsp,
+            size_t Nt, size_t Npt, double dt,
             const TYPE * const gt0s,
-            size_t samples, size_t parameters, size_t observations, 
+            size_t samples, size_t parameters, size_t observations,
             const size_t * const gidxMap) :
             _Nas(Nas), _Ndd(Ndd), _Nmesh(Nmesh), _dsp(dsp),
             _Nt(Nt), _Npt(Npt), _dt(dt),
@@ -71,7 +86,7 @@ cudaKinematicG(
     _Nddf = (_Ndd+2)*_Nmesh;
     _Nasf = (_Nas+2)*_Nmesh;
     _NGbparameters = 2*_Npatch*_Nt;
-    
+
     // create work arrays
     initialize(samples);
     // all done
@@ -98,13 +113,13 @@ initialize(const size_t samples)
 // destructor
 template <typename TYPE>
 altar::models::seismic::cudaKinematicG<TYPE>::
-~cudaKinematicG() 
+~cudaKinematicG()
 {
     // deallocate GPU
     cudaSafeCall(cudaFree((void*)_gpu_Mb));
     cudaSafeCall(cudaFree((void*)_gpu_T0));
     cudaSafeCall(cudaFree((void*)_gpu_TI0));
-    
+
     //cublasSafeCall(cublasDestroy(_cublas_handle));
     // all don
 }
@@ -124,7 +139,7 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
 {
     // set the CUDA block dimenstions
     // use Ns_good (number of samples) as block.z index
-    // each xy block(s) treats Nddf x Nasf mesh grids for one sample 
+    // each xy block(s) treats Nddf x Nasf mesh grids for one sample
     dim3 dim_block(BDIMX, BDIMY, 1);
     dim3 dim_grid(IDIVUP(_Nddf, dim_block.x), IDIVUP(_Nasf, dim_block.y), Ns_good);
     /// @note: BLOCKDIM is increased here to accommodate more threads
@@ -246,13 +261,13 @@ _interpolateT0(const size_t Ns_good, cudaStream_t stream) const
 template <typename TYPE>
 void
 altar::models::seismic::cudaKinematicG<TYPE>::
-_castBigM(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
+_castBigM(const TYPE *const gM, TYPE *const gMb, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
     dim3 dim_block(BLOCKDIM, 1, 1);
     dim3 dim_grid(IDIVUP(_Npatch, dim_block.x), 1, Ns_good);
     cudaKinematicG_kernels::castBigM_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
-        (_gidx_map, gM,  _gpu_TI0, _gpu_Mb,
+        (_gidx_map, gM,  _gpu_TI0, gMb,
             _gt0s, _dt, Nparam, _Nt, _Nas, _Ndd, _Npt);
     cudaSafeCall(cudaGetLastError());
 }
@@ -260,7 +275,7 @@ _castBigM(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaS
 template<>
 void
 altar::models::seismic::cudaKinematicG<float>::
-_linearBigGM(cublasHandle_t handle, const float *const gGb, float *gDataPrediction,
+linearBigGM(cublasHandle_t handle, const float *const gGb, const float * const gMb, float *gDataPrediction,
         const size_t Ns_good, bool return_residual, cudaStream_t stream) const
 {
     // if needed, set the stream to cublas
@@ -279,9 +294,9 @@ _linearBigGM(cublasHandle_t handle, const float *const gGb, float *gDataPredicti
         _observations, Ns_good, _NGbparameters,
         &alpha,
         gGb, obs,
-        _gpu_Mb, _NGbparameters,
+        gMb, _NGbparameters,
         &beta,
-        gDataPrediction, _observations)); 
+        gDataPrediction, _observations));
     // all done
 }
 
@@ -289,7 +304,7 @@ _linearBigGM(cublasHandle_t handle, const float *const gGb, float *gDataPredicti
 template<>
 void
 altar::models::seismic::cudaKinematicG<double>::
-_linearBigGM(cublasHandle_t handle, const double *const gGb, double * const gDataPrediction,
+linearBigGM(cublasHandle_t handle, const double *const gGb, const double *const gMb, double * const gDataPrediction,
         const size_t Ns_good, bool return_residual, cudaStream_t stream) const
 {
     // if needed, set the stream to cublas
@@ -301,15 +316,15 @@ _linearBigGM(cublasHandle_t handle, const double *const gGb, double * const gDat
     //     gRes/gObs(samplesxobs) gMb(samples, NGbparam) gGb(NGbparam, obs)
     // translated to row-major ()
     //     gRes/gObs(obsxsamples) gMb (NGbparam, samples), gGb(obs, NGbparam)
-    // therefore, we use gGb x gMb  
+    // therefore, we use gGb x gMb
     cublasSafeCall(cublasDgemm(handle,
         CUBLAS_OP_N, CUBLAS_OP_N,
         _observations, Ns_good, _NGbparameters,
         &alpha,
         gGb, _observations,
-        _gpu_Mb, _NGbparameters,
+        gMb, _NGbparameters,
         &beta,
-        gDataPrediction, _observations)); 
+        gDataPrediction, _observations));
     // all done
     // all done
 }

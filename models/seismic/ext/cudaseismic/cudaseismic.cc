@@ -36,11 +36,13 @@ module_methods[] = {
     // module metadata
     // the version
     { version__name__, version, METH_VARARGS, version__doc__ },
-    
+
     // kinematicg model
     { kinematicg_alloc__name__, kinematicg_alloc, METH_VARARGS, kinematicg_alloc__doc__ },
     { kinematicg_forward__name__, kinematicg_forward, METH_VARARGS, kinematicg_forward__doc__ },
     { kinematicg_forward_batched__name__, kinematicg_forward_batched, METH_VARARGS, kinematicg_forward_batched__doc__ },
+    { kinematicg_castMb__name__, kinematicg_castMb, METH_VARARGS, kinematicg_castMb__doc__ },
+    { kinematicg_linearGM__name__, kinematicg_linearGM, METH_VARARGS, kinematicg_linearGM__doc__},
 
     // sentinel
     {0, 0, 0, 0}

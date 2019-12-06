@@ -1,0 +1,84 @@
+#!/usr/bin/env python3
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
+# all rights reserved
+#
+# Author(s): Lijun Zhu
+
+# get the package
+import altar
+import altar.cuda
+import altar.models.seismic.cuda
+
+# other packages
+import numpy
+import h5py
+
+# make a specialized app that uses this model by default
+class kinematicForwardModel(altar.shells.cudaapplication, family='altar.applications.cudakinematicForward'):
+    """
+    A specialized AlTar application to perform kinematic forward model only;
+    compute slips as functions of patches and time, as well as data predictions from a given set of theta
+    """
+
+    # user configurable state
+    model = altar.cuda.models.model()
+    model.default = altar.models.seismic.cuda.kinematicg()
+    model.doc = "the AlTar model to sample"
+
+    # input theta with (dip
+    theta_input = altar.properties.path(default="theta.h5")
+    theta_input.doc = "the theta input file with a vector of "
+
+    theta_dataset = altar.properties.str(default=None)
+    theta_dataset.doc = "the name/path of the theta dataset in h5 file"
+
+    data_output = altar.properties.path(default="data.h5")
+    data_output.doc = "output file name for data prediction"
+
+    mb_output = altar.properties.path(default="mb.h5")
+    mb_output.doc = "output file name for big M"
+
+    def main(self):
+        # initialize the job
+        self.job.initialize(application=self)
+        self.controller.initialize(application=self)
+        # initialize the model
+        self.model = self.model.initialize(application=self)
+
+        # load theta
+        gM = self.model.loadFileToGPU(filename=self.theta_input, dataset=self.theta_dataset)
+
+        # castBigM from fast sweeping
+        gMb = self.model.castSlipsOfTime(theta=gM)
+
+        # get data prediction
+        gGF = self.model.loadFileToGPU(filename=self.model.green, shape=(self.model.NGbparameters, self.model.observations))
+        gDataPred = self.model.linearGM(gf=gGF, Mb=gMb)
+
+        # save BigM to an h5 file
+        h5file = h5py.File(name=self.mb_output.path, mode='w')
+        h5file.create_dataset(name='kinematic.Mb', data=gMb.copy_to_host(type='numpy'))
+        h5file.close()
+        # save data prediction
+        h5file = h5py.File(name=self.data_output.path, mode='w')
+        h5file.create_dataset(name='kinematic.Data', data=gDataPred.copy_to_host(type='numpy'))
+        h5file.close()
+
+        # all done; indicate success
+        return 0
+
+# bootstrap
+if __name__ == "__main__":
+    # build an instance of the default app
+    app = kinematicForwardModel(name="kinematic")
+    # invoke the main entry point
+    status = app.main()
+    # share
+    raise SystemExit(status)
+
+
+# end of file

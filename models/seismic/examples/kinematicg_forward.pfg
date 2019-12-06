@@ -1,0 +1,105 @@
+;
+; (c) 2013-2019 parasim inc
+; (c) 2010-2019 california institute of technology
+; all rights reserved
+;
+; Author(s): Lijun Zhu
+
+; the kinematic forward model only to produce M(patches, t) (or big M) and data predictions
+; run with kinematicForwardModel --config=thisfile
+kinematic:
+
+    ; theta input h5 file name
+    theta_input = kinematicG_synthetic_theta.txt
+
+    ; output h5 file name
+    ; data prediction is 1d vector with dimension observations
+    data_output = kinematicG_synthetic_data.h5
+    ; Mb is 1d vector arranged as [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
+    mb_output = kinematicG_sythetic_mb.h5
+
+    ; kinematic model, copy from your simulation config
+    model:
+        ; input path
+        case = 9patch
+
+        dataobs:
+            observations = 14148
+            data_file = kinematicG.data.h5
+            cd_std = 5.0e-3
+        ; fixed model parameters
+        ; green's function (2*Ndd*Nas*Nt, observations)
+        ; [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
+        green = kinematicG.gf.h5
+
+        Ndd = 3 ; patches along dipslip
+        Nas = 3 ; patches along strikeslip
+        Nmesh = 30 ; mesh points for each patch
+        dsp = 20.0 ; length for each patch, km
+        Nt = 90 ; number of time intervals
+        Npt = 2 ; mesh points for each time interval
+        dt = 1.0 ; time unit for each interval, second
+        ; initial starting time for each patch
+        t0s = [0.0] * {kinematic.model.patches}
+
+        patches = 9 ; Nas*Ndd (along strike/down dip)
+
+        ; parameters to be simulated
+        ; provide name and orders at first
+        psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
+        ; define each parameterset, the distributions don't matter, only the count
+        psets:
+            strikeslip = altar.cuda.models.parameterset
+            dipslip = altar.cuda.models.parameterset
+            risetime = altar.cuda.models.parameterset
+            rupturevelocity = altar.cuda.models.parameterset
+            hypocenter = altar.cuda.models.parameterset
+
+            ; variables for patches are arranged along dip direction at first [Nas][Ndd]
+            strikeslip:
+                count = {kinematic.model.patches}
+                prep = altar.cuda.distributions.preset ; load preset samples
+                prep.input_file = theta_cascaded.h5 ; file name
+                prep.dataset = ParameterSets/strikeslip ; dataset name in h5
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+
+            dipslip:
+                count = {kinematic.model.patches}
+                prep = altar.cuda.distributions.preset
+                prep.input_file = theta_cascaded.h5 ; file name
+                prep.dataset = ParameterSets/dipslip ; dataset name in h5
+                prep.input_parameters = 18
+                prior = altar.cuda.distributions.uniform
+                prior.support = (-0.5, 20.0)
+
+            risetime:
+                count = {kinematic.model.patches}
+                prior = altar.cuda.distributions.uniform
+                prior.support = (10.0, 30.0)
+
+            rupturevelocity:
+                count = {kinematic.model.patches}
+                prior = altar.cuda.distributions.uniform
+                prior.support= (1.0, 6.0)
+
+            ; along strike(frist), dip directions
+            ; could be sperated into 2 for dip and strike direction
+            hypocenter:
+                count = 2
+                prior = altar.cuda.distributions.gaussian
+                prior.mean = 20.0
+                prior.sigma = 5.0
+
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; number of gpus per task/thread
+    ;job.gpuids = [0] ; gpu slots to be occupied
+    job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 1000
+
+
+; end of file

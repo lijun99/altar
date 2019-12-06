@@ -26,7 +26,7 @@ namespace altar {
     } // of namespace models
 } // of namespace altar
 
- 
+
 /// @brief The kinematic model with big-G implementation on GPU
 ///
 /// @par Primary contents
@@ -68,7 +68,7 @@ protected:
     size_t _Nasf; // (Nas+2)*Nmesh
     size_t _Npatch; // Nas*Ndd
     size_t _NGbparameters; //[Nt][2(strike,dip slips)][Nas][Ndd]
-    
+
     // input
     const size_t * _gidx_map; ///< parameter indices
     // arranged as (strike slips x Npatch, dip slips x Npatch, rupture time x Npatch, rupture velocity x Npatch,
@@ -83,16 +83,18 @@ protected:
 
     const TYPE _it0 = 1.e6; ///< large arrival time for fastsweep
     const size_t _sweep_iter = 1; ///< number of iterations for fastsweeping
-    
+
     cublasHandle_t _cublas_handle;
 
     // method
 public:
     /// initialize the model specific GPU data
     void initialize(const size_t samples);
-    /// calculate the forward model 
+    /// calculate the forward model
     void forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const Gb, TYPE * const prediction,
         const size_t parameters, const size_t batch, bool return_residual=true, cudaStream_t stream=0) const;
+    /// calculate and return the bigM only
+    void calculateBigM(const TYPE * const theta, TYPE * const gMb, const size_t parameters, const size_t batch, cudaStream_t stream=0) const;
 
     // local methods
     /// Initialize the T0 data
@@ -104,19 +106,19 @@ public:
     /// wrapper for interpolation of T0 to TI0 kernel
     void _interpolateT0(const size_t Ns_good, cudaStream_t stream=0) const;
     /// wrapper for casting M_candidate to BigM kernel
-    void _castBigM(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
+    void _castBigM(const TYPE *const gM, TYPE * const gMb, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
     /// perform the BigM x BigG
-    void _linearBigGM(cublasHandle_t handle, const TYPE *const gGb, TYPE * const gDataPrediction,
-        const size_t Ns_good, bool return_residual, cudaStream_t stream=0) const;
+    void linearBigGM(cublasHandle_t handle, const TYPE *const gGb, const TYPE * const gMb,
+        TYPE * const gDataPrediction, const size_t Ns_good, bool return_residual, cudaStream_t stream=0) const;
 
     // meta-methods
 public:
     /// constructor
     cudaKinematicG(
             size_t Nas, size_t Ndd, size_t Nmesh, double dsp, //patch info
-            size_t Nt, size_t Npt, double dt, // time info 
+            size_t Nt, size_t Npt, double dt, // time info
             const TYPE * const gt0s, // starting time
-            size_t samples, size_t parameters, size_t observations, // simulation info 
+            size_t samples, size_t parameters, size_t observations, // simulation info
             const size_t * const gidxMap);
     /// destructor
     virtual ~cudaKinematicG();
