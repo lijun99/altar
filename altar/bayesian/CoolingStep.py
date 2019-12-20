@@ -246,7 +246,7 @@ class CoolingStep:
         annealergrp.create_dataset('covariance', data=self.sigma.ndarray())
         # save parameter sets
         psetsgrp = f.create_group('ParameterSets')
-        if psets is None:
+        if len(psets) == 0 :
             # no parameter sets info provided, save as theta
             psetsgrp.create_dataset('theta', data=self.theta.ndarray())
         else:
