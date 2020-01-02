@@ -3,7 +3,7 @@
 //
 // Lijun Zhu
 // california institute of technology
-// (c) 2016-2019  all rights reserved
+// (c) 2016-2020  all rights reserved
 //
 
 #if !defined(altar_extensions_models_cudacdm_metadata_h)
