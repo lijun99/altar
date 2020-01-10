@@ -3,8 +3,8 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2020 parasim inc
-# (c) 2010-2020 california institute of technology
+# (c) 2013-2019 parasim inc
+# (c) 2010-2019 california institute of technology
 # all rights reserved
 #
 
@@ -15,7 +15,7 @@ import altar
 
 # the protocols
 from .Model import Model as model
-from .ParameterSet import ParameterSet as parameterset
+from .ParameterSet import ParameterSet as parameters
 
 
 # the model base class
@@ -43,7 +43,7 @@ def ensemble():
     return ensemble
 
 
-@altar.foundry(implements=parameterset, tip="a contiguous parameter set")
+@altar.foundry(implements=parameters, tip="a contiguous parameter set")
 def contiguous():
     # grab the factory
     from .Contiguous import Contiguous as contiguous
