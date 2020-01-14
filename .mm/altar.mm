@@ -14,7 +14,7 @@ altar.micro := $(repo.micro)
 altar.revision := $(repo.revision)
 
 # altar consists of a python package
-altar.packages := altar.pkg
+altar.packages := altar.pkg ${if ${value cuda.dir}, altar.cudapkg}
 # libraries
 altar.libraries := altar.lib ${if ${value cuda.dir},altar.cudalib}
 # python extensions
@@ -25,7 +25,7 @@ altar.tests := altar.pkg.tests
 # the altar package meta-data
 altar.pkg.stem := altar
 altar.pkg.root := altar/
-altar.pkg.drivers := altar cudaaltar
+altar.pkg.drivers := altar
 
 # libaltar meta-data
 altar.lib.stem := altar
@@ -41,6 +41,13 @@ altar.ext.wraps := altar.lib
 altar.ext.extern := altar.lib gsl pyre python
 # compile options for the sources
 altar.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
+
+# the altar cuda package metadata
+altar.cudapkg.stem := altar/cuda
+altar.cudapkg.root := cuda/
+altar.cudapkg.drivers := altar
+
+
 
 # the altar CUDA library metadata
 altar.cudalib.stem := cudaaltar
