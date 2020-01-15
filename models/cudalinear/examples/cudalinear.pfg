@@ -9,21 +9,22 @@
 cudalinear:
     ; test case configuration
     model:
-    
-        ; the path of input files 
+
+        ; the path of input files
         case = input
-        
+
         ; the number of free parameters
         parameters = 8
-        
+
         ; data observations
         dataobs = altar.cuda.data.datal2
         dataobs:
             observations = 8
             data_file = data.txt
             cd_file = cd.txt
-        
-        ; parameters to be simulated     
+
+        ; parameters to be simulated
+        psets_list = [pset]
         psets:
             pset = altar.cuda.models.parameterset
             pset:
@@ -31,9 +32,9 @@ cudalinear:
                 count = 8
                 prep = altar.cuda.distributions.gaussian
                 prep.sigma = 0.5
-                prior = altar.cuda.distributions.gaussian 
+                prior = altar.cuda.distributions.gaussian
                 prior.sigma = 0.5
-                
+
         ; fixed model parameters
         green = green.txt
 
