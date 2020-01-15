@@ -74,7 +74,8 @@ class Recorder(
         Save the statistics information to file
         """
         # output filename
-        filename = "BetaStatistics.txt"
+        import os
+        filename = os.path.join(self.output_dir.path, "BetaStatistics.txt")
         # open the file
         statfile = open(filename, "w")
         # write the header
