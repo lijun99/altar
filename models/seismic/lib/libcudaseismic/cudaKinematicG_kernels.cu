@@ -37,7 +37,7 @@ initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE h
     int id_strike = threadIdx.y + blockIdx.y * blockDim.y;
     // check the meshgrid is within range
     if(id_dip >= Nddf || id_strike >= Nasf) return;
-    // meshgrid index in 2d strike(Nasf)xdip (Nddf) grids   
+    // meshgrid index in 2d strike(Nasf)xdip (Nddf) grids
     int id_mesh = id_strike*Nddf + id_dip;
     // find the meshgrid of hypocenter
     int id_hypo_strike = int(hypo_strike/dspf);
@@ -62,10 +62,10 @@ cudaKinematicG_kernels::
 initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0, const size_t Nparam,
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
 {
-    // sample index 
+    // sample index
     int sample = blockIdx.z;
     // get the pointer for this sample, gM[samples, parameters]
-    const TYPE * gM_sample = gM + sample*Nparam; 
+    const TYPE * gM_sample = gM + sample*Nparam;
     // get the hypocenter from M/theta
     TYPE hypo_strike = gM_sample[gIdx[4*Nas*Ndd]] + dsp*1.5; //shifted due to the extra padded edges
     TYPE hypo_dip = gM_sample[gIdx[4*Nas*Ndd+1]] + dsp*1.5;
@@ -73,7 +73,7 @@ initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0
     int Nddf = (Ndd+2)*Nmesh; // x
     int Nasf = (Nas+2)*Nmesh; // y
     TYPE dspf = dsp/Nmesh; // size of meshgrid
-    // get the gT0 pointer for this sample gT0[samples, Nasf, Nddf]  
+    // get the gT0 pointer for this sample gT0[samples, Nasf, Nddf]
     TYPE * gT0_sample = gT0 + sample*Nddf*Nasf;
     // call routine for one sample
     initT0(gT0_sample, Nddf, Nasf, dspf, hypo_dip, hypo_strike, it0);
@@ -100,37 +100,46 @@ setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
     int id_hypo_dip = int(hypo_dip/dspf);
 
     int Nddf = (Ndd+2)*Nmesh;
-    
+    int Nasf = (Nas+2)*Nmesh;
+
     // search the 2x2 window near the hypocenter for nearest 4 points
     TYPE previous_min_distance, min_distance = 0.0, current_distance;
     int iD[4]; // recording the meshgrid index of nearest 4 points
     for (int n=0; n<4; ++n)
-    {   
+    {
         previous_min_distance = min_distance;
         min_distance = it0;
-        for (int i = id_hypo_strike-2; i<=id_hypo_strike+2; ++i)
+        for (int i = max(0, id_hypo_strike-2); i<=min(id_hypo_strike+2, Nasf-1); ++i)
         {
-            for (int j = id_hypo_dip-2; j<=id_hypo_dip+2; ++j)
+            for (int j = max(0, id_hypo_dip-2); j<=min(id_hypo_dip+2, Nddf-1); ++j)
             {
                 // get the grid index
                 int id_mesh = i*Nddf + j;
                 // get the distance to hypocenter
                 current_distance = gT0[id_mesh];
-                if (current_distance>previous_min_distance && current_distance<min_distance)
+                // use '>=' in current_distance>=previous_min_distance
+                // to allow some points to have the same distance
+                if (current_distance>=previous_min_distance && current_distance<min_distance)
                 {
+                    // make sure the
+                    bool previously_found = false;
+                    for(int m=0; m<n; ++m)
+                        if(id_mesh == iD[m]) previously_found = true;
                     // record the new grid with shorter distance
-                    min_distance = current_distance;
-                    iD[n] = id_mesh;
+                    if(!previously_found) {
+                        min_distance = current_distance;
+                        iD[n] = id_mesh;
+                    }
                 }
             }
         }
     }
 
     // (re)set the arrival time for these 4x4 grids
-    bool match; 
-    for (int i = id_hypo_strike-2; i<=id_hypo_strike+2; ++i)
+    bool match;
+    for (int i = 0; i< Nasf; ++i)
     {
-        for (int j = id_hypo_dip-2; j<=id_hypo_dip+2; ++j)
+        for (int j = 0; j< Nddf; ++j)
         {
             // get the grid index
             int id_mesh = i*Nddf + j;
@@ -148,9 +157,9 @@ setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
                     else if (id_dip_patch >= Nas) id_dip_patch = Nas-1;
                     // get the patch index in flattened notation
                     int id_patch = id_strike_patch*Ndd + id_dip_patch;
-                    // get the rupture velocity    
+                    // get the rupture velocity
                     TYPE vr = gM[gIdx[3*Nas*Ndd+id_patch]];
-                    // set the time: distance/vr 
+                    // set the time: distance/vr
                     gT0[id_mesh] /= vr;
                     match = true;
                 }
@@ -235,7 +244,7 @@ upwind(const size_t * gIdx, const TYPE *const gT0, const int i, const int j,
     // get the inverse rupture velocity
     f = 1./gM[gIdx[3*Npatch+i1*Ndd+j1]]; // the index need to be shifted from gT0 to gM
     // compute the new arrival time propagating from neighbors
-    if (fabs(u_xmin-u_ymin) >= f*h) 
+    if (fabs(u_xmin-u_ymin) >= f*h)
     {
         // big difference along dip and strike, use the smaller value
         u_new = min(u_xmin, u_ymin) + f*h;
@@ -301,7 +310,7 @@ fastSweeping_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
     // get the data pointer for current sample
     const TYPE * gM_sample  = gM + sample*Nparam;
     TYPE * gT0_sample = gT0 + sample*Nddf*Nasf;
-    
+
     // get the id along the diagonal of the "expanded" diagonal mesh
     const int id = threadIdx.x;
     if (id>=max(Nasf,Nddf)) return;
@@ -321,7 +330,7 @@ fastSweeping_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
         //        gT0[(i*Nddf+j)*Ns + sample] = upwind(gIdx, gT0, i, j, Np, Nas, Ndd, Nmesh, Ns, sample, gM, h);
         // get the starting mesh coordinate for the present mesh id
         ndd = id - Nf/2;
-        nas = Nf/2 - id; 
+        nas = Nf/2 - id;
         for (i=0; i<Nf; ++i)
         {
             // Upwind the present mesh
@@ -428,7 +437,7 @@ interpolateT0_batched(const TYPE *const gT0, TYPE *const gTI0, const size_t Ns_g
 
     const TYPE * gT0_sample = gT0 + sample*Nddf*Nasf;
     TYPE * gTI0_sample = gTI0 + sample*(Npt_gi*Nas)*(Npt_gi*Ndd);
-    
+
     int i, j;
     TYPE x, y; // the absolute coordinate of a source point
     TYPE xr, yr; // the fraction part of the x/y
@@ -445,7 +454,7 @@ interpolateT0_batched(const TYPE *const gT0, TYPE *const gTI0, const size_t Ns_g
             y = offset + TYPE(j)*TYPE(Nmesh)/TYPE(Npt_gi);
             yr = y-(TYPE)(int(y));
             idy = int(y);
-            
+
             f11 = gT0_sample[idx + idy*Nddf];
             f21 = gT0_sample[idx+1 + idy*Nddf];
             f12 = gT0_sample[idx + (idy+1)*Nddf];
@@ -492,7 +501,7 @@ castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gT
         //gMb [samples][Nt][2(strike,dip slips)][Nas][Ndd]
 
     // for single (current) sample
-    
+
     //strike slip
     TYPE ss = gM_sample[gIdx[patch]];
     // dip slip
@@ -504,7 +513,7 @@ castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gT
     TYPE sdt = dt;
     TYPE t0;
     TYPE hTr=Tr/2.0;
-    TYPE c; // 
+    TYPE c; //
     // get the patch id along dip/strike
     int idx=patch%Ndd, idy=patch/Ndd; // the patch index
     int  idx_ti, idy_ti; // the gTI0 index
@@ -512,7 +521,7 @@ castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gT
     {
         t0=st0+sdt*i; //current time
         c=0.0;
-        // loop over Npt to integrate 
+        // loop over Npt to integrate
         for (idx_ti=idx*Npt_gi; idx_ti<(idx+1)*Npt_gi; idx_ti++)
         {
             for (idy_ti=idy*Npt_gi; idy_ti<(idy+1)*Npt_gi; idy_ti++)
