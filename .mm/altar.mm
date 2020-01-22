@@ -45,8 +45,6 @@ altar.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
 # the altar cuda package metadata
 altar.cudapkg.stem := altar/cuda
 altar.cudapkg.root := cuda/
-altar.cudapkg.drivers := altar
-
 
 
 # the altar CUDA library metadata
