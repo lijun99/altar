@@ -218,67 +218,66 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
             # notify we are starting the verification process
             dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
 
-            # make a loop to make sure there is at least one new sample,
-            # or certain numbers of new samples
-            while True:
-                # the random displacement may have generated candidates that are outside the
-                # support of the model, so we must give it an opportunity to reject them;
-                # initialize the candidate sample by randomly displacing the current one
-                self.displace(displacement=θproposal)
-                θproposal += θ
 
-                # reset the mask and ask the model to verify the sample validity
-                # note that I have redefined model.verify to use theta as input
+            # the random displacement may have generated candidates which are outside the
+            # support of the model, so we must give it an opportunity to reject them;
+            # initialize the candidate sample by randomly displacing the current one
+            self.displace(displacement=θproposal)
+            θproposal += θ
 
-                model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
+            # reset the mask and ask the model to verify the sample validity
+            # note that I have redefined model.verify to use theta as input
+            model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
 
-                invalid_step = int(invalid_flags.sum())
-                valid = samples - invalid_step
-                # if valid > 0, continue; otherwise go back to repropose new samples
-                if valid > 1 :
-                    break
+            invalid_step = int(invalid_flags.sum())
+            valid = samples - invalid_step
 
-            # set indices for valid samples, return valid samples count
-            libcudaaltar.cudaMetropolis_setValidSampleIndices(valid_indices.data, invalid_flags.data,
-                                                              valid_samples.data)
-
-            # get the invalid samples count
+            # add to the invalid samples count
             invalid += invalid_step
-
-            # queue valid samples to first rows of cθ
-            libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
 
             # notify that the verification process is finished
             dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
 
-            # initialize the likelihoods
-            likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
+            # if valid > 0, proceed to Metropolis–Hastings accept/reject for valid samples
+            # otherwise, do nothing and continue next proposal
+            if valid > 0 :
 
-            # compute the probabilities/likelihoods
-            model.likelihoods(annealer=annealer, step=candidate, batch=valid)
+                # notify we are starting accepting samples
+                dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
 
-            # randomize the Metropolis acceptance vector
-            dice = curand.uniform(self.curng, out=dice)
+                # set indices for valid samples, return valid samples count
+                libcudaaltar.cudaMetropolis_setValidSampleIndices(valid_indices.data, invalid_flags.data,
+                                                                  valid_samples.data)
 
-            # notify we are starting accepting samples
-            dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
+                # queue valid samples to first rows of cθ
+                libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
 
-            # accept/reject: go through all the samples
-            libcudaaltar.cudaMetropolis_metropolisUpdate(
-                θ.data, prior.data, data.data, posterior.data, # original
-                cθ.data, cprior.data, cdata.data, cpost.data,  # candidate
-                dice.data, acceptance_flags.zero().data, valid_indices.data, valid)
+                # initialize the likelihoods
+                likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
 
-            # counting the acceptance/rejection
-            accepted_step = int(acceptance_flags.sum())
-            accepted += accepted_step
-            rejected += valid - accepted_step
+                # compute the probabilities/likelihoods
+                model.likelihoods(annealer=annealer, step=candidate, batch=valid)
 
-            # notify we are done accepting samples
-            dispatcher.notify(event=dispatcher.acceptFinish, controller=annealer)
+                # randomize the Metropolis acceptance vector
+                dice = curand.uniform(self.curng, out=dice)
+
+                # accept/reject: go through all the samples
+                libcudaaltar.cudaMetropolis_metropolisUpdate(
+                    θ.data, prior.data, data.data, posterior.data, # original
+                    cθ.data, cprior.data, cdata.data, cpost.data,  # candidate
+                    dice.data, acceptance_flags.zero().data, valid_indices.data, valid)
+
+                # counting the acceptance/rejection
+                accepted_step = int(acceptance_flags.sum())
+                accepted += accepted_step
+                rejected += valid - accepted_step
+
+                # notify we are done accepting samples
+                dispatcher.notify(event=dispatcher.acceptFinish, controller=annealer)
 
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
+
         # all done
         # print(f'stats: accepted {accepted}, invalid {invalid}, rejected {rejected}')
         return accepted, invalid, rejected

@@ -239,7 +239,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
-        self.cuVerify(step, mask, batch=step.samples)
+        self.cuVerify(theta=step.theta, mask=mask)
         return self
 
 
