@@ -1,0 +1,50 @@
+# -*- Makefile -*-
+#
+# michael a.g. aïvázis
+# parasim
+# (c) 1998-2020 all rights reserved
+#
+
+# add me to the pile
+projects += cudaaltar
+
+# project meta-data
+cudaaltar.major := $(repo.major)
+cudaaltar.minor := $(repo.minor)
+cudaaltar.micro := $(repo.micro)
+cudaaltar.revision := $(repo.revision)
+
+# the top level directory
+cudaaltar.home := $(project.home)/cuda
+
+# altar consists of a python package
+cudaaltar.packages := cudaaltar.pkg
+# libraries
+cudaaltar.libraries := cudaaltar.lib
+# python extensions
+cudaaltar.extensions := cudaaltar.ext
+
+
+# the cudaaltar package metadata
+cudaaltar.pkg.root := cuda/
+cudaaltar.pkg.pycdir := $(builder.dest.pyc)altar/cuda/
+
+
+# the cudaaltar library metadata
+cudaaltar.lib.root := lib/libcudaaltar/
+cudaaltar.lib.incdir := $(builder.dest.inc)altar/cuda/
+cudaaltar.lib.extern := gsl pyre cuda
+# compile options for the sources
+cudaaltar.lib.c++.flags += $($(compiler.c++).std.c++17)
+cudaaltar.lib.cuda.flags += $(nvcc.std.c++14)
+
+# the cudaaltar extension meta-data
+cudaaltar.ext.root := ext/
+cudaaltar.ext.pkg := cudaaltar.pkg
+cudaaltar.ext.wraps := cudaaltar.lib
+cudaaltar.ext.extern := cudaaltar.lib gsl pyre python cuda
+# compile options for the sources
+cudaaltar.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
+cudaaltar.ext.lib.cuda.flags += $(nvcc.std.c++14)
+
+# end of file
