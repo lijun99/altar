@@ -8,7 +8,7 @@
 # Author(s): Lijun Zhu
 
 # pull the extension module; this must exist, so let import errors bubble up
-from altar.ext import cudaaltar as libcudaaltar
+from . import cudaaltar as libcudaaltar
 
 
 # end of file

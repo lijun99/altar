@@ -9,7 +9,7 @@
 
 # get the package
 import altar
-import altar.ext.cudaaltar as libcudaaltar
+import altar.cuda.ext.cudaaltar as libcudaaltar
 
 # get the base
 from .cudaDistribution import cudaDistribution
@@ -41,7 +41,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         Arguments:
-            theta cuArray (samples x total_parameters)   
+            theta cuArray (samples x total_parameters)
         """
         # all samples are valid!
         # all done; return the rejection map
@@ -55,7 +55,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         libcudaaltar.cudaGaussian_logpdf(theta.data, prior.data, batch, self.idx_range, (self.mean, self.sigma))
         # all done
         return self
-        
+
     # local variables
 
 # end of file

@@ -9,7 +9,7 @@
 
 # get the package
 import altar
-import altar.ext.cudaaltar as libcudaaltar
+import altar.cuda.ext.cudaaltar as libcudaaltar
 
 # get the base
 from .cudaDistribution import cudaDistribution

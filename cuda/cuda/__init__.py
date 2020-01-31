@@ -33,7 +33,7 @@ from cuda import (
     )
 
 # my extension modules
-from altar.ext import libcudaaltar
+from .ext import cudaaltar as libcudaaltar
 
 
 def get_current_device():
