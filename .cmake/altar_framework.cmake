@@ -101,6 +101,8 @@ function(altar_buildModule)
     ext/metadata.cc
     ext/exceptions.cc
     ext/dbeta.cc
+    ext/condition.cc
+    ext/distributions.cc
     )
 
   # install the altar extension

@@ -18,11 +18,11 @@ namespace altar {
     namespace cuda {
         namespace distributions {
             namespace cudaRanged {
-                
+
                 // verify the validity of samples
                 template <typename real_type>
-                void verify(const real_type * const theta, int * const invalid, 
-                    const size_t samples, const size_t parameters, 
+                void verify(const real_type * const theta, int * const invalid,
+                    const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);

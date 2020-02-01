@@ -18,7 +18,7 @@ if (POLICY CMP0076)
 endif(POLICY CMP0076)
 
 # options
-option(WITH_CUDA "enable support for CUDA" OFF)
+option(WITH_CUDA "enable support for CUDA" ON)
 
 # adjust the include path
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_LIST_DIR}/.cmake)
@@ -49,6 +49,28 @@ altar_cmakeInit()
 altar_cxxInit()
 # set up python
 altar_pythonInit()
+# set up cuda
+if (WITH_CUDA)
+  # check whether cuda toolkit is available
+  include(CheckLanguage)
+  check_language(CUDA)
+  # available
+  if(CMAKE_CUDA_COMPILER)
+    # turn it on
+    enable_language(CUDA)
+    message(STATUS "CUDA Toolkit found and CUDA support is enabled")
+    # other cuda settings
+    if(NOT DEFINED CMAKE_CUDA_STANDARD)
+      set(CMAKE_CUDA_STANDARD 11)
+      set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+    endif()
+  # cuda toolkit not available
+  else()
+    # turn off WITH_CUDA option
+    message(STATUS "CUDA Toolkit not found and set WITH_CUDA to OFF")
+    set(WITH_CUDA OFF)
+  endif()
+endif()
 
 # initialize the variables that describe the staging directory layout
 altar_stagingInit()
@@ -58,11 +80,20 @@ altar_destinationInit()
 # build the framework
 add_subdirectory(altar)
 
+if(WITH_CUDA)
+  find_package(PYRECUDA REQUIRED)
+  add_subdirectory(cuda)
+endif()
+
+
 # build the models
 add_subdirectory(models/emhp)
 add_subdirectory(models/gaussian)
 add_subdirectory(models/mogi)
 add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
+
+#add_subdirectory(model/cudalinear)
+#add_subdirectory(model/seismic)
 
 # end of file
