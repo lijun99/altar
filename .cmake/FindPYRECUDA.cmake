@@ -1,3 +1,8 @@
+# -*- cmake -*-
+#
+# Lijun Zhu (ljzhu@gps.caltech.edu)
+# (c) 2019-2020 all rights reserved
+
 # Find the pyre cuda library
 # pyre search path can be passed by
 #   1) the $LD_LIBRARY_PATH env variable
@@ -40,4 +45,4 @@ set(PYRECUDA_INCLUDE_DIRS ${PYRECUDA_INCLUDE_DIR})
 set(PYRECUDA_LIBRARIES ${PYRECUDA_LIBRARY})
 
 
-# all done
+# end of file

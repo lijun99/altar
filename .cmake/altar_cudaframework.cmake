@@ -51,16 +51,14 @@ function(altar_cuda_buildLibrary)
   # directory that let's us place the files in the correct destination
   file(
     COPY lib/libcudaaltar/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda
     FILES_MATCHING PATTERN *.h PATTERN *.icc
     )
-
   # install the library
   install(
     TARGETS libcudaaltar
     LIBRARY DESTINATION lib
     )
-
   # all done
 endfunction(altar_cuda_buildLibrary)
 

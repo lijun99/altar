@@ -92,10 +92,9 @@ add_subdirectory(models/gaussian)
 add_subdirectory(models/mogi)
 add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
-
+add_subdirectory(models/seismic)
 if(WITH_CUDA)
   add_subdirectory(models/cudalinear)
-#add_subdirectory(model/seismic)
 endif()
 
 # end of file
