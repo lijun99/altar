@@ -63,17 +63,18 @@ function(altar_seismic_cuda_buildLibrary)
     ${CMAKE_INSTALL_PREFIX}/include
     ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRECUDA_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # set the link directories
   target_link_directories(
     libcudaseismic PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
+    ${PYRE_PREFIX_PATH}/lib
     )
   # add the dependencies
   target_link_libraries(
     libcudaseismic PRIVATE
-    ${GSL_LIBRARIES} journal
+    ${GSL_LIBRARIES} journal pyrecuda
     )
   # add the sources
   target_sources(
@@ -117,7 +118,7 @@ function(altar_seismic_cuda_buildModule)
     ${CMAKE_INSTALL_PREFIX}/include
     ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRECUDA_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     )
   # set the linker
@@ -126,9 +127,10 @@ function(altar_seismic_cuda_buildModule)
   target_link_directories(
     cudaseismicmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
+    ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
-  set(CUDA_LIBRARIES cublas cusolver curand ${PYRECUDA_LIBRARIES})
+  set(CUDA_LIBRARIES cublas cusolver curand pyrecuda)
   target_link_libraries(
     cudaseismicmodule PRIVATE
     libcudaseismic libcudaaltar libaltar journal

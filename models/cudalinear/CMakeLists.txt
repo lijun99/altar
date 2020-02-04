@@ -6,9 +6,11 @@
 # get support
 include(altar_cudalinear)
 
-# build the package
-altar_cudalinear_buildPackage()
-# copy the driver
-altar_cudalinear_buildDriver()
-
+# only cuda version is available
+if(WITH_CUDA)
+  # build the package
+  altar_cudalinear_buildPackage()
+  # copy the driver
+  altar_cudalinear_buildDriver()
+endif()
 # end of file

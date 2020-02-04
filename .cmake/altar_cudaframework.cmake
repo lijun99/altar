@@ -29,12 +29,15 @@ function(altar_cuda_buildLibrary)
   target_include_directories(
     libcudaaltar PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS} ${PYRECUDA_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # add the dependencies
   target_link_libraries(
     libcudaaltar PRIVATE
     ${GSL_LIBRARIES}
+    ${PYRE_LIBRARIES}
     )
   # add the sources
   target_sources(
@@ -79,7 +82,7 @@ function(altar_cuda_buildModule)
     ${CMAKE_INSTALL_PREFIX}/include
     ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRECUDA_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     )
   # set the linker
@@ -90,10 +93,10 @@ function(altar_cuda_buildModule)
     ${CMAKE_INSTALL_PREFIX}/lib
     )
   # set the libraries to link against
-  set(CUDA_LIBRARIES cublas cusolver curand ${PYRECUDA_LIBRARIES})
+  set(CUDA_LIBRARIES cublas cusolver curand ${PYRE_LIBRARIES})
   target_link_libraries(
     cudaaltarmodule PRIVATE
-    libcudaaltar libaltar journal
+    libcudaaltar libaltar
     ${CUDA_LIBRARIES}
     )
   # add the sources

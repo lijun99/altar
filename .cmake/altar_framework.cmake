@@ -40,8 +40,11 @@ function(altar_buildLibrary)
   target_include_directories(
     libaltar PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
+
   # add the dependencies
   target_link_libraries(
     libaltar PRIVATE
@@ -86,12 +89,15 @@ function(altar_buildModule)
   target_include_directories(
     altarmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # set  the link directories
   target_link_directories(
     altarmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
+    ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
   target_link_libraries(altarmodule PRIVATE libaltar journal)

@@ -39,12 +39,15 @@ function(altar_cdm_buildLibrary)
   target_include_directories(
     libcdm PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # set the link directories
   target_link_directories(
     libcdm PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
+    ${PYRE_PREFIX_PATH}/lib
     )
   # add the dependencies
   target_link_libraries(
@@ -91,12 +94,15 @@ function(altar_cdm_buildModule)
   target_include_directories(
     cdmmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
+    ${Python3_NumPy_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # set the link directories
   target_link_directories(
     cdmmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
+    ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
   target_link_libraries(cdmmodule PUBLIC libcdm libaltar journal)

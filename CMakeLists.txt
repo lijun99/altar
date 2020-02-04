@@ -42,6 +42,8 @@ if(GSL_FOUND)
     list(APPEND PYTHON_COMPONENTS NumPy)
 endif()
 find_package(Python3 REQUIRED COMPONENTS ${PYTHON_COMPONENTS})
+# pyre and pyre cuda
+find_package(PYRE)
 
 # set up cmake
 altar_cmakeInit()
@@ -50,7 +52,7 @@ altar_cxxInit()
 # set up python
 altar_pythonInit()
 # set up cuda
-if (WITH_CUDA)
+if (WITH_CUDA AND PYRE_CUDA_FOUND)
   # check whether cuda toolkit is available
   include(CheckLanguage)
   check_language(CUDA)
@@ -67,7 +69,7 @@ if (WITH_CUDA)
   # cuda toolkit not available
   else()
     # turn off WITH_CUDA option
-    message(STATUS "CUDA Toolkit not found and set WITH_CUDA to OFF")
+    message(STATUS "CUDA Toolkit or Pyre cuda extension not found; set WITH_CUDA to OFF")
     set(WITH_CUDA OFF)
   endif()
 endif()
@@ -81,10 +83,8 @@ altar_destinationInit()
 add_subdirectory(altar)
 
 if(WITH_CUDA)
-  find_package(PYRECUDA REQUIRED)
   add_subdirectory(cuda)
 endif()
-
 
 # build the models
 add_subdirectory(models/emhp)
@@ -93,8 +93,6 @@ add_subdirectory(models/mogi)
 add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
 add_subdirectory(models/seismic)
-if(WITH_CUDA)
-  add_subdirectory(models/cudalinear)
-endif()
+add_subdirectory(models/cudalinear)
 
 # end of file
