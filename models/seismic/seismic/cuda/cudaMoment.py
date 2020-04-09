@@ -45,7 +45,10 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
     Mw_sigma.doc = " the variance of moment magnitude scale"
 
     Mu = altar.properties.array(default = [32])
-    Mu.doc = "the shear modulus for each patch in unit of GPa, provide one value if the same for all patches"
+    Mu.doc = "the shear modulus for each patch in GPa, provide one value if the same for all patches"
+
+    Mu_patch_file = altar.properties.path(default=None)
+    Mu_patch_file = "input file for the shear modulus of each patch, in Km^2"
 
     slip_sign = altar.properties.str(default='positive')
     slip_sign.validators = altar.constraints.isMember("positive", "negative")
@@ -67,6 +70,9 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         # initialize the parent uniform distribution
         super().cuInitialize(application=application)
 
+        # get the input path
+        ifs = application.pfs["inputs"]
+
         # assign the rng
         self.rng = application.rng.rng
 
@@ -86,7 +92,23 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
 
         # if a file is provided, load it
         if self.area_patch_file is not None:
-            self.area_patches.load(self.area_patch_file.uri)
+            try:
+                # get the path to the file
+                areafile = ifs[self.area_patch_file]
+            # if the file doesn't exist
+            except ifs.NotFoundError:
+                # grab my error channel
+                channel = self.error
+                # complain
+                channel.log(f"missing area_patch_file: no '{self.area_patch_file}' {ifs.path()}")
+                # and raise the exception again
+                raise
+            # if all goes well
+            else:
+                # allocate the vector
+                self.area_patches = altar.vector(shape=self.patches)
+                # and load the file contents into memory
+                self.area_patches.load(self.areafile.uri)
 
         # initialize the shear modulus for each patch
         if len(self.Mu) == 1:
@@ -99,6 +121,8 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         else:
             #
             self.mu_patches = self.Mu
+
+
 
         # all done
         return self
