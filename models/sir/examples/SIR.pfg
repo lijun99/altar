@@ -1,0 +1,86 @@
+;
+; michael a.g. aïvázis
+; orthologue
+; (c) 1998-2020 all rights reserved
+;
+
+; SIR epidemiology model
+SIR:
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+    controller.scheduler.check_positive_definiteness = False
+    controller.sampler.scaling = 0.3
+
+    ; job layout
+    job:
+        tasks = 1       ; number of tasks per host
+        gpus = 0        ; number of gpus per task
+        chains = 2**12  ; number of chains per task
+        steps = 100      ; the length of each chain
+
+    ; event handlers
+    monitors:
+       prof = altar.bayesian.profiler
+
+    ; model configuration
+    model:
+
+        case = LACounty
+        population_base = 10000
+        dataobs:
+            observations = 49
+            data_file = newcases.txt
+            cd_std = 1.e-2
+
+        psets_list = [S0, I0, R0, beta, gamma]
+
+        ; parameter sets
+        psets:
+            S0 = contiguous
+            I0 = contiguous
+            R0 = contiguous
+            beta = contiguous
+            gamma = contiguous
+
+            S0:
+                count = 1
+                prep = uniform
+                prep.support = (1, 10)
+                prior = uniform
+                prior.support = (1, 10)
+
+            I0:
+                count = 1
+                prep = uniform
+                prep.support = (0, 100)
+                prior = uniform
+                prior.support = (0, 100)
+
+            R0:
+                count = 1
+                prep = uniform
+                prep.support = (0, 100)
+                prior = uniform
+                prior.support = (0, 100)
+
+            beta:
+                count = 1
+                prep = uniform
+                prep.support = (0, 1)
+                prior = uniform
+                prior.support = (0, 1)
+
+            gamma:
+                count = 1
+                prep = uniform
+                prep.support = (0, 1)
+                prior = uniform
+                prior.support = (0, 1)
+
+
+; for parallel runs
+mpi.shells.mpirun # altar.plexus.shell:
+    extra = -mca btl self,tcp
+
+; end of file

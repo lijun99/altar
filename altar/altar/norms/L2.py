@@ -45,9 +45,14 @@ class L2(altar.component, family="altar.norms.l2", implements=Norm):
         # the lower triangle, and then just take the norm
 
         # use the lower triangle, no transpose, non-unit diagonal
-        v = altar.blas.dtrmv(
-            sigma_inv.lowerTriangular, sigma_inv.opNoTrans, sigma_inv.nonUnitDiagonal,
-            sigma_inv, v)
+        if isinstance(sigma_inv, altar.matrix):
+            v = altar.blas.dtrmv(
+                sigma_inv.lowerTriangular, sigma_inv.opNoTrans, sigma_inv.nonUnitDiagonal,
+                sigma_inv, v)
+        elif isinstance(sigma_inv, float):
+            v *= sigma_inv
+        else:
+            raise ValueError("L2 norm, sigma_inv should be a matrix or constant")
         # compute the dot product and return it
         return altar.blas.dnrm2(v)
 

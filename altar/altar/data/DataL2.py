@@ -29,9 +29,13 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
     cd_file.doc = "the name of the file with the data covariance matrix"
 
     cd_std = altar.properties.float(default=1.0)
-    cd_std = "the constant covariance for data"
+    cd_std.doc = "the constant covariance for data"
 
-    norm = altar.norms.l2()
+    merge_cd_with_data = altar.properties.bool(default=False)
+    merge_cd_with_data.doc = "whether to merge cd with data"
+
+    norm = altar.norms.norm()
+    norm.default = altar.norms.l2()
     norm.doc = "the norm to use when computing the data log likelihood"
 
     @altar.export
@@ -61,16 +65,20 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         # copy dataobs to their model and use the residual as input of prediction
         # or compute prediction from forward model and subtract the dataobs here
 
-        batch = batch if batch is not None else likelihood.size
+        batch = batch if batch is not None else likelihood.shape
 
         # go through the residual of each sample
         for idx in range(batch):
             # extract it
-            dp = prediction.getColumn(idx)
+            dp = prediction.getRow(idx)
             # subtract the dataobs if residual is not pre-calculated
             if not residual:
                 dp -= self.dataobs
-            likelihood[idx] = self.normalization - 0.5*self.norm.eval(v=dp)
+            if self.merge_cd_with_data:
+                # cd already merged, no need to multiply it by cd
+                likelihood[idx] = self.normalization - 0.5 * self.norm.eval(v=dp)
+            else:
+                likelihood[idx] = self.normalization - 0.5 * self.norm.eval(v=dp, sigma_inv=self.cd_inv)
         # all done
         return self
 
@@ -146,25 +154,27 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         :param cd:
         :return:
         """
+        # grab the number of observations
+        observations = self.observations
+
         if isinstance(cd, altar.matrix):
             # normalization
-            self.normalization = self.computeNormalization(observations=self.observations, cd=cd)
+            self.normalization = self.computeNormalization(observations=observations, cd=cd)
             # inverse matrix
             self.cd_inv = self.computeCovarianceInverse(cd=cd)
             # merge cd to data
-            Cd_inv = self.cd_inv
-            self.dataobs = altar.blas.dtrmv( Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
-                Cd_inv, self.dataobs)
+            if self.merge_cd_with_data:
+                Cd_inv = self.cd_inv
+                self.dataobs = altar.blas.dtrmv( Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
+                    Cd_inv, self.dataobs)
 
         elif isinstance(cd, float):
             # cd is standard deviation
             from math import log, pi as π
             self.normalization = -0.5*log(2*π*cd)*observations;
             self.cd_inv = 1.0/self.cd
-            self.dataobs *= self.cd_inv
-
-        # prepare the residuals matrix
-        self.residuals = self.initializeResiduals(samples=samples, data=self.d)
+            if self.merge_cd_with_data:
+                self.dataobs *= self.cd_inv
 
         # all done
         return self
@@ -216,6 +226,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         return inv
 
     # local variables
+    normalization = 0
     ifs = None
     samples = None
     dataobs = None

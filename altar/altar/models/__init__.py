@@ -42,6 +42,15 @@ def ensemble():
     # and publish it
     return ensemble
 
+@altar.foundry(implements=model, tip="a models that implements psets and dataobs with l2 norm")
+def bayesianl2():
+    # grab the factory
+    from .BayesianL2 import BayesianL2 as bayesianl2
+    # attach its docstring
+    __doc__ = bayesianl2.__doc__
+    # and publish it
+    return bayesianl2
+
 
 @altar.foundry(implements=parameters, tip="a contiguous parameter set")
 def contiguous():

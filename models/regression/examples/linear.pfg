@@ -1,0 +1,55 @@
+;
+; michael a.g. aïvázis
+; orthologue
+; (c) 1998-2020 all rights reserved
+;
+
+; regression model
+regression:
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+    ; job layout
+    job:
+        tasks = 1       ; number of tasks per host
+        gpus = 0        ; number of gpus per task
+        chains = 2**10  ; number of chains per task
+        steps = 100      ; the length of each chain
+
+    ; model configuration
+    model = altar.models.regression.linear
+    model:
+        case = synthetic
+        dataobs:
+            observations = 200
+            data_file = y.txt
+            cd_std = 1.e-2
+        x_file = x.txt
+
+        ; parameter sets
+        psets_list = [slope, intercept]
+        psets:
+            slope = contiguous
+            intercept = contiguous
+
+            slope:
+                count = 1
+                prep = uniform
+                prep.support = (0, 5)
+                prior = uniform
+                prior.support = (0, 5)
+
+            intercept:
+                count = 1
+                prep = uniform
+                prep.support = (0, 5)
+                prior = uniform
+                prior.support = (0, 5)
+
+
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+;    extra = -mca btl self,tcp
+
+; end of file

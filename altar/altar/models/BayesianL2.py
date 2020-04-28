@@ -10,17 +10,16 @@
 
 # the package
 import altar
-import altar.cuda
 # my protocol
-from altar.models.Bayesian import Bayesian
+from .Bayesian import Bayesian
 
 # other
 import numpy
 
 # declaration
-class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
+class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     """
-    The base class of AlTar models that are compatible with Bayesian explorations
+    A (Simplified) Bayesian Model with ParameterSets and L2 data norm
     """
 
     # user configurable state
@@ -37,12 +36,12 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     psets_list = altar.properties.list(default=None)
     psets_list.doc = "list of parameter sets, used to set orders"
 
-    psets = altar.properties.dict(schema=altar.cuda.models.parameters())
+    psets = altar.properties.dict(schema=altar.models.parameters())
     psets.default = dict() # empty
     psets.doc = "an ensemble of parameter sets in the model"
 
-    dataobs = altar.cuda.data.data()
-    dataobs.default = altar.cuda.data.datal2()
+    dataobs = altar.data.data()
+    dataobs.default = altar.data.datal2()
     dataobs.doc = "observed data"
 
     # the path of input files
@@ -53,7 +52,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     idx_map.default = None
     idx_map.doc = "the indices for model parameters in whole theta set"
 
-    return_residual = altar.properties.bool(default=False)
+    return_residual = altar.properties.bool(default=True)
     return_residual.doc = "the forward model returns residual(True) or prediction(False)"
 
     # protocol obligations
@@ -70,65 +69,25 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # find out how many samples I will be working with; this equal to the number of chains
         self.samples = application.job.chains
 
-
-        # cuda method
-        self.device = application.controller.worker.device
-        self.precision = application.job.gpuprecision
-
         # initialize the data
         self.dataobs.initialize(application=application)
         self.observations = self.dataobs.observations
 
         # initialize the parametersets
         # initialize the offset
-        parameters = 0
+        psets = self.psets
+        # initialize the offset
+        offset = 0
 
-        # standalone model (not embedded):
-        if self.embedded is False:
-            # iterate over a list of parameter sets
-            for name in self.psets_list:
-                # get the parameter set from psets dictionary
-                pset = self.psets[name]
-                # set the offset
-                pset.offset = parameters
-                # initialize the pset
-                parameters += pset.cuInitialize(application=application)
-        else: # embedded model
-            # get the psets from master
-            psets_master = application.model.psets
-            for name in self.psets_list:
-                pset = psets_master[name]
-                # add to dictionary
-                self.psets[name] = pset
-                #self.psets.update(name=pset)
-                # update parameters
-                parameters += pset.count
-
-        # print(self.psets, parameters)
-
-            #print("name", name, pset.offset, pset.count, parameters)
+        for name in self.psets_list:
+            # get the parameter set from psets dictionary
+            pset = self.psets[name]
+            # initialize the parameter set
+            offset += pset.initialize(model=self, offset=offset)
         # the total number of parameters is now known, so record it
-        self.parameters = parameters
-
-        # set up an idx_map
-        if self.idx_map is None:
-            idx_map = list()
-            for name, pset in self.psets.items():
-                idx_map += range(pset.offset, pset.offset+pset.count)
-            # sort idx in sequence
-            idx_map.sort()
-            self.idx_map = idx_map
-        self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
+        self.parameters = offset
 
         # all done
-        return self
-
-    def cuInitialize(self, application):
-        """
-        cuda interface
-        """
-
-        #all done
         return self
 
     @altar.export
@@ -139,101 +98,19 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # ask my controller to help me sample my posterior distribution
         return self.controller.posterior(model=self)
 
-
-    def cuInitSample(self, theta):
-        """
-        Fill {theta} with an initial random sample from my prior distribution.
-        """
-        # ask my subsets
-        for name, pset in self.psets.items():
-            # and ask each one to verify the sample
-            pset.prep.cuInitSample(theta=theta)
-
-        # all done
-        return self
-
-    def cuVerify(self, theta, mask):
-        """
-        Check whether the samples in {step.theta} are consistent with the model requirements and
-        update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
-        """
-        # ask my subsets
-        for pset in self.psets.values():
-            # and ask each one to verify the sample
-            pset.prior.cuVerify(theta=theta, mask=mask)
-        # all done; return the rejection map
-        return mask
-
-    def cuEvalPrior(self, theta, prior, batch):
-        """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
-        """
-        # ask my subsets
-        for pset in self.psets.values():
-            # and ask each one to verify the sample
-            pset.prior.cuEvalPrior(theta=theta, prior=prior, batch=batch)
-
-        # all done
-        return self
-
-
-    def cuEvalLikelihood(self, theta, likelihood, batch):
-        """
-        calculate data likelihood and add it to step.prior or step.data
-        """
-        # model has to define this
-        return self
-
-
-    def cuEvalPosterior(self, step, batch):
-        """
-        Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
-        {step.beta} and deposit the result in {step.post}
-        """
-        # prime the posterior
-        step.posterior.copy(step.prior)
-        # compute it; this expression reduces to Bayes' theorem for β->1
-        altar.cuda.cublas.axpy(alpha=step.beta, x=step.data, y=step.posterior, batch=batch)
-        # all done
-        return self
-
-
     @altar.export
-    def likelihoods(self, annealer, step, batch=None):
+    def initializeSample(self, step):
         """
-        Convenience function that computes all three likelihoods at once given the current {step}
-        of the problem
+        Fill {step.θ} with an initial random sample from my prior distribution.
         """
-
-        batch = batch or step.samples
-
-        # grab the dispatcher
-        dispatcher = annealer.dispatcher
-
-        # notify we are about to compute the prior likelihood
-        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
-        # compute the prior likelihood
-        self.cuEvalPrior(theta=step.theta, prior=step.prior, batch=batch)
-        # done
-        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
-
-        # notify we are about to compute the likelihood of the prior given the data
-        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
-        # compute it
-        self.cuEvalLikelihood(theta=step.theta, likelihood=step.data, batch=batch)
-        # done
-        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
-
-        # finally, notify we are about to put together the posterior at this temperature
-        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
-        # compute it
-        self.cuEvalPosterior(step=step, batch=batch)
-        # done
-        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
-
-        # enable chaining
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # go through each parameter set
+        for pset in self.psets.values():
+            # and ask each one to {prep} the sample
+            pset.initializeSample(theta=θ)
+        # and return
         return self
-
 
     @altar.export
     def verify(self, step, mask):
@@ -241,7 +118,130 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
-        self.cuVerify(step, mask, batch=step.samples)
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            pset.verify(theta=θ, mask=mask)
+        # all done; return the rejection map
+        return mask
+
+    def evalPrior(self, theta, prior):
+        """
+        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        """
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            pset.priorLikelihood(theta, prior)
+
+        # all done
+        return self
+
+
+    def forwardModel(self, theta, prediction):
+        """
+        The forward model for a single set of parameters
+        """
+        # i don't know what to do, so...
+        raise NotImplementedError(
+            f"model '{type(self).__name__}' must implement 'forwardModel'")
+
+
+    def forwardModelBatched(self, theta, prediction):
+        """
+        The forward model for a batch of theta: compute prediction from theta
+        also return {residual}=True, False if the difference between data and prediction is computed
+        """
+
+        # The default method computes samples one by one
+        batch = self.samples
+        # create a prediction vector
+        prediction_sample = altar.vector(shape=self.observations)
+        # iterate over samples
+        for sample in range(batch):
+            # obtain the sample (one set of parameters)
+            theta_sample = theta.getRow(sample)
+            # call the forward model
+            self.forwardModel(theta=theta_sample, prediction=prediction_sample)
+            # copy to the prediction matrix
+            prediction.setRow(sample, prediction_sample)
+
+        # all done
+        return self
+
+
+    def evalDataLikelihood(self, theta, likelihood):
+        """
+        calculate data likelihood and add it to step.prior or step.data
+        """
+        # This method assumes that there is a forwardModelBatched defined
+        # Otherwise, please define your own version of this method
+
+        # create a matrix for the prediction (samples, observations)
+        prediction = altar.matrix(shape=(self.samples, self.observations))
+        # survey forward model whether it computes residual or not
+        returnResidual = self.return_residual
+        # call forwardModel to calculate the data prediction or its difference between dataobs
+        self.forwardModelBatched(theta=theta, prediction=prediction)
+        # call data to calculate the l2 norm
+        self.dataobs.evalLikelihood(prediction=prediction, likelihood=likelihood, residual=returnResidual)
+
+        # all done
+        return self
+
+
+    def evalPosterior(self, step):
+        """
+        Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
+        {step.beta} and deposit the result in {step.post}
+        """
+        # prime the posterior
+        step.posterior.copy(step.prior)
+        # compute it; this expression reduces to Bayes' theorem for β->1
+        altar.blas.daxpy(step.beta, step.data, step.posterior)
+        # all done
+        return self
+
+
+    @altar.export
+    def likelihoods(self, annealer, step):
+        """
+        Convenience function that computes all three likelihoods at once given the current {step}
+        of the problem
+        """
+
+        batch = step.samples
+
+        # grab the dispatcher
+        dispatcher = annealer.dispatcher
+
+        # notify we are about to compute the prior likelihood
+        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
+        # compute the prior likelihood
+        self.evalPrior(theta=step.theta, prior=step.prior)
+        # done
+        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
+
+        # notify we are about to compute the likelihood of the prior given the data
+        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # compute it
+        self.evalDataLikelihood(theta=θ, likelihood=step.data)
+        # done
+        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
+
+        # finally, notify we are about to put together the posterior at this temperature
+        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
+        # compute it
+        self.evalPosterior(step=step)
+        # done
+        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
+
+        # enable chaining
         return self
 
 
@@ -254,7 +254,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return False
 
 
-        # implementation details
+    # implementation details
     def mountInputDataspace(self, pfs):
         """
         Mount the directory with my input files
@@ -280,7 +280,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
     def loadFile(self, filename, shape=None, dataset=None, dtype=None):
         """
-        Load an input file to a numpy array (for both float32/64 support)
+        Load an input file to a gsl vector or matrix (for both float32/64 support)
         Supported format:
         1. text file in '.txt' suffix, stored in prescribed shape
         2. binary file with '.bin' or '.dat' suffix,
@@ -291,7 +291,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         :param filename: str, the input file name
         :param shape: list of int
         :param dataset: str, name/key of dataset for h5 input only
-        :return: output numpy.array
+        :return: output gsl vector/matrix
         """
 
         # decide the data type of the loaded vector/matrix
@@ -338,67 +338,39 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
         if shape is not None:
             cpuData = cpuData.reshape(shape)
+
+        # convert to gsl data
+
+
         # all done
         return cpuData
 
-
-    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None, dtype=None):
+    def restrict(self, theta):
         """
-        Load an input file to a gpu (for both float32/64 support)
-        Supported format:
-        1. text file in '.txt' suffix, stored in prescribed shape
-        2. binary file with '.bin' or '.dat' suffix,
-            the precision must be same as the desired gpuprecision,
-            and users must specify the shape of the data
-        3. (preferred) hdf5 file in '.h5' suffix (preferred)
-            the metadata of shape, precision is included in .h5 file
-        :param filename: str, the input file name
-        :param shape: list of int
-        :param dataset: str, name/key of dataset for h5 input only
-        :return: out altar.cuda.matrix/vector
+        Return my portion of the sample matrix {theta}
         """
+        # find out how many samples in the set
+        samples = theta.rows
+        # get my parameter count
+        parameters = self.parameters
+        # get my offset in the samples
+        offset = self.offset
 
-        dtype = dtype or self.precision
+        # find where my samples live within the overall sample matrix:
+        start = 0, offset
+        # form the shape of the sample matrix that's mine
+        shape = samples, parameters
 
-        # load to cpu as a numpy array at fist
-        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
-
-        # if output gpu matrix/vector is not pre-allocated
-        if out is None:
-            # if vector
-            if cpuData.ndim == 1:
-                out = altar.cuda.vector(shape=cpuData.shape[0], dtype=dtype)
-            # if matrix
-            elif cpuData.ndim == 2:
-                out = altar.cuda.matrix(shape=cpuData.shape, dtype=dtype)
-            else:
-                channel = self.error
-                raise channel.log(f"unsupported data dimension {cpuData.shape}")
-
-        out.copy_from_host(source=cpuData)
-        # all done
-        return out
-
-    def restricted(self, theta, batch):
-        """
-        extract theta which contains model's own parameters
-        """
-        # allocate model's theta on gpu
-        if self.gtheta is None:
-            self.gtheta = altar.cuda.matrix(shape=(theta.shape[0], self.parameters), dtype=theta.dtype)
-
-        # extract theta according to idx_map
-        theta.copycols(dst=self.gtheta, indices=self.gidx_map, batch=batch)
-        # all done
-        return self.gtheta
+        # return a view to the portion of the sample that's mine: i own data in all sample
+        # rows, starting in the column indicated by my {offset}, and the width of my block is
+        # determined by my parameter count
+        return theta.view(start=start, shape=shape)
 
     # private data
     observations = None
     device = None
     precision = None
     ifs = None # the filesystem with the input files
-    gidx_map = None # idx_map on gpu
-    gtheta = None # theta with own parameters
 
 
 # end of file
