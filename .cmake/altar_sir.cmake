@@ -30,7 +30,7 @@ endfunction(altar_sir_buildPackage)
 function(altar_sir_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/sir
+    PROGRAMS bin/SIR
     DESTINATION bin
     )
   # all done

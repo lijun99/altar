@@ -12,13 +12,13 @@ import altar
 import altar.models.seismic
 
 # make a specialized app that uses this model by default
-class seismic(altar.shells.cudaapplication, family='altar.applications.cudaseismic'):
+class seismic(altar.shells.altar, family='altar.applications.seismic'):
     """
     A specialized AlTar application that exercises the static inversion model
     """
 
     # user configurable state
-    model = altar.cuda.models.model(default='cudastatic')
+    model = altar.models.model(default='altar.models.seismic.cudastatic')
     model.doc = "the AlTar model to sample"
     pass
 
@@ -27,8 +27,8 @@ class seismic(altar.shells.cudaapplication, family='altar.applications.cudaseism
 if __name__ == "__main__":
 
     # ask for a model
-    # build an instance of the default app    
-    app = seismic(name='cudastatic')
+    # build an instance of the default app
+    app = seismic(name='slipmodel')
 
     # invoke the main entry point
     status = app.run()

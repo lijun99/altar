@@ -65,8 +65,8 @@ slipmodel:
         prof = altar.bayesian.profiler
 
     ; run configuration
-    job.hosts = 3 ; number of hosts/nodes
-    job.tasks = 3 ; number of tasks per host
+    job.hosts = 1 ; number of hosts/nodes
+    job.tasks = 2 ; number of tasks per host
     job.gpus = 1  ; number of gpus per task
     job.gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
     ;job.gpuids = [0, 0, 0, 0, 0, 0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
@@ -78,7 +78,7 @@ slipmodel:
 
 
 ; for parallel runs
-mpi.shells.slurm # slipmodel.shell:
+mpi.shells.slurm : ; # slipmodel.shell:
     submit = True
     queue = gpu
 
