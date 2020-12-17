@@ -168,7 +168,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         :param prediction:
         :return:  prediction
         """
-        prediction = prediction or altar.cuda.vector(shape=gf.shape[1])
+        prediction = prediction or altar.cuda.vector(shape=gf.shape[1], dtype=self.precision)
         if observation is None :
             return_residual = False
         else :
