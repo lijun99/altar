@@ -41,6 +41,8 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
     rejectionWeight = altar.properties.float(default=1)
     rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
 
+    useFixedScaling = altar.properties.bool(default=False)
+    useFixedScaling.doc = "whether to use a fixed scaling"
 
     # protocol obligations
     @altar.export
@@ -110,7 +112,8 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         Update my statistics based on the results of walking my Markov chains
         """
         # update the scaling of the parameter covariance matrix
-        self.adjustCovarianceScaling(*statistics)
+        if not self.useFixedScaling:
+            self.adjustCovarianceScaling(*statistics)
         # all done
         return
 
