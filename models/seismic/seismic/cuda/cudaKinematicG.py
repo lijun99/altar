@@ -79,7 +79,8 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         self.NGbparameters = 2*self.Nas*self.Ndd*self.Nt
         self.gGF=self.loadFileToGPU(filename=self.green, shape=(self.NGbparameters, self.observations))
         # merge covariance to gf
-        self.mergeCovarianceToGF()
+        if not self.forwardonly:
+            self.mergeCovarianceToGF()
 
         # prepare the residuals matrix
         self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
@@ -184,13 +185,18 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
-        to be loaded by super class cuEvalLikelihood which already decides where the local likelihood is added to
+        Compute the likelihood from my forward problem
+
         """
+
+        # residuals = dataPrediction - dataObservation
         residuals = self.gDprediction
-        # call forward to caculate the data prediction or its difference between dataobs
+
+        # call forward model to calculate the data prediction or its difference between dataobs
         self.forwardModelBatched(theta=theta, gf=self.gGF, prediction=residuals, batch=batch,
                 observation= self.dataobs.gdataObsBatch)
-        # call data to calculate the l2 norm
+
+        # call data method to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
             residual=True, batch=batch)
         # return the likelihood
@@ -202,7 +208,8 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         """
 
         # merge cd with Green's function
-        cd_inv = self.dataobs.gcd_inv
+        cd_inv = self.dataobs.cd_inv
+
         green = self.gGF
         # check whether cd is a constant or a matrix
         if isinstance(cd_inv, float):
@@ -212,7 +219,8 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
             cublas.trmm(cd_inv, green, out=green, side=cublas.SideRight, uplo=cublas.FillModeUpper,
                 transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
                 handle = self.cublas_handle)
-
+        # release gcd_inv from gpu memory
+        self.dataobs.release_cd()
 
         # all done
         return

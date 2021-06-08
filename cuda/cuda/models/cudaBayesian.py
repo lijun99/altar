@@ -34,6 +34,9 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     embedded = altar.properties.bool(default=False)
     embedded.doc = "whether the model is embedded in an ensemble of models"
 
+    forwardonly = altar.properties.bool(default=False)
+    forwardonly.doc = "whether to run the simulation or the forward problem only"
+
     psets_list = altar.properties.list(default=None)
     psets_list.doc = "list of parameter sets, used to set orders"
 
@@ -104,9 +107,6 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
                 # update parameters
                 parameters += pset.count
 
-        # print(self.psets, parameters)
-
-            #print("name", name, pset.offset, pset.count, parameters)
         # the total number of parameters is now known, so record it
         self.parameters = parameters
 
@@ -119,7 +119,6 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             idx_map.sort()
             self.idx_map = idx_map
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
-
         # all done
         return self
 
@@ -322,7 +321,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
                     else:
                         shape = out.shape
                 # read and reshape, users need to check the precision
-                cpuData = numpy.fromfile(file.uri.path, dtype=self.precision).reshape(shape)
+                cpuData = numpy.fromfile(file.uri.path, dtype=dtype)
             # hdf5 file
             elif suffix == '.h5':
                 # get support

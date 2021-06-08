@@ -46,7 +46,9 @@ class kinematicForwardModel(altar.shells.cudaapplication, family='altar.applicat
         # initialize the job
         self.job.initialize(application=self)
         self.controller.initialize(application=self)
+
         # initialize the model
+        self.model.forwardonly = True
         self.model = self.model.initialize(application=self)
 
         # load theta
@@ -56,7 +58,7 @@ class kinematicForwardModel(altar.shells.cudaapplication, family='altar.applicat
         gMb = self.model.castSlipsOfTime(theta=gM)
 
         # get data prediction
-        gGF = self.model.loadFileToGPU(filename=self.model.green, shape=(self.model.NGbparameters, self.model.observations))
+        gGF = self.model.gGF
         gDataPred = self.model.linearGM(gf=gGF, Mb=gMb)
 
         # save BigM to an h5 file

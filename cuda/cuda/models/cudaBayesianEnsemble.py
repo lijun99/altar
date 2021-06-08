@@ -145,9 +145,9 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # to contribute to the computation of the data likelihood
 
             # make a local copy of theta if needed
-            # mtheta = model.restricted(theta=step.theta, batch=batch)
+            model_theta = model.restricted(theta=step.theta, batch=batch)
 
-            model.cuEvalLikelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
+            model.cuEvalLikelihood(theta=model_theta, likelihood=datallk.zero(), batch=batch)
             if model.cascaded:
                 step.prior += datallk
             else:

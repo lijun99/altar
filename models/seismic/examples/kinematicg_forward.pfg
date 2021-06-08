@@ -16,7 +16,7 @@ kinematic:
     ; data prediction is 1d vector with dimension observations
     data_output = kinematicG_synthetic_data.h5
     ; Mb is 1d vector arranged as [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
-    mb_output = kinematicG_sythetic_mb.h5
+    mb_output = kinematicG_synthetic_mb.h5
 
     ; kinematic model, copy from your simulation config
     model:

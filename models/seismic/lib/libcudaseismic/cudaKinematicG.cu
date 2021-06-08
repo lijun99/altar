@@ -56,7 +56,7 @@ calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters
     // find 4 nearest mesh grids close to hypocenter, set their arrival time
     _setT0(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival times for all mesh grids
-    _fastSweeping(gM_candidate_queued, parameters, good_samples, stream); // where idx_map comes to play
+    _fastSweeping(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival time for patches (average over mesh grids, but fine-tuned on time intervals Npt)
     _interpolateT0(good_samples, stream);
     // cast to time dependent slips for patches; gMb[samples][Nt][2(strike,dip slips)][Nas][Ndd]
