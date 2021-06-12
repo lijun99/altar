@@ -13,6 +13,7 @@ from .Application import Application as application
 # the plexus
 from .AlTar import AlTar as altar
 
-from .Application import Application as cudaapplication
 
+from .Application import Application as cudaapplication
+from .cudaAlTar import cudaAlTar as cudaaltar
 # end of file

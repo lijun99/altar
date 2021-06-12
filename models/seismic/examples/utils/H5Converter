@@ -99,15 +99,6 @@ class H5Converter(altar.application, family="altar.shells.h5converter"):
         return 0
 
     # pyre framework hooks
-    # support for the help system
-    def pyre_banner(self):
-        """
-        Place the application banner in the {info} channel
-        """
-        # show the package header
-        return altar.meta.header
-
-
     # interactive session management
     def pyre_interactiveSessionContext(self, context):
         """

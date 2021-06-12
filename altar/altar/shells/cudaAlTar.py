@@ -1,0 +1,126 @@
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+# michael a.g. aïvázis <michael.aivazis@para-sim.com>
+#
+# (c) 2013-2020 parasim inc
+# (c) 2010-2020 california institute of technology
+# all rights reserved
+#
+
+# support
+import altar
+import altar.cuda
+
+
+# the plexus
+class cudaAlTar(altar.plexus, family="altar.shells.cudaaltar", namespace="altar"):
+    """
+    The main action dispatcher for the simple AlTar application
+    """
+
+    # types
+    from .Action import Action as pyre_action
+
+
+    # user configurable state
+    job = altar.simulations.run()
+    job.doc = "the job input parameters"
+
+    model = altar.models.model()
+    model.doc = "the AlTar model to sample"
+
+    rng = altar.simulations.rng()
+    rng.doc = "the random number generator"
+
+    controller = altar.bayesian.controller()
+    controller.doc = "my simulation controller"
+
+    monitors = altar.properties.dict(schema=altar.simulations.monitor())
+    monitors.doc = "a collection of event handlers"
+
+
+    # protocol obligations
+    @altar.export
+    def main(self, *args, **kwds):
+        """
+        The main entry point
+        """
+        # initialize the job parameters
+        self.job.initialize(application=self)
+        # the random number generator
+        self.rng.initialize()
+        # the controller
+        self.controller.initialize(application=self)
+        # and the model; attach whatever the model initialization returns, just in case the
+        # model selects an implementation strategy based on my context
+        self.model = self.model.initialize(application=self)
+        # chain up
+        return super().main(*args, **kwds)
+
+    def initialize(self):
+        """
+        Initialize without running, for debug purpose only
+        """
+        # initialize the job parameters
+        self.job.initialize(application=self)
+        # the random number generator
+        self.rng.initialize()
+        # the controller
+        self.controller.initialize(application=self)
+        # and the model; attach whatever the model initialization returns, just in case the
+        # model selects an implementation strategy based on my context
+        self.model = self.model.initialize(application=self)
+
+        return self
+
+    # pyre framework hooks
+    # support for the help system
+    def pyre_banner(self):
+        """
+        Place the application banner in the {info} channel
+        """
+        # show the package header
+        return altar.meta.header
+
+
+    # interactive session management
+    def pyre_interactiveSessionContext(self, context):
+        """
+        Go interactive
+        """
+        # protect against bad context
+        if context is None:
+            # by initializing an empty one
+            context = {}
+
+        # add some symbols
+        context["altar"] = altar # my package
+
+        # and chain up
+        return super().pyre_interactiveSessionContext(context=context)
+
+
+    # machine layout adjustments for MPI runs
+    def pyre_mpi(self):
+        """
+        Transfer my {job} settings to the MPI shell
+        """
+        # get my shell
+        shell = self.shell
+        # if the programming model is not {MPI}
+        if shell.model != "mpi":
+            # something really bad has happened
+            self.firewall.log(f"the {pyre_mpi} hook with model={shell.model}")
+
+        # get my job parameters
+        job = self.job
+        # transfer the job settings
+        shell.hosts = job.hosts
+        shell.tasks = job.tasks
+
+        # all done
+        return self
+
+
+# end of file

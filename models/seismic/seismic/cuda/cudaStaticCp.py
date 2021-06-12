@@ -145,9 +145,6 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         observations = self.observations
         nCmu = self.nCmu
 
-        dtype_cp = 'float64'
-        dtype_model = model.dtype
-
         # allocate Cp if not pre-allocated
         Cp = cp or altar.cuda.matrix(shape=(observations, observations), dtype=self.dtype_cp)
 

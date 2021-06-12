@@ -177,6 +177,13 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # nothing to do
         return self
 
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        # do nothing
+        return
 
     # implementation details
     def mountInputDataspace(self, pfs):

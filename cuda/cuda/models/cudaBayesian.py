@@ -34,9 +34,6 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     embedded = altar.properties.bool(default=False)
     embedded.doc = "whether the model is embedded in an ensemble of models"
 
-    forwardonly = altar.properties.bool(default=False)
-    forwardonly.doc = "whether to run the simulation or the forward problem only"
-
     psets_list = altar.properties.list(default=None)
     psets_list.doc = "list of parameter sets, used to set orders"
 
@@ -58,6 +55,20 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
     return_residual = altar.properties.bool(default=False)
     return_residual.doc = "the forward model returns residual(True) or prediction(False)"
+
+    # options for performing forward model only
+    forwardonly = altar.properties.bool(default=False)
+    forwardonly.doc = "whether to run the simulation or the forward problem only"
+
+    # input theta (one sample)
+    theta_input = altar.properties.path(default="theta.h5")
+    theta_input.doc = "the theta input file with a vector of parameters"
+
+    theta_dataset = altar.properties.str(default=None)
+    theta_dataset.doc = "the name/path of the theta dataset in h5 file"
+
+    forward_output = altar.properties.path(default="forward_prediction.h5")
+    forward_output.dpc = "the name/path of the file to save forward problem results"
 
     # protocol obligations
     @altar.export
@@ -119,6 +130,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             idx_map.sort()
             self.idx_map = idx_map
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
+
         # all done
         return self
 
@@ -253,7 +265,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return False
 
 
-        # implementation details
+    # implementation details
     def mountInputDataspace(self, pfs):
         """
         Mount the directory with my input files
@@ -390,6 +402,14 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         theta.copycols(dst=self.gtheta, indices=self.gidx_map, batch=batch)
         # all done
         return self.gtheta
+
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        # each model needs to define its own version
+        return
 
     # private data
     observations = None

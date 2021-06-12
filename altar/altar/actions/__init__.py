@@ -32,4 +32,14 @@ def sample():
     # and  return the panel
     return Sample
 
+# sample the posterior distribution of a model
+@altar.foundry(implements=altar.action, tip="perform the forward modeling with a given parameter set")
+def forward():
+    # get the command panel
+    from .Forward import Forward
+    # attach the docstring
+    __doc__ = Forward.__doc__
+    # and  return the panel
+    return Forward
+
 # end of file

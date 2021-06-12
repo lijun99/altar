@@ -88,6 +88,11 @@ class Model(altar.protocol, family="altar.models"):
         Notification that a β step just ended
         """
 
+    @altar.provides
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
 
     # framework hooks
     @classmethod

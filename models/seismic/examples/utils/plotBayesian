@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+#
+# (c) 2013-2020 parasim inc
+# (c) 2010-2020 california institute of technology
+# all rights reserved
+#
+# Author(s): Lijun Zhu
+
+# the framework
+import altar
+# externals
+import h5py
+import numpy
+import os
+
+# app
+class PlotBayesian(altar.application, family="altar.application.plotbayesian"):
+    """
+    A tool to plot histograms of prior/likelihood/posterior densities
+    """
+
+    # user configurable state
+    case = altar.properties.path(default='./')
+    case.doc = "the directory of input files, default is current directory"
+
+    step = altar.properties.path(default='step_final.h5')
+    step.doc = "the beta-step hdf5 file, default is step_final.h5"
+
+    bin = altar.properties.int(default=None)
+    bin.doc = "the number of bins for histograms"
+
+    # protocol obligation
+    @altar.export
+    def main(self, *args, **kwds):
+        """
+        The main entry point
+        """
+
+        # mount input fs
+        try:
+            # mount the directory with my input data
+            ifs = altar.filesystem.local(root=self.case)
+        # if it fails
+        except altar.filesystem.MountPointError as error:
+            # grab my error channel
+            channel = self.error
+            # complain
+            channel.log(f"bad case name: '{self.case}'")
+            channel.log(str(error))
+            # and bail
+            raise SystemExit(1)
+
+        # assign it to application.pfs
+        self.pfs["inputs"] = ifs.discover()
+
+        # check the existence of kernel h5 file
+        h5file = ifs[self.step]
+
+        # open h5 file
+        datasets = h5py.File(h5file.uri.path, 'r')
+
+        # import matplotlib
+        import matplotlib.pyplot as plt
+
+        # create subplot
+        pltprior = plt.subplot(311, title='Histograms of Bayesian probabilities')
+        # get prior
+        prior = numpy.asarray(datasets.get('Bayesian/prior'))
+        # set bins if not given
+        bin = self.bin or prior.size//64
+        # plot histgram
+        n, bins, patches = pltprior.hist(prior, bin, facecolor='blue', alpha=0.5, label='prior')
+        pltprior.legend()
+
+        # repeat for data likelihood
+        pltllk = plt.subplot(312)
+        llk = numpy.asarray(datasets.get('Bayesian/likelihood'))
+        n, bins, patches = pltllk.hist(llk, bin, facecolor='blue', alpha=0.5, label='likelihood')
+        pltllk.legend()
+
+        # repeat for posterior
+        pltposterior = plt.subplot(313)
+        posterior = numpy.asarray(datasets.get('Bayesian/posterior'))
+        n, bins, patches = pltposterior.hist(posterior, bin, facecolor='blue', alpha=0.5,  label='posterior')
+        pltposterior.legend()
+
+        # set title and xlabel
+        plt.title=('Histograms of Bayesian probabilities')
+        plt.xlabel('Log probabilities')
+        plt.show()
+
+        # close the hdf5 file
+        datasets.close()
+
+        # all done
+        return 0
+
+    # pyre framework hooks
+    # support for the help system
+    def pyre_banner(self):
+        """
+        Place the application banner in the {info} channel
+        """
+        # show the package header
+        return altar.meta.header
+
+    # interactive session management
+    def pyre_interactiveSessionContext(self, context):
+        """
+        Go interactive
+        """
+        # protect against bad context
+        if context is None:
+            # by initializing an empty one
+            context = {}
+
+        # add some symbols
+        context["plotbayesian"] = plotbayesian  # my package
+
+        # and chain up
+        return super().pyre_interactiveSessionContext(context=context)
+
+
+# bootstrap
+if __name__ == "__main__":
+    # instantiate
+    app = PlotBayesian(name="plotbayesian")
+    # invoke
+    status = app.run()
+    # share
+    raise SystemExit(status)
+
+
+# end of file

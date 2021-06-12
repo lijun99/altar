@@ -71,5 +71,12 @@ class Null(Bayesian, family="altar.models.null"):
         # do nothing
         return mask
 
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        # do nothing
+        return
 
 # end of file

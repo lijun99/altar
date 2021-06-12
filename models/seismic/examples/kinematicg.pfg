@@ -114,6 +114,12 @@ slipmodel:
                 ; initial starting time for each patch
                 t0s = [0.0] * {slipmodel.model.patches}
 
+        ; options only for forward problem with a given sample, no effect for simulation mode
+        ; forward theta input
+        theta_input = theta_mean.txt
+        ; forward output file
+        forward_output = forward_prediction.h5
+
     ; controller/annealer
     controller:
         sampler = altar.cuda.bayesian.metropolis

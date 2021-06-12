@@ -30,7 +30,7 @@ endfunction(altar_seismic_buildPackage)
 function(altar_seismic_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/seismic bin/H5Converter
+    PROGRAMS bin/seismic
     DESTINATION bin
     )
   # all done
@@ -161,7 +161,7 @@ endfunction(altar_seismic_cuda_buildModule)
 function(altar_seismic_cuda_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/slipmodel bin/kinematicForwardModel
+    PROGRAMS bin/slipmodel bin/slipmodel.plexus bin/kinematicForwardModel
     DESTINATION bin
     )
   # all done

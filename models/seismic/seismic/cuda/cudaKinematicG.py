@@ -77,7 +77,11 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
         # load the green's function
         self.NGbparameters = 2*self.Nas*self.Ndd*self.Nt
-        self.gGF=self.loadFileToGPU(filename=self.green, shape=(self.NGbparameters, self.observations))
+        self.GF=self.loadFile(filename=self.green, shape=(self.NGbparameters, self.observations))
+
+        # prepare the GF in gpu
+        self.gGF = altar.cuda.matrix(shape=self.GF.shape, dtype=self.precision)
+
         # merge covariance to gf
         if not self.forwardonly:
             self.mergeCovarianceToGF()
@@ -155,7 +159,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         """
         # allocate Mb if not provided
         Mb = Mb or altar.cuda.vector(shape=self.NGbparameters, dtype=self.precision)
-        parameters = theta.shape
+        parameters = self.parameters
         # call cuda/c extension method
         libcudaseismic.kinematicg_castMb(self.cmodel, theta.data, Mb.data, parameters)
         # all done
@@ -169,7 +173,8 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         :param prediction:
         :return:  prediction
         """
-        prediction = prediction or altar.cuda.vector(shape=gf.shape[1], dtype=self.precision)
+        observations = gf.shape[1]
+        prediction = prediction or altar.cuda.vector(shape=observations, dtype=self.precision)
         if observation is None :
             return_residual = False
         else :
@@ -204,26 +209,66 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
     def mergeCovarianceToGF(self):
         """
-        merge cd with green function
+        merge data covariance (cd) with green function
         """
-
-        # merge cd with Green's function
-        cd_inv = self.dataobs.cd_inv
-
+        # get references for data covariance
+        cd_inv = self.dataobs.gcd_inv
+        # get a reference for green's function
         green = self.gGF
+        # copy from CPU
+        green.copy_from_host(source=self.GF)
         # check whether cd is a constant or a matrix
         if isinstance(cd_inv, float):
             green *= cd_inv
         elif isinstance(cd_inv, altar.cuda.matrix):
-            # (NGbparameters x obs) x (obsxobs)  = (NGbparameters x obs)
-            cublas.trmm(cd_inv, green, out=green, side=cublas.SideRight, uplo=cublas.FillModeUpper,
-                transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit, alpha=1.0,
-                handle = self.cublas_handle)
+            # (obsxobs) x (obsxparameters) = (obsxparameters)
+            cublas.trmm(cd_inv, green, out=green,
+                        side=cublas.SideLeft,
+                        uplo=cublas.FillModeUpper,
+                        transa = cublas.OpNoTrans,
+                        diag=cublas.DiagNonUnit,
+                        alpha=1.0,
+                        handle = self.cublas_handle)
         # release gcd_inv from gpu memory
         self.dataobs.release_cd()
 
         # all done
         return
+
+        # all done
+        return
+
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        import h5py
+
+        # get theta
+        gtheta = theta or self.loadFileToGPU(filename=self.theta_input,
+                                             dataset=self.theta_dataset)
+
+
+        # castBigM from fast sweeping
+        gMb = self.castSlipsOfTime(theta=gtheta)
+
+        # get a reference of green's function
+        gGF = self.gGF
+        # copy from CPU
+        gGF.copy_from_host(source=self.GF)
+        # get data prediction
+        gDataPred = self.linearGM(gf=gGF, Mb=gMb)
+
+        # save BigM to an h5 file
+        h5file = h5py.File(name=self.forward_output.path, mode='a')
+        h5file.create_dataset(name='kinematic.Mb', data=gMb.copy_to_host(type='numpy'))
+        h5file.create_dataset(name='kinematic.Data', data=gDataPred.copy_to_host(type='numpy'))
+        h5file.close()
+
+        # all done
+        return
+
 
     # private data
     # inputs

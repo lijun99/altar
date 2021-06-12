@@ -44,7 +44,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
     gpuids.default = None
     gpuids.doc = "the list of gpu ids for parallel jobs"
 
-    chains = altar.properties.int(default=1)
+    chains = altar.properties.int(default=2**6)
     chains.doc = "the number of chains per worker"
 
     steps = altar.properties.int(default=20)
@@ -122,9 +122,9 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
             # get the gpu ids requested
             if self.gpuids is None:
                 self.gpuids = list(range(requested))
-            
+
             requested = max(self.gpuids)
-            
+
             # if the user asked for more than we have
             if requested > available:
                 # be civilized

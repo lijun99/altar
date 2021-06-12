@@ -55,7 +55,8 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         self.gDataPred = altar.cuda.matrix(shape=(self.samples, self.observations),
                                            dtype=self.precision)
         # merge covariance to green's function
-        self.mergeCovarianceToGF()
+        if not self.forwardonly:
+            self.mergeCovarianceToGF()
 
         # all done
         return self
@@ -183,6 +184,33 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
                         diag=cublas.DiagNonUnit,
                         alpha=1.0,
                         handle = self.cublas_handle)
+        # all done
+        return
+
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        import h5py
+
+        # get theta
+        gtheta = theta or self.loadFileToGPU(filename=self.theta_input,
+                                             dataset=self.theta_dataset)
+        # allocate predicted data
+        gData = altar.cuda.vector(shape=self.observations, dtype = self.precision)
+        # get a reference for green's function
+        gGF = self.gGF
+        # copy from CPU
+        gGF.copy_from_host(source=self.GF)
+        # forward model
+        self.forwardModel(theta=gtheta, green=gGF, prediction=gData)
+
+        # save data prediction
+        h5file = h5py.File(name=self.forward_output.path, mode='a')
+        h5file.create_dataset(name='static.Data', data=gData.copy_to_host(type='numpy'))
+        h5file.close()
+
         # all done
         return
 

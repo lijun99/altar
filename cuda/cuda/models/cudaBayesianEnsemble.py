@@ -15,6 +15,8 @@ import altar.cuda
 # my superclass
 from altar.models.Bayesian import Bayesian
 
+# other
+import numpy
 
 # declaration
 class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
@@ -38,6 +40,20 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
     # the path of input files
     case = altar.properties.path(default="input")
     case.doc = "the directory with the input files"
+
+    # options for performing forward model only
+    forwardonly = altar.properties.bool(default=False)
+    forwardonly.doc = "whether to run the simulation or the forward problem only"
+
+    # input theta (one sample)
+    theta_input = altar.properties.path(default="theta.h5")
+    theta_input.doc = "the theta input file with a vector of parameters"
+
+    theta_dataset = altar.properties.str(default=None)
+    theta_dataset.doc = "the name/path of the theta dataset in h5 file"
+
+    forward_output = altar.properties.path(default="forward_prediction.h5")
+    forward_output.doc = "the name/path of the file to save forward problem results"
 
     # protocol obligations
     @altar.export
@@ -74,7 +90,10 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # go through my models
         for name, model in self.models.items():
             # and initialize each one
+            # set child models as embedded
             model.embedded = True
+            # set child models forwardonly
+            model.forwardonly = self.forwardonly
             model.initialize(application=application)
 
         self.cuInitialize(application=application)
@@ -144,17 +163,16 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         for name, model in self.models.items():
             # to contribute to the computation of the data likelihood
 
-            # make a local copy of theta if needed
-            model_theta = model.restricted(theta=step.theta, batch=batch)
+            # each model needs to decide how it takes the whole parameter set from an ensemble
+            # one option is to make a local copy of theta if needed
+            # model_theta = model.restricted(theta=step.theta, batch=batch)
+            # another is to use idx_map
 
-            model.cuEvalLikelihood(theta=model_theta, likelihood=datallk.zero(), batch=batch)
+            model.cuEvalLikelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
             if model.cascaded:
                 step.prior += datallk
             else:
                 step.data += datallk
-            #datallk.print()
-            #step.prior.print()
-            #step.data.print()
 
         # all done
         return self
@@ -230,6 +248,148 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         """
         self.cuVerify(step, mask, batch=step.shape[0])
         return self
+
+    # implementation details
+    def mountInputDataspace(self, pfs):
+        """
+        Mount the directory with my input files
+        """
+        # attempt to
+        try:
+            # mount the directory with my input data
+            ifs = altar.filesystem.local(root=self.case)
+        # if it fails
+        except altar.filesystem.MountPointError as error:
+            # grab my error channel
+            channel = self.error
+            # complain
+            channel.log(f"bad case name: '{self.case}'")
+            channel.log(str(error))
+            # and bail
+            raise SystemExit(1)
+
+        # if all goes well, explore it and mount it
+        pfs["inputs"] = ifs.discover()
+        # all done
+        return ifs
+
+    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+        """
+        Load an input file to a numpy array (for both float32/64 support)
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix,
+            the precision must be same as the desired gpuprecision,
+            and users must specify the shape of the data
+        3. (preferred) hdf5 file in '.h5' suffix (preferred)
+            the metadata of shape, precision is included in .h5 file
+        :param filename: str, the input file name
+        :param shape: list of int
+        :param dataset: str, name/key of dataset for h5 input only
+        :return: output numpy.array
+        """
+
+        # decide the data type of the loaded vector/matrix
+        dtype = dtype or self.precision
+
+        ifs = self.ifs
+        channel = self.error
+        try:
+            # get the path to the file
+            file = ifs[filename]
+        except not ifs.NotFoundError:
+            channel.log(f"no file '{filename}' found in '{ifs.path()}'")
+            raise
+        else:
+            # get the suffix to determine type
+            suffix = file.uri.suffix
+            # use .txt for non-binary input
+            if suffix == '.txt':
+                # load to a cpu array
+                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype)
+            # binary data
+            elif suffix == '.bin' or suffix == '.dat':
+                # check shape
+                if shape is None:
+                    # check whether I can get shape from output
+                    if out is None:
+                        raise channel.log(f"must specify shape for binary input '{filename}'")
+                    else:
+                        shape = out.shape
+                # read and reshape, users need to check the precision
+                cpuData = numpy.fromfile(file.uri.path, dtype=dtype)
+            # hdf5 file
+            elif suffix == '.h5':
+                # get support
+                import h5py
+                # open
+                h5file = h5py.File(file.uri.path, 'r')
+                # get the desired dataset
+                if dataset is None:
+                    # if not provided, assume the only or first dataset as default
+                    dataset = list(h5file.keys())[0]
+                cpuData = numpy.asarray(h5file.get(dataset), dtype=dtype)
+                h5file.close()
+
+        if shape is not None:
+            cpuData = cpuData.reshape(shape)
+        # all done
+        return cpuData
+
+    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None, dtype=None):
+        """
+        Load an input file to a gpu (for both float32/64 support)
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix,
+            the precision must be same as the desired gpuprecision,
+            and users must specify the shape of the data
+        3. (preferred) hdf5 file in '.h5' suffix (preferred)
+            the metadata of shape, precision is included in .h5 file
+        :param filename: str, the input file name
+        :param shape: list of int
+        :param dataset: str, name/key of dataset for h5 input only
+        :return: out altar.cuda.matrix/vector
+        """
+
+        dtype = dtype or self.precision
+
+        # load to cpu as a numpy array at fist
+        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
+
+        # if output gpu matrix/vector is not pre-allocated
+        if out is None:
+            # if vector
+            if cpuData.ndim == 1:
+                out = altar.cuda.vector(shape=cpuData.shape[0], dtype=dtype)
+            # if matrix
+            elif cpuData.ndim == 2:
+                out = altar.cuda.matrix(shape=cpuData.shape, dtype=dtype)
+            else:
+                channel = self.error
+                raise channel.log(f"unsupported data dimension {cpuData.shape}")
+
+        out.copy_from_host(source=cpuData)
+        # all done
+        return out
+
+    @altar.export
+    def forwardProblem(self, application, theta=None):
+        """
+        Perform the forward modeling with given {theta}
+        """
+        # only for one set of parameters
+        theta = theta or self.loadFileToGPU(filename=self.theta_input,
+                                            dataset=self.theta_dataset)
+        for name, model in self.models.items():
+            # to contribute to the computation of the data likelihood
+
+            # use the ensemble output path if not provided for each model
+            # model needs to decide how to treat the whole parameter set
+
+            model.forward_output = self.forward_output
+            model.forwardProblem(application=application, theta=theta)
+        return
 
     # local
     datallk = None
