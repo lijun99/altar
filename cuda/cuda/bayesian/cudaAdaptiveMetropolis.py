@@ -22,6 +22,7 @@ from altar.bayesian.Sampler import Sampler
 
 # other packages
 import math
+import journal
 
 # declaration
 class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemetropolis", implements=Sampler):
@@ -43,6 +44,12 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
     scaling = altar.properties.float(default=2.38)
     scaling.doc = 'scaling factor σ  for Gaussian proposal  ~ N(0, σ^2 Σ), initial value 2.38/sqrt(N_d)'
 
+    scaling_min = altar.properties.float(default=.01)
+    scaling_min.doc = 'the minimum value of the scaling factor'
+
+    scaling_max = altar.properties.float(default=1)
+    scaling_max.doc = 'the maximum value of the scaling factor'
+
     parameters = altar.properties.int(default=1)
     parameters.doc = 'total number of parameters N_d'
 
@@ -52,15 +59,23 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
     gain = altar.properties.float(default=2.1)
     gain.doc = 'Feedback gain constant'
 
-    max_mc_steps = altar.properties.int(default=100000)
+    max_mc_steps = altar.properties.int(default=10000)
     max_mc_steps.doc = 'the maximum Monte-Carlo steps for one beta step'
+
+    min_mc_steps = altar.properties.int(default=1000)
+    min_mc_steps.doc = 'the minimum Monte-Carlo steps for one beta step'
+
+    max_mc_steps_stage2 = altar.properties.int(default=None)
+    max_mc_steps_stage2.doc = 'the maximum Monte-Carlo steps at stage 2, or beta> beta_stage2'
+
+    beta_stage2 = altar.properties.float(default=1.)
+    beta_stage2.doc ='beta value to start stage 2, i.e., to use a different max_mc_steps'
 
     corr_check_steps = altar.properties.int(default=1000)
     corr_check_steps.doc = 'the Monte-Carlo steps to compute the de'
 
     target_correlation = altar.properties.float(default=0.6)
     target_correlation.doc = 'the threshold of correlation to stop the chain'
-
 
     # protocol obligations
     @altar.export
@@ -69,17 +84,30 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         Initialize me and my parts given an {application} context
         """
 
-        # initialize scaling
+        # TBD initialize scaling
+        # parameters = application.model.parameters
 
-        #parameters = application.model.parameters
-
+        # optimal scaling factor
         self.scaling = self.scaling/math.sqrt(self.parameters)
-        print(f'parameters from sampler {self.parameters}, {self.scaling}')
+        # adjusted by max/min scaling
+        self.scaling = min(self.scaling, self.scaling_max)
+        self.scaling = max(self.scaling, self.scaling_min)
+
+        # assign the stage 2 steps
+        if self.max_mc_steps_stage2 is None:
+            self.max_mc_steps_stage2 = self.max_mc_steps
 
         # get the gpu processor information
         self.device = application.controller.worker.device
         self.curng = self.device.curand_generator
         self.precision = application.job.gpuprecision
+
+        # grab the channel
+        self.info = application.info
+
+        # show the info
+        channel = self.info
+        channel.log(f'Adaptive Metropolis Sampler: initial scaling {self.scaling}')
 
         # all done
         return self
@@ -165,7 +193,6 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         self.gsigma_chol.Cholesky(uplo=cublas.FillModeUpper)
 
         # scale it
-        print(f'scaling {self.scaling}')
         self.gsigma_chol *= self.scaling
 
         # notify we are done preparing the sampling PDF
@@ -235,12 +262,21 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # copy the beta over
         candidate.beta = step.beta
 
+        # determine the max/min steps
+        if step.beta > self.beta_stage2:
+            max_mc_steps = self.max_mc_steps_stage2
+        else:
+            max_mc_steps = self.max_mc_steps
+
+        min_mc_steps = self.min_mc_steps
+
         # make a copy of the starting samples
         θstart = θ.clone()
+        # running variables
         correlation = 1.0
         mcsteps = 0
 
-        while correlation > self.target_correlation and mcsteps < self.max_mc_steps:
+        while correlation > self.target_correlation and mcsteps < max_mc_steps:
 
             for ihop in range(self.corr_check_steps):
                 # notify we are advancing the chains
@@ -266,7 +302,6 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                     invalid_step = int(invalid_flags.sum())
                     valid = samples - invalid_step
 
-                    #print(f'valid {valid}')
                     # if valid > 0, continue; otherwise go back to repropose new samples
                     if valid > 1:
                         break
@@ -313,16 +348,20 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
 
-            correlation = altar.cuda.stats.correlation(θstart, θ, axis=0).amax()
-            if annealer.worker.workers > 1:
-                import mpi
-                comm = mpi.world
-                correlation = comm.max(item=correlation)
             mcsteps += self.corr_check_steps
-            print(f"correlation {correlation} at {mcsteps}")
+
+            # compute the correlation when min steps are reached
+            if mcsteps >= min_mc_steps:
+                correlation = altar.cuda.stats.correlation(θstart, θ, axis=0).amax()
+                if annealer.worker.workers > 1:
+                    import mpi
+                    comm = mpi.world
+                    correlation = comm.max(item=correlation)
+
+                channel = self.info
+                channel.log(f"Adaptive Metropolis: correlation {correlation} at {mcsteps}")
 
         # all done
-        # print(f'stats: accepted {accepted}, invalid {invalid}, rejected {rejected}')
         return accepted, invalid, rejected
 
 
@@ -363,8 +402,14 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
 
         # store it
         self.scaling = scaling_original*math.exp(G*(acceptance-target_acceptance))
+        # adjust it
+        self.scaling = min(self.scaling, self.scaling_max)
+        self.scaling = max(self.scaling, self.scaling_min)
 
-        print(f'scaling {self.scaling} {acceptance}')
+        # show it
+        channel = self.info
+        channel.log(f'Adaptive Metropolis: scaling {self.scaling}, acceptance ratio {acceptance}')
+
         # and return
         return self
 
@@ -407,5 +452,4 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
     precision = None
     gdice = None
     curng = None
-
 # end of file

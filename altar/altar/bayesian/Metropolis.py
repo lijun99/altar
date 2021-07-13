@@ -29,13 +29,13 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
 
 
     # user configurable state
-    scaling = altar.properties.float(default=.3)
+    scaling = altar.properties.float(default=.1)
     scaling.doc = 'the parameter covariance Σ is scaled by the square of this'
 
-    acceptanceWeight = altar.properties.float(default=8)
+    acceptanceWeight = altar.properties.float(default=8.0/9.0)
     acceptanceWeight.doc = 'the weight of accepted samples during covariance rescaling'
 
-    rejectionWeight = altar.properties.float(default=1)
+    rejectionWeight = altar.properties.float(default=1.0/9.0)
     rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
 
 
@@ -271,9 +271,9 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # compute the acceptance ratio
         acceptance = accepted / (accepted + rejected + unlikely)
         # the fudge factor
-        kc = (aw*acceptance + rw)/(aw+rw)
+        kc = aw*acceptance + rw
         # don't let it get too small
-        # if kc < .1: kc = .1
+        if kc < .01: kc = .01
         # or too big
         if kc > 1.: kc = 1.
         # store it

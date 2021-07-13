@@ -46,6 +46,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     min_eigenvalue_ratio = altar.properties.float(default=0.001)
     min_eigenvalue_ratio.doc = 'the desired minimal eigenvalue of Σ matrix, as a ratio to the max eigenvalue'
 
+    beta_resampling_start = altar.properties.float(default=0)
+    beta_resampling_start.doc = 'the beta threshold to start the resampling procedure'
+
     # public data
     w = None # the vector of re-sampling weights
     cov = 0.0 # the actual value for COV we were able to attain
@@ -65,6 +68,10 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
         # set up the distribution for building the sample multiplicities
         self.uniform = altar.pdf.uniform(support=(0,1), rng=self.rng)
+
+        # grab the info channel
+        self.info = application.info
+
         # all done
         return self
 
@@ -80,14 +87,17 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # compute the new parameter covariance matrix
         Σ = self.computeCovariance(step=step)
         # resampling according to their likelihood
-        θ, (prior, data, posterior) = self.resampling(step=step)
+        if β > self.beta_resampling_start:
+            θ, (prior, data, posterior) = self.resampling(step=step)
+            # update the step after the resampling
+            step.prior.copy(prior)
+            step.data.copy(data)
+            step.theta.copy(θ)
 
-        # update the step
+        # update the step (common procedures with or w/o resampling)
         step.beta = β
-        step.theta.copy(θ)
         step.sigma.copy(Σ)
-        step.prior.copy(prior)
-        step.data.copy(data)
+
         # recompute posterior with updated beta
         step.computePosterior()
 
@@ -257,7 +267,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # shuffle the indices
         indices.shuffle(rng=self.rng)
 
-        print(f"resampling: unique samples {unique_samples} out of {multi.shape}")
+        self.info.log(f"resampling: unique samples {unique_samples} out of {multi.shape}")
         # print("     kept sample indices: {}".format(tuple(indices[i] for i in range(indices.shape))))
 
         # copy theta, (prior, data, posterior) over according to the indices

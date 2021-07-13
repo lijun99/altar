@@ -117,7 +117,7 @@ class AnnealingMethod:
         # ask it to adjust the sample statistics
         sampler.resample(annealer=annealer, statistics=statistics)
         # all done
-        return self
+        return statistics
 
     def archive(self, annealer, scaling, stats):
         """

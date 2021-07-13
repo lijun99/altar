@@ -125,7 +125,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
             dispatcher.notify(event=dispatcher.resampleStart, controller=self)
             # resample: this only adjusts the scaling factor of proposal matrix
             # better use another name
-            worker.resample(annealer=self, statistics=statistics)
+            statistics = worker.resample(annealer=self, statistics=statistics)
             # notify we are done resampling
             dispatcher.notify(event=dispatcher.resampleFinish, controller=self)
 

@@ -42,7 +42,7 @@ class CUDAAnnealing(AnnealingMethod):
         tasks = application.job.tasks # jobs per host
         # set gpu ids for current worker
         self.device=altar.cuda.use_device(gpuids[self.wid % tasks])
-        print(f'current worker {self.wid} with device {self.device} id {self.device.id}')
+        application.info.log(f'current worker {self.wid} with device {self.device} id {self.device.id}')
         return self
 
     # interface

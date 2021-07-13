@@ -35,14 +35,21 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
     scaling = altar.properties.float(default=.1)
     scaling.doc = 'the parameter covariance Σ is scaled by the square of this'
 
-    acceptanceWeight = altar.properties.float(default=8)
+    acceptanceWeight = altar.properties.float(default=8.0/9.0)
     acceptanceWeight.doc = 'the weight of accepted samples during covariance rescaling'
 
-    rejectionWeight = altar.properties.float(default=1)
+    rejectionWeight = altar.properties.float(default=1.0/9.0)
     rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
 
     useFixedScaling = altar.properties.bool(default=False)
-    useFixedScaling.doc = "whether to use a fixed scaling"
+    useFixedScaling.doc = 'whether to use a fixed scaling'
+
+    scalingMin = altar.properties.float(default=.01)
+    scalingMin.doc = 'the minimum value of the scaling factor'
+
+    scalingMax = altar.properties.float(default=1)
+    scalingMax.doc = 'the maximum value of the scaling factor'
+
 
     # protocol obligations
     @altar.export
@@ -317,11 +324,11 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # compute the acceptance ratio
         acceptance = accepted / (accepted + rejected + invalid)
         # the fudge factor
-        kc = (aw*acceptance + rw)/(aw+rw)
+        kc = aw*acceptance + rw
         # don't let it get too small
-        if kc < .1: kc = .1
+        kc = max(kc, self.scalingMin)
         # or too big
-        if kc > 1.: kc = 1.
+        kc = min(kc, self.scalingMax)
         # store it
         self.scaling = kc
 

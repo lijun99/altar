@@ -40,14 +40,16 @@ class MPIAnnealing(AnnealingMethod):
         # seed the rng
         rng.rng.seed(seed=seed)
 
+        # show me
+        application.info.log(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
+
         # initialize worker
-        print(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
         self.worker.wid = self.rank
         self.worker.initialize(application=application)
-        # grab a channel
-        channel = self.debug
-        # show me
-        channel.log(f"initializing worker {mpi.world.rank} of {mpi.world.size}")
+
+        # turn off info channel for non-managers
+        if self.rank != self.manager:
+            application.info.active = False
 
         # all done
         return self
@@ -118,15 +120,15 @@ class MPIAnnealing(AnnealingMethod):
         accepted, rejected, unlikely = statistics
 
         # add up the acceptance/rejection statistics from all the nodes
-        accepted = self.communicator.sum(accepted)
-        rejected = self.communicator.sum(rejected)
-        unlikely = self.communicator.sum(unlikely)
+        accepted = int(self.communicator.sum(accepted))
+        rejected = int(self.communicator.sum(rejected))
+        unlikely = int(self.communicator.sum(unlikely))
 
         # chain up
-        super().resample(annealer=annealer, statistics=(accepted,rejected,unlikely))
+        statistics = super().resample(annealer=annealer, statistics=(accepted,rejected,unlikely))
 
         # all done
-        return self
+        return statistics
 
     def archive(self, annealer, scaling, stats):
         """
