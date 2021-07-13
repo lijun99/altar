@@ -1,7 +1,7 @@
 // -*- C++ -*-
 //
 // eric m. gurrola  <eric.m.gurrola@jpl.nasa.gov>
-// (c) 2019 california institute of technology * jet propulsion lab * nasa
+// (c) 2019-2021 california institute of technology * jet propulsion lab * nasa
 // all rights reserved
 //
 

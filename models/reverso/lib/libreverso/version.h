@@ -2,7 +2,7 @@
 //
 // eric m. gurrola <eric m. gurrola@jpl.nasa.gov>
 // california institute of technology * jet propulsion lab * nasa
-// (c) 2013 all rights reserved
+// (c) 2013-2021 all rights reserved
 //
 
 // code guard

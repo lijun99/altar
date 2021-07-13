@@ -1,7 +1,7 @@
 # -*- cmake -*-
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
-# (c) 2003-2020 all rights reserved
+# (c) 2003-2021 all rights reserved
 
 # cmake setup
 cmake_minimum_required(VERSION 3.12 FATAL_ERROR)

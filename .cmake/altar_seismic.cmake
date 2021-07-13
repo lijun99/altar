@@ -1,7 +1,7 @@
 # -*- cmake -*-
 #
 # Lijun Zhu (ljzhu@gps.caltech.edu)
-# (c) 2019-2020 all rights reserved
+# (c) 2019-2021 all rights reserved
 
 # build the seismic package
 function(altar_seismic_buildPackage)

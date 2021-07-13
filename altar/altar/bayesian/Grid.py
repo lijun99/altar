@@ -4,8 +4,8 @@
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 # Lijun Zhu
 #
-# (c) 2013-2020 parasim inc
-# (c) 2010-2020 california institute of technology
+# (c) 2013-2021 parasim inc
+# (c) 2010-2021 california institute of technology
 # all rights reserved
 #
 

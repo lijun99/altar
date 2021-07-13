@@ -5,9 +5,9 @@
 #
 # eric m. gurrola <eric.m.gurrola@jpl.nasa.gov>
 #
-# (c) 2018-2020 jet propulsion laboratory
-# (c) 2018-2020 california institute of technology
-# (c) 2018-2020 parasim
+# (c) 2018-2021 jet propulsion laboratory
+# (c) 2018-2021 california institute of technology
+# (c) 2018-2021 parasim
 # all rights reserved
 #
 

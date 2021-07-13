@@ -2,7 +2,7 @@
 //
 // eric m. gurrola <eric.m.gurrola@jpl.nasa.gov>
 //
-// (c) 2019 jet propulsion laboratory
+// (c) 2019-2021 jet propulsion laboratory
 // california institute of technology
 // all rights reserved
 //

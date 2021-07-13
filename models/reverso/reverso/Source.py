@@ -3,7 +3,7 @@
 #
 # eric m. gurrola
 #
-# (c) 2018 california institute of technology
+# (c) 2018-2021 california institute of technology
 # all rights reserved
 #
 #

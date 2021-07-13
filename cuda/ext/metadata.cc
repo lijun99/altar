@@ -1,8 +1,8 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2020 parasim inc
-// (c) 2010-2020 california institute of technology
+// (c) 2013-2021 parasim inc
+// (c) 2010-2021 california institute of technology
 // all rights reserved
 //
 // Author(s): Lijun Zhu
@@ -21,7 +21,7 @@ copyright(PyObject *, PyObject *)
 {
     // the note
     const char * const copyright_note =
-        "altar.beta: (c) 2013-2018 ParaSim Inc; 2010-2018 California Institute of Technology";
+        "altar.beta: (c) 2013-2021 ParaSim Inc; 2010-2021 California Institute of Technology";
     // turn it into a python string
     return Py_BuildValue("s", copyright_note);
 }
@@ -37,8 +37,8 @@ license(PyObject *, PyObject *)
     const char * const license_string =
         "\n"
         "    altar 2.0\n"
-        "    Copyright (c) 2013-2018 ParaSim Inc.\n"
-        "    Copyright (c) 2010-2018 California Institute of Technology\n"
+        "    Copyright (c) 2013-2021 ParaSim Inc.\n"
+        "    Copyright (c) 2010-2021 California Institute of Technology\n"
         "    All Rights Reserved\n"
         "\n"
         "\n"

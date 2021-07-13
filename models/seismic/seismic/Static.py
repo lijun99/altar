@@ -1,13 +1,11 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# (c) 2013-2020 parasim inc
-# (c) 2010-2020 california institute of technology
+# (c) 2013-2021 parasim inc
+# (c) 2010-2021 california institute of technology
 # all rights reserved
 #
 # Author(s): Lijun Zhu
-
-# Based on cupy, need some modifications (04/20/2019)
 
 # the package
 import altar
@@ -16,15 +14,15 @@ import altar
 class Static(altar.models.bayesian, family="altar.models.seismic.static"):
     """
     Static inversion with cuda  (d = G theta)
-    Modeled as N patches with dip and slip displacements  
+    Modeled as N patches with dip and slip displacements
     """
 
     # user configurable state
     # parameter sets and their prior distributions
     # dip (ususally Moment - ) and slip (usually Gaussian)
     parametersets = altar.properties.dict(schema=altar.models.parameters())
-    parametersets.doc = "the set of parameters in the model" 
-    
+    parametersets.doc = "the set of parameters in the model"
+
     parameters = altar.properties.int(default=None)
     parameters.doc = "total number of parameters in the model"
 
@@ -52,9 +50,9 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
     cd_file = altar.properties.path(default="cd.txt")
     cd_file.doc = "the name of the file with the data covariance matrix"
 
-    # output 
+    # output
     output_path = altar.properties.path(default="results")
-    
+
 
     # protocol obligations
     @altar.export
@@ -64,22 +62,22 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
         """
         # chain up
         super().initialize(application=application)
-        
+
         if application.job.gpus > 0:
             self.processor = 'gpu'
-            
+
         # find out how many samples I will be working with; this equal to the number of chains
         samples = application.job.chains
 
-        # initialize the parameter sets and their priors 
+        # initialize the parameter sets and their priors
         self.initializeParameterSets()
 
         # mount my input data space
         self.ifs = self.mountInputDataspace(pfs=application.pfs)
-        
+
         # convert the input filenames into data
         self.G, self.d, self.Cd = self.loadInputs()
-        
+
         # initialize covariance and merge it to data and green's function
         self.initializeCovariance(samples=samples)
 
@@ -134,7 +132,7 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
         Fill {step.prior} with the densities of the samples in {step.theta} in the prior
         distribution
         """
-        
+
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # and the storage for the prior densities
@@ -173,9 +171,9 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
         # compute G * transpose(θ) - d
         # we must transpose θ because its shape is (samples x parameters)
         # while the shape of G is (observations x parameters)
-        
-    
-        residuals = self.forwardModel(theta=θ, green=self.G, data_observations=self.residuals) 
+
+
+        residuals = self.forwardModel(theta=θ, green=self.G, data_observations=self.residuals)
 
         # go through the residual of each sample
         for idx in range(residuals.columns):
@@ -183,7 +181,7 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
             residual = residuals.getColumn(idx)
             # compute its norm, normalize, and store it as the data log likelihood
             # dataLLK[idx] = normalization - self.norm.eval(v=residual, sigma_inv=Cd_inv)/2
-            dataLLK[idx] = normalization - 0.5*self.norm.eval(v=residual)   
+            dataLLK[idx] = normalization - 0.5*self.norm.eval(v=residual)
         # all done
         return self
 
@@ -339,9 +337,9 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
             Cd_inv, self.d)
         # prepare the residuals matrix
         self.residuals = self.initializeResiduals(samples=samples, data=self.d)
-        # all done 
+        # all done
         return self
-        
+
 
     def computeCovarianceInverse(self, cd):
         """
@@ -402,51 +400,51 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
         # check master
         if worker.rank == worker.manager:
             altar.utils.save_step(step=worker.step, path=self.output_path)
-        # all done    
+        # all done
         return self
 
 
-     
+
     def forwardModel(theta, green, data_residuals=None, data_observations=None, batches=None):
         """
-        Forward model: compute data prediction or data residuals from a set of theta 
-        Args: 
+        Forward model: compute data prediction or data residuals from a set of theta
+        Args:
             theta [in, cuarray] parameters with shape=(samples, parameters)
             green [in, cuarray] Green's function with shape = (observations, parameters)
             batches [in, integer, optional] number of samples needto be computed <=samples
             data_observations [in, cuarray, optional] data observations
             data_residuals[inout, cuarray, optional] data predictions or residuals shape=(observations, samples)
         Returns:
-            data predictions or residuals if data_observations is provides 
+            data predictions or residuals if data_observations is provides
         """
-        
+
         # determine different sizes
         samples, parameters = theta.shape
         assert green.ndim == 2, "Green's function must be a 2D array"
         observations, parameters_g = green.shape
         assert parameters_g == parameters, "parameters in theta and Green's function don't match"
-    
+
         # allocate a new data_residuals if not present
         if data_residuals is None:
             data_residuals = altar.cuda.matrix(shape=(observations, samples))
         # if data_observations is available, copy it over
         if data_observations is not None:
-            assert data_observations.shape == data_residuals.shape, "the shape of data_obs is not (obs, samples)" 
+            assert data_observations.shape == data_residuals.shape, "the shape of data_obs is not (obs, samples)"
             data_residuals = data_observations.copy()
             beta = -1.0
         else:
             data_residuals.fill(0)
-            beta = 0.0    
-    
+            beta = 0.0
+
         if batches is None:
             batches = samples
-        
+
         # grab cublas handle
         handle = altar.cuda.device.get_cublas_handle()
-        # call cublas matrix multiplication 
+        # call cublas matrix multiplication
         # d_residuals =  theta * Green  - d_obs
-        # (samples x observations) = (samples x parameters) x (obs x obs)  
-        cublas.gemm(handle,  
+        # (samples x observations) = (samples x parameters) x (obs x obs)
+        cublas.gemm(handle,
             1,  # transas
             0,  # transb
             batches, observations, parameters, #m,n,k
@@ -458,7 +456,7 @@ class Static(altar.models.bayesian, family="altar.models.seismic.static"):
 
         #all done
         return data_residuals
-    
+
 
     # private data
     ifs = None # the filesystem with the input files
