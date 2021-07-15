@@ -56,7 +56,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
     target_acceptance_rate = altar.properties.float(default=0.234)
     target_acceptance_rate.doc = 'the targeted acceptance rate'
 
-    gain = altar.properties.float(default=2.1)
+    gain = altar.properties.float(default=None)
     gain.doc = 'Feedback gain constant'
 
     max_mc_steps = altar.properties.int(default=10000)
@@ -92,6 +92,10 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # adjusted by max/min scaling
         self.scaling = min(self.scaling, self.scaling_max)
         self.scaling = max(self.scaling, self.scaling_min)
+
+        # compute an optimal gain if not provided
+        if self.gain is None:
+            self.gain = self.gainFunction(self.target_acceptance_rate)
 
         # assign the stage 2 steps
         if self.max_mc_steps_stage2 is None:
@@ -436,6 +440,17 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # set initialized flag = 1
         self.ginit = True
         return
+
+    @staticmethod
+    def gainFunction(x):
+        """
+        Compute the optimal gain constant from a target acceptranceRate {x}
+        """
+        from scipy.special import erfcinv
+        from math import pi, sqrt, exp
+
+        e = erfcinv(x)
+        return 0.5*sqrt(pi)*exp(e**2)/e
 
     # private data
     mcsteps = 1          # the length of each Markov chain
