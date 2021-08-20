@@ -1,53 +1,37 @@
 ;
-; (c) 2013-2021 parasim inc
-; (c) 2010-2021 california institute of technology
+; (c) 2013-2020 parasim inc
+; (c) 2010-2020 california institute of technology
 ; all rights reserved
 ;
 ; Author(s): Lijun Zhu
 
-; the kinematic forward model only to produce M(patches, t) (or big M) and data predictions
-; run with kinematicForwardModel --config=thisfile
-kinematic:
+; the cascaded static/kinematic forward problem
+; run with slipmodel.plex forward --config=thisfile
 
-    ; theta input h5 file name
-    theta_input = kinematicG_synthetic_theta.txt
+; the application
+slipmodel:
 
-    ; output h5 file name
-    ; data prediction is 1d vector with dimension observations
-    data_output = kinematicG_synthetic_data.h5
-    ; Mb is 1d vector arranged as [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
-    mb_output = kinematicG_synthetic_mb.h5
-
-    ; kinematic model, copy from your simulation config
+    ; the model
+    model = altar.models.seismic.cuda.cascaded
     model:
-        ; input path
+
+        ; forward only (True), simulation(set to False)
+        forwardonly = True
+        ; forward theta input
+        theta_input = kinematicG_mean_theta.txt
+        ; forward output file
+        forward_output = forward_prediction.h5
+
+        ; the path of input files
         case = 9patch
-
-        dataobs:
-            observations = 14148
-            data_file = kinematicG.data.h5
-            cd_std = 5.0e-3
-        ; fixed model parameters
-        ; green's function (2*Ndd*Nas*Nt, observations)
-        ; [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
-        green = kinematicG.gf.h5
-
-        Ndd = 3 ; patches along dipslip
-        Nas = 3 ; patches along strikeslip
-        Nmesh = 30 ; mesh points for each patch
-        dsp = 20.0 ; length for each patch, km
-        Nt = 90 ; number of time intervals
-        Npt = 2 ; mesh points for each time interval
-        dt = 1.0 ; time unit for each interval, second
-        ; initial starting time for each patch
-        t0s = [0.0] * {kinematic.model.patches}
 
         patches = 9 ; Nas*Ndd (along strike/down dip)
 
         ; parameters to be simulated
-        ; provide name and orders at first
+        ; provide a list at first, serving as their orders in theta
         psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
-        ; define each parameterset, the distributions don't matter, only the count
+
+        ; define each parameterset
         psets:
             strikeslip = altar.cuda.models.parameterset
             dipslip = altar.cuda.models.parameterset
@@ -57,7 +41,7 @@ kinematic:
 
             ; variables for patches are arranged along dip direction at first [Nas][Ndd]
             strikeslip:
-                count = {kinematic.model.patches}
+                count = {slipmodel.model.patches}
                 prep = altar.cuda.distributions.preset ; load preset samples
                 prep.input_file = theta_cascaded.h5 ; file name
                 prep.dataset = ParameterSets/strikeslip ; dataset name in h5
@@ -66,40 +50,105 @@ kinematic:
                 prior.sigma = 0.5
 
             dipslip:
-                count = {kinematic.model.patches}
+                count = {slipmodel.model.patches}
                 prep = altar.cuda.distributions.preset
                 prep.input_file = theta_cascaded.h5 ; file name
                 prep.dataset = ParameterSets/dipslip ; dataset name in h5
-                prep.input_parameters = 18
                 prior = altar.cuda.distributions.uniform
                 prior.support = (-0.5, 20.0)
 
             risetime:
-                count = {kinematic.model.patches}
+                count = {slipmodel.model.patches}
                 prior = altar.cuda.distributions.uniform
                 prior.support = (10.0, 30.0)
 
             rupturevelocity:
-                count = {kinematic.model.patches}
+                count = {slipmodel.model.patches}
                 prior = altar.cuda.distributions.uniform
                 prior.support= (1.0, 6.0)
 
-            ; along strike(frist), dip directions
-            ; could be sperated into 2 for dip and strike direction
+            ; along strike(first), dip directions
+            ; could be separated into 2 for dip and strike direction
             hypocenter:
                 count = 2
                 prior = altar.cuda.distributions.gaussian
                 prior.mean = 20.0
                 prior.sigma = 5.0
 
+        ; the model ensemble
+        models:
+            static = altar.models.seismic.cuda.static
+            kinematic = altar.models.seismic.cuda.kinematicg
+
+            static:
+                cascaded = True
+                case = {slipmodel.model.case}
+
+                ; parameters to be simulated
+                ; just take a subset from master model psets
+                psets_list = [strikeslip, dipslip]
+
+                dataobs = altar.cuda.data.datal2
+                dataobs:
+                    observations = 108
+                    data_file = static.data.h5
+                    cd_file = static.Cd.h5
+
+                ; fixed model parameters
+                green = static.gf.h5
+                ; patches are provided by the total number of parameters/2
+
+            kinematic:
+                cascaded = False ; default
+                case =  {slipmodel.model.case}
+                psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
+
+                dataobs:
+                    observations = 14148
+                    data_file = kinematicG.data.h5
+                    cd_std = 5.0e-3
+
+                ; fixed model parameters
+                ; green's function (2*Ndd*Nas*Nt, observations)
+                ; [Nt][2(strike/dip)][Nas][Ndd] with leading dimensions on the right
+                green = kinematicG.gf.h5
+
+                Ndd = 3 ; patches along dipslip
+                Nas = 3 ; patches along strikeslip
+                Nmesh = 30 ; mesh points for each patch
+                dsp = 20.0 ; length for each patch, km
+                Nt = 90 ; number of time intervals
+                Npt = 2 ; mesh points for each time interval
+                dt = 1.0 ; time unit for each interval, second
+                ; initial starting time for each patch
+                t0s = [0.0] * {slipmodel.model.patches}
+
+    ; controller/annealer
+    controller:
+        sampler = altar.cuda.bayesian.metropolis
+        archiver:
+            output_dir = results/cascaded ; results output directory
+            output_freq = 3 ; output frequency of annealing steps
+        scheduler:
+            dbeta_solver_method = gsl
+
+    monitors:
+        prof = altar.bayesian.profiler
 
     ; run configuration
     job.tasks = 1 ; number of tasks per host
     job.gpus = 1  ; number of gpus per task/thread
-    ;job.gpuids = [0] ; gpu slots to be occupied
-    job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
-    job.chains = 2**8 ; number of chains per task
-    job.steps = 1000
+    ;job.gpuids = [0 0 1 ] ; gpu slots to be occupied
+    job.gpuprecision = float64 ; desired precision for gpu (float64 or float32)
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 500
 
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+    ;extra = -mca btl self,tcp
 
 ; end of file

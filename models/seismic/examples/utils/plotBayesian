@@ -65,8 +65,16 @@ class PlotBayesian(altar.application, family="altar.application.plotbayesian"):
         # import matplotlib
         import matplotlib.pyplot as plt
 
+        # create a figure
+        fig = plt.figure()
+
         # create subplot
         pltprior = plt.subplot(311, title='Histograms of Bayesian probabilities')
+
+        # set title
+        title = 'Histograms of Bayesian probabilities ' + self.step.path
+        plt.title(title)
+
         # get prior
         prior = numpy.asarray(datasets.get('Bayesian/prior'))
         # set bins if not given
@@ -87,10 +95,10 @@ class PlotBayesian(altar.application, family="altar.application.plotbayesian"):
         n, bins, patches = pltposterior.hist(posterior, bin, facecolor='blue', alpha=0.5,  label='posterior')
         pltposterior.legend()
 
-        # set title and xlabel
-        plt.title=('Histograms of Bayesian probabilities')
+        # set xlabel
         plt.xlabel('Log probabilities')
-        plt.show()
+        fig.savefig('Bayesian_histogram.pdf')
+        #plt.show()
 
         # close the hdf5 file
         datasets.close()

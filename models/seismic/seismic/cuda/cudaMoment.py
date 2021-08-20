@@ -47,9 +47,6 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
     Mu = altar.properties.array(default = [32])
     Mu.doc = "the shear modulus for each patch in GPa, provide one value if the same for all patches"
 
-    Mu_patch_file = altar.properties.path(default=None)
-    Mu_patch_file = "input file for the shear modulus of each patch, in Km^2"
-
     slip_sign = altar.properties.str(default='positive')
     slip_sign.validators = altar.constraints.isMember("positive", "negative")
     slip_sign.doc = "the sign of slips, all positive or all negative"
@@ -122,11 +119,8 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
             #
             self.mu_patches = self.Mu
 
-
-
         # all done
         return self
-
 
 
     def cuInitSample(self, theta):
