@@ -262,6 +262,11 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
         # save BigM to an h5 file
         h5file = h5py.File(name=self.forward_output.path, mode='a')
+        # if already exists, del the old dataset
+        if 'kinematic.Mb' in h5file.keys():
+            del h5file['kinematic.Mb']
+        if 'kinematic.Data' in h5file.keys():
+            del h5file['kinematic.Data']
         h5file.create_dataset(name='kinematic.Mb', data=gMb.copy_to_host(type='numpy'))
         h5file.create_dataset(name='kinematic.Data', data=gDataPred.copy_to_host(type='numpy'))
         h5file.close()

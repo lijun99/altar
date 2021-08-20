@@ -208,6 +208,9 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
 
         # save data prediction
         h5file = h5py.File(name=self.forward_output.path, mode='a')
+        # if already exists, del the old dataset
+        if 'static.Data' in h5file.keys():
+            del h5file['static.Data']
         h5file.create_dataset(name='static.Data', data=gData.copy_to_host(type='numpy'))
         h5file.close()
 

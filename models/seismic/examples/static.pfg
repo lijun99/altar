@@ -6,7 +6,13 @@
 ; Author(s): Lijun Zhu
 
 ; the static uoᴉsɹǝʌuᴉ example
-; run with 'slipmodel --config=static.pfg'
+;
+; for Bayesian simulations, run
+;        slipmodel --config=static.pfg
+;   or   slipmodel.plexus sample --config=static.pfg
+; for forward problem only (with an input set of parameters), run
+;        slipmodel.plexus forward --config=static.pfg
+
 
 ; my shell application
 slipmodel = altar.shells.altar
@@ -15,6 +21,12 @@ slipmodel:
     ; model to be sampled
     model = altar.models.seismic.cuda.static
     model:
+
+        ; settings for running forward problem only
+        ; forward theta input
+        theta_input = static_mean_model.txt
+        ; forward output file
+        forward_output = forward_prediction.h5
 
         ; the name of the test case, also as directory for input files
         case = 9patch

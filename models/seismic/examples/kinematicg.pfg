@@ -6,6 +6,14 @@
 ; Author(s): Lijun Zhu
 
 ; the cascaded static/kinematic uoᴉsɹǝʌuᴉ
+; for Bayesian simulations, run
+;        slipmodel --config=kinematicg.pfg
+;   or   slipmodel.plexus sample --config=kinematicg.pfg
+; for forward problem only (with an input set of parameters), run
+;        slipmodel.plexus forward --config=kinematicg.pfg
+;
+; download kinematicG.gf.h5 file from https://caltech.app.box.com/v/altar2framework
+
 
 ; the application
 slipmodel:
@@ -13,6 +21,13 @@ slipmodel:
     ; the model
     model = altar.models.seismic.cuda.cascaded
     model:
+
+        ; settings for running forward problem only
+        ; forward theta input
+        theta_input = kinematicG_mean_model.txt
+        ; forward output file
+        forward_output = forward_prediction.h5
+
         ; the path of input files
         case = 9patch
 

@@ -68,7 +68,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     theta_dataset.doc = "the name/path of the theta dataset in h5 file"
 
     forward_output = altar.properties.path(default="forward_prediction.h5")
-    forward_output.dpc = "the name/path of the file to save forward problem results"
+    forward_output.doc = "the name/path of the file to save forward problem results"
 
     # protocol obligations
     @altar.export

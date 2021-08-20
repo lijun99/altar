@@ -59,6 +59,7 @@ class kinematicForwardModel(altar.shells.cudaapplication, family='altar.applicat
 
         # get data prediction
         gGF = self.model.gGF
+        gGF.copy_from_host(source=self.model.GF)
         gDataPred = self.model.linearGM(gf=gGF, Mb=gMb)
 
         # save BigM to an h5 file
