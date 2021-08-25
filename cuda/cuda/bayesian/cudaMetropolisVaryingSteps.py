@@ -233,26 +233,26 @@ class cudaMetropolisVaryingSteps(altar.component, family="altar.samplers.metropo
                 # notify we are starting the verification process
                 dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
 
-                # make a loop to make sure there is at least one new sample,
-                # or certain numbers of new samples
-                while True:
-                    # the random displacement may have generated candidates that are outside the
-                    # support of the model, so we must give it an opportunity to reject them;
-                    # initialize the candidate sample by randomly displacing the current one
-                    self.displace(displacement=θproposal)
-                    θproposal += θ
 
-                    # reset the mask and ask the model to verify the sample validity
-                    # note that I have redefined model.verify to use theta as input
+                # the random displacement may have generated candidates that are outside the
+                # support of the model, so we must give it an opportunity to reject them;
+                # initialize the candidate sample by randomly displacing the current one
+                self.displace(displacement=θproposal)
+                θproposal += θ
 
-                    model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
+                # reset the mask and ask the model to verify the sample validity
+                # note that I have redefined model.verify to use theta as input
 
-                    invalid_step = int(invalid_flags.sum())
-                    valid = samples - invalid_step
-                    # if valid > 0, continue; otherwise go back to repropose new samples
-                    if valid > 1 :
-                        break
+                model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
 
+                invalid_step = int(invalid_flags.sum())
+                valid = samples - invalid_step
+                # if valid = 0, continue to next MC step
+                if valid == 0:
+                    invalid += invalid_step
+                    continue
+
+                # if valid > 0, proceed to Metropolis accept-reject
                 # set indices for valid samples, return valid samples count
                 libcudaaltar.cudaMetropolis_setValidSampleIndices(valid_indices.data, invalid_flags.data,
                                                                   valid_samples.data)
