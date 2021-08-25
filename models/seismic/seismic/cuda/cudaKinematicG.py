@@ -217,13 +217,14 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         green = self.gGF
         # copy from CPU
         green.copy_from_host(source=self.GF)
+
         # check whether cd is a constant or a matrix
         if isinstance(cd_inv, float):
             green *= cd_inv
         elif isinstance(cd_inv, altar.cuda.matrix):
-            # (obsxobs) x (obsxparameters) = (obsxparameters)
+            # (NGbparameters x obs) x (obs x obs) = (NGbparameters x obs)
             cublas.trmm(cd_inv, green, out=green,
-                        side=cublas.SideLeft,
+                        side=cublas.SideRight,
                         uplo=cublas.FillModeUpper,
                         transa = cublas.OpNoTrans,
                         diag=cublas.DiagNonUnit,
@@ -231,9 +232,6 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
                         handle = self.cublas_handle)
         # release gcd_inv from gpu memory
         self.dataobs.release_cd()
-
-        # all done
-        return
 
         # all done
         return

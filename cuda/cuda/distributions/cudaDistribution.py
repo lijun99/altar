@@ -36,7 +36,7 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         Initialize with the given random number generator
         """
-        # will recommand a framework change to use application instead of rng
+        # will recommend a framework change to use application instead of rng
         # some distribution might need info from application
         # e.g, cascaded need worker id
         # so, use cuInitialize instead
