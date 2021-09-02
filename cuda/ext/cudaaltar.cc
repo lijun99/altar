@@ -37,6 +37,10 @@ namespace altar { namespace cuda {
             // cudaUniform
             { cudaUniform::sample__name__, cudaUniform::sample, METH_VARARGS, cudaUniform::sample__doc__},
             { cudaUniform::logpdf__name__, cudaUniform::logpdf, METH_VARARGS, cudaUniform::logpdf__doc__},
+            { cudaUniform::logit__name__, cudaUniform::logit, METH_VARARGS, cudaUniform::logit__doc__},
+            { cudaUniform::logit_inverse__name__, cudaUniform::logit_inverse, METH_VARARGS, cudaUniform::logit_inverse__doc__},
+
+
             // cudaGaussian
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
             { cudaGaussian::logpdf__name__, cudaGaussian::logpdf, METH_VARARGS, cudaGaussian::logpdf__doc__},

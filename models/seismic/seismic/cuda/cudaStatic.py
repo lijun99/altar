@@ -151,7 +151,9 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         """
 
         residuals = self.gDataPred
-        # call forward to caculate the data prediction or its difference between dataobs
+        # call forward to calculate the data prediction or its difference between dataobs
+        #print("eval likelihood")
+        #theta.print()
         self.forwardModelBatched(theta=theta, green=self.gGF,
                                  prediction=residuals, batch=batch,
                                  observation= self.dataobs.gdataObsBatch)

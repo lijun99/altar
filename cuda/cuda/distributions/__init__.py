@@ -12,13 +12,13 @@
 import altar
 import altar.cuda
 
-# use the cpu protocol 
+# use the cpu protocol
 from altar.distributions.Distribution import Distribution as distribution
 # get default
 from .cudaDistribution import cudaDistribution as cudaDistribution
 
 
-@altar.foundry(implements=distribution, tip="the cuda cudaUniform probability distribution")
+@altar.foundry(implements=distribution, tip="the cuda Uniform probability distribution")
 def uniform():
     # grab the factory
     from .cudaUniform import cudaUniform as uniform
@@ -26,6 +26,16 @@ def uniform():
     __doc__ = uniform.__doc__
     # and return it
     return uniform
+
+@altar.foundry(implements=distribution, tip="the cuda Uniform Logit probability distribution")
+def uniformlogit():
+    # grab the factory
+    from .cudaUniformLogit import cudaUniformLogit as uniformlogit
+    # attach its docstring
+    __doc__ = uniformlogit.__doc__
+    # and return it
+    return uniformlogit
+
 
 
 @altar.foundry(implements=distribution, tip="the cuda gaussian probability distribution")

@@ -131,6 +131,9 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             self.idx_map = idx_map
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
 
+        # make a theta copy for transformation
+        self.thetaTrans = altar.cuda.matrix(shape=(self.samples, self.parameters), dtype=self.precision)
+
         # all done
         return self
 
@@ -174,6 +177,19 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             pset.prior.cuVerify(theta=theta, mask=mask)
         # all done; return the rejection map
         return mask
+
+    def cuTransform(self, theta, batch):
+        """
+        Transform {step.theta} to {thetaTrans} as appropriate for the forward model
+        """
+        # make a copy
+        thetaTrans = self.thetaTrans
+        thetaTrans.copy(other=theta)
+        # ask my subsets
+        for pset in self.psets.values():
+            pset.prior.cuTransform(theta=thetaTrans, batch=batch)
+        # all done
+        return thetaTrans
 
     def cuEvalPrior(self, theta, prior, batch):
         """
@@ -230,8 +246,10 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
         # notify we are about to compute the likelihood of the prior given the data
         dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+        # make theta transformation
+        self.thetaTrans = self.cuTransform(theta=step.theta, batch=batch)
         # compute it
-        self.cuEvalLikelihood(theta=step.theta, likelihood=step.data, batch=batch)
+        self.cuEvalLikelihood(theta=self.thetaTrans, likelihood=step.data, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
 
@@ -418,6 +436,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     ifs = None # the filesystem with the input files
     gidx_map = None # idx_map on gpu
     gtheta = None # theta with own parameters
+    thetaTrans = None # theta transformed for forward modeling
 
 
 # end of file

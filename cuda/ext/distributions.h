@@ -24,7 +24,7 @@ namespace altar { namespace cuda { namespace extensions {
             PyObject * verify(PyObject *, PyObject *);
         }
 
-        // uniform distribution        
+        // uniform distribution
         namespace cudaUniform {
             // generate random sample
             extern const char * const sample__name__;
@@ -34,8 +34,16 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
-        } 
-        
+            // logit
+            extern const char * const logit__name__;
+            extern const char * const logit__doc__;
+            PyObject * logit(PyObject *, PyObject *);
+            // logit inverse
+            extern const char * const logit_inverse__name__;
+            extern const char * const logit_inverse__doc__;
+            PyObject * logit_inverse(PyObject *, PyObject *);
+        }
+
         // gaussian distribution
         namespace cudaGaussian {
             // generate random sample

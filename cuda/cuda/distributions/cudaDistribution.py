@@ -76,6 +76,15 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
+    def cuTransform(self, theta, batch):
+        """
+        transform theta if needed
+        This is used to transform, e.g., uniform_logit to uniform
+        """
+        # default, do nothing
+        return self
+
+
     # private data
     device = None
     idx_range = None
