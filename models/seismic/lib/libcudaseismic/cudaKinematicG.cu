@@ -140,8 +140,8 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     // set the CUDA block dimenstions
     // use Ns_good (number of samples) as block.z index
     // each xy block(s) treats Nddf x Nasf mesh grids for one sample
-    dim3 dim_block(BDIMX, BDIMY, 1);
-    dim3 dim_grid(IDIVUP(_Nddf, dim_block.x), IDIVUP(_Nasf, dim_block.y), Ns_good);
+    dim3 dim_block(1, BDIMX, BDIMY);
+    dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.x), IDIVUP(_Nasf, dim_block.y));
     /// @note: BLOCKDIM is increased here to accommodate more threads
     cudaKinematicG_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
         gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);
@@ -264,8 +264,8 @@ altar::models::seismic::cudaKinematicG<TYPE>::
 _castBigM(const TYPE *const gM, TYPE *const gMb, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
-    dim3 dim_block(BLOCKDIM, 1, 1);
-    dim3 dim_grid(IDIVUP(_Npatch, dim_block.x), 1, Ns_good);
+    dim3 dim_block(1, BLOCKDIM, 1);
+    dim3 dim_grid(Ns_good, IDIVUP(_Npatch, dim_block.y), 1);
     cudaKinematicG_kernels::castBigM_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
         (_gidx_map, gM,  _gpu_TI0, gMb,
             _gt0s, _dt, Nparam, _Nt, _Nas, _Ndd, _Npt);
