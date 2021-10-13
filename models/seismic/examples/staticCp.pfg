@@ -52,14 +52,12 @@ slipmodel:
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prep = altar.models.seismic.cuda.moment
-                prep:
-                    Mw_mean = 7.0 ;5535
+                prior = altar.models.seismic.cuda.moment
+                prior:
+                    Mw_mean = 7.0
                     Mw_sigma = 0.5
                     Mu = [30] ; in GPa
                     area = [3600] ; patch area in km^2
-                prior = altar.cuda.distributions.uniform
-                prior:
                     support = (-0.5, 10)
 
     controller:

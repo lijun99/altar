@@ -63,15 +63,13 @@ slipmodel:
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prep = altar.models.seismic.cuda.moment
-                prep:
+                prior = altar.models.seismic.cuda.moment
+                prior:
                     support = (-0.5, 20) ; slip range
                     Mw_mean = 7.3
                     Mw_sigma = 0.2
                     Mu = [30] ; in GPa
                     area = [400] ; patch area in km^2
-                prior = altar.cuda.distributions.uniform
-                prior.support = (-0.5, 20)
 
     controller:
         sampler = altar.cuda.bayesian.metropolis

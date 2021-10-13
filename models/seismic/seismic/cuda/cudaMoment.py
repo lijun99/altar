@@ -145,21 +145,34 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
 
         # create a tempory vector for theta of samples
         theta_sample = altar.vector(shape=parameters)
+
+        # get the range
+        low, high = self.support
+
         # iterate through samples to initialize samples
         for sample in range(samples):
-            # generate a Mw sample
-            Mw = gaussian_Mw.sample()
-            # Pentiar = M0 =  \sum (A_i D_i Mu_i)
-            # 15 here is for GPa * Km^2, instead of Pa * m^2
-            Pentier = pow(10, 1.5*Mw + 9.1 - 15)
-            # if a negative sign is desired
-            if self.slip_sign == 'negative':
-                Pentier = - Pentier
-            # generate a dirichlet sample \sum x_i = 1
-            dirichlet_D.vector(vector=theta_sample)
-            # D_i = P * x_i /A_i
-            for patch in range(parameters):
-                theta_sample[patch]*=Pentier/(area_patches[patch]*mu_patches[patch])
+            within_range = False
+            # iterate until all samples are within support
+            while within_range is False:
+                # assume within_range is true in the beginning
+                within_range = True
+                # generate a Mw sample
+                Mw = gaussian_Mw.sample()
+                # Pentiar = M0 =  \sum (A_i D_i Mu_i)
+                # 15 here is for GPa * Km^2, instead of Pa * m^2
+                Pentier = pow(10, 1.5*Mw + 9.1 - 15)
+                # if a negative sign is desired
+                if self.slip_sign == 'negative':
+                    Pentier = - Pentier
+                # generate a dirichlet sample \sum x_i = 1
+                dirichlet_D.vector(vector=theta_sample)
+                # D_i = P * x_i /A_i
+                for patch in range(parameters):
+                    theta_sample[patch]*=Pentier/(area_patches[patch]*mu_patches[patch])
+                    # check the range
+                    if(theta_sample[patch]>=high or theta_sample[patch]<=low):
+                        within_range = False
+                        break
             # set theta
             θ.setRow(sample, theta_sample)
 
