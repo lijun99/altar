@@ -229,7 +229,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # add Cp if provided
         if cp is not None:
             # check cp data type
-            gCp = cp if cp.dtype == self.dtype_cd else cp.copy_to_host(dtype=self.dtype_cd)
+            gCp = cp if cp.dtype == self.dtype_cd else cp.copy_to_device(dtype=self.dtype_cd)
             # add cp to cd
             gCchi += gCp
 
