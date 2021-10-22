@@ -49,6 +49,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     beta_resampling_start = altar.properties.float(default=0)
     beta_resampling_start.doc = 'the beta threshold to start the resampling procedure'
 
+    beta_min = altar.properties.float(default=0)
+    beta_min.doc = 'the minimum beta value to be used'
+
     # public data
     w = None # the vector of re-sampling weights
     cov = 0.0 # the actual value for COV we were able to attain
@@ -116,6 +119,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         self.w = altar.vector(shape=step.samples).zero()
         # compute {δβ} and the normalized {w}
         β, self.cov = self.solver.solve(dataLikelihood, self.w)
+        # adjust β if it is too small
+        β = max(β, self.beta_min)
         # and return the new temperature
         return β
 
