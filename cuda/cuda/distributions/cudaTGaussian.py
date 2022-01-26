@@ -15,7 +15,7 @@ import altar.cuda.ext.cudaaltar as libcudaaltar
 from .cudaDistribution import cudaDistribution
 
 # the declaration
-class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"):
+class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.tgaussian"):
     """
     The cuda gaussian probability distribution
     """
@@ -28,13 +28,29 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"
     support = altar.properties.array(default=(0,1))
     support.doc = "the support interval of the truncated gaussian distribution"
 
+    def cuInitialize(self, application):
+        """
+        cuda initialize distribution
+        """
+        # super class process
+        super().cuInitialize(application=application)
+
+        # compute the normalized support Phi(a) = 1/2(1+erf((a-mean)/(sqrt(2)*sigma))
+        from math import erf, sqrt
+        sqrt2sigma = sqrt(2.0)*self.sigma
+        Phi = lambda x : 0.5+0.5*erf((x-self.mean)/sqrt2sigma)
+        low, high = self.support
+        self.support_normalized = (Phi(low), Phi(high))
+        # all done
+        return self
+
     def cuInitSample(self, theta):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
         batch = theta.shape[0]
         # call cuda c extension
-        libcudaaltar.cudaTGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma), self.support)
+        libcudaaltar.cudaTGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma), self.support_normalized)
         # and return
         return self
 
@@ -58,10 +74,10 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian"
         """
         # call extension
         libcudaaltar.cudaTGaussian_logpdf(theta.data, prior.data, batch, self.idx_range,
-                                          (self.mean, self.sigma), self.support)
+                                          (self.mean, self.sigma), self.support_normalized)
         # all done
         return self
 
     # local variables
-
+    support_normalized = None
 # end of file

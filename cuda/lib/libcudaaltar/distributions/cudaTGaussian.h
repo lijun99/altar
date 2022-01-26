@@ -8,7 +8,6 @@
 // Author(s): Hailiang Zhang, Lijun Zhu
 
 /// altar/cuda/distributions/cudaTGaussian.h
-/// Uniform Distribution
 
 // code guard
 #ifndef altar_cuda_distributions_cudaTGaussian_h
