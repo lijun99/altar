@@ -98,5 +98,6 @@ add_subdirectory(models/seismic)
 add_subdirectory(models/cudalinear)
 add_subdirectory(models/sir)
 add_subdirectory(models/regression)
+add_subdirectory(models/seas)
 
 # end of file
