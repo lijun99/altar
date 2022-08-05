@@ -14,13 +14,13 @@ import altar
 from altar.models.BayesianL2 import BayesianL2
 
 # import the earthquake cycle simulator
-from seqeas.subduction import Simulation
+from seqeas.pyflat import SubductionSimulation
 
 
 class SEAS(BayesianL2, family="altar.models.seas"):
     """
     Wrapper around the subduction simulation class provided by
-    ``seqeas.subduction.Simulation``.
+    ``seqeas.pyflat.SubductionSimulation``.
     """
     # configurable properties
     config_file = altar.properties.str()
@@ -36,7 +36,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         super().initialize(application=application)
 
         # initialize simulation object
-        self.sim = Simulation(self.config_file)
+        self.sim = SubductionSimulation(self.config_file)
 
         # done
         return self
@@ -47,14 +47,12 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         """
 
         # set rheology viscosity
-        log10_alpha_1 = theta[0]
-        self.sim.fault.upper_rheo.alpha_1 = 10 ** log10_alpha_1
+        log10_alpha_n = theta[0]
+        self.sim.fault.upper_rheo.alpha_n = 10 ** log10_alpha_n
+        self.sim.fault.upper_rheo.n = theta[1]
 
         # run simulation
-        sol = self.sim.run(show_pbar=False)
-
-        # get surface displacements
-        surf_disps = self.sim.get_surface_displacements(sol)
+        surf_disps = self.sim.run()
 
         # fill the predictions array with the residuals
         prediction[:] = surf_disps[:, -self.sim.n_cycsamples:].ravel() - self.dataobs.dataobs
