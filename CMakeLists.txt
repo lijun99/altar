@@ -45,6 +45,10 @@ find_package(Python3 REQUIRED COMPONENTS ${PYTHON_COMPONENTS})
 # pyre and pyre cuda
 find_package(PYRE)
 
+set(PYBIND11_PYTHON_VERSION 3)
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11 CONFIG)
+
 # set up cmake
 altar_cmakeInit()
 # set up c++
@@ -98,5 +102,6 @@ add_subdirectory(models/seismic)
 add_subdirectory(models/cudalinear)
 add_subdirectory(models/sir)
 add_subdirectory(models/regression)
+add_subdirectory(models/seas)
 
 # end of file

@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+#
+# (c) 2022 california institute of technology
+# all rights reserved
+#
+
+
+# get the package
+import altar
+import altar.cuda
+
+# make a specialized app that uses this model by default
+class Seas(altar.shells.cudaapplication, family='altar.applications.seas'):
+    """
+    An AlTar application for static/kinematic slip models
+    """
+
+    # user configurable state
+    model = altar.models.model(default=altar.cuda.models.bayesian())
+    model.doc = "the AlTar model to sample"
+
+
+# bootstrap
+if __name__ == "__main__":
+    # build an instance of the default app
+    app = Seas(name="seas")
+    # invoke the main entry point
+    status = app.run()
+    # share
+    raise SystemExit(status)
+
+
+# end of file
