@@ -83,49 +83,6 @@ void LinearViscous<T>::set_spinup_data(T* spinup_data)
 }
 
 template <typename T>
-struct LinearViscous<T>::ode_function {
-        __device__ __host__ void operator()
-        (T* f, //  dydt output vector [2*patches]
-        const T t, // time// my dependencies
-#include <pyre/cuda.h>
-        const T* y, // y value, vector [2*patches]
-        const int system_size, // 2*number of patches
-        const int parameters, // number of paraneters in alpha1
-        const T* param, // viscous coefficient
-        const T Vj, // backslip rate
-        const T* stressKernel // stress kernel matrix [patches,patches]
-        )
-   {
-        // the system_size is 2*patches, slip and velocity
-        auto patches = system_size/2;
-
-        // assume same alpha_1 for all patches
-        auto alpha_1 = param[0];
-
-        // get the physical quantities from wrapped data
-        auto dsdt = f;
-        auto dvdt = f+patches;
-        // auto slip = y; // not used
-        auto velocity = y+patches;
-
-        // set dsdt
-        for(int i=0; i<patches; ++i)
-            dsdt[i] = velocity[i];
-
-        // set dvdt
-        for(int ix=0; ix<patches; ++ix) {
-            // use dvdt for dtau/dt temporarily)
-            dvdt[ix] = 0;
-            for(int iy=0; iy<patches; ++iy)
-                dvdt[ix] += (velocity[iy]-Vj) *stressKernel[iy*patches+ix];
-            // get dvdt from dtau/dt
-            dvdt[ix] = dvdt[ix]/alpha_1;
-        }
-        // all done return f
-   }
-};
-
-template <typename T>
 void
 LinearViscous<T>::ode_solver(const int parameters, const int batch,
     const T* alpha1,
