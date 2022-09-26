@@ -19,42 +19,13 @@ from altar.cuda.models.cudaBayesian import cudaBayesian as model
 
 # implementations
 @altar.foundry(implements=model, tip="static inversion model")
-def static():
+def linearviscous():
     # grab the factory
-    from .cudaStatic import cudaStatic as static
+    from .cudaLinearViscous import cudaLinearViscous as linearviscous
     # attach its docstring
-    __doc__ = static.__doc__
+    __doc__ = linearviscous.__doc__
     # and return it
-    return static
+    return linearviscous
 
-# implementations
-@altar.foundry(implements=model, tip="static inversion model with Cp")
-def staticcp():
-    # grab the factory
-    from .cudaStaticCp import cudaStaticCp as staticcp
-    # attach its docstring
-    __doc__ = staticcp.__doc__
-    # and return it
-    return staticcp
-
-# implementations
-@altar.foundry(implements=model, tip="kinematic inversion model")
-def kinematicg():
-    # grab the factory
-    from .cudaKinematicG import cudaKinematicG as kinematicg
-    # attach its docstring
-    __doc__ = kinematicg.__doc__
-    # and return it
-    return kinematicg
-
-# implementations
-@altar.foundry(implements=model, tip="cascaded kinematic inversion model")
-def cascaded():
-    # grab the factory
-    from .cudaCascaded import cudaCascaded as cascaded
-    # attach its docstring
-    __doc__ = cascaded.__doc__
-    # and return it
-    return cascaded
 
 # end of file

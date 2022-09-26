@@ -13,94 +13,82 @@
 
 namespace altar::cuda::py::seas::linearviscous {
 
-// define a struct as interface to call c modules
-template<typename T>
-struct ode_solver {
-    // fixed parameters, initialized in the beginning
-    int system_size;     // 2*patches (slip, velocity)
-    int asperity_range;  // creep zone
-    T Vj;                // backslip
-    T* stressKernel;     // stress kernel
+template <typename T, typename D>
+T* convertPyArray(py::capsule pycap)
+{
+    auto cap = static_cast<D *>(pycap.get_pointer());
+    return (T *)cap->data;
+}
 
-    // methods - we need wrapper to convert python objects to c/c++ objects
-    // current cuda matrix/vectors are passed by python capsules
-    // this will be changed when all modules are implemented by pybind11
-    void init(int ss, int a_r, double v, py::capsule s);
-    void run(
-        int samples,
-        T t0, // start time
-        T tn, // end time
-        int rk_steps, // number of rk steps between t0 and tn
-        py::capsule py_y0, // initial values for y =(slip, velocity) [samples, 2*patches]
-        bool dense_output,
-        py::capsule py_tout, // desired output time points [samples, nout]
-        py::capsule py_yout, // output y values at tout  [samples, nout*2*patches]
-        int nout, // number of desired output time points
-        py::capsule py_alpha1 // viscous coefficient, a constant for all patches in each sample [samples]
+
+template<typename T>
+class pyLinearViscous
+{
+    using model_type = altar::models::seas::cuda::LinearViscous<T>;
+private:
+    model_type * _cmodel;
+public:
+    // constructor
+    pyLinearViscous () {_cmodel = new model_type();}
+    // initialize cmodel parameters
+    void initialize(int samples, int patches, int stations,
+        T t0, T t1, T Vj,
+        py::capsule stress_kernel, py::capsule displacement_kernel,
+        int t_eval_points, py::capsule t_eval,
+        py::capsule coseismic,
+        int spin_up_max_cycles,
+        int spin_up_convergence_check_cycles)
+    {
+        _cmodel->initialize(
+            samples, patches, stations,
+            t0, t1, Vj,
+            convertPyArray<T, cuda_matrix>(stress_kernel),
+            convertPyArray<T, cuda_matrix>(displacement_kernel),
+            t_eval_points, convertPyArray<T, cuda_vector>(t_eval),
+            convertPyArray<T, cuda_vector>(coseismic),
+            spin_up_max_cycles, spin_up_convergence_check_cycles
         );
+    }
+    // set initial spin up state
+    void set_spinup_data(py::capsule spinup_data)
+    {
+        _cmodel->set_spinup_data(
+            convertPyArray<T, cuda_vector>(spinup_data)
+        );
+    }
+    // set ode solver parameters
+    void set_ode_parameters(int steps, T tolerance_absolute, T tolerance_relative)
+    {
+        _cmodel->set_ode_parameters(steps, tolerance_absolute, tolerance_relative);
+    }
+    // forward modeling theta -> data prediction
+    void forward_model(py::capsule theta, py::capsule prediction, int parameters, int batch)
+    {
+        auto c_theta =  convertPyArray<T, cuda_matrix>(theta);
+        auto c_prediction = convertPyArray<T, cuda_matrix>(prediction);
+        _cmodel->forward_model(parameters, batch, c_theta, c_prediction);
+    }
 };
-
-template<typename T>
-void ode_solver<T>::init(int ss, int a_r, double v, py::capsule s)
-{
-    // assign values
-    system_size = ss;
-    asperity_range = a_r;
-    Vj = (T)v;
-    // cast python matrix to C matrix
-    cuda_matrix* s_mat = static_cast<cuda_matrix *>(s.get_pointer());
-    // get the data pointer
-    stressKernel = (T *)s_mat->data;
-}
-
-template<typename T>
-void ode_solver<T>::run(
-        int samples,
-        T t0, // start time
-        T tn, // end time
-        int rk_steps, // number of rk steps between t0 and tn
-        py::capsule py_y0, // initial values for y =(slip, velocity) [samples, 2*patches]
-        bool dense_output,
-        py::capsule py_tout, // desired output time points [samples, nout]
-        py::capsule py_yout, // output y values at tout  [samples, nout, 2*patches]
-        int nout, // number of desired output time points
-        py::capsule py_alpha1 // viscous coefficient, a constant for all patches in each sample [samples]
-        )
-{
-    // cast python matrix/vectors
-    auto y0_c = static_cast<cuda_vector *>(py_y0.get_pointer());
-    T* y0 = (T *)y0_c->data;
-    auto tout_c = static_cast<cuda_vector *>(py_tout.get_pointer());
-    T* tout = (T *)tout_c->data;
-    auto yout_c = static_cast<cuda_matrix *>(py_yout.get_pointer());
-    T* yout = (T *)yout_c->data;
-    auto alpha1_c = static_cast<cuda_matrix *>(py_alpha1.get_pointer());
-    T* alpha1 = (T *)alpha1_c;
-    // call c method
-    altar::models::seas::cuda::linearviscous::ode_solver<T>(
-        samples, system_size, t0, tn, rk_steps, y0, dense_output, tout, yout, nout,
-        asperity_range, Vj, stressKernel, alpha1);
-    // all done
-}
-
-
 
 // add bindings for the various cuda struct
 void
 module(py::module & m)
 {
-    using ode_solver_double = ode_solver<double>;
-    using ode_solver_float = ode_solver<float>;
+    using pyLinearViscous_float = pyLinearViscous<float>;
+    using pyLinearViscous_double = pyLinearViscous<double>;
 
-    py::class_<ode_solver_double>(m, "ode_solver_double")
+    py::class_<pyLinearViscous_double>(m, "model_double")
         .def(py::init())
-        .def("init", &ode_solver_double::init)
-        .def("run", &ode_solver_double::run);
-    py::class_<ode_solver_float>(m, "ode_solver_float")
+        .def("initialize", &pyLinearViscous_double::initialize)
+        .def("set_spinup_data", &pyLinearViscous_double::set_spinup_data)
+        .def("set_ode_parameters", &pyLinearViscous_double::set_ode_parameters)
+        .def("forward_model", &pyLinearViscous_double::forward_model);
+    py::class_<pyLinearViscous_float>(m, "model_float")
         .def(py::init())
-        .def("init", &ode_solver_float::init)
-        .def("run", &ode_solver_float::run);
-
+        .def("initialize", &pyLinearViscous_float::initialize)
+        .def("set_spinup_data", &pyLinearViscous_float::set_spinup_data)
+        .def("set_ode_parameters", &pyLinearViscous_float::set_ode_parameters)
+        .def("forward_model", &pyLinearViscous_float::forward_model);
 }
 
 } // end of namespace pycuda::seas::linearviscous

@@ -13,6 +13,8 @@
 #ifndef __DOPRI5_CUH__
 #define __DOPRI5_CUH__
 
+#include "details.cuh"
+
 // enclosed in namespace
 namespace ode::dopri5 {
 
@@ -204,8 +206,8 @@ void interpolator<T>::interpolate_dense(T* yt, const T t, const int n)
 // this is rather a holder of the output state data
 template <typename T>
 struct dense_output_state{
-    int nout;
-    int index;
+    int nout; //number of time points
+    int index; //
     const T* tout; // [nout] vector
     T* yout; // [nout, system_size]
     __device__ __host__ void init(const int n, const T* t, T* y)
@@ -216,8 +218,6 @@ struct dense_output_state{
         index = 0;
     }
 };
-
-
 
 template <typename T>
 __device__ __host__
@@ -275,15 +275,16 @@ void vector_copy(T*a, const T*b, const int size)
  * Solve one sample of ivp
  * dydt f=dy/dt function
  * t0, t1 start and end time
- * steps number of steps
+ * steps number of rk integral steps
  * y0 initial values at t0
  * tout dense output t values
  * yout dense output y values
  **/
 template <typename T, typename Func, typename... Args>
 __device__ void rk_solver_fixedstep(
+    const int rk_steps,
     const int system_size,
-    const T t0, const T t1, const int steps,
+    const T t0, const T t1,
     const T* y0,
     bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
@@ -291,7 +292,7 @@ __device__ void rk_solver_fixedstep(
     )
 {
     // determine the step size
-    auto h_step = (t1-t0)/steps;
+    auto h_step = (t1-t0)/rk_steps;
     // initialize the tableau and state
     tableau<T> table;
     step_state<T> rk_step_state;
@@ -299,6 +300,7 @@ __device__ void rk_solver_fixedstep(
     // data for dense output
     dense_output_state<T> out_state;
     interpolator<T> interp;
+    // only allocate the
     if(is_dense_output)
     {
         // only initialize them when dense output is desired
@@ -306,14 +308,13 @@ __device__ void rk_solver_fixedstep(
         interp.init(system_size);
     }
 
-
     // assign the initial values to state
     vector_copy<T>(rk_step_state.y0, y0, system_size);
     // assign the initial k1 value: f(t0, y0)
     dydt(rk_step_state.k1, t0, y0, system_size, args...);
 
     // iterate over steps
-    for(int step = 0; step<steps; step++)
+    for(int step = 0; step<rk_steps; step++)
     {
         // set the t0 and step
         rk_step_state.t0 = t0 + step*h_step;
@@ -330,14 +331,19 @@ __device__ void rk_solver_fixedstep(
         vector_copy<T>(rk_step_state.y0, rk_step_state.yn, system_size); // y
         vector_copy<T>(rk_step_state.k1, rk_step_state.k7, system_size); // f(t, y)
     }
-
+    // if not dense_output, we copy the last step y to output
+    if (!is_dense_output) {
+        vector_copy<T>(y_out, rk_step_state.yn, system_size);
+    }
 }
 
-// a generic interface for calling the rk sovler, need to be customized for each model
+// a generic interface for calling the rk solver for a batch of samples
 template <typename T, typename Func, typename... Args>
-__global__ void rk_solver_fixedstep_batch(const int samples,
+__global__ void rk_solver_fixedstep_batch(
+    const int rk_steps,
+    const int samples,
     const int system_size,
-    const T t0, const T t1, const int steps,
+    const T t0, const T t1,
     const T* y0,
     bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
@@ -347,11 +353,11 @@ __global__ void rk_solver_fixedstep_batch(const int samples,
     // one thread per sample, to get the sample index
     int sample = blockIdx.x *blockDim.x + threadIdx.x;
 
-
-
-    // check thread id in range of samples
+    // check whether thread id is in range of samples
+    // - a common practice for cuda since #threads might be bigger than #samples
     if(sample >= samples)
         return;
+
     // get the starting pointer for samples
     auto y0_s = y0 + sample*system_size;
     auto yout_s = y_out + sample*system_size*n_out;
@@ -359,8 +365,8 @@ __global__ void rk_solver_fixedstep_batch(const int samples,
     // assume t_out is the same
 
     // call the ode solver for this sample
-    rk_solver_fixedstep<T, Func, Args...>(system_size,
-            t0, t1, steps, y0_s, is_dense_output,
+    rk_solver_fixedstep<T, Func, Args...>(rk_steps, system_size,
+            t0, t1, y0_s, is_dense_output,
             t_out, yout_s, n_out,
             dydt, args...);
 

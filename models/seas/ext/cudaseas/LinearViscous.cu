@@ -6,48 +6,102 @@
 //
 
 // for the build system
-//#include <portinfo>
+#include <portinfo>
 
 // get my class declaration
 #include "LinearViscous.h"
 
-// my dependencies
-#include "dopri5.cuh"
-#include <stdio.h>
-#include <iostream>
-// #include <pyre/cuda.h>
-// #include <algorithm>
+#include "details.cuh"
+#include "LinearViscousOde.cuh"
 
-// global namespace enclosure
+// get my dependencies
+#include "details.cuh"
+// my dependencies
+#include <pyre/cuda.h>
+
 namespace altar::models::seas::cuda {
 
-// linear viscous methods
-namespace linearviscous {
-
-// for each model, defined
-// 1. ode_function - define the ode function
-// 2. ode_solver_kernel - cuda kernel for a specific ode function, needed because each sample may have different varied parameters
-// 3. struct/class to wrap data and run method, served as python interface
-
-// 1. function used in the ode integration
-// the first four parameters are required as standard ones in an ode equation
-// the rest may be defined by the model
-// here, y = (s, v)  [2*patches]
 template <typename T>
-struct ode_function {
-    __device__ __host__ void operator()
+void
+LinearViscous<T>::set_ode_parameters (int steps, T ta, T tr)
+{
+    rk_steps_ = steps;
+    tolerance_absolute_ = ta;
+    tolerance_relative_ = tr;
+}
+
+// Initialize model parameters
+// suffix underline indicate class parameters
+template <typename T>
+void LinearViscous<T>::initialize(
+    int samples, int patches, int stations,
+    T t0, T t1, T Vj,
+    T* stress_kernel, T* displacement_kernel,
+    int t_eval_points, T* t_eval,
+    T* coseismic,
+    int spinup_max_cycles,
+    int spinup_convergence_check_cycles
+    )
+{
+    // assign parameters
+    max_samples_ = samples;
+    patches_ = patches;
+    stations_ = stations;
+
+    stress_kernel_ = stress_kernel;
+    displacement_kernel_ = displacement_kernel;
+    t_eval_points_ = t_eval_points;
+    t_eval_ = t_eval;
+    coseismic_ = coseismic;
+
+    t0_ = t0;
+    t1_ = t1;
+    Vj_ = Vj;
+
+    spinup_max_cycles_ = spinup_max_cycles;
+    spinup_convergence_check_cycles_ = spinup_convergence_check_cycles;
+
+    // allocate the (slip, velocity) at t_eval
+    cudaSafeCall(cudaMalloc(&y_eval_, t_eval_points_*2*patches_*max_samples_*sizeof(T)));
+    cudaSafeCall(cudaMemset(y_eval_, 0, t_eval_points_*patches_*max_samples_*sizeof(T)));
+
+    // alllocate two (old and new) matrix for (slip velocity) at t1
+    cudaSafeCall(cudaMalloc(&yold_, 2*patches_*max_samples_*sizeof(T)));
+    cudaSafeCall(cudaMalloc(&ynew_, 2*patches_*max_samples_*sizeof(T)));
+
+    // allocate a vector to record convergence
+    cudaSafeCall(cudaMalloc(&convergence_, max_samples_*sizeof(int)));
+
+}
+
+template <typename T>
+void LinearViscous<T>::set_spinup_data(T* spinup_data)
+{
+    spinup_data_ = spinup_data;
+    std::cout << "assign spin up data";
+    details::debug_cuda_memory(spinup_data_, 2*patches_);
+}
+
+template <typename T>
+struct LinearViscous<T>::ode_function {
+        __device__ __host__ void operator()
         (T* f, //  dydt output vector [2*patches]
-        const T t, // t0
-        const T* y, // slip value, vector [2*patches]
+        const T t, // time// my dependencies
+#include <pyre/cuda.h>
+        const T* y, // y value, vector [2*patches]
         const int system_size, // 2*number of patches
-        const int asperity_range, // the range of creeping zone
-        const T alpha1, // viscous coefficient
+        const int parameters, // number of paraneters in alpha1
+        const T* param, // viscous coefficient
         const T Vj, // backslip rate
         const T* stressKernel // stress kernel matrix [patches,patches]
         )
    {
         // the system_size is 2*patches, slip and velocity
         auto patches = system_size/2;
+
+        // assume same alpha_1 for all patches
+        auto alpha_1 = param[0];
+
         // get the physical quantities from wrapped data
         auto dsdt = f;
         auto dvdt = f+patches;
@@ -62,121 +116,287 @@ struct ode_function {
         for(int ix=0; ix<patches; ++ix) {
             // use dvdt for dtau/dt temporarily)
             dvdt[ix] = 0;
-            if(ix>=asperity_range)
-                for(int iy=0; iy<patches; ++iy)
-                    dvdt[ix] += velocity[iy]*stressKernel[iy*patches+ix];
+            for(int iy=0; iy<patches; ++iy)
+                dvdt[ix] += (velocity[iy]-Vj) *stressKernel[iy*patches+ix];
             // get dvdt from dtau/dt
-            dvdt[ix] = dvdt[ix]/alpha1 - Vj;
+            dvdt[ix] = dvdt[ix]/alpha_1;
         }
         // all done return f
    }
-}; // end of struct ode_function
+};
 
-// 2. cuda kernels to call rk sovler to solve a batch of samples
-// need to be customized for each model on how to assign varied parameters to each sample
 template <typename T>
-__global__ void ode_solver_kernel(
-    const int samples,
-    const int system_size,
-    const T t0, const T t1, const int steps,
-    const T* y0,
-    bool is_dense_output,
-    const T* t_out, T* y_out, const int n_out,
-    ode_function<T> dydt,
-    const int asperity_range, const T* alpha1, const T Vj, const T* stressKernel // model-depend parameters
-    )
+void
+LinearViscous<T>::ode_solver(const int parameters, const int batch,
+    const T* alpha1,
+    const T* yin,
+    T* yout,
+    bool dense_output)
 {
-    // one thread per sample, to get the sample index
-    int sample = blockIdx.x *blockDim.x + threadIdx.x;
+    // take the ode_function
+    using func_type = ode_function;
+    func_type dydt;
 
-    // check thread id in range of samples
-    if(sample >= samples)
+    // if not dense_output, we only get the last time point (t1) value
+    // otherwise, perform interpolation to get all t_eval time points
+    int nout = (dense_output) ? t_eval_points_ : 1;
+
+    //call the solver
+    altar::models::seas::cuda::linearviscous_ode::ode_solver<T>(
+        rk_steps_,
+        batch,
+        2*patches_,
+        t0_, // start time
+        t1_, // end time
+        yin, // initial values for y =(slip, velocity) [samples, 2*patches]
+        dense_output,
+        t_eval_, // desired output time points [samples, nout]
+        yout, // output y values at tout  [samples, nout, 2*patches]
+        nout, // number of desired output time points
+        Vj_, stress_kernel_,
+        parameters, alpha1);
+    // all done
+}
+
+
+template <typename T>
+void
+LinearViscous<T>::forward_model (const int parameters, const int batch, const T* theta, T* prediction)
+{
+    // load spin up data from preset or previous iteration
+    details::matrix_duplicate_vector<T>(ynew_, spinup_data_, batch, 2*patches_);
+
+    // spin up
+    int cycles = 0;
+    while (cycles < spinup_max_cycles_) {
+        for(int cycle=0; cycle< spinup_convergence_check_cycles_; cycle++)
+        {
+            // make a copy of current state for convergence check
+            details::matrix_copy<T>(yold_, ynew_, batch*2*patches_);
+
+            //std::cout << "printing init ynew \n";
+            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+
+            // add coseismic change
+            add_coseismic_change(ynew_, coseismic_, theta, parameters, batch, patches_);
+
+            //std::cout << "printing theta/alpha1 \n";
+            //details::debug_cuda_memory<T>(theta, batch*parameters);
+
+            //std::cout << "printing ynew after adding coseismic \n";
+            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+
+            // call ode solver for one cycle, only get the last time point values
+            // ode_solver(parameters, batch, theta, ynew_, y_eval_, false);
+
+            // copy the last time point values to ynew
+            details::matrix_copy<T>(ynew_, y_eval_, batch*2*patches_);
+
+            //std::cout << "printing ynew after ode\n";
+            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+
+            // set slip to zeros to enforce convergence
+            set_slips_zero(ynew_, batch, patches_);
+        }
+
+        // check convergence
+        bool converged = check_spinup_convergence(ynew_, yold_, batch);
+        if(converged) {
+            cycles = spinup_max_cycles_;
+        }
+        else{
+            cycles += spinup_convergence_check_cycles_;
+        }
+    }
+
+    // save the first set of data to spin up data for later iterations
+    details::matrix_copy<T>(spinup_data_, ynew_, 2*patches_);
+
+    // final cycle to compute data output
+    // run an ode with dense_output
+    add_coseismic_change(ynew_, coseismic_, theta, parameters, batch, patches_);
+    ode_solver(parameters, batch, theta, ynew_, y_eval_, true);
+
+    // compute the observations
+    compute_displacement(y_eval_, prediction, batch);
+    // all done
+}
+
+
+// add coseismic change (slip, stress/alpha1) to y(slip, velocity) - kernel
+template<typename T>
+__global__ void add_coseismic_change_kernel(T* y,
+    const T* coseismic, const T* alpha1,
+    const int parameters, const int samples, const int patches)
+{
+    // each row uses a thread, get row index from thread id
+    int sample  = blockIdx.x *blockDim.x + threadIdx.x;
+    // avoid out of range
+    if (sample>=samples)
         return;
-    // get the starting pointer for samples
-    auto y0_s = y0 + sample*system_size;
-    auto yout_s = y_out + sample*system_size*n_out;
-
-    // get the varies parameter for this sample
-    auto alpha1_s = alpha1[sample];
-
-    // first bracket <...>:
-    // T-typename, ode_function<T>-function type
-    // const T, const T, const T* - model-depend parameter types
-
-    ode::dopri5::rk_solver_fixedstep<T, ode_function<T>, const int, const T, const T, const T*>(
-        system_size,
-        t0, t1, steps,
-        y0_s,
-        is_dense_output,
-        t_out, yout_s, n_out,
-        dydt,
-        asperity_range,
-        alpha1_s, Vj, stressKernel);
+    // get the head of the matrix row
+    auto y_s = &y[sample*2*patches];
+    auto alpha1_s = &alpha1[sample*parameters];
+    // iterate over slip cols
+    for(int i=0; i<patches; ++i)
+        y_s[i] += coseismic[i];
+    // iterate over velocity cols
+    for(int i=patches; i<2*patches; ++i)
+        y_s[i] += coseismic[i]/alpha1_s[0];
     // all done
 }
 
 
-// 3. define the struct/class ode_solver to wrap data and methods
-// see LinearViscous.h for defintion
-
-
-// 3.2 cuda ode solver
+// add coseismic change (slip, stress/alpha1) to (slip, velocity)
 template <typename T>
-void ode_solver(
-    const int samples,
-    const int system_size, //system_size = 2*patches for slip and velocity
-    const T t0, // start time
-    const T tn, // end time
-    const int rk_steps, // number of rk steps between t0 and tn
-    const T* y0, // initial values for y =(slip, velocity) [samples, 2*patches]
-    const bool dense_output,
-    const T* tout, // desired output time points [samples, nout]
-    T *yout, // output y values at tout  [samples, nout, 2*patches]
-    const int nout, // number of desired output time points
-    const int asperity_range, // creep zone range - fixed parameters
-    const T Vj,
-    const T* stressKernel,
-    const T* alpha1 // viscous coefficient, a constant for all patches in each sample [samples]
-    )
+void LinearViscous<T>::add_coseismic_change(T* y, const T* coseismic, const T* alpha1,
+    const int parameters, const int samples, const int patches)
 {
+    // decide the execution size - one sample per thread
+    const int threadsPerBlock = 128;
+    const int numberOfBlocks = IDIVUP(samples, threadsPerBlock); //IDIVUP
+    // call kernel
+    add_coseismic_change_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(y, coseismic, alpha1,
+        parameters, samples, patches);
+    // check error
+    cudaSafeCall(cudaGetLastError());
+}
 
-    // create an instance of ode_function
-    ode_function<T> func;
 
-    // compute the number of gpu blocks needed
-    const int threadsPerBlock = 256;
-    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
-    std::cout << numberOfBlocks;
+// set slips to 0, as a temporary solution for convergence
+template<typename T>
+__global__ void set_slips_zero_kernel(T* y, const int samples, const int patches)
+{
+    // each row uses a thread, get row index from thread id
+    int sample  = blockIdx.x *blockDim.x + threadIdx.x;
+    // avoid out of range
+    if (sample>=samples)
+        return;
+    // get the head of the matrix row
+    auto y_s = y + sample*2*patches;
 
-
-    // call ode solver kernel
-    ode_solver_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(
-        samples,
-        system_size, // system size
-        t0, tn, rk_steps,
-        y0,
-        dense_output, // dense out = true
-        tout, yout, nout, // for dense_output
-        func, // the above are stand parameters to call rk_solver, below are model-depend parameter, included in args...
-        asperity_range, // int
-        alpha1, Vj, stressKernel  // T* T T*
-        );
-    // check errors
-    auto status = cudaGetLastError();
-    if (status != cudaSuccess)
-        printf("CUDA Error Code %d: %s - at %s:%d\n",
-                status, cudaGetErrorString(status), __FILE__, __LINE__);
+    for(int i=0; i<patches; ++i)
+        y_s[i] = 0;
     // all done
 }
 
-// explicit instantiation for python module
-template void ode_solver<double>(const int, const int, const double, const double, const int,
-    const double*, const bool, const double*, double*, const int, const int, const double, const double*, const double*);
-template void ode_solver<float>(const int, const int, const float, const float, const int,
-    const float*, const bool, const float*, float*, const int, const int, const float, const float*, const float*);
+template <typename T>
+void LinearViscous<T>::set_slips_zero(T* y, const int samples, const int patches)
+{
+    // decide the execution size - one sample per thread
+    const int threadsPerBlock = 128;
+    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
+    // call kernel
+    set_slips_zero_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(y, samples, patches);
+    // check error
+    cudaSafeCall(cudaGetLastError());
+}
 
-} // namespace linearviscous
-} // namespace
+template<typename T>
+__device__
+int check_error(const T a, const T b, const T absolute, const T relative)
+{
+    auto diff = abs(a-b);
+    if( diff > absolute)
+        return 1;
+    else if (diff/(abs(b)+absolute) > relative)
+        return 1;
+    else
+        return 0;
+}
+
+template<typename T>
+__global__ void check_spinup_convergence_kernel(int* result, const T* y0, const T* y1,
+    const T absolute, const T relative, const int samples, const int elements)
+{
+    // each row uses a thread, get row index from thread id
+    int sample  = blockIdx.x *blockDim.x + threadIdx.x;
+    // avoid out of range
+    if (sample>=samples)
+        return;
+    // get the head of the matrix row
+    auto y0s = y0 + sample*elements;
+    auto y1s = y1 + sample*elements;
+
+    result[sample] = 0;
+    for(int i=0; i<elements; ++i)
+        result[sample] += check_error<T>(y0s[i], y1s[i], absolute, relative);
+    // all done
+}
+
+template <typename T>
+bool LinearViscous<T>::check_spinup_convergence(const T* y0, const T* y1, const int samples)
+{
+    // decide the execution size - one sample per thread
+    const int threadsPerBlock = 128;
+    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
+    // call kernel
+    check_spinup_convergence_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(convergence_, y0, y1,
+        tolerance_absolute_, tolerance_relative_, samples, 2*patches_);
+    // check error
+    cudaSafeCall(cudaGetLastError());
+    // convergence_ records convergence for each sample
+    // note: currently, if one sample is not converged, we repeat for all
+    int sum = details::vector_sum<int>(convergence_, samples);
+    return sum==0;
+}
 
 
+template<typename T>
+__global__
+void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
+        const int samples, const int t_points, const int patches, const int stations)
+{
+    // each row uses a thread, get row index from thread id
+    int sample  = blockIdx.x *blockDim.x + threadIdx.x;
+    // avoid out of range
+    if (sample>=samples)
+        return;
+
+    // get the head of the matrix for this sample
+    auto y_s = yeval + sample*t_points*2*patches;
+    auto pred_s = predictions + sample*t_points*stations;
+
+    // iterate over time points
+    for(int t=0; t<t_points; t++)
+    {
+        // get data pointers for this sample at this time
+        auto y_s_t = y_s + t*2*patches;
+        auto pred_s_t = pred_s +t*stations;
+        auto gf_t = gf + t*patches*stations;
+
+        // compute Obs (stations) = Slip (patches) x G(patches, stations)
+        for(int s=0; s<stations; s++)
+        {
+            pred_s_t[s] = 0;
+            for (int p=0; p<patches; p++)
+                pred_s_t[s] += y_s_t[p]*gf_t[p*stations+s];
+        }
+    }
+}
+
+// compute displacement from slips
+// @note yeval is arranged in shape (samples, times, 2*patches) - C-style
+//       gf is arranged in shape (times, patches, stations)
+//          - merged with data covariance, therefore, different for different t
+//       predictions is arranged in shape (samples, times, stations)
+template <typename T>
+void LinearViscous<T>::compute_displacement(const T* yeval, T* predictions, const int samples)
+{
+        // decide the execution size - one sample per thread
+    const int threadsPerBlock = 128;
+    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
+    // call kernel
+    compute_displacement_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(yeval, displacement_kernel_,predictions,
+        samples, t_eval_points_,patches_,stations_);
+    // check error
+    cudaSafeCall(cudaGetLastError());
+
+}
+
+// explicit instantiation
+template class altar::models::seas::cuda::LinearViscous<float>;
+template class altar::models::seas::cuda::LinearViscous<double>;
+
+} // end of namespace
 // end of file

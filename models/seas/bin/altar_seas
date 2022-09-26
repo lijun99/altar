@@ -20,7 +20,6 @@ class Seas(altar.shells.cudaapplication, family='altar.applications.seas'):
     model = altar.models.model(default=altar.cuda.models.bayesian())
     model.doc = "the AlTar model to sample"
 
-
 # bootstrap
 if __name__ == "__main__":
     # build an instance of the default app

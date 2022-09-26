@@ -14,7 +14,7 @@ from altar.cuda.models.cudaBayesian import cudaBayesian
 # extensions
 from altar.cuda import cublas
 from altar.cuda import libcuda
-from altar.models.seismic.ext import cudaseismic as libcudaseismic
+from altar.models.seas.ext import cudaseas as libcudaseas
 import numpy
 
 # declaration
@@ -26,25 +26,75 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     # configurable traits
 
     # data observations
+    # flattened 1d vector with time points x stations
     dataobs = altar.cuda.data.data()
     dataobs.default = altar.cuda.data.datal2()
     dataobs.doc = "the observed data"
 
-    # the file based inputs
-    green = altar.properties.path(default="green.txt")
-    green.doc = "the name of the file with the Green functions"
+    # model parameters
+    t_period = altar.properties.array(default=(0.0, 1.0))
+    t_period.doc = "the start/end time of an earthquake cycle"
 
     patches = altar.properties.int(default=1)
-    patches.doc = "number of patches"
+    patches.doc = "number of creeping patches"
 
-    stresskernel = altar.properties.path(default="stresskernel.txt")
-    stresskernel.doc = "the filename for input stress kernel - patches x patches matrix"
+    stations = altar.properties.int(default=1)
+    stations.doc = "number of surface observation locations"
 
-    t = altar.properties.array(default=(0.0, 1.0))
-    t.doc = "the start/end time"
+    # the file based inputs
+    t_eval_file = altar.properties.path(default="t_eval.txt")
+    t_eval_file.doc = "the input file for time points when displacements are evaluated"
+
+    t_eval_points = altar.properties.int(default=1)
+    t_eval_points.doc = "number of t_eval points"
+
+    plate_loading_velocity = altar.properties.float(default=1)
+    plate_loading_velocity.doc = "Plate loading velocity, as back slip"
+
+    stress_kernel_file = altar.properties.path(default="stresskernel.txt")
+    stress_kernel_file.doc = "the filename for input stress kernel - patches x patches matrix"
+
+    displacement_kernel_file = altar.properties.path(default="displacementkernel.txt")
+    displacement_kernel_file.doc = "the filename for input displacement kernel G, arranged in (patches, stations)"
+
+    coseismic_file = altar.properties.path(default="coseismic.txt")
+    coseismic_file.doc = "the input file for coseismic (slip, stress) changes, vector with 2*patches elements"
+
+    use_spin_up_data = altar.properties.bool(default=False)
+    use_spin_up_data.doc = "whether to use a pre-computed data for (slip, velocity) at the end of an cycle"
+
+    spin_up_data_file = altar.properties.path(default="spin_up_data.txt")
+    spin_up_data_file.doc = "the input file for spin-up data of (slip, velocity) - 2*patches"
+
+    ode_solver_steps = altar.properties.int(default=1000)
+    ode_solver_steps.doc = "runge-kutta steps (for fixed steps) or max steps (for adaptive)"
+
+    ode_solver_tolerance_relative = altar.properties.float(default=1e-4)
+    ode_solver_tolerance_relative.doc = "max relative error for ode solver"
+
+    ode_solver_tolerance_absolute = altar.properties.float(default=1e-3)
+    ode_solver_tolerance_absolute.doc = "max absolute error for ode solver"
+
+    spin_up_convergence_check_cycles = altar.properties.int(default=20)
+    spin_up_convergence_check_cycles.doc = "number of spin up cycles to check convergence"
+
+    spin_up_max_cycles = altar.properties.int(default=100)
+    spin_up_max_cycles.doc = "max number of cycles to stop spin up"
 
     # public data
-    ode_solver = None
+    # use gPrefix to indicate cuda matrix/vector
+    gT_eval = None
+    gCoseismic = None
+    gStressKernel = None
+    gGF = None # displacement kernel
+    gSpinUpData = None
+    gDataObsBatched = None # data observations duplicated in #samples
+    gDprediction = None
+    # interface to C++ model object
+    cmodel = None
+
+    ode_solver = None # to be implemented as a component in the future
+
 
     # protocol obligations
     @altar.export
@@ -55,80 +105,149 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # chain up
         super().initialize(application=application)
 
-        # get a cublas handle
-        self.cublas_handle = self.device.get_cublas_handle()
+        # load files to gpu
+        self.loadInputFiles()
 
-        # load the green's function
-        self.NGbparameters = 2*self.Nas*self.Ndd*self.Nt
-        self.GF=self.loadFile(filename=self.green, shape=(self.NGbparameters, self.observations))
-
-        # prepare the GF in gpu
-        self.gGF = altar.cuda.matrix(shape=self.GF.shape, dtype=self.precision)
-
-        # merge covariance to gf
-        if not self.forwardonly:
-            self.mergeCovarianceToGF()
-
-        # prepare the residuals matrix
+        # prepare the predicted data matrix
         self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
 
-        # prepare the initial arrival time
-        self.gt0s = altar.cuda.vector(source=numpy.asarray(self.t0s, dtype=self.precision))
+        # create the c model and pass parameters
+        print(self.precision)
+        if self.precision == "float32": # single precision
+            self.cmodel = libcudaseas.linearviscous.model_float()
+        else: # double precision
+            self.cmodel = libcudaseas.linearviscous.model_double()
 
-        # create a cuda/c model object
-        dtype = self.gGF.dtype.num
-        self.cmodel = libcudaseismic.kinematicg_alloc(
-                self.Nas, self.Ndd, self.Nmesh, self.dsp,
-                self.Nt, self.Npt, self.dt,
-                self.gt0s.data,
-                self.samples, self.parameters, self.observations,
-                self.gidx_map.data, dtype)
+        # pass parameters and data to cmodel
+        self.cmodel.initialize(
+            self.samples, self.patches, self.stations,
+            self.t_period[0], self.t_period[1], self.plate_loading_velocity,
+            self.gStressKernel.data, self.gGF.data,
+            self.t_eval_points, self.gT_eval.data,
+            self.gCoseismic.data,
+            self.spin_up_max_cycles, self.spin_up_convergence_check_cycles
+        )
+
+        # set the initial state for spin up
+        self.cmodel.set_spinup_data(
+            self.gSpinUpData.data
+        )
+
+        # set ode solver parameters
+        self.cmodel.set_ode_parameters(
+            self.ode_solver_steps,
+            self.ode_solver_tolerance_absolute,
+            self.ode_solver_tolerance_relative
+        )
 
         # all done
         return self
 
-    def forwardModelBatched(self, theta, gf, prediction, batch, observation=None):
+    def loadInputFiles(self):
         """
-        KinematicG forward model in batch: cast Mb(x,y,t)
-        :param theta: matrix (samples, parameters), sampling parameters
-        :param gf: matrix (2*Ndd*Nas*Nt, observations), kinematicG green's function
-        :param prediction: matrix (samples, observations), the predicted data or residual between predicted and observed data
-        :param batch: integer, the number of samples to be computed batch<=samples
-        :param observation: matrix (samples, observations), duplicates of observed data
-        :return: prediction as predicted data(observation=None) or residual (observation is provided)
+        Load All Input files
         """
-        if observation is None:
-            return_residual = False
-        else:
-            prediction.copy(other=observation)
-            return_residual = True
+        # grab the report channels
+        info = self.info
+        error = self.error
 
-        # call cuda/c library
-        libcudaseismic.kinematicg_forward_batched(self.cublas_handle, self.cmodel,
-            theta.data, gf.data, prediction.data, theta.shape[1], batch, return_residual)
+        # grab the sizes
+        patches = self.patches
+        stations = self.stations
+        times = self.t_eval_points
+        max_samples = self.samples
+
+        info.log(f'loading files from {self.case}...')
+        # load the coseismic change to (slip, stress)
+        self.gCoseismic = self.loadFileToGPU(self.coseismic_file)
+        coseismic_shape = self.gCoseismic.shape
+        if coseismic_shape != patches*2:
+            error.log(f'Coseismic data shape {coseismic_shape} does not match 2*{patches}')
+
+        # load the stress kernel (patches, patches)
+        self.gStressKernel = self.loadFileToGPU(self.stress_kernel_file)
+        sk_shape = self.gStressKernel.shape
+        if sk_shape != (patches, patches):
+            error.log(f'Stress kernel shape {sk_shape} does not match (patches, patches)')
+
+        # init or load spin up data for (slips, velocities)
+        if self.use_spin_up_data:
+            self.gSpinUpData = self.loadFileToGPU(self.spin_up_data_file)
+            spinup_data_shape = self.gSpinUpData.shape
+            if spinup_data_shape != patches:
+                error.log(f'The spin up data shape {spinup_data_shape} does not match 2*{patches}')
+        else: # set as zeros
+            self.gSpinUpData = altar.cuda.vector(shape=2*patches, dtype=self.precision).zero()
+
+            # load the displacement kernel
+        GF = self.loadFile(self.displacement_kernel_file)
+        if GF.shape != (self.patches, self.stations):
+            error.log(f'Displacement kernel shape {coseismic.shape} does not match ({self.patches}, {self.stations}')
+
+        # cd has been already merged to observed data through dataobs initialization
+        # get a reference for the observed data (samples,
+        self.gDataObsBatched = self.dataobs.gdataObsBatch
+        # we now merge cd to GF
+        cd = self.dataobs.gcd_inv.copy_to_host(type='numpy')
+        bGF = self.mergeCdToGF(cd, GF)
+        # copy it to gpu
+        self.gGF = altar.cuda.matrix(source=bGF, dtype=self.precision)
+
+        # load the t_eval points
+        self.gT_eval = self.loadFileToGPU(self.t_eval_file)
+        t_eval_shape = self.gT_eval.shape
+        if t_eval_shape != times:
+            error.log(f'the number of time points {t_eval_shape} does not match {times}')
+
+        # debug
+        #self.gSpinUpData.print()
+        #self.gCoseismic.print()
+        #self.gT_eval.print()
+        #self.gStressKernel.print()
+        #self.gGF.print()
 
         # all done
-        return prediction
+        return
 
-    def forwardModel(self, theta, gf, prediction, observation=None):
+    def mergeCdToGF(self, cd, GF):
         """
-        KinematicG forward model for single sample: cast Mb(x,y,t)
-        :param theta: vector (parameters), sampling parameters
-        :param gf: matrix (2*Ndd*Nas*Nt, observations), kinematicG green's function
-        :param prediction: vector (observations), the predicted data or residual between predicted and observed data
-        :param observation: vector (observations), duplicates of observed data
-        :return: prediction as predicted data(observation=None) or residual (observation is provided)
+        Merge Data Covariance(cd) to GF (displacement kernel)
+        @note that
+        :param: cd - Data Covariance inverse in Cholesky decomposed form (obs, obs), obs=timesxstations
+        :param: GF - Original displacement kernel (patches, stations)
+        :return: bGF - merged GF (times, patchesxstations), the latter is flattened
         """
-        if observation is None:
-            return_residual = False
-        else:
-            prediction.copy(other=observation)
-            return_residual = True
 
-        parameters = theta.shape
-        # call cuda/c extension
-        libcudaseismic.kinematicg_forward(self.cublas_handle, self.cmodel,
-            theta.data, gf.data, prediction.data, parameters, return_residual)
+        # grab sizes
+        patches = self.patches
+        stations = self.stations
+        times = self.t_eval_points
+
+        # construct return
+        bGF = numpy.zeros(shape=(times, patches, stations), dtype=self.precision)
+        # iterate over different time points
+        for time in range(times):
+            # get a submatrix from cd for this time point
+            # consider data at different time points are uncorrelated
+            cd_t = cd[time*stations:(time+1)*stations, time*stations:(time+1)*stations]
+            # multiply it by the original GF
+            bGF[time,:,:] = numpy.matmul(GF, cd_t)
+        # flatten the second dimension
+        bGF = bGF.reshape(times, patches*stations)
+        # all done
+        return bGF
+
+    def forwardModelBatched(self, theta, prediction, batch):
+        """
+        Linear Viscous forward model in batch
+        :param theta: matrix (samples, parameters), sampling parameters
+        :param prediction: matrix (samples, observations), the predicted data or residual between predicted and observed data
+        :param batch: integer, the number of samples to be computed batch<=samples
+        :return: prediction as predicted data
+        """
+
+        parameters = theta.shape[1]
+        self.cmodel.forward_model(theta.data, prediction.data, parameters, batch)
 
         # all done
         return prediction
@@ -137,15 +256,19 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
         Compute the likelihood from my forward problem
-
+        :param: theta - sampled parameters, matrix of (samples, parameters)
+        :param: likelihood - computed likelihood, vector of (samples)
+        :param: batch - number of samples to be computed
         """
 
-        # residuals = dataPrediction - dataObservation
+        # get the data storage for data prediction or residual
         residuals = self.gDprediction
 
         # call forward model to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=theta, gf=self.gGF, prediction=residuals, batch=batch,
-                observation= self.dataobs.gdataObsBatch)
+        self.forwardModelBatched(theta=theta, prediction=residuals, batch=batch)
+
+        # subtract from data observation
+        residuals -= self.gDataObsBatched
 
         # call data method to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
@@ -166,9 +289,5 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
 
     # private data
     # inputs
-    GF = None # the Green functions
-    gGF = None
-    gDprediction = None
-    cublas_handle=None
 
 # end of file
