@@ -233,8 +233,9 @@ void dense_output(
 
     bool is_in_range = 1;
     bool is_interpolator_prepared = 0;
-    while (is_in_range){
-        auto & index = out_state.index;
+    auto & index = out_state.index;
+    auto nout = out_state.nout;
+    while (is_in_range && index < nout){
         auto t = out_state.tout[index];
         // check whether t is \in [t0, t0+h]
         // printf("interpolation %d %f %f %f\n", index, t, t0, h);
@@ -363,13 +364,11 @@ __global__ void rk_solver_fixedstep_batch(
     auto yout_s = y_out + sample*system_size*n_out;
 
     // assume t_out is the same
-
     // call the ode solver for this sample
     rk_solver_fixedstep<T, Func, Args...>(rk_steps, system_size,
             t0, t1, y0_s, is_dense_output,
             t_out, yout_s, n_out,
             dydt, args...);
-
     // all done
 }
 

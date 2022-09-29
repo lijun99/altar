@@ -30,7 +30,7 @@ void run(
 
     const int threads = 256;
     const int blocks = (samples-1+threads)/threads;
-
+    cudaSafeCall(cudaDeviceSetLimit(cudaLimitMallocHeapSize, 256*1024*1024));
     std::cout << "blocks " << blocks << "\n";
 
     ode::dopri5::rk_solver_fixedstep_batch<T, dydt<T>, const T><<<blocks, threads>>>(
@@ -52,7 +52,7 @@ int main()
     using data_type = float;
     data_type alpha = 2.0;
     const int size = 256;
-    const int samples = 270;
+    const int samples = 1024;
 
     data_type *y0;
     data_type t0 = 0, tn = 1;
