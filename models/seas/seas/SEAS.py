@@ -24,6 +24,9 @@ class SEAS(BayesianL2, family="altar.models.seas"):
     """
     # configurable properties
     config_file = altar.properties.str()
+    slice_start = altar.properties.int()
+    slice_end = altar.properties.int()
+    slice_zero = altar.properties.int()
 
     @altar.export
     def initialize(self, application):
@@ -46,16 +49,17 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         Forward SEAS model
         """
 
-        # set rheology viscosity
-        log10_alpha_n = theta[0]
-        self.sim.fault.upper_rheo.alpha_n = 10 ** log10_alpha_n
-        self.sim.fault.upper_rheo.n = theta[1]
+        # set upper rheology
+        alpha_eff = 10**theta[0]
+        n = 10**theta[1]
+        self.sim.set_upper_rheo_from_alpha_eff(alpha_eff=alpha_eff, n=n)
 
         # run simulation
-        surf_disps = self.sim.run()
+        surf_disps = self.sim.zero_obs_at_eq(self.sim.run()[1])
 
         # fill the predictions array with the residuals
-        prediction[:] = surf_disps[:, -self.sim.n_cycsamples:].ravel() - self.dataobs.dataobs
+        prediction[:] = (surf_disps[:, self.slice_start:self.slice_end].ravel()
+                         - self.dataobs.dataobs)
 
         # all done
         return self
