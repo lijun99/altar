@@ -72,7 +72,7 @@ int main()
 
     for(int s=0; s<samples; s++) {
         for(int i=0; i<size; ++i)
-            y0[i+s*size] = i+1;
+            y0[i+s*size] = s+i+1;
 
     }
 

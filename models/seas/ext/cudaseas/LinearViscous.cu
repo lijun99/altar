@@ -11,15 +11,39 @@
 // get my class declaration
 #include "LinearViscous.h"
 
-#include "details.cuh"
+// get my dependencies
 #include "LinearViscousOde.cuh"
 
-// get my dependencies
-#include "details.cuh"
-// my dependencies
-#include <pyre/cuda.h>
-
 namespace altar::models::seas::cuda {
+
+template <typename T>
+void
+LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alpha1,
+    const T* yin, T* yout, bool dense_output)
+{
+
+    // if not dense_output, we only get the last time point (t1) value
+    // otherwise, perform interpolation to get all t_eval time points
+    // results are saved in yout
+    int nout = (dense_output) ? t_eval_points_ : 1;
+
+    //call the solver
+    altar::models::seas::cuda::linearviscous_ode::ode_solver(
+        rk_steps_,
+        batch,
+        2*patches_,
+        t0_, // start time
+        t1_, // end time
+        yin, // initial values for y =(slip, velocity) [samples, 2*patches]
+        dense_output,
+        t_eval_, // desired output time points [samples, nout]
+        yout, // output y values at tout  [samples, nout, 2*patches]
+        nout, // number of desired output time points
+        Vj_, stress_kernel_,
+        parameters, alpha1
+        );
+    // all done
+}
 
 template <typename T>
 void
@@ -84,41 +108,7 @@ void LinearViscous<T>::set_spinup_data(T* spinup_data)
 
 template <typename T>
 void
-LinearViscous<T>::ode_solver(const int parameters, const int batch,
-    const T* alpha1,
-    const T* yin,
-    T* yout,
-    bool dense_output)
-{
-    // take the ode_function
-    using func_type = ode_function;
-    func_type dydt;
-
-    // if not dense_output, we only get the last time point (t1) value
-    // otherwise, perform interpolation to get all t_eval time points
-    int nout = (dense_output) ? t_eval_points_ : 1;
-
-    //call the solver
-    altar::models::seas::cuda::linearviscous_ode::ode_solver<T>(
-        rk_steps_,
-        batch,
-        2*patches_,
-        t0_, // start time
-        t1_, // end time
-        yin, // initial values for y =(slip, velocity) [samples, 2*patches]
-        dense_output,
-        t_eval_, // desired output time points [samples, nout]
-        yout, // output y values at tout  [samples, nout, 2*patches]
-        nout, // number of desired output time points
-        Vj_, stress_kernel_,
-        parameters, alpha1);
-    // all done
-}
-
-
-template <typename T>
-void
-LinearViscous<T>::forward_model (const int parameters, const int batch, const T* theta, T* prediction)
+LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parameters, const int batch)
 {
     // load spin up data from preset or previous iteration
     details::matrix_duplicate_vector<T>(ynew_, spinup_data_, batch, 2*patches_);
@@ -144,7 +134,7 @@ LinearViscous<T>::forward_model (const int parameters, const int batch, const T*
             //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
             // call ode solver for one cycle, only get the last time point values
-            // ode_solver(parameters, batch, theta, ynew_, y_eval_, false);
+            ode_solver(batch, parameters, theta, ynew_, y_eval_, false);
 
             // copy the last time point values to ynew
             details::matrix_copy<T>(ynew_, y_eval_, batch*2*patches_);

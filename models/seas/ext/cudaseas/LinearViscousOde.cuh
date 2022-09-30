@@ -40,7 +40,6 @@ struct ode_function {
         const int parameters, const T *alpha1 // viscous coefficient
         )
    {
-        printf("inside ode_funtion %f\n", alpha1[0]);
         // the system_size is 2*patches, slip and velocity
         auto patches = system_size/2;
         // get the physical quantities from wrapped data
@@ -137,14 +136,14 @@ void ode_solver(
 {
 
     // create an instance of ode_function
-    ode_function<T> func;
+    ode_function<T> dydt;
 
     // compute the number of gpu blocks needed
     const int threadsPerBlock = 256;
     const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
-    std::cout << numberOfBlocks;
 
-
+    long limitsize = (long)2*1024*1024*1024;
+    cudaSafeCall(cudaDeviceSetLimit(cudaLimitMallocHeapSize, limitsize));
     // call ode solver kernel
     ode_solver_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(
         rk_steps,
@@ -154,15 +153,12 @@ void ode_solver(
         y0,
         dense_output, // dense out = true
         tout, yout, nout, // for dense_output
-        func, // the above are stand parameters to call rk_solver, below are model-depend parameter, included in args...
+        dydt, // the above are stand parameters to call rk_solver
         Vj, stressKernel,  // T* T T*
-        parameters, alpha1
+        parameters, alpha1 // int T*
         );
     // check errors
-    auto status = cudaGetLastError();
-    if (status != cudaSuccess)
-        printf("CUDA Error Code %d: %s - at %s:%d\n",
-                status, cudaGetErrorString(status), __FILE__, __LINE__);
+    cudaSafeCall(cudaGetLastError());
     // all done
 }
 

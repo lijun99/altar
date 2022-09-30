@@ -1,0 +1,2 @@
+nvcc -o dopri5 dopri5_test.cu -I../ext/cudaseas -I$CONDA_PREFIX/include
+

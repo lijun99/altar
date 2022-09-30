@@ -32,8 +32,8 @@ namespace altar::models::seas::cuda {
         // set ode parameters
         void set_ode_parameters(const int steps, const T ta, const T tr);
         // perform forward modeling
-        void forward_model(const int parameters, const int batch, const T* theta, T* prediction);
-        // f=dy/dt function
+        void forward_model(const T* theta, T* prediction, const int parameters, const int batch);
+        // f=dy/dt function, forward declaration
         struct ode_function;
 
 
@@ -71,7 +71,7 @@ namespace altar::models::seas::cuda {
         // private methods
         void add_coseismic_change(T* y, const T* coseismic, const T* alpha1, const int parameters, const int samples, const int patches);
         // call ode solver
-        void ode_solver(const int parameters, const int batch, const T* alpha1, const T* y0, T* y1, bool dense_output);
+        void ode_solver(const int batch, const int parameters, const T* alpha1, const T* y0, T* y1, bool dense_output);
         // set slips to zero, as a temporary solution for convergence
         void set_slips_zero(T* y, const int samples, const int patches);
         bool check_spinup_convergence(const T* yn, const T* yo, const int batch);

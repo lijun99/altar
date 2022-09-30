@@ -59,9 +59,9 @@ struct step_state {
     T* k1; // f(t0, y0)
     T *k2, *k3, *k4, *k5, *k6;
     T* k7; // f(t0+h, yn)
-
-    // T* error; // error estimation
+    bool allocated;
     __device__ __host__ void init(int);
+    __device__ __host__ void deallocate();
 };
 
 // constructor - to initialize state data
@@ -71,16 +71,37 @@ void step_state<T>::init (int n)
 {
     system_size = n;
     // allocate memory for step data
-    y0 = new T[system_size];
-    yn = new T[system_size];
-    k1 = new T[system_size];
-    k2 = new T[system_size];
-    k3 = new T[system_size];
-    k4 = new T[system_size];
-    k5 = new T[system_size];
-    k6 = new T[system_size];
-    k7 = new T[system_size];
+    y0 = (T *) malloc(system_size*sizeof(T));
+    yn = (T *) malloc(system_size*sizeof(T));
+    k1 = (T *) malloc(system_size*sizeof(T));
+    k2 = (T *) malloc(system_size*sizeof(T));
+    k3 = (T *) malloc(system_size*sizeof(T));
+    k4 = (T *) malloc(system_size*sizeof(T));
+    k5 = (T *) malloc(system_size*sizeof(T));
+    k6 = (T *) malloc(system_size*sizeof(T));
+    k7 = (T *) malloc(system_size*sizeof(T));
+    allocated = true;
 }
+
+// deallocate temporary data
+template <typename T>
+__device__ __host__
+void step_state<T>::deallocate ()
+{
+    if(allocated) {
+        free(y0);
+        free(yn);
+        free(k1);
+        free(k2);
+        free(k3);
+        free(k4);
+        free(k5);
+        free(k6);
+        free(k7);
+        allocated = false;
+    }
+}
+
 
 /**
  * Runge-Kutta Step within (t, t+h)
@@ -151,23 +172,43 @@ struct interpolator {
     // save the time information
     T t0;
     T h;
+    bool allocated; // whether rcont are allocated
+    bool computed; // whether rcont are computed
     // initialize
     __device__ __host__ void init(int);
     // prepare for dense output from the rk step data
     __device__ __host__ void prepare_dense(step_state<T>&);
     // interpolate for a given time t
     __device__ __host__ void interpolate_dense(T* yt, const T t, const int n);
+    // deallocate
+    __device__ __host__ void deallocate();
 };
 
 template <typename T>
 void interpolator<T>::init (int system_size)
 {
     // allocate the work data
-    rcont1 = new T[system_size];
-    rcont2 = new T[system_size];
-    rcont3 = new T[system_size];
-    rcont4 = new T[system_size];
-    rcont5 = new T[system_size];
+    rcont1 = (T *) malloc(system_size*sizeof(T));
+    rcont2 = (T *) malloc(system_size*sizeof(T));
+    rcont3 = (T *) malloc(system_size*sizeof(T));
+    rcont4 = (T *) malloc(system_size*sizeof(T));
+    rcont5 = (T *) malloc(system_size*sizeof(T));
+    allocated = true;
+    computed = false;
+}
+
+template <typename T>
+void interpolator<T>::deallocate ()
+{
+    if(allocated) {
+        free(rcont1);
+        free(rcont2);
+        free(rcont3);
+        free(rcont4);
+        free(rcont5);
+        allocated = false;
+        computed = false;
+    }
 }
 
 template <typename T>
@@ -188,6 +229,7 @@ void interpolator<T>::prepare_dense(step_state<T>& s)
 		rcont4[i]=ydiff-h*s.k7[i]-bspl;
 		rcont5[i]=h*(d1*s.k1[i]+d3*s.k3[i]+d4*s.k4[i]+d5*s.k5[i]+d6*s.k6[i]+d7*s.k7[i]);
 	}
+	computed = true;
 }
 
 template <typename T>
@@ -232,7 +274,7 @@ void dense_output(
     auto h = rk_state.h;
 
     bool is_in_range = 1;
-    bool is_interpolator_prepared = 0;
+    interp.computed = false;
     auto & index = out_state.index;
     auto nout = out_state.nout;
     while (is_in_range && index < nout){
@@ -243,12 +285,11 @@ void dense_output(
             // in range, perform the interpolation
             // check whether rcond_n vectors are initialized, if not, prepare them
             // only need to do once for all t's within [t0, t0+h]
-            if(!is_interpolator_prepared){
+            if(!interp.computed){
                 interp.prepare_dense(rk_state);
-                is_interpolator_prepared = 1;
             }
             // get the output y location
-            auto yout = &(out_state.yout[index*system_size]);
+            auto yout = out_state.yout + index*system_size;
             // perform the interpolation
             interp.interpolate_dense(yout, t, system_size);
             //printf("interpolation result %d %f %f\n", index, t, yout[0]);
@@ -258,8 +299,6 @@ void dense_output(
         else {
             // set in range to false
             is_in_range = 0;
-            // reset the interpolator status
-            is_interpolator_prepared = 0;
         }
     }
 }
@@ -336,6 +375,9 @@ __device__ void rk_solver_fixedstep(
     if (!is_dense_output) {
         vector_copy<T>(y_out, rk_step_state.yn, system_size);
     }
+    // deallocate tmp data
+    rk_step_state.deallocate();
+    interp.deallocate();
 }
 
 // a generic interface for calling the rk solver for a batch of samples
@@ -371,6 +413,96 @@ __global__ void rk_solver_fixedstep_batch(
             dydt, args...);
     // all done
 }
+
+// a generic interface for calling the rk solver for a batch of samples
+// with sample dependent parameters (params) and sample-independent parameters (args)
+template <typename T, typename Func, typename... Args>
+__global__ void rk_solver_batch_params(
+    const int rk_steps,
+    const int samples,
+    const int system_size,
+    const T t0, const T t1,
+    const T* y0,
+    bool is_dense_output,
+    const T* t_out, T* y_out, const int n_out,
+    Func dydt,
+    const T* params, const int parameters,
+    Args... args
+    )
+{
+    // one thread per sample, to get the sample index
+    int sample = blockIdx.x *blockDim.x + threadIdx.x;
+
+    // check whether thread id is in range of samples
+    // - a common practice for cuda since #threads might be bigger than #samples
+    if(sample >= samples)
+        return;
+
+    // get the starting pointer for samples
+    auto y0_s = y0 + sample*system_size;
+    auto yout_s = y_out + sample*system_size*n_out;
+
+    // get the sample dependent parameters
+    auto params_s = params + sample*parameters;
+
+    // assume t_out is the same
+    // call the ode solver for this sample
+    rk_solver_fixedstep<T, Func, const T*, const int, Args...>(
+        rk_steps,
+        system_size,
+        t0, t1, y0_s,
+        is_dense_output,
+        t_out, yout_s, n_out,
+        dydt,
+        params_s, parameters,
+        args...);
+    // all done
+}
+
+// a generic function to call rk_solver_batch_params
+template <typename T, typename Func, typename... Args>
+void rk_ode_solver(
+    const int rk_steps,
+    const int samples,
+    const int system_size,
+    const T t0, const T t1,
+    const T* y0,
+    bool is_dense_output,
+    const T* t_out, T* y_out, const int n_out,
+    Func dydt,
+    const T* params, const int parameters,
+    Args... args
+    )
+{
+
+    // compute the number of gpu blocks needed
+    const int threadsPerBlock = 128;
+    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
+    std::cout << numberOfBlocks;
+
+    // @note required for allocating large memory from kernel
+    // not working for all gpus - need check
+    // also on how to adjust the limit to request
+    cudaSafeCall(cudaDeviceSetLimit(cudaLimitMallocHeapSize, 1024*1024*1024));
+
+    // call ode solver kernel
+    rk_solver_batch_params<T, Func, Args...><<<numberOfBlocks, threadsPerBlock>>>(
+        rk_steps,
+        samples,
+        system_size, // system size
+        t0, t1,
+        y0,
+        dense_output, // dense out = true
+        t_out, y_out, n_out, // for dense_output
+        dydt, // the above are stand parameters to call rk_solver, below are model-depend parameter, included in args...
+        parameters, params, // sample dependent parameters
+        args ...  // sample independent parameters
+        );
+    // check errors
+    cudaSafeCall(cudaGetLastError());
+    // all done
+}
+
 
 } // end of namespace ode::dopri5
 

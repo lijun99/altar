@@ -66,7 +66,7 @@ public:
     {
         auto c_theta =  convertPyArray<T, cuda_matrix>(theta);
         auto c_prediction = convertPyArray<T, cuda_matrix>(prediction);
-        _cmodel->forward_model(parameters, batch, c_theta, c_prediction);
+        _cmodel->forward_model( c_theta, c_prediction, parameters, batch);
     }
 };
 
