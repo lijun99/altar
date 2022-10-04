@@ -1,2 +1,3 @@
 nvcc -o dopri5 dopri5_test.cu -I../ext/cudaseas -I$CONDA_PREFIX/include
+nvcc -o linearviscous linearviscous_test.cu -I../ext/cudaseas -I$CONDA_PREFIX/include
 

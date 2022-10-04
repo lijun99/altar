@@ -71,6 +71,7 @@ struct ode_function {
 template <typename T>
 __global__ void ode_solver_kernel(
     const int rk_steps,
+    T* rk_work,
     const int samples,
     const int system_size,
     const T t0, const T t1,
@@ -94,12 +95,14 @@ __global__ void ode_solver_kernel(
     auto yout_s = y_out + sample*system_size*n_out;
     // get the varies parameter for this sample
     auto alpha1_s = alpha1 + sample*parameters;
+    // get the work data for each sample 14*system_size
+    auto rk_work_s = rk_work + sample*14*system_size;
 
     // first bracket <...>:
     // T-typename, ode_function<T>-function type
     // const T, const T, const T* - model-depend parameter types
     ode::dopri5::rk_solver_fixedstep<T, ode_function<T>, const T, const T*, const int, const T*>(
-        rk_steps,
+        rk_steps, rk_work_s,
         system_size,
         t0, t1,
         y0_s,
@@ -142,11 +145,14 @@ void ode_solver(
     const int threadsPerBlock = 256;
     const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
 
-    long limitsize = (long)2*1024*1024*1024;
-    cudaSafeCall(cudaDeviceSetLimit(cudaLimitMallocHeapSize, limitsize));
+    // allocate the work data for rk ode solver, will move this to a better location of the code
+    T * rk_work;
+    // 9 vectors for rk solver, 5 vectors for dense output
+    cudaSafeCall(cudaMalloc(&rk_work, 14*samples*system_size*sizeof(T)));
+
     // call ode solver kernel
     ode_solver_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(
-        rk_steps,
+        rk_steps, rk_work,
         samples,
         system_size, // system size
         t0, tn,
@@ -159,6 +165,8 @@ void ode_solver(
         );
     // check errors
     cudaSafeCall(cudaGetLastError());
+    // free the work data
+    cudaSafeCall(cudaFree(rk_work));
     // all done
 }
 

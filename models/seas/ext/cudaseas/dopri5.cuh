@@ -55,53 +55,29 @@ struct step_state {
     T h;  // time step
     T* y0; // [size] initial value
     T* yn; // [size] final value at t=t0+h
-
     T* k1; // f(t0, y0)
     T *k2, *k3, *k4, *k5, *k6;
     T* k7; // f(t0+h, yn)
-    bool allocated;
-    __device__ __host__ void init(int);
-    __device__ __host__ void deallocate();
+    __device__ __host__ void init(int, T*);
 };
 
 // constructor - to initialize state data
 template <typename T>
 __device__ __host__
-void step_state<T>::init (int n)
+void step_state<T>::init (int n, T* rk_work)
 {
     system_size = n;
     // allocate memory for step data
-    y0 = (T *) malloc(system_size*sizeof(T));
-    yn = (T *) malloc(system_size*sizeof(T));
-    k1 = (T *) malloc(system_size*sizeof(T));
-    k2 = (T *) malloc(system_size*sizeof(T));
-    k3 = (T *) malloc(system_size*sizeof(T));
-    k4 = (T *) malloc(system_size*sizeof(T));
-    k5 = (T *) malloc(system_size*sizeof(T));
-    k6 = (T *) malloc(system_size*sizeof(T));
-    k7 = (T *) malloc(system_size*sizeof(T));
-    allocated = true;
+    y0 = rk_work;
+    yn = rk_work +    system_size;
+    k1 = rk_work +  2*system_size;
+    k2 = rk_work +  3*system_size;
+    k3 = rk_work +  4*system_size;
+    k4 = rk_work +  5*system_size;
+    k5 = rk_work +  6*system_size;
+    k6 = rk_work +  7*system_size;
+    k7 = rk_work +  8*system_size;
 }
-
-// deallocate temporary data
-template <typename T>
-__device__ __host__
-void step_state<T>::deallocate ()
-{
-    if(allocated) {
-        free(y0);
-        free(yn);
-        free(k1);
-        free(k2);
-        free(k3);
-        free(k4);
-        free(k5);
-        free(k6);
-        free(k7);
-        allocated = false;
-    }
-}
-
 
 /**
  * Runge-Kutta Step within (t, t+h)
@@ -172,44 +148,27 @@ struct interpolator {
     // save the time information
     T t0;
     T h;
-    bool allocated; // whether rcont are allocated
     bool computed; // whether rcont are computed
     // initialize
-    __device__ __host__ void init(int);
+    __device__ __host__ void init(int, T*);
     // prepare for dense output from the rk step data
     __device__ __host__ void prepare_dense(step_state<T>&);
     // interpolate for a given time t
     __device__ __host__ void interpolate_dense(T* yt, const T t, const int n);
-    // deallocate
-    __device__ __host__ void deallocate();
 };
 
 template <typename T>
-void interpolator<T>::init (int system_size)
+void interpolator<T>::init (int system_size, T* rk_work)
 {
     // allocate the work data
-    rcont1 = (T *) malloc(system_size*sizeof(T));
-    rcont2 = (T *) malloc(system_size*sizeof(T));
-    rcont3 = (T *) malloc(system_size*sizeof(T));
-    rcont4 = (T *) malloc(system_size*sizeof(T));
-    rcont5 = (T *) malloc(system_size*sizeof(T));
-    allocated = true;
+    rcont1 = rk_work +  9*system_size;
+    rcont2 = rk_work + 10*system_size;
+    rcont3 = rk_work + 11*system_size;
+    rcont4 = rk_work + 12*system_size;
+    rcont5 = rk_work + 13*system_size;
     computed = false;
 }
 
-template <typename T>
-void interpolator<T>::deallocate ()
-{
-    if(allocated) {
-        free(rcont1);
-        free(rcont2);
-        free(rcont3);
-        free(rcont4);
-        free(rcont5);
-        allocated = false;
-        computed = false;
-    }
-}
 
 template <typename T>
 __device__ __host__
@@ -323,6 +282,7 @@ void vector_copy(T*a, const T*b, const int size)
 template <typename T, typename Func, typename... Args>
 __device__ void rk_solver_fixedstep(
     const int rk_steps,
+    T* rk_work,
     const int system_size,
     const T t0, const T t1,
     const T* y0,
@@ -336,7 +296,7 @@ __device__ void rk_solver_fixedstep(
     // initialize the tableau and state
     tableau<T> table;
     step_state<T> rk_step_state;
-    rk_step_state.init(system_size);
+    rk_step_state.init(system_size, rk_work);
     // data for dense output
     dense_output_state<T> out_state;
     interpolator<T> interp;
@@ -345,7 +305,7 @@ __device__ void rk_solver_fixedstep(
     {
         // only initialize them when dense output is desired
         out_state.init(n_out, t_out, y_out);
-        interp.init(system_size);
+        interp.init(system_size, rk_work);
     }
 
     // assign the initial values to state
@@ -375,9 +335,6 @@ __device__ void rk_solver_fixedstep(
     if (!is_dense_output) {
         vector_copy<T>(y_out, rk_step_state.yn, system_size);
     }
-    // deallocate tmp data
-    rk_step_state.deallocate();
-    interp.deallocate();
 }
 
 // a generic interface for calling the rk solver for a batch of samples

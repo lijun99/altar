@@ -144,6 +144,7 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
 
             // set slip to zeros to enforce convergence
             set_slips_zero(ynew_, batch, patches_);
+
         }
 
         // check convergence

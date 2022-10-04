@@ -70,8 +70,8 @@ seas:
     job.gpus = 1  ; number of gpus per task/thread
     ;job.gpuids = [0 1] ; gpu slots to be occupied
     job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
-    job.chains = 2**1 ; number of chains per task
-    job.steps = 500
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 100
 
     ; shell
     ; shell = mpi.shells.mpirun ; for running with mpi

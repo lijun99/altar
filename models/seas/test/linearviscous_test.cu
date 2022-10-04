@@ -6,9 +6,9 @@ int main()
     using data_type = float;
 
 
-    const int size = 128;
+    const int size = 256;
     auto patches = size/2;
-    const int samples = 64;
+    const int samples = 256;
 
     data_type *y0;
     data_type t0 = 0, tn = 1;
@@ -29,13 +29,16 @@ int main()
     cudaSafeCall(cudaMemset(y0, 0, samples*size*sizeof(data_type)));
     cudaSafeCall(cudaMemset(stress, 0, patches*patches*sizeof(data_type)));
 
+    data_type * tempdata;
+    cudaSafeCall(cudaMallocManaged(&tempdata, samples*14*size*sizeof(data_type)));
+
     for(int i=0; i<samples; i++)
         alpha[i] = 0.1;
 
     for(int i=0; i<nout; i++)
         tout[i] = (i+1)/nout;
 
-    for(int i=0; i<3; i++) {
+    for(int i=0; i<10; i++) {
         altar::models::seas::cuda::linearviscous_ode::ode_solver<data_type>
             (steps, samples, size, t0, tn, y0, 1, tout, yout, nout, vj, stress, 1, alpha);
         cudaSafeCall(cudaDeviceSynchronize());
