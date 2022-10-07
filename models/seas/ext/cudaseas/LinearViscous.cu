@@ -39,7 +39,7 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
         t_eval_, // desired output time points [samples, nout]
         yout, // output y values at tout  [samples, nout, 2*patches]
         nout, // number of desired output time points
-        Vj_, stress_kernel_,
+        Vj_, stress_kernel_, stressrate_ext_,
         parameters, alpha1
         );
     // all done
@@ -60,7 +60,9 @@ template <typename T>
 void LinearViscous<T>::initialize(
     int samples, int patches, int stations,
     T t0, T t1, T Vj,
-    T* stress_kernel, T* displacement_kernel,
+    T* stress_kernel,
+    T* stressrate_ext,
+    T* displacement_kernel,
     int t_eval_points, T* t_eval,
     T* coseismic,
     int spinup_max_cycles,
@@ -73,6 +75,7 @@ void LinearViscous<T>::initialize(
     stations_ = stations;
 
     stress_kernel_ = stress_kernel;
+    stressrate_ext_ = stressrate_ext;
     displacement_kernel_ = displacement_kernel;
     t_eval_points_ = t_eval_points;
     t_eval_ = t_eval;
@@ -142,8 +145,8 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
             //std::cout << "printing ynew after ode\n";
             //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
-            // set slip to zeros to enforce convergence
-            set_slips_zero(ynew_, batch, patches_);
+            // set slip to zeros to enforce convergence - no longer needed
+            // set_slips_zero(ynew_, batch, patches_);
 
         }
 
@@ -156,6 +159,9 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
             cycles += spinup_convergence_check_cycles_;
         }
     }
+
+    std::cout << "printing ynew after ode\n";
+    details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
     // save the first set of data to spin up data for later iterations
     details::matrix_copy<T>(spinup_data_, ynew_, 2*patches_);
@@ -339,6 +345,10 @@ void LinearViscous<T>::compute_displacement(const T* yeval, T* predictions, cons
         samples, t_eval_points_,patches_,stations_);
     // check error
     cudaSafeCall(cudaGetLastError());
+
+    std::cout << "printing ynew after ode\n";
+    details::debug_cuda_memory<T>(displacement_kernel_, t_eval_points_*stations_*2*patches_);
+    details::debug_cuda_memory<T>(predictions, samples*t_eval_points_*stations_);
 
 }
 

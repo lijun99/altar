@@ -19,10 +19,10 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
     """
 
     # user configuration state
-    patches = altar.properties.int(default=10)
+    patches = altar.properties.int(default=36)
     patches.doc = "number of patches for fault"
 
-    asperity_patches = altar.properties.int(default=2)
+    asperity_patches = altar.properties.int(default=4)
     asperity_patches.doc = "number of asperity patches"
 
     fault_depth = altar.properties.float(default=100)
@@ -33,7 +33,7 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
 
     alpha_1 = altar.properties.float(default=0.1)
 
-    spinup_periods = altar.properties.int(default=100)
+    spinup_periods = altar.properties.int(default=80)
     spinup_periods.doc = "number of periods used for spin up"
 
     spinup_tolerance = altar.properties.float(default=1e-4)
@@ -42,25 +42,26 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
     t = altar.properties.array(default=(0, 1))
     t.doc = "time range for each period"
 
-    stations = altar.properties.int(default=10)
+    stations = altar.properties.int(default=20)
     stations.doc = "number of observation stations (random generated)"
 
-    obs_min = altar.properties.float(default=20)
+    obs_min = altar.properties.float(default=10)
     obs_min.doc  = "the min distance of station locations (random generated)"
 
-    obs_max = altar.properties.float(default=200)
+    obs_max = altar.properties.float(default=100)
     obs_max.doc = "the max distance of stations"
 
     mu = altar.properties.float(default=1)
     mu.doc = "modulous"
 
-    t_eval_points = altar.properties.int(default=10)
+    t_eval_points = altar.properties.int(default=20)
     t_eval_points.doc = "number of eval time points"
 
 
     # local parameters
-    stressK = None
-    stress_coseismic = None
+    stressKernel = None
+    stressKernel_creep = None
+    stressrate_external = None
 
     coseismic = None
     slip_cycle = None
@@ -86,9 +87,18 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
         depth = self.fault_depth
 
         # generate stress kernel
-        self.stressK = GenerateStressKernel(z0=0, z1=-self.fault_depth, patches = self.patches, mu=self.mu)
-        self.stressK_creep = self.stressK[asperity_patches:, asperity_patches:]
-        numpy.savetxt("stresskernel.txt", self.stressK_creep)
+        self.stressKernel = GenerateStressKernel(z0=0, z1=-self.fault_depth, patches = self.patches, mu=self.mu)
+        stressKernel = self.stressKernel
+        # creep zone internal stress kernel
+        self.stressKernel_creep = stressKernel[asperity_patches:, asperity_patches:]
+        numpy.savetxt("stresskernel.txt", self.stressKernel_creep)
+        # stress rate imposed by the locked zone
+        self.stressrate_external = numpy.dot(stressKernel[asperity_patches:, :asperity_patches], numpy.full(shape=asperity_patches, fill_value=1))
+        # save only the unit (without factoring the backslip velocity)
+        numpy.savetxt("stressrate_ext.txt", self.stressrate_external)
+        # now multiply it by the back slip (plate loading) velocity
+        self.stressrate_external *= -self.vpl
+
 
         # generate coseismic change of slip and velocity
         self.coseismic = self.generateCosesmicSlip()
@@ -104,6 +114,7 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
         tstart, tend = self.t
         self.t_eval = numpy.arange(1, self.t_eval_points+1)*(tend-tstart)/self.t_eval_points + tstart
         numpy.savetxt("t_eval.txt", self.t_eval)
+
 
         # simulation
         #slip_velocity = self.onecycle()
@@ -148,7 +159,7 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
             else:
                 slip[i] = slip_max*math.exp(-(i-asperity+1)/penetration_depth)
 
-        stressK = self.stressK
+        stressK = self.stressKernel
         stress = numpy.dot(slip, stressK)
 
         return numpy.concatenate((slip[asperity:], stress[asperity:]))
@@ -193,7 +204,7 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
         f[:patches] = velocity
 
         # dv/dt
-        stress = numpy.dot(velocity, self.stressK_creep)
+        stress = numpy.dot(velocity, self.stressKernel_creep) + self.stressrate_external
         f[patches:] = stress/alpha_1
 
         return f
@@ -253,12 +264,11 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
             print('slip', end[:creep_patches])
             print('velocity', end[creep_patches:])
 
-            # temporary solution to override slip convergence
-            end[:creep_patches] = 0
             diff = end-start
             print('difference', diff)
             start =  end
             tspan = tuple(t + t_period for t in tspan)
+        numpy.savetxt("spin_up_data.txt", end)
         # final step
         s0 = start+coseismic
         t_span = self.t

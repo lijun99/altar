@@ -33,7 +33,9 @@ public:
     // initialize cmodel parameters
     void initialize(int samples, int patches, int stations,
         T t0, T t1, T Vj,
-        py::capsule stress_kernel, py::capsule displacement_kernel,
+        py::capsule stress_kernel,
+        py::capsule stressrate_ext,
+        py::capsule displacement_kernel,
         int t_eval_points, py::capsule t_eval,
         py::capsule coseismic,
         int spin_up_max_cycles,
@@ -43,6 +45,7 @@ public:
             samples, patches, stations,
             t0, t1, Vj,
             convertPyArray<T, cuda_matrix>(stress_kernel),
+            convertPyArray<T, cuda_vector>(stressrate_ext),
             convertPyArray<T, cuda_matrix>(displacement_kernel),
             t_eval_points, convertPyArray<T, cuda_vector>(t_eval),
             convertPyArray<T, cuda_vector>(coseismic),

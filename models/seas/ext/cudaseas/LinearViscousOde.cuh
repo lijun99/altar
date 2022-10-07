@@ -37,6 +37,7 @@ struct ode_function {
         const int system_size, // 2*number of patches
         const T Vj, // backslip rate
         const T* stressKernel, // stress kernel matrix [patches,patches]
+        const T* stressrate_ext,
         const int parameters, const T *alpha1 // viscous coefficient
         )
    {
@@ -55,7 +56,7 @@ struct ode_function {
         // set dvdt
         for(int ix=0; ix<patches; ++ix) {
             // use dvdt for dtau/dt temporarily)
-            dvdt[ix] = 0;
+            dvdt[ix] = stressrate_ext[ix];
             for(int iy=0; iy<patches; ++iy)
                 dvdt[ix] += (velocity[iy]-Vj) *stressKernel[iy*patches+ix];
             // get dvdt from dtau/dt
@@ -79,7 +80,7 @@ __global__ void ode_solver_kernel(
     bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
     ode_function<T> dydt,
-    const T Vj, const T* stressKernel, // model-depend parameters
+    const T Vj, const T* stressKernel, const T* stressrate_ext, // model-depend parameters
     const int parameters, const T* alpha1
     )
 {
@@ -101,7 +102,7 @@ __global__ void ode_solver_kernel(
     // first bracket <...>:
     // T-typename, ode_function<T>-function type
     // const T, const T, const T* - model-depend parameter types
-    ode::dopri5::rk_solver_fixedstep<T, ode_function<T>, const T, const T*, const int, const T*>(
+    ode::dopri5::rk_solver_fixedstep<T, ode_function<T>, const T, const T*, const T*, const int, const T*>(
         rk_steps, rk_work_s,
         system_size,
         t0, t1,
@@ -109,7 +110,7 @@ __global__ void ode_solver_kernel(
         is_dense_output,
         t_out, yout_s, n_out,
         dydt,
-        Vj, stressKernel,
+        Vj, stressKernel, stressrate_ext,
         parameters, alpha1_s
         );
     // all done
@@ -133,6 +134,7 @@ void ode_solver(
     const int nout, // number of desired output time points
     const T Vj,
     const T* stressKernel,
+    const T* stressrate_ext,
     const int parameters,
     const T* alpha1 // viscous coefficient, a constant for all patches in each sample [samples]
     )
@@ -160,7 +162,7 @@ void ode_solver(
         dense_output, // dense out = true
         tout, yout, nout, // for dense_output
         dydt, // the above are stand parameters to call rk_solver
-        Vj, stressKernel,  // T* T T*
+        Vj, stressKernel, stressrate_ext,  // T* T T*
         parameters, alpha1 // int T*
         );
     // check errors
@@ -172,9 +174,11 @@ void ode_solver(
 
 // explicit instantiation for python module
 template void ode_solver<double>(const int, const int,  const int, const double, const double,
-    const double*, const bool, const double*, double*, const int, const double, const double*, const int, const double*);
+    const double*, const bool, const double*, double*, const int, const double, const double*, const double*,
+    const int, const double*);
 template void ode_solver<float>(const int, const int,  const int, const float, const float,
-    const float*, const bool, const float*, float*, const int, const float, const float*, const int, const float*);
+    const float*, const bool, const float*, float*, const int, const float, const float*, const float*,
+    const int, const float*);
 
 } // namespace linearviscous_ode
 } // namespace

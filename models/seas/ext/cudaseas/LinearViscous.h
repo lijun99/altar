@@ -22,7 +22,9 @@ namespace altar::models::seas::cuda {
         // initial parameters and data
         void initialize(int samples_, int patches_, int stations_,
             T t0, T t1, T Vj,
-            T* stress_kernel, T* displacement_kernel,
+            T* stress_kernel,
+            T* stressrate_ext,
+            T* displacement_kernel,
             int t_eval_points, T* t_eval,
             T* coseismic,
             int spinup_max_cycles,
@@ -45,6 +47,7 @@ namespace altar::models::seas::cuda {
 
 
         T* stress_kernel_;
+        T* stressrate_ext_;
         T* displacement_kernel_;
         int t_eval_points_;
         T* t_eval_;

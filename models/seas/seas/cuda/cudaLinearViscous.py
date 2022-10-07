@@ -54,6 +54,9 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     stress_kernel_file = altar.properties.path(default="stresskernel.txt")
     stress_kernel_file.doc = "the filename for input stress kernel - patches x patches matrix"
 
+    stressrate_ext_file = altar.properties.path(default="stressrate_ext.txt")
+    stressrate_ext_file.doc = "stress rate d\tau/dt imposed by external (locked) patches - vector (patches)"
+
     displacement_kernel_file = altar.properties.path(default="displacementkernel.txt")
     displacement_kernel_file.doc = "the filename for input displacement kernel G, arranged in (patches, stations)"
 
@@ -66,7 +69,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     spin_up_data_file = altar.properties.path(default="spin_up_data.txt")
     spin_up_data_file.doc = "the input file for spin-up data of (slip, velocity) - 2*patches"
 
-    ode_solver_steps = altar.properties.int(default=1000)
+    ode_solver_steps = altar.properties.int(default=100)
     ode_solver_steps.doc = "runge-kutta steps (for fixed steps) or max steps (for adaptive)"
 
     ode_solver_tolerance_relative = altar.properties.float(default=1e-4)
@@ -75,10 +78,10 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     ode_solver_tolerance_absolute = altar.properties.float(default=1e-3)
     ode_solver_tolerance_absolute.doc = "max absolute error for ode solver"
 
-    spin_up_convergence_check_cycles = altar.properties.int(default=20)
+    spin_up_convergence_check_cycles = altar.properties.int(default=10)
     spin_up_convergence_check_cycles.doc = "number of spin up cycles to check convergence"
 
-    spin_up_max_cycles = altar.properties.int(default=100)
+    spin_up_max_cycles = altar.properties.int(default=50)
     spin_up_max_cycles.doc = "max number of cycles to stop spin up"
 
     # public data
@@ -86,6 +89,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     gT_eval = None
     gCoseismic = None
     gStressKernel = None
+    gStressRateExt = None
     gGF = None # displacement kernel
     gSpinUpData = None
     gDataObsBatched = None # data observations duplicated in #samples
@@ -122,7 +126,9 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         self.cmodel.initialize(
             self.samples, self.patches, self.stations,
             self.t_period[0], self.t_period[1], self.plate_loading_velocity,
-            self.gStressKernel.data, self.gGF.data,
+            self.gStressKernel.data,
+            self.gStressRateExt.data,
+            self.gGF.data,
             self.t_eval_points, self.gT_eval.data,
             self.gCoseismic.data,
             self.spin_up_max_cycles, self.spin_up_convergence_check_cycles
@@ -170,11 +176,18 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         if sk_shape != (patches, patches):
             error.log(f'Stress kernel shape {sk_shape} does not match (patches, patches)')
 
+        # load the stress rate imposed by external patches
+        stressRateExt = self.loadFile(self.stressrate_ext_file)
+        # multiply by the plate loading velocity
+        stressRateExt *= -self.plate_loading_velocity
+        # copy to gpu
+        self.gStressRateExt = altar.cuda.vector(source=stressRateExt, dtype=self.precision)
+
         # init or load spin up data for (slips, velocities)
         if self.use_spin_up_data:
             self.gSpinUpData = self.loadFileToGPU(self.spin_up_data_file)
             spinup_data_shape = self.gSpinUpData.shape
-            if spinup_data_shape != patches:
+            if spinup_data_shape != 2*patches:
                 error.log(f'The spin up data shape {spinup_data_shape} does not match 2*{patches}')
         else: # set as zeros
             self.gSpinUpData = altar.cuda.vector(shape=2*patches, dtype=self.precision).zero()
@@ -190,9 +203,10 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # we now merge cd to GF
         cd = self.dataobs.gcd_inv.copy_to_host(type='numpy')
         bGF = self.mergeCdToGF(cd, GF)
+        print(bGF.shape)
         # copy it to gpu
         self.gGF = altar.cuda.matrix(source=bGF, dtype=self.precision)
-
+        print(bGF.shape, self.gGF.shape)
         # load the t_eval points
         self.gT_eval = self.loadFileToGPU(self.t_eval_file)
         t_eval_shape = self.gT_eval.shape
@@ -246,6 +260,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         :return: prediction as predicted data
         """
 
+        print("prediction", prediction.shape)
         parameters = theta.shape[1]
         self.cmodel.forward_model(theta.data, prediction.data, parameters, batch)
 
