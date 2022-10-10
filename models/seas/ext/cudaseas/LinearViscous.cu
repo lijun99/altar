@@ -27,6 +27,8 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
     // results are saved in yout
     int nout = (dense_output) ? t_eval_points_ : 1;
 
+    // printf("inside ode_solver, %d\n", nout);
+
     //call the solver
     altar::models::seas::cuda::linearviscous_ode::ode_solver(
         rk_steps_,
@@ -105,8 +107,8 @@ template <typename T>
 void LinearViscous<T>::set_spinup_data(T* spinup_data)
 {
     spinup_data_ = spinup_data;
-    std::cout << "assign spin up data";
-    details::debug_cuda_memory(spinup_data_, 2*patches_);
+    // std::cout << "assign spin up data";
+    // details::debug_cuda_memory(spinup_data_, 2*patches_);
 }
 
 template <typename T>
@@ -124,17 +126,17 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
             // make a copy of current state for convergence check
             details::matrix_copy<T>(yold_, ynew_, batch*2*patches_);
 
-            //std::cout << "printing init ynew \n";
-            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+            // std::cout << "printing init ynew \n";
+            // details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
             // add coseismic change
             add_coseismic_change(ynew_, coseismic_, theta, parameters, batch, patches_);
 
-            //std::cout << "printing theta/alpha1 \n";
-            //details::debug_cuda_memory<T>(theta, batch*parameters);
+            // std::cout << "printing theta/alpha1 \n";
+            // details::debug_cuda_memory<T>(theta, batch*parameters);
 
-            //std::cout << "printing ynew after adding coseismic \n";
-            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+            // std::cout << "printing ynew after adding coseismic \n";
+            // details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
             // call ode solver for one cycle, only get the last time point values
             ode_solver(batch, parameters, theta, ynew_, y_eval_, false);
@@ -142,8 +144,8 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
             // copy the last time point values to ynew
             details::matrix_copy<T>(ynew_, y_eval_, batch*2*patches_);
 
-            //std::cout << "printing ynew after ode\n";
-            //details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+            // std::cout << "printing ynew after ode\n";
+            // details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
             // set slip to zeros to enforce convergence - no longer needed
             // set_slips_zero(ynew_, batch, patches_);
@@ -160,8 +162,8 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
         }
     }
 
-    std::cout << "printing ynew after ode\n";
-    details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
+    // std::cout << "printing ynew after ode - check \n";
+    // details::debug_cuda_memory<T>(ynew_, batch*2*patches_);
 
     // save the first set of data to spin up data for later iterations
     details::matrix_copy<T>(spinup_data_, ynew_, 2*patches_);
@@ -169,7 +171,14 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
     // final cycle to compute data output
     // run an ode with dense_output
     add_coseismic_change(ynew_, coseismic_, theta, parameters, batch, patches_);
-    ode_solver(parameters, batch, theta, ynew_, y_eval_, true);
+    ode_solver(batch, parameters, theta, ynew_, y_eval_, true);
+
+    // std::cout << "printing y_eval_ after ode - with dense output \n";
+    // for (int i=0; i<batch; i++) {
+    //     auto y_s = y_eval_ + i*2*patches_*t_eval_points_;
+    //     details::debug_cuda_memory<T>(y_s, 2*patches_*t_eval_points_);
+    // }
+
 
     // compute the observations
     compute_displacement(y_eval_, prediction, batch);
@@ -326,6 +335,8 @@ void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
             for (int p=0; p<patches; p++)
                 pred_s_t[s] += y_s_t[p]*gf_t[p*stations+s];
         }
+
+    // printf("disp %d %d %d %g %g %g\n", sample, samples, t, pred_s_t[0], y_s_t[0], gf_t[0]);
     }
 }
 
@@ -346,9 +357,9 @@ void LinearViscous<T>::compute_displacement(const T* yeval, T* predictions, cons
     // check error
     cudaSafeCall(cudaGetLastError());
 
-    std::cout << "printing ynew after ode\n";
-    details::debug_cuda_memory<T>(displacement_kernel_, t_eval_points_*stations_*2*patches_);
-    details::debug_cuda_memory<T>(predictions, samples*t_eval_points_*stations_);
+    // std::cout << "printing predictions after ode \n";
+    //details::debug_cuda_memory<T>(displacement_kernel_, t_eval_points_*stations_*2*patches_);
+    // details::debug_cuda_memory<T>(predictions, samples*t_eval_points_*stations_);
 
 }
 

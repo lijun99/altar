@@ -78,10 +78,10 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     ode_solver_tolerance_absolute = altar.properties.float(default=1e-3)
     ode_solver_tolerance_absolute.doc = "max absolute error for ode solver"
 
-    spin_up_convergence_check_cycles = altar.properties.int(default=10)
+    spin_up_convergence_check_cycles = altar.properties.int(default=1)
     spin_up_convergence_check_cycles.doc = "number of spin up cycles to check convergence"
 
-    spin_up_max_cycles = altar.properties.int(default=50)
+    spin_up_max_cycles = altar.properties.int(default=5)
     spin_up_max_cycles.doc = "max number of cycles to stop spin up"
 
     # public data
@@ -203,10 +203,10 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # we now merge cd to GF
         cd = self.dataobs.gcd_inv.copy_to_host(type='numpy')
         bGF = self.mergeCdToGF(cd, GF)
-        print(bGF.shape)
+
         # copy it to gpu
         self.gGF = altar.cuda.matrix(source=bGF, dtype=self.precision)
-        print(bGF.shape, self.gGF.shape)
+
         # load the t_eval points
         self.gT_eval = self.loadFileToGPU(self.t_eval_file)
         t_eval_shape = self.gT_eval.shape
@@ -260,7 +260,6 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         :return: prediction as predicted data
         """
 
-        print("prediction", prediction.shape)
         parameters = theta.shape[1]
         self.cmodel.forward_model(theta.data, prediction.data, parameters, batch)
 

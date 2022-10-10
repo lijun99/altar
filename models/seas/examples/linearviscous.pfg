@@ -36,7 +36,7 @@ seas:
         dataobs:
              observations = {seas.model.t_eval_points}*{seas.model.stations}
              data_file = displacements.txt ; (t_eval_points, stations) flattened
-             cd_std = 1e-6 ; or cd_file
+             cd_std = 1e0 ; or cd_file
 
         ; parameters to be simulated
         ; provide a list at first, serving as their orders in theta
@@ -51,10 +51,6 @@ seas:
                 count = 1 ; same for all patches
                 prior = altar.cuda.distributions.uniform
                 prior.support = (0.01, 0.3)
-
-
-
-
 
     ; controller/annealer
     controller:
@@ -72,8 +68,8 @@ seas:
     job.gpus = 1  ; number of gpus per task/thread
     ;job.gpuids = [0 1] ; gpu slots to be occupied
     job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
-    job.chains = 2**2 ; number of chains per task
-    job.steps = 100
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 10
 
     ; shell
     ; shell = mpi.shells.mpirun ; for running with mpi

@@ -52,6 +52,7 @@ template <typename T>
 struct step_state {
     int system_size; // components of y
     T t0; // start t0
+    T t1; // end t1
     T h;  // time step
     T* y0; // [size] initial value
     T* yn; // [size] final value at t=t0+h
@@ -95,7 +96,7 @@ void rk_step_impl(
     int n = s.system_size;
     auto t0 = s.t0; // start time
     auto h = s.h;  // time step
-    auto tn = t0+h; // final time
+    auto tn = s.t1; // final time
     auto y0 = s.y0; // initial value
     auto yn = s.yn; //final value
 
@@ -227,10 +228,13 @@ void dense_output(
     interpolator<T>& interp,
     step_state<T>& rk_state)
 {
+
+  //    int sample = blockIdx.x *blockDim.x + threadIdx.x;
     // get the parameters
     auto system_size = rk_state.system_size;
     auto t0 = rk_state.t0;
-    auto h = rk_state.h;
+    auto t1 = rk_state.t1;
+    // auto h = rk_state.h;
 
     bool is_in_range = 1;
     interp.computed = false;
@@ -239,8 +243,8 @@ void dense_output(
     while (is_in_range && index < nout){
         auto t = out_state.tout[index];
         // check whether t is \in [t0, t0+h]
-        // printf("interpolation %d %f %f %f\n", index, t, t0, h);
-        if(t>=t0 && t<=(t0+h)) {
+        // printf("interpolation check %d %f %f %f %d\n", index, t, t0, t1, t>=t0 && t<=t1);
+        if(t>=t0 && t<=t1) {
             // in range, perform the interpolation
             // check whether rcond_n vectors are initialized, if not, prepare them
             // only need to do once for all t's within [t0, t0+h]
@@ -251,7 +255,7 @@ void dense_output(
             auto yout = out_state.yout + index*system_size;
             // perform the interpolation
             interp.interpolate_dense(yout, t, system_size);
-            //printf("interpolation result %d %f %f\n", index, t, yout[0]);
+            // printf("interpolation result %d %f %f %f %f \n", index, t, t0, t0+h, yout[0]);
             // move index
             index++;
         }
@@ -317,7 +321,8 @@ __device__ void rk_solver_fixedstep(
     for(int step = 0; step<rk_steps; step++)
     {
         // set the t0 and step
-        rk_step_state.t0 = t0 + step*h_step;
+        rk_step_state.t0 = t0 + step*(t1-t0)/rk_steps;
+        rk_step_state.t1 = t0 + (step+1)*(t1-t0)/rk_steps;
         rk_step_state.h = h_step;
         // printf("step loop %d %f %f\n", step, rk_step_state.t0, rk_step_state.yn[0]);
         // call ode solver
@@ -325,6 +330,9 @@ __device__ void rk_solver_fixedstep(
         // if denseoutput
         if(is_dense_output) {
             dense_output<T>(out_state, interp, rk_step_state);
+            //if(sample!=0) {
+            //    printf("inside rk kernel dense %d %g %g\n", sample, out_state.yout[0], y_out[0]);
+            // }
         }
         // printf("step data %f %f\n", rk_step_state.y0[0], rk_step_state.yn[0]);
         // copy final results to next step final values

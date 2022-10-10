@@ -34,15 +34,15 @@ struct ode_function {
         (T* f, //  dydt output vector [2*patches]
         const T t, // time
         const T* y, // y value, vector [2*patches]
-        const int system_size, // 2*number of patches
+        const int system_size, // 2*patches
         const T Vj, // backslip rate
         const T* stressKernel, // stress kernel matrix [patches,patches]
-        const T* stressrate_ext,
+        const T* stressrate_ext, // stress rate imposed by external patches
         const int parameters, const T *alpha1 // viscous coefficient
         )
    {
         // the system_size is 2*patches, slip and velocity
-        auto patches = system_size/2;
+        int patches = system_size/2;
         // get the physical quantities from wrapped data
         auto dsdt = f;
         auto dvdt = f+patches;
@@ -51,7 +51,7 @@ struct ode_function {
 
         // set dsdt
         for(int i=0; i<patches; ++i)
-            dsdt[i] = velocity[i];
+            dsdt[i] = velocity[i] - Vj;
 
         // set dvdt
         for(int ix=0; ix<patches; ++ix) {
@@ -102,7 +102,7 @@ __global__ void ode_solver_kernel(
     // first bracket <...>:
     // T-typename, ode_function<T>-function type
     // const T, const T, const T* - model-depend parameter types
-    ode::dopri5::rk_solver_fixedstep<T, ode_function<T>, const T, const T*, const T*, const int, const T*>(
+    ode::dopri5::rk_solver_fixedstep(
         rk_steps, rk_work_s,
         system_size,
         t0, t1,
@@ -113,6 +113,7 @@ __global__ void ode_solver_kernel(
         Vj, stressKernel, stressrate_ext,
         parameters, alpha1_s
         );
+    // printf("ode kernel %d %d %g %g\n", sample, samples, yout_s[0], yout_s[system_size*n_out-1]);
     // all done
 }
 
@@ -153,7 +154,7 @@ void ode_solver(
     cudaSafeCall(cudaMalloc(&rk_work, 14*samples*system_size*sizeof(T)));
 
     // call ode solver kernel
-    ode_solver_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(
+    ode_solver_kernel<<<numberOfBlocks, threadsPerBlock>>>(
         rk_steps, rk_work,
         samples,
         system_size, // system size
