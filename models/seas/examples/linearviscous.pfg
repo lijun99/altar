@@ -36,7 +36,7 @@ seas:
         dataobs:
              observations = {seas.model.t_eval_points}*{seas.model.stations}
              data_file = displacements.txt ; (t_eval_points, stations) flattened
-             cd_std = 1e0 ; or cd_file
+             cd_std = 1e-2 ; or cd_file
 
         ; parameters to be simulated
         ; provide a list at first, serving as their orders in theta
