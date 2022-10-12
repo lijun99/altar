@@ -36,7 +36,7 @@ namespace altar::models::seas::cuda {
         // perform forward modeling
         void forward_model(const T* theta, T* prediction, const int parameters, const int batch);
         // f=dy/dt function, forward declaration
-        struct ode_function;
+        // struct ode_function;
 
 
     // parameters

@@ -12,15 +12,62 @@
 #include "LinearViscous.h"
 
 // get my dependencies
-#include "LinearViscousOde.cuh"
+#include "dopri5.cuh"
 
 namespace altar::models::seas::cuda {
+
+// 1. function used in the ode integration
+// the first four parameters are required as standard ones in an ode equation
+// the rest may be defined by the model
+// here y = (slip, velocity)  [2*patches] for creeping zone
+// return f = dy/dt = (ds/dt, dv/dt)
+template <typename T>
+struct ode_function {
+    __device__ __host__ void operator()
+        (T* f, //  dydt output vector [2*patches]
+        const T t, // time
+        const T* y, // y value, vector [2*patches]
+        const int system_size, // 2*patches
+        const T Vj, // backslip rate
+        const T* stressKernel, // stress kernel matrix [patches,patches]
+        const T* stressrate_ext, // stress rate imposed by external patches
+        const int parameters, const T *alpha1 // viscous coefficient
+        )
+   {
+        // the system_size is 2*patches, slip and velocity
+        int patches = system_size/2;
+        // get the physical quantities from wrapped data
+        auto dsdt = f;
+        auto dvdt = f+patches;
+        // auto slip = y; // not used
+        auto velocity = y+patches;
+
+        // set dsdt
+        for(int i=0; i<patches; ++i)
+            dsdt[i] = velocity[i] - Vj;
+
+        // set dvdt
+        for(int ix=0; ix<patches; ++ix) {
+            // use dvdt for dtau/dt temporarily)
+            dvdt[ix] = stressrate_ext[ix];
+            for(int iy=0; iy<patches; ++iy)
+                dvdt[ix] += (velocity[iy]-Vj) *stressKernel[iy*patches+ix];
+            // get dvdt from dtau/dt
+            dvdt[ix] = dvdt[ix]/alpha1[0];
+        }
+        // all done return f
+   }
+}; // end of struct ode_function
+
+
 
 template <typename T>
 void
 LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alpha1,
     const T* yin, T* yout, bool dense_output)
 {
+
+    altar::models::seas::cuda::ode_function<T> func;
 
     // if not dense_output, we only get the last time point (t1) value
     // otherwise, perform interpolation to get all t_eval time points
@@ -29,8 +76,7 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
 
     // printf("inside ode_solver, %d\n", nout);
 
-    //call the solver
-    altar::models::seas::cuda::linearviscous_ode::ode_solver(
+    ode::dopri5::rk_ode_solver(
         rk_steps_,
         batch,
         2*patches_,
@@ -41,8 +87,9 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
         t_eval_, // desired output time points [samples, nout]
         yout, // output y values at tout  [samples, nout, 2*patches]
         nout, // number of desired output time points
-        Vj_, stress_kernel_, stressrate_ext_,
-        parameters, alpha1
+        func,
+        alpha1, parameters,
+        Vj_, stress_kernel_, stressrate_ext_
         );
     // all done
 }

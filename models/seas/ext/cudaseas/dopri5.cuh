@@ -425,6 +425,8 @@ __global__ void rk_solver_batch_params(
 }
 
 // a generic function to call rk_solver_batch_params
+// params are varied parameters for different samples
+// args are fixed parameters
 template <typename T, typename Func, typename... Args>
 void rk_ode_solver(
     const int rk_steps,
@@ -432,7 +434,7 @@ void rk_ode_solver(
     const int system_size,
     const T t0, const T t1,
     const T* y0,
-    bool is_dense_output,
+    const bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
     Func dydt,
     const T* params, const int parameters,
