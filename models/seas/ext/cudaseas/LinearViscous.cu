@@ -28,10 +28,10 @@ struct ode_function {
         const T t, // time
         const T* y, // y value, vector [2*patches]
         const int system_size, // 2*patches
+        const int parameters, const T *alpha1, // viscous coefficient
         const T Vj, // backslip rate
         const T* stressKernel, // stress kernel matrix [patches,patches]
-        const T* stressrate_ext, // stress rate imposed by external patches
-        const int parameters, const T *alpha1 // viscous coefficient
+        const T* stressrate_ext // stress rate imposed by external patches
         )
    {
         // the system_size is 2*patches, slip and velocity
@@ -66,8 +66,8 @@ void
 LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alpha1,
     const T* yin, T* yout, bool dense_output)
 {
-
-    altar::models::seas::cuda::ode_function<T> func;
+    using func_type = altar::models::seas::cuda::ode_function<T>;
+    func_type func;
 
     // if not dense_output, we only get the last time point (t1) value
     // otherwise, perform interpolation to get all t_eval time points
@@ -76,7 +76,7 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
 
     // printf("inside ode_solver, %d\n", nout);
 
-    ode::dopri5::rk_ode_solver(
+    ode::dopri5::rk_ode_solver<T, func_type, const T, const T*, const T*>(
         rk_steps_,
         batch,
         2*patches_,
@@ -88,7 +88,7 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
         yout, // output y values at tout  [samples, nout, 2*patches]
         nout, // number of desired output time points
         func,
-        alpha1, parameters,
+        parameters, alpha1,
         Vj_, stress_kernel_, stressrate_ext_
         );
     // all done

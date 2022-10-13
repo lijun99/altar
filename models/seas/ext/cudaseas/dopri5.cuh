@@ -384,6 +384,7 @@ __global__ void rk_solver_fixedstep_batch(
 template <typename T, typename Func, typename... Args>
 __global__ void rk_solver_batch_params(
     const int rk_steps,
+    T* rk_work,
     const int samples,
     const int system_size,
     const T t0, const T t1,
@@ -391,36 +392,40 @@ __global__ void rk_solver_batch_params(
     bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
     Func dydt,
-    const T* params, const int parameters,
+    const int parameters, const T* params,
     Args... args
     )
 {
     // one thread per sample, to get the sample index
     int sample = blockIdx.x *blockDim.x + threadIdx.x;
 
-    // check whether thread id is in range of samples
-    // - a common practice for cuda since #threads might be bigger than #samples
+    // check thread id in range of samples
+    // - a common cuda check since threads could be larger than samples
     if(sample >= samples)
         return;
-
     // get the starting pointer for samples
-    auto y0_s = y0 + sample*system_size;
+    auto y0_s = y0 + sample*system_size; // initial values of (slip, velocity)
     auto yout_s = y_out + sample*system_size*n_out;
-
-    // get the sample dependent parameters
+    // get the varies parameter for this sample
     auto params_s = params + sample*parameters;
+    // get the work data for each sample 14*system_size
+    auto rk_work_s = rk_work + sample*14*system_size;
 
-    // assume t_out is the same
-    // call the ode solver for this sample
-    rk_solver_fixedstep<T, Func, const T*, const int, Args...>(
-        rk_steps,
+    // first bracket <...>:
+    // T-typename, ode_function<T>-function type
+    // const T, const T, const T* - model-depend parameter types
+    ode::dopri5::rk_solver_fixedstep(
+        rk_steps, rk_work_s,
         system_size,
-        t0, t1, y0_s,
+        t0, t1,
+        y0_s,
         is_dense_output,
         t_out, yout_s, n_out,
         dydt,
-        params_s, parameters,
-        args...);
+        parameters, params_s,
+        args...
+        );
+    // printf("ode kernel %d %d %g %g\n", sample, samples, yout_s[0], yout_s[system_size*n_out-1]);
     // all done
 }
 
@@ -437,39 +442,39 @@ void rk_ode_solver(
     const bool is_dense_output,
     const T* t_out, T* y_out, const int n_out,
     Func dydt,
-    const T* params, const int parameters,
+    const int parameters, const T* params,
     Args... args
     )
 {
 
     // compute the number of gpu blocks needed
-    const int threadsPerBlock = 128;
+    const int threadsPerBlock = 256;
     const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
-    std::cout << numberOfBlocks;
 
-    // @note required for allocating large memory from kernel
-    // not working for all gpus - need check
-    // also on how to adjust the limit to request
-    cudaSafeCall(cudaDeviceSetLimit(cudaLimitMallocHeapSize, 1024*1024*1024));
+    // allocate the work data for rk ode solver, will move this to a better location of the code
+    T * rk_work;
+    // 9 vectors for rk solver, 5 vectors for dense output
+    cudaSafeCall(cudaMalloc(&rk_work, 14*samples*system_size*sizeof(T)));
 
     // call ode solver kernel
     rk_solver_batch_params<T, Func, Args...><<<numberOfBlocks, threadsPerBlock>>>(
-        rk_steps,
+        rk_steps, rk_work,
         samples,
         system_size, // system size
         t0, t1,
         y0,
-        dense_output, // dense out = true
+        is_dense_output, // dense out = true
         t_out, y_out, n_out, // for dense_output
-        dydt, // the above are stand parameters to call rk_solver, below are model-depend parameter, included in args...
-        parameters, params, // sample dependent parameters
-        args ...  // sample independent parameters
+        dydt, // the above are stand parameters to call rk_solver
+        parameters, params, // int T*
+        args...
         );
     // check errors
     cudaSafeCall(cudaGetLastError());
+    // free the work data
+    cudaSafeCall(cudaFree(rk_work));
     // all done
 }
-
 
 } // end of namespace ode::dopri5
 
