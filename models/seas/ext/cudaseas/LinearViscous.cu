@@ -16,11 +16,16 @@
 
 namespace altar::models::seas::cuda {
 
-// 1. function used in the ode integration
-// the first four parameters are required as standard ones in an ode equation
-// the rest may be defined by the model
-// here y = (slip, velocity)  [2*patches] for creeping zone
+// function used in the ode integration
+// y = (slip, velocity)  vector (2*patches) for creeping zone only
 // return f = dy/dt = (ds/dt, dv/dt)
+// the first four parameters f, t, y, system_size are required as standard input in an ode equation
+// the rest are model dependent dependent parameters, as args...
+// - parameters, alpha1 are sample dependent parameters,
+//   for example, alpha1 within [s*parameters, (s+1)*parameters) belong to sample index s.
+// - Vj, stressKernel, stressrate_ext are sample-independent model parameters
+//   stressrate_ext are Stress Rate due to locked patches (already multiplied by Vj)
+
 template <typename T>
 struct ode_function {
     __device__ __host__ void operator()
@@ -59,14 +64,18 @@ struct ode_function {
    }
 }; // end of struct ode_function
 
-
+//
+// A wrapper to call the generic ode_solver
+//
 
 template <typename T>
 void
 LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alpha1,
     const T* yin, T* yout, bool dense_output)
 {
+    // get the ode function type
     using func_type = altar::models::seas::cuda::ode_function<T>;
+    // make an instance of the ode function
     func_type func;
 
     // if not dense_output, we only get the last time point (t1) value
@@ -75,8 +84,9 @@ LinearViscous<T>::ode_solver(const int batch, const int parameters, const T* alp
     int nout = (dense_output) ? t_eval_points_ : 1;
 
     // printf("inside ode_solver, %d\n", nout);
-
-    ode::dopri5::rk_ode_solver<T, func_type, const T, const T*, const T*>(
+    // call the generic ode_solver
+    // note we need to specify the
+    ode::dopri5::rk_ode_solver(
         rk_steps_,
         batch,
         2*patches_,

@@ -50,11 +50,15 @@ seas:
             viscous_coef:
                 count = 1 ; same for all patches
                 prior = altar.cuda.distributions.uniform
-                prior.support = (0.01, 0.3)
+                prior.support = (0.1, 0.6)
 
     ; controller/annealer
     controller:
-        sampler = altar.cuda.bayesian.metropolis
+        sampler = altar.cuda.bayesian.adaptivemetropolis
+        sampler:
+            min_mc_steps = 20
+            max_mc_steps = 100
+            corr_check_steps = 20
         archiver:
             output_dir = results ; results output directory
             output_freq = 3 ; output frequency of annealing steps
@@ -68,8 +72,8 @@ seas:
     job.gpus = 1  ; number of gpus per task/thread
     ;job.gpuids = [0 1] ; gpu slots to be occupied
     job.gpuprecision = float32 ; desired precision for gpu (float64 or float32)
-    job.chains = 2**8 ; number of chains per task
-    job.steps = 10
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 20
 
     ; shell
     ; shell = mpi.shells.mpirun ; for running with mpi

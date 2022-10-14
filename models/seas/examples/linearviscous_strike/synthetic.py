@@ -31,9 +31,9 @@ class LinearViscousSynthetic(altar.application, family="altar.shells.creepsyneth
     vpl = altar.properties.float(default=1)
     vpl.doc = "plate loading velocity, as scale for slip rate cm/year"
 
-    alpha_1 = altar.properties.float(default=0.1)
+    alpha_1 = altar.properties.float(default=0.2)
 
-    spinup_periods = altar.properties.int(default=80)
+    spinup_periods = altar.properties.int(default=200)
     spinup_periods.doc = "number of periods used for spin up"
 
     spinup_tolerance = altar.properties.float(default=1e-4)
