@@ -9,6 +9,10 @@
 #
 # author(s): Tobias Köhne
 
+# general imports
+import numpy as np
+import pandas as pd
+
 # import altar
 import altar
 from altar.models.BayesianL2 import BayesianL2
@@ -24,9 +28,8 @@ class SEAS(BayesianL2, family="altar.models.seas"):
     """
     # configurable properties
     config_file = altar.properties.str()
-    slice_start = altar.properties.int()
-    slice_end = altar.properties.int()
-    slice_zero = altar.properties.int()
+    obs_loc_file = altar.properties.str()
+    t_obs_file = altar.properties.str()
 
     @altar.export
     def initialize(self, application):
@@ -38,8 +41,13 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         # super class method loads and initializes dataobs
         super().initialize(application=application)
 
+        # load ancillary data
+        obs_loc = pd.read_csv(self.obs_loc_file, index_col=0)
+        pts_surf = obs_loc.values.ravel()
+        t_obs = pd.DatetimeIndex(np.load(self.t_obs_file))
+
         # initialize simulation object
-        self.sim = SubductionSimulation(self.config_file)
+        self.sim = SubductionSimulation(self.config_file, t_obs, pts_surf)
 
         # done
         return self
@@ -55,11 +63,10 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         self.sim.set_upper_rheo_from_alpha_eff(alpha_eff=alpha_eff, n=n)
 
         # run simulation
-        surf_disps = self.sim.zero_obs_at_eq(self.sim.run()[1])
+        obs_zeroed = self.sim.zero_obs_at_eq(self.sim.run()[2])
 
         # fill the predictions array with the residuals
-        prediction[:] = (surf_disps[:, self.slice_start:self.slice_end].ravel()
-                         - self.dataobs.dataobs)
+        prediction[:] = (obs_zeroed[:self.sim.pts_surf.size, :].ravel() - self.dataobs.dataobs)
 
         # all done
         return self
