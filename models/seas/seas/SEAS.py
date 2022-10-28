@@ -43,11 +43,11 @@ class SEAS(BayesianL2, family="altar.models.seas"):
 
         # load ancillary data
         obs_loc = pd.read_csv(self.obs_loc_file, index_col=0)
-        pts_surf = obs_loc.values.ravel()
-        t_obs = pd.DatetimeIndex(np.load(self.t_obs_file))
+        self.pts_surf = obs_loc.values.ravel()
+        self.t_obs = pd.DatetimeIndex(np.load(self.t_obs_file))
 
-        # initialize simulation object
-        self.sim = SubductionSimulation(self.config_file, t_obs, pts_surf)
+        # read simulation configuration dictionary
+        self.config_dict = SubductionSimulation.read_config_file(self.config_file)
 
         # done
         return self
@@ -57,16 +57,22 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         Forward SEAS model
         """
 
-        # set upper rheology
+        # calculate alpha_n
         alpha_eff = 10**theta[0]
         n = 10**theta[1]
-        self.sim.set_upper_rheo_from_alpha_eff(alpha_eff=alpha_eff, n=n)
+        v_eff = self.config_dict["v_plate"]
+        alpha_n = SubductionSimulation.get_alpha_n(alpha_eff, n, v_eff)
 
-        # run simulation
-        obs_zeroed = self.sim.zero_obs_at_eq(self.sim.run()[2])
+        # make a new configuration with the updated alpha_n and n
+        cfg = self.config_dict.copy()
+        cfg["upper_rheo_kw_args"].update({"alpha_n": alpha_n, "n": n})
+
+        # make and run simulation
+        sim = SubductionSimulation.from_config_dict(cfg, self.t_obs, self.pts_surf)
+        obs_zeroed = sim.zero_obs_at_eq(sim.run()[2])
 
         # fill the predictions array with the residuals
-        prediction[:] = (obs_zeroed[:self.sim.pts_surf.size, :].ravel() - self.dataobs.dataobs)
+        prediction[:] = (obs_zeroed[:self.pts_surf.size, :].ravel() - self.dataobs.dataobs)
 
         # all done
         return self
