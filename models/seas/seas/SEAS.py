@@ -44,7 +44,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         # load ancillary data
         obs_loc = pd.read_csv(self.obs_loc_file, index_col=0)
         self.pts_surf = obs_loc.values.ravel()
-        self.t_obs = pd.DatetimeIndex(np.load(self.t_obs_file))
+        self.t_obs = np.load(self.t_obs_file)
 
         # read simulation configuration dictionary
         self.config_dict = SubductionSimulation.read_config_file(self.config_file)
@@ -72,7 +72,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         obs_zeroed = sim.zero_obs_at_eq(sim.run()[2])
 
         # fill the predictions array with the residuals
-        prediction[:] = (obs_zeroed[:self.pts_surf.size, :].ravel() - self.dataobs.dataobs)
+        prediction[:] = obs_zeroed.ravel() - self.dataobs.dataobs
 
         # all done
         return self
