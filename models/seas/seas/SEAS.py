@@ -52,20 +52,50 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         # done
         return self
 
+    def update_cfg_from_theta(self, cfg, theta):
+        """
+        Convert the theta array into a SubductionSimulation-compatible dictionary.
+        """
+        i = 0
+        theta_arr = theta.ndarray(copy=False)
+        for name in self.psets_list:
+            count = self.psets[name].count
+            # get data
+            val = theta_arr[i:i + count]
+            # check whether we're setting a rheology
+            if name.startswith("upper_"):
+                key = name[6:]
+                target = cfg["upper_rheo_kw_args"]
+            elif name.startswith("lower_"):
+                key = name[6:]
+                target = cfg["lower_rheo_kw_args"]
+            else:
+                key = name
+                target = cfg
+            # check if we need to convert from log space
+            if key.startswith("log10_"):
+                val = 10**val
+                key = key[6:]
+            # apply update
+            target[key] = val[0] if val.size == 1 else val.tolist()
+            i += count
+        # convert alpha_eff to alpha_n after we've set both alpha_eff and n
+        for rheo in ["upper_rheo_kw_args", "lower_rheo_kw_args"]:
+            try:
+                alpha_eff = cfg[rheo].pop("alpha_eff")
+            except KeyError:
+                pass
+            else:
+                cfg[rheo]["alpha_n"] = SubductionSimulation.get_alpha_n(
+                    alpha_eff, cfg[rheo]["n"], cfg["v_plate"])
+        return cfg
+
     def forwardModel(self, theta, prediction):
         """
         Forward SEAS model
         """
-
-        # calculate alpha_n
-        alpha_eff = 10**theta[0]
-        n = 10**theta[1]
-        v_eff = self.config_dict["v_plate"]
-        alpha_n = SubductionSimulation.get_alpha_n(alpha_eff, n, v_eff)
-
-        # make a new configuration with the updated alpha_n and n
-        cfg = self.config_dict.copy()
-        cfg["upper_rheo_kw_args"].update({"alpha_n": alpha_n, "n": n})
+        # make a new configuration with updates from theta
+        cfg = self.update_cfg_from_theta(self.config_dict.copy(), theta)
 
         # make and run simulation
         sim = SubductionSimulation.from_config_dict(cfg, self.t_obs, self.pts_surf)
