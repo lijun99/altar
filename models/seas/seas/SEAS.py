@@ -76,6 +76,9 @@ class SEAS(BayesianL2, family="altar.models.seas"):
             if key.startswith("log10_"):
                 val = 10**val
                 key = key[6:]
+            # check for km to m conversion
+            if key == "H":
+                val = val*1e3
             # apply update
             target[key] = val[0] if val.size == 1 else val.tolist()
             i += count
