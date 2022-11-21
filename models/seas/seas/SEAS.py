@@ -86,11 +86,18 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         for rheo in ["upper_rheo_kw_args", "lower_rheo_kw_args"]:
             try:
                 alpha_eff = cfg[rheo].pop("alpha_eff")
-            except KeyError:
+            except (KeyError, AttributeError):
                 pass
             else:
                 cfg[rheo]["alpha_n"] = SubductionSimulation.get_alpha_n(
                     alpha_eff, cfg[rheo]["n"], cfg["v_plate"])
+            try:
+                alpha_eff_deep = cfg[rheo].pop("alpha_eff_deep")
+            except (KeyError, AttributeError):
+                pass
+            else:
+                cfg[rheo]["alpha_n_deep"] = SubductionSimulation.get_alpha_n(
+                    alpha_eff_deep, cfg[rheo]["n"], cfg["v_plate"])
         return cfg
 
     def forwardModel(self, theta, prediction):
