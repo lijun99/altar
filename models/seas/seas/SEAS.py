@@ -96,8 +96,9 @@ class SEAS(BayesianL2, family="altar.models.seas"):
             except (KeyError, AttributeError):
                 pass
             else:
+                n = cfg[rheo]["n_deep"] if "n_deep" in cfg[rheo] else cfg[rheo]["n"]
                 cfg[rheo]["alpha_n_deep"] = SubductionSimulation.get_alpha_n(
-                    alpha_eff_deep, cfg[rheo]["n"], cfg["v_plate"])
+                    alpha_eff_deep, n, cfg["v_plate"])
         return cfg
 
     def forwardModel(self, theta, prediction):
