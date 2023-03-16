@@ -77,7 +77,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
                 val = 10**val
                 key = key[6:]
             # check for km to m conversion
-            if key == "H":
+            if key in ["H", "mid_transition", "deep_transition", "deep_transition_width"]:
                 val = val*1e3
             # apply update
             target[key] = val[0] if val.size == 1 else val.tolist()
@@ -91,6 +91,14 @@ class SEAS(BayesianL2, family="altar.models.seas"):
             else:
                 cfg[rheo]["alpha_n"] = SubductionSimulation.get_alpha_n(
                     alpha_eff, cfg[rheo]["n"], cfg["v_plate"])
+            try:
+                alpha_eff_mid = cfg[rheo].pop("alpha_eff_mid")
+            except (KeyError, AttributeError):
+                pass
+            else:
+                n = cfg[rheo]["n_mid"] if "n_mid" in cfg[rheo] else cfg[rheo]["n"]
+                cfg[rheo]["alpha_n_mid"] = SubductionSimulation.get_alpha_n(
+                    alpha_eff_mid, n, cfg["v_plate"])
             try:
                 alpha_eff_deep = cfg[rheo].pop("alpha_eff_deep")
             except (KeyError, AttributeError):
