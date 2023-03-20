@@ -37,7 +37,7 @@ public:
         py::capsule stressrate_ext,
         py::capsule displacement_kernel,
         int t_eval_points, py::capsule t_eval,
-        py::capsule coseismic,
+        int n_coseismic, py::capsule t_coseismic, py::capsule coseismic,
         int spin_up_max_cycles,
         int spin_up_convergence_check_cycles)
     {
@@ -48,6 +48,7 @@ public:
             convertPyArray<T, cuda_vector>(stressrate_ext),
             convertPyArray<T, cuda_matrix>(displacement_kernel),
             t_eval_points, convertPyArray<T, cuda_vector>(t_eval),
+            n_coseismic, convertPyArray<T, cuda_vector>(t_coseismic),
             convertPyArray<T, cuda_vector>(coseismic),
             spin_up_max_cycles, spin_up_convergence_check_cycles
         );
