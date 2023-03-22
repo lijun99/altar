@@ -11,41 +11,39 @@
 // get my class declaration
 #include "LinearViscous.h"
 
-// get my dependencies
-#include "dopri5log.cuh"
-
-namespace altar::models::seas::cuda {
+namespace altar::models::seas::cuda::linearviscous {
 
 // Initialize model parameters
 // suffix underline indicate class parameters
 template <typename T>
 void LinearViscous<T>::initialize(
-    int samples, int patches, int stations,
-    T Vj, T* stress_kernel, T* stressrate_ext,
-    T* displacement_kernel,
-    int nevent, const T* tevent, const T* yevent,
-    int t_eval_points, T* t_eval,
-    int n_coseismic, T* t_coseismic, T* coseismic,
-    T atol, T rtol, int spinup_max_cycles,
+    int max_samples_, int patches_, int stations_, //
+    T Vj_,
+    T* stress_kernel_, // patches * patches
+    T* stressrate_ext_, // patches
+    T* displacement_kernel_, //
+    int n_coseismic_, T* t_coseismic_, T* coseismic_, // events
+    int neval_, T* teval_, T* yeval_,
+    T atol_, T rtol_, int spinup_max_cycles_ // ode controls
     )
 {
     // assign parameters
-    max_samples = samples;
-    patches_ = patches;
-    stations_ = stations;
+    max_samples = max_samples_;
+    patches = patches_;
+    system_size = patches*2; //units = 2, s and v
+    stations = stations_;
 
     // ode
     Vj = Vj_;
     stress_kernel = stress_kernel_;
     stressrate_ext = stressrate_ext_;
 
-
     // create an instance of odefunc
     odefunc = new OdeType(max_samples, patches, 2);
-    odefunct->initialize(Vj, stress_kernel, stressrate_ext);
+    odefunc->init_parameters(Vj, stress_kernel, stressrate_ext);
 
     // create an instance of events (including starting/ending time)
-    events = new EventType(nevents_, tevents_, coseismic_; patches*2);
+    events = new EventType(n_coseismic_, t_coseismic_, coseismic_, patches*2);
 
     // create the solver
     solver = new SolverType(*odefunc, *events, atol_, rtol_, max_samples);
@@ -54,7 +52,7 @@ void LinearViscous<T>::initialize(
     neval = neval_;
     teval = teval_;
     yeval = yeval_;
-    solver->set_dense_output(neval, teval, yeval);
+    solver->set_dense_output(neval_, teval_, yeval_);
 
     spinup_max_cycles = spinup_max_cycles_;
 }
@@ -69,10 +67,10 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
     solver->set_init_values(y0, true, batch, 0);
 
     // set parameters (pointer) to odefunc
-    odefunc.set_alpha1(theta, parameters);
+    odefunc->set_alpha1(theta, parameters);
 
     // iteratively solve ode until convergence
-    // paramtgers (dense_out, systems_to_process, system_offset, max_cycles)
+    // parameters (dense_out, systems_to_process, system_offset, max_cycles)
     solver-> solve_ivp_cycles(true, batch, 0, spinup_max_cycles);
     // results are saved in yeval
 
@@ -81,7 +79,7 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
     // all done
 }
 
-
+// need to rewrite to use block per system
 template<typename T>
 __global__
 void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
@@ -98,21 +96,21 @@ void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
     auto pred_s = predictions + sample*t_points*stations;
 
     // iterate over time points
-    for(int t=0; t<t_points; t++)
+    for(int it=0; it<t_points; it++)
     {
         // get data pointers for this sample at this time
-        auto y_s_t = y_s + t*2*patches;
-        auto pred_s_t = pred_s +t*stations;
-        auto gf_t = gf + t*patches*stations;
+        auto y_s_t = y_s + it*2*patches;
+        auto pred_s_t = pred_s +it*stations;
+        auto gf_t = gf + it*patches*stations;
 
         // compute Obs (stations) = Slip (patches) x G(patches, stations)
+        // will use device blas function to optimize
         for(int s=0; s<stations; s++)
         {
             pred_s_t[s] = 0;
             for (int p=0; p<patches; p++)
                 pred_s_t[s] += y_s_t[p]*gf_t[p*stations+s];
         }
-
     // printf("disp %d %d %d %g %g %g\n", sample, samples, t, pred_s_t[0], y_s_t[0], gf_t[0]);
     }
 }
@@ -129,20 +127,16 @@ void LinearViscous<T>::compute_displacement(const T* yeval, T* predictions, cons
     const int threadsPerBlock = 128;
     const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
     // call kernel
-    compute_displacement_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(yeval, displacement_kernel_,predictions,
-        samples, t_eval_points_,patches_,stations_);
+    compute_displacement_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(yeval,
+        displacement_kernel, predictions,
+        samples, neval, patches, stations);
     // check error
-    cudaSafeCall(cudaGetLastError());
-
-    // std::cout << "printing predictions after ode \n";
-    //details::debug_cuda_memory<T>(displacement_kernel_, t_eval_points_*stations_*2*patches_);
-    // details::debug_cuda_memory<T>(predictions, samples*t_eval_points_*stations_);
-
+    // cudaSafeCall(cudaGetLastError());
 }
 
 // explicit instantiation
-template class altar::models::seas::cuda::LinearViscous<float>;
-template class altar::models::seas::cuda::LinearViscous<double>;
+template class altar::models::seas::cuda::linearviscous::LinearViscous<float>;
+template class altar::models::seas::cuda::linearviscous::LinearViscous<double>;
 
 } // end of namespace
 // end of file

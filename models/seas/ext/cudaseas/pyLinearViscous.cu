@@ -8,7 +8,7 @@
 
 
 // my definitions
-#include "LinearViscous.h"
+#include "linearviscous/LinearViscous.h"
 
 
 namespace altar::cuda::py::seas::linearviscous {
@@ -24,7 +24,7 @@ T* convertPyArray(py::capsule pycap)
 template<typename T>
 class pyLinearViscous
 {
-    using model_type = altar::models::seas::cuda::LinearViscous<T>;
+    using model_type = altar::models::seas::cuda::linearviscous::LinearViscous<T>;
 private:
     model_type * _cmodel;
 public:
@@ -32,40 +32,35 @@ public:
     pyLinearViscous () {_cmodel = new model_type();}
     // initialize cmodel parameters
     void initialize(int samples, int patches, int stations,
-        T t0, T t1, T Vj,
+        T Vj,
         py::capsule stress_kernel,
         py::capsule stressrate_ext,
         py::capsule displacement_kernel,
-        int t_eval_points, py::capsule t_eval,
         int n_coseismic, py::capsule t_coseismic, py::capsule coseismic,
-        int spin_up_max_cycles,
-        int spin_up_convergence_check_cycles)
+        int t_eval_points, py::capsule t_eval, py::capsule y_eval,
+        T atol, T rtol, int spin_up_max_cycles)
     {
         _cmodel->initialize(
             samples, patches, stations,
-            t0, t1, Vj,
+            Vj,
             convertPyArray<T, cuda_matrix>(stress_kernel),
             convertPyArray<T, cuda_vector>(stressrate_ext),
             convertPyArray<T, cuda_matrix>(displacement_kernel),
-            t_eval_points, convertPyArray<T, cuda_vector>(t_eval),
             n_coseismic, convertPyArray<T, cuda_vector>(t_coseismic),
             convertPyArray<T, cuda_vector>(coseismic),
-            spin_up_max_cycles, spin_up_convergence_check_cycles
+            t_eval_points, convertPyArray<T, cuda_vector>(t_eval),
+            convertPyArray<T, cuda_matrix>(y_eval),
+            atol, rtol, spin_up_max_cycles
         );
     }
     // set initial spin up state
     void set_spinup_data(py::capsule spinup_data)
     {
-        _cmodel->set_spinup_data(
+        _cmodel->set_initial_values(
             convertPyArray<T, cuda_vector>(spinup_data)
         );
     }
-    // set ode solver parameters
-    void set_ode_parameters(int steps, T tolerance_absolute, T tolerance_relative)
-    {
-        _cmodel->set_ode_parameters(steps, tolerance_absolute, tolerance_relative);
-    }
-    // forward modeling theta -> data prediction
+
     void forward_model(py::capsule theta, py::capsule prediction, int parameters, int batch)
     {
         auto c_theta =  convertPyArray<T, cuda_matrix>(theta);
@@ -85,13 +80,11 @@ module(py::module & m)
         .def(py::init())
         .def("initialize", &pyLinearViscous_double::initialize)
         .def("set_spinup_data", &pyLinearViscous_double::set_spinup_data)
-        .def("set_ode_parameters", &pyLinearViscous_double::set_ode_parameters)
         .def("forward_model", &pyLinearViscous_double::forward_model);
     py::class_<pyLinearViscous_float>(m, "model_float")
         .def(py::init())
         .def("initialize", &pyLinearViscous_float::initialize)
         .def("set_spinup_data", &pyLinearViscous_float::set_spinup_data)
-        .def("set_ode_parameters", &pyLinearViscous_float::set_ode_parameters)
         .def("forward_model", &pyLinearViscous_float::forward_model);
 }
 

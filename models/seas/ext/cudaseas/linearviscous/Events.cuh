@@ -23,14 +23,14 @@ template <typename T>
 struct __ALIGNED__ Events {
     // required event parameters
     int nevents; // number of coseismic changes, including starting and ending time t0, tn
-    T* tevents; // [nevents], assume the same for all systems here, otherwise, rewrite
+    const T* tevents; // [nevents], assume the same for all systems here, otherwise, rewrite
 
     // other custom parameters
     int system_size;
-    T * yevents; // [nevents-1, system_size], assuming nothing happens at tn, and same for all systems
+    const T * yevents; // [nevents-1, system_size], assuming nothing happens at tn, and same for all systems
 
     // an example constructor
-    Events (const int nevents_, const T* tevents_, const T* yevents_; const int system_size_)
+    Events (const int nevents_, const T* tevents_, const T* yevents_, const int system_size_)
         : nevents(nevents_), system_size(system_size_), tevents(tevents_), yevents(yevents_)
     {
     };
@@ -55,6 +55,8 @@ struct __ALIGNED__ Events {
         return;
     };
 };
+
+} // end of namespace
 
 #endif // altar_models_seas_cuda_linearviscous_events_cuh
 // end of file

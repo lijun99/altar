@@ -66,6 +66,7 @@ function(altar_seas_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
   # set the linker
   set_target_properties(cudaseasmodule PROPERTIES LINKER_LANGUAGE CUDA)
@@ -85,8 +86,8 @@ function(altar_seas_cuda_buildModule)
   # add the sources
   target_sources(cudaseasmodule PRIVATE
     ext/cudaseas/cudaseas.cc
-    ext/cudaseas/LinearViscous.cu
-    ext/cudaseas/pyLinearViscous.cc
+    ext/cudaseas/linearviscous/LinearViscous.cu
+    ext/cudaseas/pyLinearViscous.cu
     )
 
   # install the seas extension

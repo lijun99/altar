@@ -32,22 +32,19 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     dataobs.doc = "the observed data"
 
     # model parameters
-    t_period = altar.properties.array(default=(0.0, 1.0))
-    t_period.doc = "the start/end time of an earthquake cycle"
-
+    # system information, each system consists of #patches and 2 units (slip, velocity) per patch
     patches = altar.properties.int(default=1)
     patches.doc = "number of creeping patches"
-
     stations = altar.properties.int(default=1)
     stations.doc = "number of surface observation locations"
 
-    # the file based inputs
+    # dense output of slip rate
+    n_eval = altar.properties.int(default=1)
+    n_eval.doc = "number of t_eval points"
     t_eval_file = altar.properties.path(default="t_eval.txt")
     t_eval_file.doc = "the input file for time points when displacements are evaluated"
 
-    t_eval_points = altar.properties.int(default=1)
-    t_eval_points.doc = "number of t_eval points"
-
+    #
     plate_loading_velocity = altar.properties.float(default=1)
     plate_loading_velocity.doc = "Plate loading velocity, as back slip"
 
@@ -60,9 +57,11 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     displacement_kernel_file = altar.properties.path(default="displacementkernel.txt")
     displacement_kernel_file.doc = "the filename for input displacement kernel G, arranged in (patches, stations)"
 
+    # events - coseismic time and changes
+    n_coseismic = altar.properties.int(default=2)
+    n_coseismic.doc = "number of the event/earthquake time within a cycle, including start/end time"
     t_coseismic_file = altar.properties.path(default="t_coseismic.txt")
     t_coseismic_file.doc = "the input file for coseismic event time points"
-
     coseismic_file = altar.properties.path(default="coseismic.txt")
     coseismic_file.doc = "the input file for coseismic (slip, stress) changes, matrix with (events, 2*patches) elements"
 
@@ -72,26 +71,20 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     spin_up_data_file = altar.properties.path(default="spin_up_data.txt")
     spin_up_data_file.doc = "the input file for spin-up data of (slip, velocity) - 2*patches"
 
-    ode_solver_steps = altar.properties.int(default=16)
-    ode_solver_steps.doc = "runge-kutta steps (for fixed steps) or max steps (for adaptive)"
-
     ode_solver_tolerance_relative = altar.properties.float(default=1e-4)
     ode_solver_tolerance_relative.doc = "max relative error for ode solver"
 
     ode_solver_tolerance_absolute = altar.properties.float(default=1e-3)
     ode_solver_tolerance_absolute.doc = "max absolute error for ode solver"
 
-    spin_up_convergence_check_cycles = altar.properties.int(default=1)
-    spin_up_convergence_check_cycles.doc = "number of spin up cycles to check convergence"
-
     spin_up_max_cycles = altar.properties.int(default=5)
     spin_up_max_cycles.doc = "max number of cycles to stop spin up"
 
-    # public data
-    # use gPrefix to indicate cuda matrix/vector
+    # public data, use gPrefix to indicate cuda matrix/vector
+    # keep track of (slip, velocity) at t_eval
     gT_eval = None
+    gY_eval = None
     # coseismic events
-    nCoseismic = 0
     gTCoseismic = None
     gCoseismic = None
     # stress
@@ -104,9 +97,6 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     gDprediction = None
     # interface to C++ model object
     cmodel = None
-
-
-
 
     ode_solver = None # to be implemented as a component in the future
 
@@ -123,11 +113,14 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # load files to gpu
         self.loadInputFiles()
 
+        # prepare the (slip, velocity) at t_eval, in order to be accessed from python
+        self.gY_eval = altar.cuda.matrix(shape=(self.samples, self.n_eval*self.patches*2))
+
         # prepare the predicted data matrix
         self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
 
         # create the c model and pass parameters
-        print(self.precision)
+        print("the model is run in precison", self.precision)
         if self.precision == "float32": # single precision
             self.cmodel = libcudaseas.linearviscous.model_float()
         else: # double precision
@@ -136,27 +129,21 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # pass parameters and data to cmodel
         self.cmodel.initialize(
             self.samples, self.patches, self.stations,
-            self.t_period[0], self.t_period[1], self.plate_loading_velocity,
+            self.plate_loading_velocity,
             self.gStressKernel.data,
             self.gStressRateExt.data,
             self.gGF.data,
-            self.t_eval_points, self.gT_eval.data,
             self.nCoseismic, self.gTCoseismic, self.gCoseismic.data,
-            self.spin_up_max_cycles, self.spin_up_convergence_check_cycles
+            self.t_eval_points, self.gT_eval.data, sef.gY_eval.data,
+            self.ode_solver_tolerance_absolute,
+            self.ode_solver_tolerance_relative,
+            self.self.spin_up_max_cycles
         )
 
         # set the initial state for spin up
         self.cmodel.set_spinup_data(
             self.gSpinUpData.data
         )
-
-        # set ode solver parameters
-        self.cmodel.set_ode_parameters(
-            self.ode_solver_steps,
-            self.ode_solver_tolerance_absolute,
-            self.ode_solver_tolerance_relative
-        )
-
         # all done
         return self
 
@@ -171,7 +158,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         # grab the sizes
         patches = self.patches
         stations = self.stations
-        times = self.t_eval_points
+        times = self.n_eval
         max_samples = self.samples
 
         info.log(f'loading files from {self.case}...')

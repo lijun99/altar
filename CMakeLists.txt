@@ -69,7 +69,7 @@ if (WITH_CUDA AND PYRE_CUDA_FOUND)
     # enforce linker for CUDA modules; not properly set for some systems
     set(CMAKE_CUDA_HOST_LINK_LAUNCHER ${CMAKE_CXX_COMPILER})
     if(NOT DEFINED CMAKE_CUDA_STANDARD)
-      set(CMAKE_CUDA_STANDARD 11)
+      set(CMAKE_CUDA_STANDARD 14)
       set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     endif()
   # cuda toolkit not available
