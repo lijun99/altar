@@ -6,6 +6,7 @@ __pycache__
 .DS_Store
 
 # the default build locations
+/build
 /builds
 /products
 
@@ -47,5 +48,8 @@ BetaStatistics.txt
 
 # availabel upon request, due to large sizes
 models/seismic/examples/kinematicG_9patch/
+
+# VS Code
+.vscode/
 
 # end of file
