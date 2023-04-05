@@ -20,6 +20,10 @@ PYBIND11_MODULE(cudaseas, m)
     auto ms = m.def_submodule("linearviscous", "linear viscous ode binding");
     altar::cuda::py::seas::linearviscous::module(ms);
 
+    // the rate-dependent method bindings
+    auto ms = m.def_submodule("ratedependent", "rate-dependent ode binding");
+    altar::cuda::py::seas::ratedependent::module(ms);
+
 }
 
 // end of file

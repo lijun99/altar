@@ -30,6 +30,10 @@ namespace altar::cuda::py::seas {
         namespace py = pybind11;
     }
 
+    namespace ratedependent {
+        namespace py = pybind11;
+    }
+
 } // namespace
 
 #endif

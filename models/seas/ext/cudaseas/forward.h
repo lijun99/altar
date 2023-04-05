@@ -14,6 +14,10 @@ namespace altar::cuda::py::seas {
     namespace linearviscous {
         void module(py::module & m);
     }
+
+    namespace ratedependent {
+        void module(py::module & m);
+    }
 }
 
 #endif
