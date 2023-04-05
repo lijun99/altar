@@ -12,10 +12,11 @@ import altar.cuda
 # my base
 from altar.cuda.models.cudaBayesian import cudaBayesian
 # extensions
-from altar.cuda import cublas
-from altar.cuda import libcuda
+# from altar.cuda import cublas
+# from altar.cuda import libcuda
 from altar.models.seas.ext import cudaseas as libcudaseas
 import numpy
+
 
 # declaration
 class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearviscous"):
@@ -52,21 +53,26 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     stress_kernel_file.doc = "the filename for input stress kernel - patches x patches matrix"
 
     stressrate_ext_file = altar.properties.path(default="stressrate_ext.txt")
-    stressrate_ext_file.doc = "stress rate d\tau/dt imposed by external (locked) patches - vector (patches)"
+    stressrate_ext_file.doc = (r"stress rate d\tau/dt imposed by external (locked) "
+                               "patches - vector (patches)")
 
     displacement_kernel_file = altar.properties.path(default="displacementkernel.txt")
-    displacement_kernel_file.doc = "the filename for input displacement kernel G, arranged in (patches, stations)"
+    displacement_kernel_file.doc = ("the filename for input displacement kernel G, arranged "
+                                    "in (patches, stations)")
 
     # events - coseismic time and changes
     n_coseismic = altar.properties.int(default=2)
-    n_coseismic.doc = "number of the event/earthquake time within a cycle, including start/end time"
+    n_coseismic.doc = ("number of the event/earthquake time within a cycle, "
+                       "including start/end time")
     t_coseismic_file = altar.properties.path(default="t_coseismic.txt")
     t_coseismic_file.doc = "the input file for coseismic event time points"
     coseismic_file = altar.properties.path(default="coseismic.txt")
-    coseismic_file.doc = "the input file for coseismic (slip, stress) changes, matrix with (events, 2*patches) elements"
+    coseismic_file.doc = ("the input file for coseismic (slip, stress) changes, "
+                          "matrix with (events, 2*patches) elements")
 
     use_spin_up_data = altar.properties.bool(default=False)
-    use_spin_up_data.doc = "whether to use a pre-computed data for (slip, velocity) at the end of an cycle"
+    use_spin_up_data.doc = ("whether to use a pre-computed data for (slip, velocity) "
+                            "at the end of an cycle")
 
     spin_up_data_file = altar.properties.path(default="spin_up_data.txt")
     spin_up_data_file.doc = "the input file for spin-up data of (slip, velocity) - 2*patches"
@@ -91,15 +97,14 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
     gStressKernel = None
     gStressRateExt = None
 
-    gGF = None # displacement kernel
+    gGF = None  # displacement kernel
     gSpinUpData = None
-    gDataObsBatched = None # data observations duplicated in #samples
+    gDataObsBatched = None  # data observations duplicated in #samples
     gDprediction = None
     # interface to C++ model object
     cmodel = None
 
-    ode_solver = None # to be implemented as a component in the future
-
+    ode_solver = None  # to be implemented as a component in the future
 
     # protocol obligations
     @altar.export
@@ -117,13 +122,14 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         self.gY_eval = altar.cuda.matrix(shape=(self.samples, self.n_eval*self.patches*2))
 
         # prepare the predicted data matrix
-        self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+        self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations),
+                                              dtype=self.precision)
 
         # create the c model and pass parameters
         print("the model is run in precison", self.precision)
-        if self.precision == "float32": # single precision
+        if self.precision == "float32":  # single precision
             self.cmodel = libcudaseas.linearviscous.model_float()
-        else: # double precision
+        else:  # double precision
             self.cmodel = libcudaseas.linearviscous.model_double()
 
         # pass parameters and data to cmodel
@@ -134,7 +140,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
             self.gStressRateExt.data,
             self.gGF.data,
             self.nCoseismic, self.gTCoseismic, self.gCoseismic.data,
-            self.t_eval_points, self.gT_eval.data, sef.gY_eval.data,
+            self.t_eval_points, self.gT_eval.data, self.gY_eval.data,
             self.ode_solver_tolerance_absolute,
             self.ode_solver_tolerance_relative,
             self.self.spin_up_max_cycles
@@ -157,9 +163,9 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
 
         # grab the sizes
         patches = self.patches
-        stations = self.stations
+        # stations = self.stations
         times = self.n_eval
-        max_samples = self.samples
+        # max_samples = self.samples
 
         info.log(f'loading files from {self.case}...')
         # load the coseismic change to (slip, stress)
@@ -190,13 +196,14 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
             spinup_data_shape = self.gSpinUpData.shape
             if spinup_data_shape != 2*patches:
                 error.log(f'The spin up data shape {spinup_data_shape} does not match 2*{patches}')
-        else: # set as zeros
+        else:  # set as zeros
             self.gSpinUpData = altar.cuda.vector(shape=2*patches, dtype=self.precision).zero()
 
             # load the displacement kernel
         GF = self.loadFile(self.displacement_kernel_file)
         if GF.shape != (self.patches, self.stations):
-            error.log(f'Displacement kernel shape {coseismic.shape} does not match ({self.patches}, {self.stations}')
+            error.log(f'Displacement kernel shape {self.gTCoseismic.shape} does not '
+                      f'match ({self.patches}, {self.stations}')
 
         # cd has been already merged to observed data through dataobs initialization
         # get a reference for the observed data (samples,
@@ -215,11 +222,11 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
             error.log(f'the number of time points {t_eval_shape} does not match {times}')
 
         # debug
-        #self.gSpinUpData.print()
-        #self.gCoseismic.print()
-        #self.gT_eval.print()
-        #self.gStressKernel.print()
-        #self.gGF.print()
+        # self.gSpinUpData.print()
+        # self.gCoseismic.print()
+        # self.gT_eval.print()
+        # self.gStressKernel.print()
+        # self.gGF.print()
 
         # all done
         return
@@ -228,7 +235,8 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         """
         Merge Data Covariance(cd) to GF (displacement kernel)
         @note that
-        :param: cd - Data Covariance inverse in Cholesky decomposed form (obs, obs), obs=timesxstations
+        :param: cd - Data Covariance inverse in Cholesky decomposed form (obs, obs),
+                     obs = times x stations
         :param: GF - Original displacement kernel (patches, stations)
         :return: bGF - merged GF (times, patchesxstations), the latter is flattened
         """
@@ -246,7 +254,7 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
             # consider data at different time points are uncorrelated
             cd_t = cd[time*stations:(time+1)*stations, time*stations:(time+1)*stations]
             # multiply it by the original GF
-            bGF[time,:,:] = numpy.matmul(GF, cd_t)
+            bGF[time, :, :] = numpy.matmul(GF, cd_t)
         # flatten the second dimension
         bGF = bGF.reshape(times, patches*stations)
         # all done
@@ -256,7 +264,8 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
         """
         Linear Viscous forward model in batch
         :param theta: matrix (samples, parameters), sampling parameters
-        :param prediction: matrix (samples, observations), the predicted data or residual between predicted and observed data
+        :param prediction: matrix (samples, observations), the predicted data or residual
+                           between predicted and observed data
         :param batch: integer, the number of samples to be computed batch<=samples
         :return: prediction as predicted data
         """
@@ -266,7 +275,6 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
 
         # all done
         return prediction
-
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
@@ -287,10 +295,9 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
 
         # call data method to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
-            residual=True, batch=batch)
+                                      residual=True, batch=batch)
         # return the likelihood
         return likelihood
-
 
     @altar.export
     def forwardProblem(self, application, theta=None):
@@ -300,7 +307,6 @@ class cudaLinearViscous(cudaBayesian, family="altar.models.seas.cuda.linearvisco
 
         # all done
         return
-
 
     # private data
     # inputs
