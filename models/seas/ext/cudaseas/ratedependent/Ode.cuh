@@ -12,6 +12,8 @@
 #ifndef altar_models_seas_cuda_ratedependent_ode_cuh
 #define altar_models_seas_cuda_ratedependent_ode_cuh
 
+#include "math.h"
+
 // enclosed in a name space
 namespace altar::models::seas::cuda::ratedependent {
 
@@ -28,8 +30,8 @@ struct Ode {
 
     // other custom parameters
     // all these parameters need to set inside this structure
-    int parameters; // number of alpha_h per system
-    const T *alpha_h; // viscous coefficient [systems, parameters]
+    int parameters; // size of theta per system
+    const T *alpha_h_vec; // viscous coefficient for each patch [systems, patches]
     T Vj; // backslip rate
     T mu_over_2vs; // radiation damping coefficient
     T* stress_kernel; // stress kernel matrix [patches,patches]
@@ -51,16 +53,16 @@ struct Ode {
 
         // dvdt
         // compute radiation damping
-        auto raddamp = mu_over_2vs * v / alpha_h
+        auto raddamp = mu_over_2vs * v / alpha_h_vec[system_id*patches+patch_id]
         // compute dtau/dt, put it into f
         auto ix = patches + patch_id;
         f[ix] = stressrate_ext[patch_id];
-        for(int iy=0; iy<patches; ++iy)
+        for (int iy=0; iy<patches; ++iy)
             f[ix] += Vj * (exp(zeta[iy]) - 1) * stress_kernel[iy*patches+ix];
         // apply radiation damping
         f[ix] /= 1 + raddamp
         // get dvdt from dtau/dt
-        f[ix] /= alpha_h[system_id];
+        f[ix] /= alpha_h_vec[system_id*patches+patch_id];
         // all done for this patch
         return;
     };
@@ -70,7 +72,7 @@ struct Ode {
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
         // this loop is needed because the total number of patches may be bigger than the total number of threads
-        for(int patch_id = cta.thread_rank(); patch_id<patches; patch_id+=cta.size())
+        for (int patch_id = cta.thread_rank(); patch_id<patches; patch_id+=cta.size())
             dydt(system_id, patch_id, t, y0, f);
     };
 
@@ -86,11 +88,24 @@ struct Ode {
     };
 
     // pass the updated parameters
-    void set_alpha_h(const T* alpha_h_, const int parameters_)
+    // assume theta has shape [systems, parameters]
+    void set_alpha_h(const T* theta_, const int parameters_)
     {
         parameters = parameters_;
-        alpha_h = alpha_h_;
-    }
+        T log_alpha_h_range;
+        T frac_log_alpha_h;
+        for (int isys=0, isys<systems, ++isys)
+        {
+            log_alpha_h_range = theta_[isys*parameters+1] - theta_[isys*parameters];
+            for (int ipatch=0, ipatch<patches, ++ipatch)
+            {
+                // assume log-linear slope between boundary alpha_h values in theta
+                // this still assumes patch order is meaningful and 1D
+                frac_log_alpha_h = theta_[isys*parameters] + ipatch * log_alpha_h_range / patches;
+                alpha_h_vec[isys*patches+ipatch] = pow(10, frac_log_alpha_h);
+            };
+        };
+    };
 
     // constructor
     Ode(const int p, const int u, const int sys)
