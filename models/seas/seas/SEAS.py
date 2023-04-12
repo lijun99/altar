@@ -54,7 +54,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         self.obs_ndarray = self.dataobs.dataobs.ndarray()
         # subset to horizontals if desired
         if self.only_horizontals:
-            self.obs_ndarray = self.obs_ndarray[:self.dataobs.observations]
+            self.obs_ndarray = self.obs_ndarray[:self.dataobs.observations // 2]
 
         # done
         return self
