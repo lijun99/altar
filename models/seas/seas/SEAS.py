@@ -50,6 +50,12 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         # read simulation configuration dictionary
         self.config_dict = SubductionSimulation.read_config_file(self.config_file)
 
+        # shortcut to dataobs as ndarray
+        self.obs_ndarray = self.dataobs.dataobs.ndarray()
+        # subset to horizontals if desired
+        if self.only_horizontals:
+            self.obs_ndarray = self.obs_ndarray[:self.dataobs.observations]
+
         # done
         return self
 
@@ -126,13 +132,12 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         sim = SubductionSimulation.from_config_dict(cfg, self.t_obs, self.pts_surf)
         obs_zeroed = sim.zero_obs_at_eq(sim.run()[2])
 
-        # fill the predictions array with the residuals
-        if self.only_horizontals:  # restrict to horizontals if desired
+        # restrict to horizontals if desired
+        if self.only_horizontals:
             obs_zeroed = obs_zeroed[:obs_zeroed.shape[0]//2, :]
-            dataobs = self.dataobs.dataobs.view(0, self.dataobs.observations // 2)
-            prediction[:] = obs_zeroed.ravel() - dataobs
-        else:
-            prediction[:] = obs_zeroed.ravel() - self.dataobs.dataobs
+
+        # fill the predictions array with the residuals
+        prediction[:] = obs_zeroed.ravel() - self.obs_ndarray
 
         # all done
         return self
