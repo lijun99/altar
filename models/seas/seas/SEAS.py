@@ -30,6 +30,7 @@ class SEAS(BayesianL2, family="altar.models.seas"):
     config_file = altar.properties.str()
     obs_loc_file = altar.properties.str()
     t_obs_file = altar.properties.str()
+    only_horizontals = altar.properties.bool(default=False)
 
     @altar.export
     def initialize(self, application):
@@ -126,7 +127,12 @@ class SEAS(BayesianL2, family="altar.models.seas"):
         obs_zeroed = sim.zero_obs_at_eq(sim.run()[2])
 
         # fill the predictions array with the residuals
-        prediction[:] = obs_zeroed.ravel() - self.dataobs.dataobs
+        if self.only_horizontals:  # restrict to horizontals if desired
+            obs_zeroed = obs_zeroed[:obs_zeroed.shape[0]//2, :]
+            dataobs = self.dataobs.dataobs[:self.dataobs.observations]
+            prediction[:] = obs_zeroed.ravel() - dataobs
+        else:
+            prediction[:] = obs_zeroed.ravel() - self.dataobs.dataobs
 
         # all done
         return self
