@@ -7,10 +7,23 @@
 
 ; the static uoᴉsɹǝʌuᴉ with Cp example
 
+; for Bayesian simulations, run
+;        slipmodel --config=staticCp.pfg
+;   or   slipmodel.plexus sample --config=staticCp.pfg
+; for forward problem only (with an input set of parameters), run
+;        slipmodel.plexus forward --config=staticCp.pfg
+
+
 slipmodel:
 
     model = altar.models.seismic.cuda.staticcp
     model:
+
+        ; settings for running forward problem only
+        ; forward theta input
+        theta_input = static_mean_model.txt
+        ; forward output file
+        forward_output = forward_prediction.h5
 
         ; the name of the test case
         case = 9patchCp
@@ -33,8 +46,13 @@ slipmodel:
         kmu_file = static.kernel.h5
         initial_model_file = static.initialModel.h5
 
+        ; when to start using cp instead of cd
         beta_cp_start = 0.01
+        ; when to stop using initial model (or start using mean model during run)
         beta_use_initial_model = 0
+        ; data precision for cp calculation (if different from cd.dtype)
+        ; it might be helpful to use double precision to reduce the error in matrix inversion
+        ; dtype_cp = float64
 
         ; list of parameterset (also used as the order parameters in theta)
         psets_list = [strikeslip, dipslip]

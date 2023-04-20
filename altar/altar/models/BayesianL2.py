@@ -33,7 +33,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     embedded = altar.properties.bool(default=False)
     embedded.doc = "whether the model is embedded in an ensemble of models"
 
-    psets_list = altar.properties.list(default=None)
+    psets_list = altar.properties.list(schema=altar.properties.str(), default=None)
     psets_list.doc = "list of parameter sets, used to set orders"
 
     psets = altar.properties.dict(schema=altar.models.parameters())

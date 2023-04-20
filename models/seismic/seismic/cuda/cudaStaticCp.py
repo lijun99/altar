@@ -45,7 +45,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
     beta_use_initial_model = altar.properties.float(default=0)
     beta_use_initial_model.doc = "for beta <= beta_use_initial_model, use initial_model instead of mean model"
 
-    dtype_cp = altar.properties.str(default='None')
+    dtype_cp = altar.properties.str(default=None)
     dtype_cp.doc = "single/double precision to compute Cp"
 
     # protocol obligations
