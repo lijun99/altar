@@ -105,7 +105,7 @@ endfunction(altar_seismic_cuda_buildLibrary)
 # build the seismic extension module
 function(altar_seismic_cuda_buildModule)
   # seismic
-  Python3_add_library(cudaseismicmodule MODULE)
+  Python_add_library(cudaseismicmodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     cudaseismicmodule PROPERTIES

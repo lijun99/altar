@@ -83,7 +83,7 @@ endfunction(altar_cdm_buildLibrary)
 # build the cdm extension module
 function(altar_cdm_buildModule)
   # cdm
-  Python3_add_library(cdmmodule MODULE)
+  Python_add_library(cdmmodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     cdmmodule PROPERTIES

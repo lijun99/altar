@@ -78,7 +78,7 @@ endfunction(altar_buildLibrary)
 # build the altar extension module
 function(altar_buildModule)
   # altar
-  Python3_add_library(altarmodule MODULE)
+  Python_add_library(altarmodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     altarmodule PROPERTIES

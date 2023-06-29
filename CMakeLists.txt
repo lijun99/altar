@@ -4,18 +4,8 @@
 # (c) 2003-2021 all rights reserved
 
 # cmake setup
-cmake_minimum_required(VERSION 3.12 FATAL_ERROR)
-# policies
-if (POLICY CMP0048)
-  cmake_policy(SET CMP0048 NEW)
-endif(POLICY CMP0048)
-cmake_policy(SET CMP0060 NEW)
-if (POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
-endif(POLICY CMP0074)
-if (POLICY CMP0076)
-  cmake_policy(SET CMP0076 NEW)
-endif(POLICY CMP0076)
+# v3.18 is needed to pass Development.Module to FIndPython
+cmake_minimum_required(VERSION 3.19...3.25)
 
 # options
 option(WITH_CUDA "enable support for CUDA" ON)
@@ -34,14 +24,17 @@ project(ALTAR VERSION ${REPO_MAJOR}.${REPO_MINOR}.${REPO_MICRO} LANGUAGES CXX)
 # packages
 # gsl
 find_package(GSL)
+
 # mpi
 find_package(MPI)
+
 # python
-set(PYTHON_COMPONENTS Interpreter Development)
+set(PYTHON_COMPONENTS Interpreter Development.Module)
 if(GSL_FOUND)
     list(APPEND PYTHON_COMPONENTS NumPy)
 endif()
-find_package(Python3 REQUIRED COMPONENTS ${PYTHON_COMPONENTS})
+find_package(Python 3.7 REQUIRED COMPONENTS ${PYTHON_COMPONENTS} OPTIONAL_COMPONENTS Development.Embed)
+
 # pyre and pyre cuda
 find_package(PYRE)
 
