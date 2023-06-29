@@ -25,7 +25,7 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.tgaussian
     mean.doc = "the mean value"
     sigma = altar.properties.float(default=1.0)
     sigma.doc = " the standard deviation"
-    support = altar.properties.array(default=(0,1))
+    support = altar.properties.array(schema=altar.properties.float(), default=(0,1))
     support.doc = "the support interval of the truncated gaussian distribution"
 
     def cuInitialize(self, application):

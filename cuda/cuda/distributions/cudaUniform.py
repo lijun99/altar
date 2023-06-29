@@ -21,7 +21,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
     """
 
     # user configurable state
-    support = altar.properties.array(default=(0,1))
+    support = altar.properties.array(schema=altar.properties.float(), default=(0,1))
     support.doc = "the support interval of the prior distribution"
 
 

@@ -35,7 +35,7 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
     area_patch_file = altar.properties.path(default=None)
     area_patch_file.doc = "input file for area of each patch, in unit of km^2"
 
-    area = altar.properties.array(default=[1.0])
+    area = altar.properties.array(schema=altar.properties.float(), default=[1.0])
     area.doc = "area of each patch in unit of km^2, provide one value if the same for all patches"
 
     Mw_mean = altar.properties.float(default=1.0)
@@ -44,7 +44,7 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
     Mw_sigma = altar.properties.float(default=0.5)
     Mw_sigma.doc = " the variance of moment magnitude scale"
 
-    Mu = altar.properties.array(default = [32])
+    Mu = altar.properties.array(schema=altar.properties.float(), default = [32])
     Mu.doc = "the shear modulus for each patch in GPa, provide one value if the same for all patches"
 
     slip_sign = altar.properties.str(default='positive')
