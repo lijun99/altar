@@ -69,7 +69,7 @@ struct Solver
 
 // solver constructor
 template <class real_type, class ode_system_type, class event_type>
-Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, event_type & events_, 
+Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, event_type & events_,
     const real_type atol=1e-8, const real_type rtol=1e-6, const int systems_batch_=8192)
     : ode(ode_), events(events_)
 {
@@ -158,6 +158,13 @@ __device__ void solve_device( const cg::thread_block & cta,
 
     outputter.reset(cta);
 
+    /*if(threadIdx.x==0) {
+        printf("tevents\n");
+        for(auto i=0; i!=events.nevents; ++i)
+            printf("%d %g, ", i, tevents[i]);
+        printf("\n");
+    }*/
+
     for(auto it=0; it<events.nevents-1; it++)
     {
         auto t0 = tevents[it];
@@ -165,12 +172,14 @@ __device__ void solve_device( const cg::thread_block & cta,
 
         // set events at t0
         events.set_events_block(cta, system_id, it, stepper.y0);
+        cta.sync();
 
         // adaptive steps from t0 to t1
         t1reached = false;
         // take steps from t0 to t1
 
         controller.set_init_h(cta, t1-t0);
+
         while(!t1reached)
         {
             auto h = controller.hnext;
@@ -179,23 +188,42 @@ __device__ void solve_device( const cg::thread_block & cta,
                 t1reached = true;
             }
             converged = false;
+
+            auto h_run = h;
+
             while(!converged)
             {
+                // integrate over step h
                 stepper.integrate(cta, system_id, t0, h, ode);
+                // save a copy of h before proposing new one below
+                h_run = h;
+                // check the convergence and propose a new step h
                 converged = controller.success(cta, stepper, h);
-                // if(threadIdx.x==0)
-                //      printf("test solver step: hnext, t0, h, y0, converged, t1reached: %g %g %g %g %d %d\n",
-                //         controller.hnext, t0, h, stepper.y0[0], converged, t1reached);
+
+                // if(threadIdx.x==0) {
+                //    printf("h value before and after %g %g \n", h_run, h);
+                //    }
+
+                /* if(threadIdx.x==0) {
+                     printf("test solver step: hnext, t0, h, t1, converged, t1reached: %g %g %g %g %d %d\n",
+                         controller.hnext, t0, h, t1, converged, t1reached);
+                    // printf("i, y0[i], y1[i], yerr[i]\n");
+                    // for(auto i=0; i!=stepper.system_size; ++i)
+                    // auto i=0;
+                    //     printf("%d %g %g %g\n", i, stepper.y0[i], stepper.yn[i], stepper.en[i]);
+                }*/
+
             }
             if (dense_out)
-                outputter.output(cta, stepper, system_id, t0, h);
+                outputter.output(cta, stepper, system_id, t0, h_run);
 
             // copy from last t state to initial state
             // yn -> y0 // cta, T* dst, const T* src, const int N)
             cuda::detail::vector_copy(cta, stepper.y0, stepper.yn, stepper.system_size);
             // k7 (fn) -> k1 (f0)
             cuda::detail::vector_copy(cta, stepper.k1, stepper.k7, stepper.system_size);
-            t0 += h;
+
+            t0 += h_run;
         }
     }
     cta.sync();

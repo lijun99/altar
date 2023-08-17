@@ -33,6 +33,7 @@ __device__ double atomicAdd(double* address, double val) {
 
 namespace cuda::detail {
 
+
 // sum reduction within a thread block for values returned by func(args...)
 template<class T, class FuncType, class... Args>
 __device__  auto sum_block(
