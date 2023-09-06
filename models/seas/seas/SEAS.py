@@ -18,7 +18,7 @@ import altar
 from altar.models.BayesianL2 import BayesianL2
 
 # import the earthquake cycle simulator
-from seqeas.pyflat import SubductionSimulation
+from seqeas.subduction2d import SubductionSimulation
 
 
 class SEAS(BayesianL2, family="altar.models.seas"):
