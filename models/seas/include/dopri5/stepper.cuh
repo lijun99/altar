@@ -265,6 +265,12 @@ void Stepper<T>::integrate(
     };
     cuda::detail::block_process<T, decltype(yn7)>(system_size, yn7);
 	cta.sync();
+
+	// if(threadIdx.x ==0) {
+	//    for(auto i=0; i!=system_size; ++i)
+	//        printf("stepper %d %g %g %g %g %g %g %g %g %g \n", i, y0[i], k1[i], k2[i], k3[i], k4[i], k5[i], k6[i], k7[i], yn[i]);
+	//}
+
     // compute k7 = f(t0+h, y(t0+h))
     ode.dydt_block(cta, system_id, t0+h, yn, k7);
     cta.sync();

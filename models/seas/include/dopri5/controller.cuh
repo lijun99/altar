@@ -85,6 +85,8 @@ Controller<T>::init (const T atol_, const T rtol_)
 // Check whether the error is within tolerance
 // follow numerical recipe implementation
 // for PI step control, choose beta = 0.4/k (k=5)
+// @param s Stepper for one system, shared by all threads in one block
+// @param h stepping distance, defined for each thread
 template <class T>
 __device__ auto Controller<T>::success(
     const cg::thread_block & cta,
@@ -97,10 +99,12 @@ __device__ auto Controller<T>::success(
 	static const T safe = 0.9;
 
     __shared__ bool success;
+    __shared__ T h_shared;
+
 
     // compute error
     auto y0 = s.y0;
-    auto yn = s.k7;
+    auto yn = s.yn;
     auto yerr = s.en;
 
     // error function for each element
@@ -112,12 +116,19 @@ __device__ auto Controller<T>::success(
     // sum over all elements
     auto val = cuda::detail::sum_block<T, decltype(lambda)>(cta, s.system_size, lambda);
 
+    //
 	if(cta.thread_rank() == 0)
 	{
+        // compute the error
 	    auto err = sqrt(val/s.system_size);
+
 
         T scale;
 
+        // copy h to shared
+        h_shared = h;
+
+        // check estimated error for convergence
         if (err <= static_cast<T>(1.0))
         {
             // the error estimate is within required accuracy
@@ -140,15 +151,18 @@ __device__ auto Controller<T>::success(
         }
         else
         {
-
+            // reduce h for next trial
             scale=max(safe*pow(err,-alpha),minscale);
-            h *= scale;
+            h_shared *= scale;
             reject = true;
             success = false;
         }
-        // printf("test controller err h scale hnext %g %g %g %g \n", err, h, scale, hnext);
+        //printf("test controller err h scale hnext %g %g %g %g \n", err, h, scale, hnext);
     }
     cta.sync();
+    // broadcast h to each thread
+    h = h_shared;
+
     return success;
 }
 
