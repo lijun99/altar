@@ -37,27 +37,31 @@ struct __ALIGNED__ SpinupController
         yold = y_;
         system_size = system_size_;
     };
-    // keep copies of y
-    __device__ void record(const cg::thread_block & cta, const T* y)
+
+    // keep copies of y from [i_start, i_end]
+    __device__ void record(const cg::thread_block & cta, const T* y, const int i_start, const int i_end)
     {
-        cuda::detail::vector_copy<T>(cta, yold, y, system_size);
+        auto y_check = y + i_start;
+        cuda::detail::vector_copy<T>(cta, yold, y_check, i_end-i_start+1);
     };
     // check convergence
-    __device__ bool check_convergence(const cg::thread_block & cta, const T* ynew)
+    __device__ bool check_convergence(const cg::thread_block & cta, const T* ynew, const int i_start, const int i_end)
     {
         __shared__ bool converge;
         // define the error estimate function
+        auto ynew_check = ynew + i_start;
         auto lambda = [=] (const int i)
         {
-            auto val = abs(ynew[i]-yold[i])/(atol + rtol*max(abs(ynew[i]), abs(yold[i])));
+            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew[i]), abs(yold[i])));
             return val*val;
         };
         // sum reduction
-        auto val = cuda::detail::sum_block<T, decltype(lambda)>(cta, system_size, lambda);
+        auto check_size = i_end - i_start + 1;
+        auto val = cuda::detail::sum_block<T, decltype(lambda)>(cta, check_size, lambda);
 
         if(cta.thread_rank() == 0)
         {
-            auto err = sqrt(val/system_size);
+            auto err = sqrt(val/check_size);
             converge = (err <= static_cast<T>(1.0));
             // printf("inside spinup controller err converge %g %d\n", err, converge);
         }

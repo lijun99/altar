@@ -74,6 +74,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     Controller<real_type> * controllers,
     SpinupController<real_type> * spinup_controllers,
     DenseOutput<real_type> * outputs,
+    const int index_start, const int index_end,
     const int max_cycles)
 {
     // get the system index and patch index
@@ -102,7 +103,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     while (!converged && icycle<max_cycles)
     {
         // keep record of the final y(tn)
-        spinup_controller.record(cta, stepper.yn);
+        spinup_controller.record(cta, stepper.yn, index_start, index_end);
         // make another cycle
         reset_f0_value(cta, system_id, ode, events, stepper);
         solve_device(cta, system_id, dense_out_run,
@@ -113,7 +114,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
             outputter);
 
         // check for convergence
-        converged = spinup_controller.check_convergence(cta, stepper.yn);
+        converged = spinup_controller.check_convergence(cta, stepper.yn, index_start, index_end);
         icycle++;
         cta.sync();
     }
@@ -135,6 +136,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
 template <class real_type, class ode_system_type, class event_type>
 void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
     const bool dense_out, const int systems, const int system_offset,
+    const int index_start, const int index_end, // start end end indices of yn for convergence check
     const int max_cycles)
 {
     auto patches = this->ode.patches;
@@ -163,6 +165,7 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
         this->controller_holder->controllers,
         spinup_controller_holder->controllers,
         this->output_holder->outputters,
+        index_start, index_end,
         max_cycles);
     cudaCheckError("solve_ivp_kernel error");
     // all done, return the yevals
