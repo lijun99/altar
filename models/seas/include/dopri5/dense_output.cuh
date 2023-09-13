@@ -98,23 +98,34 @@ struct __ALIGNED__ DenseOutput{
 
         // first check whether the interpolation time points overlap
         if(teval[current_t_index] > t1 || teval[neval-1] < t0)
-            return; // no overlap
-        // otherwise, proceed
+            return; // no overlap, return
+
+        // some teval are in this range
         // compute the rconts
         prepare_dense(cta, stepper, h);
-        // iterate
+        // iterate teval
         for(int it=current_t_index;  it<neval; it++)
         {
             auto t = teval[it];
-            if (t>=t0 && t<=t1) {
+            if (t >= t0 && t < t1) {
                 auto yout = yeval + (system_id*neval+it)*system_size;
                 interpolate(cta, yout, t0, h, t);
             }
             else {
+                // out of range, record the current index and return
                 current_t_index = it;
                 break;
             }
         }
+        // the above iteration doesn't compute teval[neval-1] if it is t1
+        // so treat it separately
+        if(teval[neval-1] == t1) {
+            // find starting pointer
+            auto yout = yeval + (system_id*neval+neval-1)*system_size;
+            // simply copy yn
+            cuda::detail::vector_copy<T>(cta, yout, stepper.yn, system_size);
+        }
+
         // all done
     };
     __device__ void reset(const cg::thread_block & cta)
