@@ -32,13 +32,17 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
     int max_iterations;
     spinup_controller_holder_type * spinup_controller_holder;
 
+    // constructor
+    // @param [atol, rtol] error control for RK stepper
+    // @param [spinup_atol, spinup_rtol] error control for spinup convergence
     SpinupSolver(ode_system_type & ode_, event_type & events_,
         const real_type atol_=1e-8, const real_type rtol_=1e-6,
+        const real_type spinup_atol_ = 1e-6, const real_type spinup_rtol_ = 1e-3,
         const int systems_batch_=8192)
         : single_solver_type(ode_, events_, atol_, rtol_, systems_batch_)
     {
         spinup_controller_holder = new spinup_controller_holder_type(this->systems_batch, this->system_size,
-            atol_, rtol_);
+            spinup_atol_, spinup_rtol_);
     };
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);
