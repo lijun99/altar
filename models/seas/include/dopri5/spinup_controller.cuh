@@ -68,6 +68,30 @@ struct __ALIGNED__ SpinupController
         cta.sync();
         return converge;
     };
+        // check convergence, use max formula
+    __device__ bool check_convergence2(const cg::thread_block & cta, const T* ynew, const int i_start, const int i_end)
+    {
+        __shared__ bool converge;
+        // define the error estimate function
+        auto ynew_check = ynew + i_start;
+        auto lambda = [=] (const int i)
+        {
+            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew[i]), abs(yold[i])));
+            return val;
+        };
+        // sum reduction
+        auto check_size = i_end - i_start + 1;
+        auto err = cuda::detail::max_block<T, decltype(lambda)>(cta, check_size, lambda);
+
+        if(cta.thread_rank() == 0)
+        {
+            converge = (err <= static_cast<T>(1.0));
+            // printf("inside spinup controller err converge %g %d\n", err, converge);
+        }
+        cta.sync();
+        return converge;
+    };
+
 };
 
 template <class T>

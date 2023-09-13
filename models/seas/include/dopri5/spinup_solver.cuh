@@ -114,11 +114,16 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
             outputter);
 
         // check for convergence
-        converged = spinup_controller.check_convergence(cta, stepper.yn, index_start, index_end);
+        converged = spinup_controller.check_convergence2(cta, stepper.yn, index_start, index_end);
         icycle++;
         cta.sync();
     }
     cta.sync();
+
+    // if debugging cycles
+    // if(cta.thread_rank()==0)
+    //    printf("spinup cycles finished in %d steps, convergence is %b\n", icycle, converged);
+
     //converged, last run for dense_out
     if(dense_out)
     {

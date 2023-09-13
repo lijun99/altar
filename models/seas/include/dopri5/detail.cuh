@@ -73,6 +73,46 @@ __device__  auto sum_block(
         return sum;
 }
 
+// max reduction within a thread block for values returned by func(args...)
+// assume all elements are positive
+template<class T, class FuncType, class... Args>
+__device__  auto max_block(
+    const cg::thread_block & cta,
+    const int N,
+    FuncType func,
+    Args... args) -> T
+{
+    // each thread tid sum errors over elements of tid, tid+block_size, tid+2*block_size ...
+    T thread_max = static_cast<T>(0);
+    for(int i=cta.thread_rank(); i<N; i+=cta.size())
+    {
+        auto sk = func(i, args...);
+        thread_max = max(thread_max, sk);
+    }
+
+    // sum over each warp (32-threads tile)
+    auto tile = cg::tiled_partition<32>(cta);
+    auto tile_max = cg::reduce(tile, thread_max, cg::greater<T>());
+
+    // define/init the block sum
+	__shared__ T max_val;
+    if(cta.thread_rank()==0)
+    {
+		max_val = static_cast<T>(0);
+	}
+	cta.sync();
+
+	// sum over all tiles
+    if(tile.thread_rank()==0)
+    {
+        atomicMax(&max_val, tile_max);
+    }
+    cta.sync();
+
+    if(cta.thread_rank()==0)
+        return max_val;
+}
+
 template<class T>
 __device__  auto sum(
     const cg::thread_block & cta,
