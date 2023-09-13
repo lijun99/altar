@@ -47,6 +47,9 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);
 
+    void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset,
+        const int index_start, const int index_end, const int max_cycles);
+
 };
 
 // re-set f(t0, y0) at the beginning of each cycle
@@ -174,6 +177,13 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
         max_cycles);
     cudaCheckError("solve_ivp_kernel error");
     // all done, return the yevals
+}
+
+template <class real_type, class ode_system_type, class event_type>
+void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles)
+{
+    solve_ivp_cycles(dense_out, systems, system_offset,
+        0, this->system_size, max_cycles);
 }
 
 } // end of namespace cuda::ode::dopri5

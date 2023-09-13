@@ -19,7 +19,7 @@
 
 // check atomicAdd double is defined
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
-__device__ double atomicAdd(double* address, double val) {
+static inline __device__ double atomicAdd(double* address, double val) {
     unsigned long long int* address_as_ull = (unsigned long long int*)address;
     unsigned long long int old = *address_as_ull, assumed;
     do {
@@ -30,6 +30,60 @@ __device__ double atomicAdd(double* address, double val) {
     return __longlong_as_double(old);
 }
 #endif
+
+// The default implementation for atomic maximum
+template <typename T>
+__device__ void AtomicMax(T * const address, const T value)
+{
+	atomicMax(address, value);
+}
+
+
+template <>
+__device__ void AtomicMax(float * const address, const float value)
+{
+	if (* address >= value)
+	{
+		return;
+	}
+
+	int * const address_as_i = (int *)address;
+	int old = * address_as_i, assumed;
+
+	do
+	{
+		assumed = old;
+		if (__int_as_float(assumed) >= value)
+		{
+			break;
+		}
+
+		old = atomicCAS(address_as_i, assumed, __float_as_int(value));
+	} while (assumed != old);
+}
+
+template <>
+__device__ void AtomicMax(double * const address, const double value)
+{
+	if (* address >= value)
+	{
+		return;
+	}
+
+	unsigned long long * const address_as_i = (unsigned long long *)address;
+    unsigned long long old = * address_as_i, assumed;
+
+	do
+	{
+        assumed = old;
+		if (__longlong_as_double(assumed) >= value)
+		{
+			break;
+		}
+
+        old = atomicCAS(address_as_i, assumed, __double_as_longlong(value));
+    } while (assumed != old);
+}
 
 namespace cuda::detail {
 
@@ -90,11 +144,11 @@ __device__  auto max_block(
         thread_max = max(thread_max, sk);
     }
 
-    // sum over each warp (32-threads tile)
+    // max over each warp (32-threads tile)
     auto tile = cg::tiled_partition<32>(cta);
     auto tile_max = cg::reduce(tile, thread_max, cg::greater<T>());
 
-    // define/init the block sum
+    // define/init the block max
 	__shared__ T max_val;
     if(cta.thread_rank()==0)
     {
@@ -102,10 +156,10 @@ __device__  auto max_block(
 	}
 	cta.sync();
 
-	// sum over all tiles
+	// max over all tiles
     if(tile.thread_rank()==0)
     {
-        atomicMax(&max_val, tile_max);
+        AtomicMax<T>(&max_val, tile_max);
     }
     cta.sync();
 
