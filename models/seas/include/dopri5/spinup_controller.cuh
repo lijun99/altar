@@ -76,7 +76,7 @@ struct __ALIGNED__ SpinupController
         auto ynew_check = ynew + i_start;
         auto lambda = [=] (const int i)
         {
-            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew[i]), abs(yold[i])));
+            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew_check[i]), abs(yold[i])));
             return val;
         };
         // sum reduction
@@ -86,7 +86,7 @@ struct __ALIGNED__ SpinupController
         if(cta.thread_rank() == 0)
         {
             converge = (err <= static_cast<T>(1.0));
-            // printf("inside spinup controller err converge %g %d\n", err, converge);
+            printf("inside spinup controller err: %g  convergence: %d yn[0]: %g\n", err, converge, ynew_check[0]);
         }
         cta.sync();
         return converge;

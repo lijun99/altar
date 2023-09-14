@@ -90,7 +90,7 @@ struct __ALIGNED__ Stepper{
             const T t0, const T* y0_in, const int system_id, ode_system_type& ode)
     {
         // set f0 = f(t0, y0)
-        ode.dydt_block(cta, system_id, t0, y0, k1);
+        ode.dydt_block(cta, system_id, t0, y0_in, k1);
     };
 
     template <class ode_system_type>
@@ -177,7 +177,9 @@ void Stepper<T>::integrate(
     auto tid = cta.thread_rank(); // patch_id
     auto block_size = cta.size();
 
-    //*** stage 1 - k1 = f(t0, y0) pre-calculated or copied
+    //*** stage 1 - k1 = f(t0, y0) - copied or precomputed
+    // ode.dydt_block(cta, system_id, t0, y0, k1);
+    // cta.sync();
 
     //*** stage 2 - k2 = f(t0+c2*h, y0+h*a21*k1)
     // compute y0+h*a21*k1

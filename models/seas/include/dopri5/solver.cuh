@@ -173,6 +173,9 @@ __device__ void solve_device( const cg::thread_block & cta,
         // set events at t0
         events.set_events_block(cta, system_id, it, stepper.y0);
         cta.sync();
+        // need to recompute f0 = f(t0, y0) due to the possible y0 update
+        stepper.set_f0_value(cta, t0, system_id, ode);
+        cta.sync();
 
         // adaptive steps from t0 to t1
         t1reached = false;
