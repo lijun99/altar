@@ -76,7 +76,7 @@ struct __ALIGNED__ SpinupController
         auto ynew_check = ynew + i_start;
         auto lambda = [=] (const int i)
         {
-            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew[i]), abs(yold[i])));
+            auto val = abs(ynew_check[i]-yold[i])/(atol + rtol*max(abs(ynew_check[i]), abs(yold[i])));
             return val;
         };
         // sum reduction

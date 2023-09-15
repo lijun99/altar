@@ -95,10 +95,41 @@ struct __ALIGNED__ RateDependentODE {
     // ode function called when solving a system with a thread block
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
-        for(int patch_id = cta.thread_rank(); patch_id<patches; patch_id+=cta.size())
-            dydt(system_id, patch_id, t, y0, f);
+        // old version, calling individual dydt method
+
+        // for(int patch_id = cta.thread_rank(); patch_id<patches; patch_id+=cta.size())
+        //     dydt(system_id, patch_id, t, y0, f);
         // if(cta.thread_rank()==0)
         //    printf("test dydt %g\n", f[0]);
+
+        // new version, doing everything in dydt_block
+
+        // update slip in both directions
+        for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
+            f[patch_id] = v_0 * exp(y0[patch_id + 2 * patches]);
+            f[patch_id + patches] = v_0 * exp(y0[patch_id + 3 * patches]);
+        }
+
+        // wait for completion
+        cta.sync();
+
+        // update velocities in both directions
+        for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
+            // initialize with external influence
+            f[patch_id + 2 * patches] = -K_ext[patch_id];
+            f[patch_id + 3 * patches] = -K_ext[patch_id + patches];
+            // tensor product with all other patches
+            for (auto j = 0; j < patches; j++) {
+                auto delv0 = f[j] - v_p[j];
+                auto delv1 = f[j + patches] - v_p[j + patches];
+                f[patch_id + 2 * patches] += K_int[i_Kii(patch_id, 0, j, 0)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1)] * delv1;
+                f[patch_id + 3 * patches] += K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1;
+            }
+            // rescaling due to radiation damping
+            f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[patch_id];
+            f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[patch_id];
+        }
+
     };
 
     // constructor

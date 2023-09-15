@@ -125,7 +125,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
 
     // if debugging cycles
     // if(cta.thread_rank()==0)
-    //    printf("spinup cycles finished in %d steps, convergence is %b\n", icycle, converged);
+    //    printf("spinup cycles finished in %d steps, convergence is %d\n", icycle, converged);
 
     //converged, last run for dense_out
     if(dense_out)
@@ -183,7 +183,7 @@ template <class real_type, class ode_system_type, class event_type>
 void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles)
 {
     solve_ivp_cycles(dense_out, systems, system_offset,
-        0, this->system_size, max_cycles);
+        0, this->system_size - 1, max_cycles);
 }
 
 } // end of namespace cuda::ode::dopri5
