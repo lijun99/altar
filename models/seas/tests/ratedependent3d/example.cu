@@ -74,8 +74,8 @@ int main()
     using T = double;
     using EventType = SEASEvents<T>;
     using OdeType = RateDependentODE<T>;
-    // using SolverType = cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
-    using SolverType = cuda::ode::dopri5::Solver<T, OdeType, EventType>;
+    using SolverType = cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
+    // using SolverType = cuda::ode::dopri5::Solver<T, OdeType, EventType>; // single cycle
 
     // look for runfiles.json in current folder
     std::string rootdir = "./";
@@ -204,7 +204,7 @@ int main()
     const int units = 4;
     const int systems = 1;
     const int systems_batch = 1;
-    // const int max_cycles = 1;
+    const int max_cycles = 20;
 
     // variable sizes
     int patches = num_inner_patches;
@@ -224,22 +224,18 @@ int main()
         y0[i + 3 * patches] = (T) log(v_init[i_Kia_v(i, 1)] / v_0);
     }
 
-    // // print first patch initial value
-    // printf("y0[patch=0]: [%g, %g, %g, %g]\n",
-    //        y0[0], y0[patches], y0[2 * patches], y0[3 * patches]);
-
     // extract evaluation times
 
-    // first cycle (without observation times)
-    int ix_break_start = 0;
-    int ix_break_stop = ix_break_joint[1];
+    // // first cycle (without observation times)
+    // int ix_break_start = 0;
+    // int ix_break_stop = ix_break_joint[1];
 
-    // // last cycle (with observation times)
-    // // the dense teval is the last cycle of t_eval_joint_sec
-    // // bounded by the last two indices in ix_break_joint
-    // // need to find it and reset to zero at cycle start
-    // int ix_break_start = ix_break_joint[num_ix_break - 2];
-    // int ix_break_stop = ix_break_joint[num_ix_break - 1];
+    // last cycle (with observation times)
+    // the dense teval is the last cycle of t_eval_joint_sec
+    // bounded by the last two indices in ix_break_joint
+    // need to find it and reset to zero at cycle start
+    int ix_break_start = ix_break_joint[num_ix_break - 2];
+    int ix_break_stop = ix_break_joint[num_ix_break - 1];
 
     // initialize teval
     int neval = ix_break_stop - ix_break_start + 1;
@@ -260,27 +256,27 @@ int main()
     // ix_break_start and ix_break_end
     // find first event index
 
-    // for first cycle
-    int ix_eq_start = 0;
-    int nevents = -1;
-    for (auto i=0; i<num_ix_eq; i++) {
-        if (ix_eq_joint[i] >= ix_break_joint[1]) {
-            nevents = i + 2;
-            break;
-        }
-    }
-    if (nevents == -1) throw std::runtime_error("!! nevents == -1");
-
-    // // for last cycle
-    // int ix_eq_start = -1;
+    // // for first cycle
+    // int ix_eq_start = 0;
+    // int nevents = -1;
     // for (auto i=0; i<num_ix_eq; i++) {
-    //     if (ix_eq_joint[i] >= ix_break_start) {
-    //         ix_eq_start = i;
+    //     if (ix_eq_joint[i] >= ix_break_joint[1]) {
+    //         nevents = i + 2;
     //         break;
     //     }
     // }
-    // int nevents = num_ix_eq - ix_eq_start + 2;
-    // if (ix_eq_start == -1) throw std::runtime_error("!! ix_eq_start == -1");
+    // if (nevents == -1) throw std::runtime_error("!! nevents == -1");
+
+    // for last cycle
+    int ix_eq_start = -1;
+    for (auto i=0; i<num_ix_eq; i++) {
+        if (ix_eq_joint[i] >= ix_break_start) {
+            ix_eq_start = i;
+            break;
+        }
+    }
+    int nevents = num_ix_eq - ix_eq_start + 2;
+    if (ix_eq_start == -1) throw std::runtime_error("!! ix_eq_start == -1");
 
     // extract event times from t_eval_joint_sec
     // current format of nevents has to include the start and end time
@@ -302,19 +298,21 @@ int main()
     // solver settings
     bool dense_out = true;
     bool use_y0_for_all = true;
-    const T atol = 1e-10;
-    const T rtol = 1e-11;
+    const T atol = 1e-8;
+    const T rtol = 1e-6;
 
     // initialize dense output array
     T * yeval;
     cudaMallocManaged(&yeval, systems * neval * system_size * sizeof(T));
 
     // construct the ode solver
-    SolverType solver{odefunc, events, atol, rtol, systems_batch};
+    SolverType solver{odefunc, events, atol, rtol, 1e-6, 1e-3, systems_batch};
     // set dense output
     solver.set_dense_output(neval, teval, yeval);
 
     // iteratively solve systems in batch
+    int conv_i_start = (units / 2) * patches;
+    int conv_i_stop = units * patches - 1;
     for (int system_offset=0; system_offset<systems; system_offset+=systems_batch)
     {
         // check how many systems are left
@@ -323,8 +321,9 @@ int main()
         solver.set_init_values(y0, use_y0_for_all, systems_to_process, system_offset);
         // call the solver
         printf("iterate systems %d %d %d ... \n", system_offset, systems_to_process, systems);
-        // solver.solve_ivp_cycles(dense_out, systems_to_process, system_offset, max_cycles);
-        solver.solve_ivp(dense_out, systems_to_process, system_offset);
+        solver.solve_ivp_cycles(dense_out, systems_to_process, system_offset,
+                                conv_i_start, conv_i_stop, max_cycles);
+        // solver.solve_ivp(dense_out, systems_to_process, system_offset); // single cycle
 
         cudaDeviceSynchronize();
 
@@ -361,9 +360,5 @@ int main()
     // print output file info
     printf("Output file shape = %i (systems=%i, neval=%i, system_size=%i)\n",
            systems * neval * system_size, systems, neval, system_size);
-
-    // // print first patch initial value
-    // printf("yeval[patch=0]: [%g, %g, %g, %g]\n",
-    //        yeval[0], yeval[patches], yeval[2 * patches], yeval[3 * patches]);
 
 }
