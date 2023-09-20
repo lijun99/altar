@@ -110,6 +110,7 @@ struct __ALIGNED__ DenseOutput{
             if (t >= t0 && t < t1) {
                 auto yout = yeval + (system_id*neval+it)*system_size;
                 interpolate(cta, yout, t0, h, t);
+                cta.sync();
             }
             else {
                 // out of range, record the current index and return
