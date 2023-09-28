@@ -76,6 +76,7 @@ int main()
     using OdeType = RateDependentODE<T>;
     using SolverType = cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
     // using SolverType = cuda::ode::dopri5::Solver<T, OdeType, EventType>; // single cycle
+    const bool load_second_sim = true;
 
     // look for runfiles.json in current folder
     std::string rootdir = "./";
@@ -168,6 +169,14 @@ int main()
     std::vector<double> delta_tau_bounded(read_bin_file<double>(rootdir + "delta_tau_bounded.bin", get_vector_size(shape)));
     vector_stats("delta_tau_bounded", delta_tau_bounded);
 
+    // load second delta_tau_bounded
+    if (load_second_sim) {
+        std::vector<double> delta_tau_bounded2(read_bin_file<double>(rootdir + "delta_tau_bounded2.bin", get_vector_size(shape)));
+        vector_stats("delta_tau_bounded2", delta_tau_bounded2);
+        // append
+        delta_tau_bounded.insert(delta_tau_bounded.end(), delta_tau_bounded2.begin(), delta_tau_bounded2.end());
+    }
+
     // v_0
     assert_string("v_0.dtype", info.at("v_0").at("dtype"), "float64");
     shape = info.at("v_0").at("shape").get<std::vector<int>>();
@@ -182,6 +191,14 @@ int main()
     assert_number("alpha_h_vec.shape[0]", (int) shape[0], num_inner_patches);
     std::vector<double> alpha_h_vec(read_bin_file<double>(rootdir + "alpha_h_vec.bin", num_inner_patches));
     vector_stats("alpha_h_vec", alpha_h_vec);
+
+    // load second alpha_h_vec
+    if (load_second_sim) {
+        std::vector<double> alpha_h_vec2(read_bin_file<double>(rootdir + "alpha_h_vec2.bin", num_inner_patches));
+        vector_stats("alpha_h_vec2", alpha_h_vec2);
+        // append
+        alpha_h_vec.insert(alpha_h_vec.end(), alpha_h_vec2.begin(), alpha_h_vec2.end());
+    }
 
     // mu_over_2vs
     assert_string("mu_over_2vs.dtype", info.at("mu_over_2vs").at("dtype"), "float64");
@@ -202,9 +219,15 @@ int main()
 
     // define ode system
     const int units = 4;
-    const int systems = 1;
-    const int systems_batch = 1;
+    const int systems_batch = 2;
     const int max_cycles = 20;
+    int systems;
+    if (load_second_sim) {
+        systems = 2;
+    }
+    else {
+        systems = 1;
+    }
 
     // variable sizes
     int patches = num_inner_patches;
@@ -293,7 +316,7 @@ int main()
     printf("]\n");
 
     // initialize events
-    EventType events {nevents, tevents.data(), delta_tau_bounded.data(), alpha_h_vec.data(), patches, units};
+    EventType events {nevents, tevents.data(), delta_tau_bounded.data(), alpha_h_vec.data(), systems, patches, units};
 
     // solver settings
     bool dense_out = true;
@@ -326,36 +349,21 @@ int main()
         // solver.solve_ivp(dense_out, systems_to_process, system_offset); // single cycle
 
         cudaDeviceSynchronize();
-
-        // // check results
-        // for (auto is = max(0, systems_to_process-4); is<systems_to_process; is++)
-        // {
-        //     auto system = is + system_offset;
-        //     std::cout << "System " << system << " ... \n";
-        //     for(auto ieval = 0; ieval<neval; ieval++)
-        //     {
-        //         std::cout << "t=" << std::setw(8) << teval[ieval] << " ";
-        //         for(auto i=0; i<min(8, patches*units); i++)
-        //             std::cout << std::setw(8) << yeval[(system*neval+ieval)*patches*units+i] << " ";
-        //         std::cout << "...\n";
-        //     }
-        // }
-
-        // write yeval output file
-        std::string outpath = "yeval_" + std::to_string(system_offset) + ".bin";
-        std::ofstream outfile(outpath, std::ios::out | std::ios::binary);
-        if (!outfile) {throw std::runtime_error("Could not write file: '" + outpath + "'");}
-        outfile.write((char *) &yeval[system_offset * neval * system_size * sizeof(T)],
-                      neval * system_size * sizeof(T));
-        outfile.close();
     }
 
+    // write yeval output file
+    std::string ypath = "yeval.bin";
+    std::ofstream yfile(ypath, std::ios::out | std::ios::binary);
+    if (!yfile) {throw std::runtime_error("Could not write file: '" + ypath + "'");}
+    yfile.write((char *) &yeval[0], systems * neval * system_size * sizeof(T));
+    yfile.close();
+
     // write teval output file
-    std::string outpath = "teval.bin";
-    std::ofstream outfile(outpath, std::ios::out | std::ios::binary);
-    if (!outfile) {throw std::runtime_error("Could not write file: '" + outpath + "'");}
-    outfile.write((char *) &teval[0], neval * sizeof(T));
-    outfile.close();
+    std::string tpath = "teval.bin";
+    std::ofstream tfile(tpath, std::ios::out | std::ios::binary);
+    if (!tfile) {throw std::runtime_error("Could not write file: '" + tpath + "'");}
+    tfile.write((char *) &teval[0], neval * sizeof(T));
+    tfile.close();
 
     // print output file info
     printf("Output file shape = %i (systems=%i, neval=%i, system_size=%i)\n",

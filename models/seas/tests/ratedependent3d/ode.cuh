@@ -20,7 +20,7 @@ struct __ALIGNED__ RateDependentODE {
 
     // other custom parameters
     // all these parameters need to set inside this structure
-    T* alpha_h; // [patches]
+    T* alpha_h; // [systems * patches]
     T* K_int; // [patches, 2, patches, 2]
     T* K_ext; // [patches * 2]
     T* v_p; // [patches * 2]
@@ -40,57 +40,6 @@ struct __ALIGNED__ RateDependentODE {
         assert((i0 < patches) && (i1 < 2));
         return (i1) + (i0 * 2);
     }
-
-    // ode function
-    __device__ __forceinline__ void dydt(const int system_id, const int patch_id, const T t, const T* y, T* f)
-    {
-        // bool debug = ((threadIdx.x == 0) && (patch_id == 0) && (t < 86400 * 150) && (t > 86400 * 100));
-
-        // update slip in both directions
-        f[patch_id] = v_0 * exp(y[patch_id + 2 * patches]);
-        f[patch_id + patches] = v_0 * exp(y[patch_id + 3 * patches]);
-
-        // if (debug == true) {
-        //     printf("v_0 = %.14g\n", v_0);
-        //     printf("zeta_old[%i] = [%.14g, %.14g]\n", patch_id, y[patch_id + 2 * patches], y[patch_id + 3 * patches]);
-        //     printf("ds/dt[%i] = v = [%.14g, %.14g]\n", patch_id, f[patch_id], f[patch_id + patches]);
-        // }
-
-        // update velocity in both directions
-        f[patch_id + 2 * patches] = -K_ext[patch_id];
-        f[patch_id + 3 * patches] = -K_ext[patch_id + patches];
-
-        // if (debug == true) {
-        //     printf("-K_ext[%i] = [%.14g, %.14g]\n", patch_id, -K_ext[patch_id], -K_ext[patch_id + patches]);
-        // }
-
-        for (auto j = 0; j < patches; j++) {
-            auto delv0 = f[j] - v_p[j];
-            auto delv1 = f[j + patches] - v_p[j + patches];
-            f[patch_id + 2 * patches] += K_int[i_Kii(patch_id, 0, j, 0)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1)] * delv1;
-            f[patch_id + 3 * patches] += K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1;
-
-            // if (debug == true) {
-            //     printf("    (v-v_p)[%i] = [%.14g, %.14g]\n", j, delv0, delv1);
-            //     printf("    K_int[%i, :, %i, :] @ (v-v_p) = [%.14g, %.14g]\n",
-            //            patch_id, j,
-            //            K_int[i_Kii(patch_id, 0, j, 0)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1)] * delv1,
-            //            K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1);
-            // }
-        }
-
-        // rescaling due to radiation damping
-        f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[patch_id];
-        f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[patch_id];
-
-        // if (debug == true) {
-        //     printf("denom[%i] = [%.14g, %.14g]\n", patch_id, mu_over_2vs * f[patch_id] + alpha_h[patch_id], mu_over_2vs * f[patch_id + patches] + alpha_h[patch_id]);
-        //     printf("ODE evaluation: t, i, v0, v1, dvdt0, dvdt1: %g %i %.14g %.14g %.14g %.14g\n",
-        //            t, patch_id, f[patch_id], f[patch_id + patches], f[patch_id + 2 * patches], f[patch_id + 3 * patches]);
-        // }
-
-        return;
-    };
 
     // ode function called when solving a system with a thread block
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
@@ -126,8 +75,8 @@ struct __ALIGNED__ RateDependentODE {
                 f[patch_id + 3 * patches] += K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1;
             }
             // rescaling due to radiation damping
-            f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[patch_id];
-            f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[patch_id];
+            f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[system_id * patches + patch_id];
+            f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[system_id * patches + patch_id];
         }
 
     };
@@ -138,8 +87,8 @@ struct __ALIGNED__ RateDependentODE {
         : patches(p), units(u), systems(sys), system_size(p*u), mu_over_2vs(mu_over_2vs_), v_0(v_0_)
     {
         // set up alpha_h_vec
-        cudaMallocManaged(&alpha_h, patches * sizeof(T));
-        cudaMemcpy(alpha_h, alpha_h_vec_, patches * sizeof(T), cudaMemcpyDefault);
+        cudaMallocManaged(&alpha_h, systems * patches * sizeof(T));
+        cudaMemcpy(alpha_h, alpha_h_vec_, systems * patches * sizeof(T), cudaMemcpyDefault);
         // for (auto i = 0; i < patches; i++)
         //     alpha_h[i] = (T) alpha_h_vec_[i];
 
