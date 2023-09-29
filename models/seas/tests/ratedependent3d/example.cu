@@ -329,7 +329,7 @@ int main()
     cudaMallocManaged(&yeval, systems * neval * system_size * sizeof(T));
 
     // construct the ode solver
-    SolverType solver{odefunc, events, atol, rtol, 1e-6, 1e-3, systems_batch};
+    SolverType solver {odefunc, events, atol, rtol, 1e-6, 1e-3, systems_batch};
     // set dense output
     solver.set_dense_output(neval, teval, yeval);
 

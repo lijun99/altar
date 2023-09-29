@@ -1,7 +1,7 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2022 california institute of technology
+// (c) 2023 california institute of technology
 // all rights reserved
 //
 
@@ -17,122 +17,102 @@ namespace altar::models::seas::cuda::ratedependent {
 // suffix underline indicate class parameters
 template <typename T>
 void RateDependent<T>::initialize(
-    int max_samples_, int patches_, int stations_, //
-    T Vj_, T mu_over_2vs_,
-    T* stress_kernel_, // patches * patches
-    T* stressrate_ext_, // patches
-    T* displacement_kernel_, //
-    int n_coseismic_, T* t_coseismic_, T* coseismic_, // events
-    int neval_, T* teval_, T* yeval_,
-    T atol_, T rtol_, int spinup_max_cycles_ // ode controls
-    )
+        int num_systems_,
+        int systems_batch_,
+        int max_cycles_,
+        int num_t_eval_,
+        T* t_eval_joint_sec_,
+        int num_ix_eq_,
+        int num_eq_,
+        int* ix_eq_joint_,
+        T* t_events_,
+        T v_0_,
+        T mu_over_2vs_,
+        int num_inner_patches_,
+        T* K_inner_inner_onfault_,
+        T* K_inner_asperities_v_plate_,
+        T* v_plate_ddcs_proj_eff_inner_,
+        T* v_init_,
+        T atol_ = 1e-8,
+        T rtol_ = 1e-6,
+        T spinup_atol_ = 1e-6,
+        T spinup_rtol_ = 1e-3)
 {
-    // assign parameters
-    max_samples = max_samples_;
-    patches = patches_;
-    system_size = patches * 2; //units = 2, s and zeta
-    stations = stations_;
+    // general variables
+    num_systems = num_systems_;
+    systems_batch = systems_batch_;
+
+    // cycles
+    max_cycles = max_cycles_;
+    num_t_eval = num_t_eval_;
+    t_eval_joint_sec = t_eval_joint_sec_;
+
+    // events
+    num_ix_eq = num_ix_eq_;
+    n_events = num_ix_eq + 2;
+    num_eq = num_eq_;
+    ix_eq_joint = ix_eq_joint_;
+    t_events = t_events_;
+
+    // rheology
+    v_0 = v_0_;
+    mu_over_2vs = mu_over_2vs_;
+
+    // fault
+    num_inner_patches = num_inner_patches_;
+    system_size = num_inner_patches * UNITS;
+    K_inner_inner_onfault = K_inner_inner_onfault_;
+    K_inner_asperities_v_plate = K_inner_asperities_v_plate_;
+    v_plate_ddcs_proj_eff_inner = v_plate_ddcs_proj_eff_inner_;
+    v_init = v_init_;
 
     // ode
-    Vj = Vj_;
-    mu_over_2vs = mu_over_2vs_;
-    stress_kernel = stress_kernel_;
-    stressrate_ext = stressrate_ext_;
+    atol = atol_;
+    rtol = rtol_;
+    spinup_atol = spinup_atol_;
+    spinup_rtol = spinup_rtol_;
+    conv_i_start = (UNITS / 2) * num_inner_patches;
+    conv_i_stop = UNITS * num_inner_patches - 1;
+
+    // output variable
+    cudaMallocManaged(&sim_state, num_systems * num_t_eval * system_size * sizeof(T));
+}
+
+template <typename T> 
+void set_system_odes(
+    T* alpha_h_vec_,
+    T* delta_tau_bounded_
+    )
+{
+    // save system-specific rheology and event realization
+    alpha_h_vec = alpha_h_vec_;
+    delta_tau_bounded = delta_tau_bounded_;
 
     // create an instance of odefunc
-    odefunc = new OdeType(max_samples, patches, 2);
-    odefunc->init_parameters(Vj, mu_over_2vs, stress_kernel, stressrate_ext);
+    odefunc {num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
+             K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
 
     // create an instance of events (including starting/ending time)
-    events = new EventType(n_coseismic_, t_coseismic_, coseismic_, patches*2);
+    events {n_events, t_events, delta_tau_bounded, alpha_h_vec, num_systems, num_inner_patches, UNITS};
 
     // create the solver
-    solver = new SolverType(*odefunc, *events, atol_, rtol_, max_samples);
-
-    // output
-    neval = neval_;
-    teval = teval_;
-    yeval = yeval_;
-    solver->set_dense_output(neval_, teval_, yeval_);
-
-    spinup_max_cycles = spinup_max_cycles_;
+    solver {odefunc, events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
+    solver.set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
 }
 
-
-template <typename T>
-void
-RateDependent<T>::forward_model (const T* theta, T* prediction, const int parameters, const int batch)
-{
-    // set initial values
-    // parameters y0, use_y0_for_all, systems_to_process, system_offset
-    solver->set_init_values(y0, true, batch, 0);
-
-    // set parameters (pointer) to odefunc
-    odefunc->set_alpha_h(theta, parameters);
-
-    // iteratively solve ode until convergence
-    // parameters (dense_out, systems_to_process, system_offset, max_cycles)
-    solver-> solve_ivp_cycles(true, batch, 0, spinup_max_cycles);
-    // results are saved in yeval
-
-    // compute the observations
-    compute_displacement(yeval, prediction, batch);
-    // all done
-}
-
-// need to rewrite to use block per system
-template<typename T>
-__global__
-void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
-        const int samples, const int t_points, const int patches, const int stations)
-{
-    // each row uses a thread, get row index from thread id
-    int sample  = blockIdx.x *blockDim.x + threadIdx.x;
-    // avoid out of range
-    if (sample>=samples)
-        return;
-
-    // get the head of the matrix for this sample
-    auto y_s = yeval + sample*t_points*2*patches;
-    auto pred_s = predictions + sample*t_points*stations;
-
-    // iterate over time points
-    for(int it=0; it<t_points; it++)
+template <typename T> 
+void RateDependent<T>::forward_model_batch () {
+    for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
-        // get data pointers for this sample at this time
-        auto y_s_t = y_s + it*2*patches;
-        auto pred_s_t = pred_s +it*stations;
-        auto gf_t = gf + it*patches*stations;
-
-        // compute Obs (stations) = Slip (patches) x G(patches, stations)
-        // will use device blas function to optimize
-        for(int s=0; s<stations; s++)
-        {
-            pred_s_t[s] = 0;
-            for (int p=0; p<patches; p++)
-                pred_s_t[s] += y_s_t[p]*gf_t[p*stations+s];
-        }
-    // printf("disp %d %d %d %g %g %g\n", sample, samples, t, pred_s_t[0], y_s_t[0], gf_t[0]);
+        // check how many systems are left
+        auto systems_to_process = min(systems_batch, num_systems - system_offset);
+         // set initial values
+        solver.set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
+        // call the solver
+        solver.solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
+                                conv_i_start, conv_i_stop, max_cycles);
+        cudaDeviceSynchronize();
     }
-}
-
-// compute displacement from slips
-// @note yeval is arranged in shape (samples, times, 2*patches) - C-style
-//       gf is arranged in shape (times, patches, stations)
-//          - merged with data covariance, therefore, different for different t
-//       predictions is arranged in shape (samples, times, stations)
-template <typename T>
-void RateDependent<T>::compute_displacement(const T* yeval, T* predictions, const int samples)
-{
-        // decide the execution size - one sample per thread
-    const int threadsPerBlock = 128;
-    const int numberOfBlocks = (samples-1+threadsPerBlock)/threadsPerBlock; //IDIVUP
-    // call kernel
-    compute_displacement_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(yeval,
-        displacement_kernel, predictions,
-        samples, neval, patches, stations);
-    // check error
-    // cudaSafeCall(cudaGetLastError());
 }
 
 // explicit instantiation

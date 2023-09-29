@@ -85,5 +85,5 @@ struct __ALIGNED__ SEASEvents {
     };
 };
 
-#endif //__mytestevent_cuh__
+#endif //__rd_event_cuh__
 // end of file

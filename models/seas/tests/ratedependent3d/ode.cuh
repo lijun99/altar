@@ -117,4 +117,4 @@ struct __ALIGNED__ RateDependentODE {
     };
 };
 
-#endif //__RateDependentODE_cuh__
+#endif //__rd_ode_cuh__
