@@ -17,12 +17,12 @@ PYBIND11_MODULE(cudaseas, m)
     m.doc() = "the cuda extension module for seas model methods";
 
     // the linear viscous method bindings
-    auto ms = m.def_submodule("linearviscous", "linear viscous ode binding");
-    altar::cuda::py::seas::linearviscous::module(ms);
+    auto ms_linvis = m.def_submodule("linearviscous", "linear viscous ode binding");
+    altar::cuda::py::seas::linearviscous::module(ms_linvis);
 
     // the rate-dependent method bindings
-    auto ms = m.def_submodule("ratedependent", "rate-dependent ode binding");
-    altar::cuda::py::seas::ratedependent::module(ms);
+    auto ms_rd = m.def_submodule("ratedependent", "rate-dependent ode binding");
+    altar::cuda::py::seas::ratedependent::module(ms_rd);
 
 }
 
