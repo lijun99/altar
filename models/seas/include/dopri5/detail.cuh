@@ -33,14 +33,14 @@ static inline __device__ double atomicAdd(double* address, double val) {
 
 // The default implementation for atomic maximum
 template <typename T>
-__device__ void AtomicMax(T * const address, const T value)
+inline __device__ void AtomicMax(T * const address, const T value)
 {
 	atomicMax(address, value);
 }
 
 
 template <>
-__device__ void AtomicMax(float * const address, const float value)
+inline __device__ void AtomicMax(float * const address, const float value)
 {
 	if (* address >= value)
 	{
@@ -63,7 +63,7 @@ __device__ void AtomicMax(float * const address, const float value)
 }
 
 template <>
-__device__ void AtomicMax(double * const address, const double value)
+inline __device__ void AtomicMax(double * const address, const double value)
 {
 	if (* address >= value)
 	{
