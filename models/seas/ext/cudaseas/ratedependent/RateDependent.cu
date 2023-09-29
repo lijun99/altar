@@ -33,10 +33,10 @@ void RateDependent<T>::initialize(
         T* K_inner_asperities_v_plate_,
         T* v_plate_ddcs_proj_eff_inner_,
         T* v_init_,
-        T atol_ = 1e-8,
-        T rtol_ = 1e-6,
-        T spinup_atol_ = 1e-6,
-        T spinup_rtol_ = 1e-3)
+        T atol_,
+        T rtol_,
+        T spinup_atol_,
+        T spinup_rtol_)
 {
     // general variables
     num_systems = num_systems_;
