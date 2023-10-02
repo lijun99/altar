@@ -13,7 +13,7 @@ import altar
 import altar.cuda
 
 # publish the protocol for probability distributions
-from altar.cuda.distributions import cudaDistribution as distribution
+from altar.cuda.distributions import cudaDistribution as distribution  # noqa: F401
 from altar.cuda.models.cudaBayesian import cudaBayesian as model
 
 
@@ -23,9 +23,19 @@ def linearviscous():
     # grab the factory
     from .cudaLinearViscous import cudaLinearViscous as linearviscous
     # attach its docstring
-    __doc__ = linearviscous.__doc__
+    __doc__ = linearviscous.__doc__  # noqa: F841
     # and return it
     return linearviscous
 
+
+# implementations
+@altar.foundry(implements=model, tip="Rate-dependent 3D SEAS Simulation")
+def ratedependent():
+    # grab the factory
+    from .cudaRateDependent import cudaRateDependent as ratedependent
+    # attach its docstring
+    __doc__ = ratedependent.__doc__  # noqa: F841
+    # and return it
+    return ratedependent
 
 # end of file
