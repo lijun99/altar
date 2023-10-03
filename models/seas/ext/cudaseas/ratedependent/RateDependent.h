@@ -24,8 +24,8 @@ class RateDependent {
     public:
 
         // types
-        using OdeType = Ode<T>; // ode function defition from Ode.cuh
-        using EventType = Events<T>; // event(coseismic) from Events.cuh
+        using OdeType = RateDependentODE<T>; // ode function defition from Ode.cuh
+        using EventType = SEASEvents<T>; // event(coseismic) from Events.cuh
         // this is an ode solver with spin up procedure built-in
         using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
 

@@ -35,6 +35,7 @@ private:
     int _num_ix_eq;
     int _num_inner_patches;
     int _num_eq;
+    int _num_systems;
 public:
     // constructor
     pyRateDependent () {_cmodel = new model_type();}
@@ -45,7 +46,7 @@ public:
         int max_cycles,
         py::capsule t_eval_joint_sec,
         int num_eq,
-        int* ix_eq_joint,
+        py::capsule ix_eq_joint,
         py::capsule t_events,
         T v_0,
         T mu_over_2vs,
@@ -64,6 +65,7 @@ public:
         _num_ix_eq = ix_eq_joint.attr("size").cast<int>();
         _num_inner_patches = v_plate_ddcs_proj_eff_inner.attr("size").cast<int>() / 2;
         _num_eq = num_eq;
+        _num_systems = num_systems;
 
         // check the shapes
         auto temp_int = v_init.attr("size").cast<int>() / 2;

@@ -79,7 +79,7 @@ void RateDependent<T>::initialize(
 }
 
 template <typename T> 
-void set_system_odes(
+void RateDependent<T>::set_system_odes(
     T* alpha_h_vec_,
     T* delta_tau_bounded_
     )
@@ -89,14 +89,14 @@ void set_system_odes(
     delta_tau_bounded = delta_tau_bounded_;
 
     // create an instance of odefunc
-    odefunc {num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
-             K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
+    OdeType odefunc {num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
+                     K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
 
     // create an instance of events (including starting/ending time)
-    events {n_events, t_events, delta_tau_bounded, alpha_h_vec, num_systems, num_inner_patches, UNITS};
+    EventType events {n_events, t_events, delta_tau_bounded, alpha_h_vec, num_systems, num_inner_patches, UNITS};
 
     // create the solver
-    solver {odefunc, events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
+    SolverType solver {odefunc, events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
     solver.set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
 }
 
@@ -107,10 +107,10 @@ void RateDependent<T>::forward_model_batch () {
         // check how many systems are left
         auto systems_to_process = min(systems_batch, num_systems - system_offset);
          // set initial values
-        solver.set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
+        solver->set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
         // call the solver
-        solver.solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
-                                conv_i_start, conv_i_stop, max_cycles);
+        solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
+                                 conv_i_start, conv_i_stop, max_cycles);
         cudaDeviceSynchronize();
     }
 }
