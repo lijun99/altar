@@ -115,7 +115,9 @@ template <class real_type, class ode_system_type, class event_type>
 void Solver<real_type, ode_system_type, event_type>::set_init_values(
     const real_type* y0, const bool use_y0_for_all, const int systems, const int system_offset=0)
 {
+    printf("    inside solver.cuh:set_init_values\n");
     auto patches = ode.patches;
+    printf("      patches=%i\n", patches);
     int threads;
     if(patches <= 32)
         threads = 32;
@@ -129,9 +131,11 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
         threads = 512;
     else
         threads = 1024;
+    printf("      threads=%i\n", threads);
 
     int blocks = systems;
-
+    printf("      blocks=%i\n", blocks);
+    printf("      system_offset=%i\n", system_offset);
     set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
         system_offset,
         ode,

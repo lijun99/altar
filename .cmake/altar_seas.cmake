@@ -87,7 +87,9 @@ function(altar_seas_cuda_buildModule)
   target_sources(cudaseasmodule PRIVATE
     ext/cudaseas/cudaseas.cc
     ext/cudaseas/linearviscous/LinearViscous.cu
+    ext/cudaseas/ratedependent/RateDependent.cu
     ext/cudaseas/pyLinearViscous.cu
+    ext/cudaseas/pyRateDependent.cu
     )
 
   # install the seas extension
