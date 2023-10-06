@@ -14,7 +14,7 @@ template <typename T>
 struct __ALIGNED__ SEASEvents {
     // required event parameters
     int nevents; // number of events, including starting and ending time t0, tn
-    T* tevents;
+    const T* tevents;
 
     // other custom parameters
     int patches;
@@ -23,8 +23,8 @@ struct __ALIGNED__ SEASEvents {
     int system_size;
     int num_eq; // unique number of events
     int num_slips; // total number of events (including repeating ones)
-    T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
-    int* delta_tau_ix; // convert non-unique event_id to unique eq_id
+    const T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
+    const int* delta_tau_ix; // convert non-unique event_id to unique eq_id
 
     // an example constructor
     SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,

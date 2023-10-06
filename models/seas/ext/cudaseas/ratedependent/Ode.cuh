@@ -8,7 +8,7 @@
 
 // an example ode function
 // please follow(copy) this example for naming conventions
-template <class T> 
+template <class T>
 struct __ALIGNED__ RateDependentODE {
     // required parameters, keep their names
     // @note each system is defined by #patches and each patch with #units
@@ -20,10 +20,10 @@ struct __ALIGNED__ RateDependentODE {
 
     // other custom parameters
     // all these parameters need to set inside this structure
-    T* alpha_h; // [systems * patches]
-    T* K_int; // [patches, 2, patches, 2]
-    T* K_ext; // [patches * 2]
-    T* v_p; // [patches * 2]
+    const T* alpha_h; // [systems * patches]
+    const T* K_int; // [patches, 2, patches, 2]
+    const T* K_ext; // [patches * 2]
+    const T* v_p; // [patches * 2]
     T mu_over_2vs;
     T v_0;
 
