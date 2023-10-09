@@ -68,12 +68,26 @@ struct __ALIGNED__ RateDependentODE {
 
     };
 
+    // debugging descriptor that has access to GPU data
+    __device__ void describe() {
+        printf("RateDependentODE\n");
+        printf("patches = %i, units = %i, system_size = %i, systems = %i\n",
+               patches, units, system_size, systems);
+        printf("mu_over_2vs = %g, v_0 = %g\n", mu_over_2vs, v_0);
+        printf("alpha_h = %g ... %g\n", alpha_h[0], alpha_h[systems * patches - 1]);
+        printf("K_int = %g ... %g\n", K_int[0], K_int[patches * patches * 4 - 1]);
+        printf("K_ext = %g ... %g\n", K_ext[0], K_ext[2 * patches - 1]);
+        printf("v_p = %g ... %g\n", v_p[0], v_p[2 * patches - 1]);
+    }
+
     // constructor
     RateDependentODE(const int p, const int u, const int sys, const T* alpha_h_vec_, const T mu_over_2vs_, const T v_0_,
               const T* K_inner_inner_onfault_, const T* K_inner_asperities_v_plate_, const T* v_plate_ddcs_proj_eff_inner_)
         : patches(p), units(u), systems(sys), system_size(p*u), mu_over_2vs(mu_over_2vs_), v_0(v_0_),
           alpha_h(alpha_h_vec_), K_int(K_inner_inner_onfault_), K_ext(K_inner_asperities_v_plate_), v_p(v_plate_ddcs_proj_eff_inner_)
-        { }
+        {
+            describe();
+        }
 };
 
 #endif //__rd_ode_cuh__

@@ -34,6 +34,18 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
+        describe();
+    }
+
+    // debugging descriptor that has access to GPU data
+    __device__ void describe() {
+        printf("SEASEvents\n");
+        printf("patches = %i, units = %i, system_size = %i, systems = %i\n",
+               patches, units, system_size, systems);
+        printf("num_eq = %i, num_slips = %i, nevents = %i\n", num_eq, num_slips, nevents);
+        printf("tevents = %g ... %g\n", tevents[0], tevents[nevents - 1]);
+        printf("ychange = %g ... %g\n", ychange[0], ychange[systems * num_eq * patches * 2 - 1]);
+        printf("delta_tau_ix = %i ... %i\n", delta_tau_ix[0], delta_tau_ix[num_slips - 1]);
     }
 
     // keep this function
