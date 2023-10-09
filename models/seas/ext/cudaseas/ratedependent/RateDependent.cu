@@ -117,10 +117,10 @@ template <typename T>
 void RateDependent<T>::forward_model_batch () {
     printf("inside RateDependent.cu:forward_model_batch\n");
 
-    std::cout << "Debug forward_model_batch "
-        << "num_systems " << num_systems
-        << "systems_batch " << systems_batch
-        << "system_size " << system_size
+    std::cout << "Debug forward_model_batch: "
+        << "num_systems=" << num_systems
+        << ", systems_batch=" << systems_batch
+        << ", system_size=" << system_size
         << std::endl;
 
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)

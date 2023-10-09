@@ -38,6 +38,8 @@ struct __ALIGNED__ RateDependentODE {
     // ode function called when solving a system with a thread block
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
+        printf("      dydt_block at t=%f\n", t);
+
         // update slip in both directions
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             f[patch_id] = v_0 * exp(y0[patch_id + 2 * patches]);
