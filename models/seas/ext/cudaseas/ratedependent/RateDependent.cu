@@ -24,6 +24,7 @@ void RateDependent<T>::initialize(
         T* t_eval_joint_sec_,
         int num_ix_eq_,
         int num_eq_,
+        int* delta_tau_bounded_indices_,
         int* ix_eq_joint_,
         T* t_events_,
         T v_0_,
@@ -33,6 +34,7 @@ void RateDependent<T>::initialize(
         T* K_inner_asperities_v_plate_,
         T* v_plate_ddcs_proj_eff_inner_,
         T* v_init_,
+        T* sim_state_,
         T atol_,
         T rtol_,
         T spinup_atol_,
@@ -49,9 +51,9 @@ void RateDependent<T>::initialize(
 
     // events
     num_ix_eq = num_ix_eq_;
-    n_events = num_ix_eq + 2;
     num_eq = num_eq_;
     ix_eq_joint = ix_eq_joint_;
+    delta_tau_bounded_indices = delta_tau_bounded_indices_;
     t_events = t_events_;
 
     // rheology
@@ -73,39 +75,51 @@ void RateDependent<T>::initialize(
     spinup_rtol = spinup_rtol_;
     conv_i_start = (UNITS / 2) * num_inner_patches;
     conv_i_stop = UNITS * num_inner_patches - 1;
-
-    // output variable
-    cudaMallocManaged(&sim_state, num_systems * num_t_eval * system_size * sizeof(T));
+    sim_state = sim_state_;
 }
 
 template <typename T> 
 void RateDependent<T>::set_system_odes(
     T* alpha_h_vec_,
-    T* delta_tau_bounded_
+    T* delta_tau_div_alpha_h_
     )
 {
+    printf("inside RateDependent.cu:set_system_odes\n");
     // save system-specific rheology and event realization
     alpha_h_vec = alpha_h_vec_;
-    delta_tau_bounded = delta_tau_bounded_;
+    delta_tau_div_alpha_h = delta_tau_div_alpha_h_;
+    
+    printf("  assigned pointers\n");
 
     // create an instance of odefunc
     OdeType odefunc {num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
                      K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
+    
+    printf("  initialized odefunc\n");
 
     // create an instance of events (including starting/ending time)
-    EventType events {n_events, t_events, delta_tau_bounded, alpha_h_vec, num_systems, num_inner_patches, UNITS};
+    EventType events {num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
+                      num_systems, num_inner_patches, UNITS};
+    
+    printf("  initialized events\n");
 
     // create the solver
     SolverType solver {odefunc, events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
+    
+    printf("  initialized solver\n");
     solver.set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
+    
+    printf("  set dense output\n");
 }
 
 template <typename T> 
 void RateDependent<T>::forward_model_batch () {
+    printf("inside RateDependent.cu:forward_model_batch\n");
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
         // check how many systems are left
         auto systems_to_process = min(systems_batch, num_systems - system_offset);
+        printf("  processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
          // set initial values
         solver->set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
         // call the solver

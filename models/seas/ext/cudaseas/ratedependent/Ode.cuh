@@ -35,12 +35,6 @@ struct __ALIGNED__ RateDependentODE {
         return (i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2);
     }
 
-    // for K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner, v_init, 2D
-    int i_Kia_v (int i0, int i1) {
-        assert((i0 < patches) && (i1 < 2));
-        return (i1) + (i0 * 2);
-    }
-
     // ode function called when solving a system with a thread block
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
@@ -75,33 +69,9 @@ struct __ALIGNED__ RateDependentODE {
     // constructor
     RateDependentODE(const int p, const int u, const int sys, const T* alpha_h_vec_, const T mu_over_2vs_, const T v_0_,
               const T* K_inner_inner_onfault_, const T* K_inner_asperities_v_plate_, const T* v_plate_ddcs_proj_eff_inner_)
-        : patches(p), units(u), systems(sys), system_size(p*u), mu_over_2vs(mu_over_2vs_), v_0(v_0_)
-    {
-        // set up alpha_h_vec
-        cudaMallocManaged(&alpha_h, systems * patches * sizeof(T));
-        cudaMemcpy(alpha_h, alpha_h_vec_, systems * patches * sizeof(T), cudaMemcpyDefault);
-
-        // set up internal stress kernel - this is a 4D tensor that we'll have to
-        // correctly index within dydt
-        auto num_p_p_4 = patches * patches * 4;
-        cudaMallocManaged(&K_int, num_p_p_4 * sizeof(T));
-        cudaMemcpy(K_int, K_inner_inner_onfault_, num_p_p_4 * sizeof(T), cudaMemcpyDefault);
-
-        // for K_ext and v_p it makes sense to already reshape them to match the format of f and y,
-        // i.e. first all the velocities for unit 1, then all the valocities for unit 2
-
-        // set up external stress kernel and plate velocities
-        cudaMallocManaged(&K_ext, patches * 2 * sizeof(T));
-        cudaMallocManaged(&v_p, patches * 2 * sizeof(T));
-        for (auto i = 0; i < patches; i++) {
-            auto i0 = i_Kia_v(i, 0);
-            auto i1 = i_Kia_v(i, 1);
-            K_ext[i] = K_inner_asperities_v_plate_[i0];
-            K_ext[i + patches] = K_inner_asperities_v_plate_[i1];
-            v_p[i] = v_plate_ddcs_proj_eff_inner_[i0];
-            v_p[i + patches] = v_plate_ddcs_proj_eff_inner_[i1];
-        }
-    };
+        : patches(p), units(u), systems(sys), system_size(p*u), mu_over_2vs(mu_over_2vs_), v_0(v_0_),
+          alpha_h(alpha_h_vec_), K_int(K_inner_inner_onfault_), K_ext(K_inner_asperities_v_plate_), v_p(v_plate_ddcs_proj_eff_inner_)
+        { }
 };
 
 #endif //__rd_ode_cuh__

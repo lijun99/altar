@@ -41,6 +41,7 @@ class RateDependent {
             T* t_eval_joint_sec_,
             int num_ix_eq_,
             int num_eq_,
+            int* delta_tau_bounded_indices_,
             int* ix_eq_joint_,
             T* t_events_,
             T v_0_,
@@ -50,6 +51,7 @@ class RateDependent {
             T* K_inner_asperities_v_plate_,
             T* v_plate_ddcs_proj_eff_inner_,
             T* v_init_,
+            T* sim_state_,
             T atol_,
             T rtol_,
             T spinup_atol_,
@@ -59,7 +61,7 @@ class RateDependent {
         // set spin up data (initial values)
         void set_system_odes(
             T* alpha_h_vec_,
-            T* delta_tau_bounded_
+            T* delta_tau_bounded_compressed_
         );
 
         // perform forward modeling
@@ -84,10 +86,10 @@ class RateDependent {
         T* t_eval_joint_sec; // timesteps to simulate (num_t_eval, ) [s]
 
         // events
-        int num_ix_eq; // number of non-unique earthquakes [-]
-        int n_events; // num_ix_eq + 2 to match events specification [-]
+        int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
-        T* delta_tau_bounded; // stress change for each system and earthquake (num_systems, num_eq, num_inner_patches, 2) [Pa]
+        T* delta_tau_div_alpha_h; // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
+        int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
         int* ix_eq_joint; // indices of earthquakes in t_eval_joint_sec (num_ix_eq, ) [-]
         T* t_events; // timestamps of start time, end time, and earthquakes (n_events, ) [s]
 

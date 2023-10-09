@@ -27,78 +27,64 @@ template<typename T>
 class pyRateDependent
 {
     using model_type = altar::models::seas::cuda::ratedependent::RateDependent<T>;
+
 private:
+
     // model instance
     model_type * _cmodel;
-    // some shape parameters for pre-check
-    int _num_t_eval;
-    int _num_ix_eq;
-    int _num_inner_patches;
-    int _num_eq;
-    int _num_systems;
+
 public:
+
     // constructor
     pyRateDependent () {_cmodel = new model_type();}
+
     // initialize cmodel parameters
     void initialize(
         int num_systems,
         int systems_batch,
         int max_cycles,
+        int num_t_eval,
         py::capsule t_eval_joint_sec,
+        int num_ix_eq,
         int num_eq,
+        py::capsule delta_tau_bounded_indices,
         py::capsule ix_eq_joint,
         py::capsule t_events,
         T v_0,
         T mu_over_2vs,
+        int num_inner_patches,
         py::capsule K_inner_inner_onfault,
         py::capsule K_inner_asperities_v_plate,
         py::capsule v_plate_ddcs_proj_eff_inner,
         py::capsule v_init,
+        py::capsule sim_state,
         T atol,
         T rtol,
         T spinup_atol,
         T spinup_rtol
     )
     {
-        // calculate some shapes
-        _num_t_eval = t_eval_joint_sec.attr("size").cast<int>();
-        _num_ix_eq = ix_eq_joint.attr("size").cast<int>();
-        _num_inner_patches = v_plate_ddcs_proj_eff_inner.attr("size").cast<int>() / 2;
-        _num_eq = num_eq;
-        _num_systems = num_systems;
-
-        // check the shapes
-        auto temp_int = v_init.attr("size").cast<int>() / 2;
-        if (temp_int != _num_inner_patches)
-            throw std::runtime_error("num_inner_patches from v_init: "
-                                     + std::to_string(_num_inner_patches) + " != " + std::to_string(temp_int));
-        temp_int = K_inner_asperities_v_plate.attr("size").cast<int>() / 2;
-        if (temp_int != _num_inner_patches)
-            throw std::runtime_error("num_inner_patches from K_inner_asperities_v_plate: "
-                                     + std::to_string(_num_inner_patches) + " != " + std::to_string(temp_int));
-        temp_int = (int) sqrt(K_inner_inner_onfault.attr("size").cast<int>() / 4);
-        if (temp_int != _num_inner_patches)
-            throw std::runtime_error("num_inner_patches from K_inner_inner_onfault: "
-                                     + std::to_string(_num_inner_patches) + " != " + std::to_string(temp_int));
-
-        // initialize CUDA model
+        printf("inside pyRateDependent.cu:initialize\n");
+        // initialize CUDA model, assuming all shapes are correct
         _cmodel->initialize(
             num_systems,
             systems_batch,
             max_cycles,
-            _num_t_eval,
+            num_t_eval,
             convertPyArray<T, cuda_vector>(t_eval_joint_sec),
-            _num_ix_eq,
-            _num_eq,
+            num_ix_eq,
+            num_eq,
+            convertPyArray<int, cuda_vector>(delta_tau_bounded_indices),
             convertPyArray<int, cuda_vector>(ix_eq_joint),
             convertPyArray<T, cuda_vector>(t_events),
             v_0,
             mu_over_2vs,
-            _num_inner_patches,
+            num_inner_patches,
             convertPyArray<T, cuda_vector>(K_inner_inner_onfault),
             convertPyArray<T, cuda_vector>(K_inner_asperities_v_plate),
             convertPyArray<T, cuda_vector>(v_plate_ddcs_proj_eff_inner),
             convertPyArray<T, cuda_vector>(v_init),
+            convertPyArray<T, cuda_vector>(sim_state),
             atol,
             rtol,
             spinup_atol,
@@ -107,29 +93,20 @@ public:
     }
 
     // set system ODEs
-    void set_system_odes(py::capsule alpha_h_vec, py::capsule delta_tau_bounded)
+    void set_system_odes(py::capsule alpha_h_vec, py::capsule delta_tau_div_alpha_h)
     {
-        // check some shapes
-        auto temp_int = alpha_h_vec.attr("size").cast<int>();
-        if (temp_int != _num_systems * _num_inner_patches)
-            throw std::runtime_error("Invalid alpha_h_vec size: got "
-                                     + std::to_string(_num_systems * _num_inner_patches)
-                                     + ", expected " + std::to_string(temp_int));
-        temp_int = (int) delta_tau_bounded.attr("size").cast<int>() / _num_systems / _num_inner_patches / 2;
-        if (temp_int != _num_eq)
-            throw std::runtime_error("num_eq from delta_tau_bounded: "
-                                     + std::to_string(_num_eq) + " != " + std::to_string(temp_int));
-
-        // set internal values
+        printf("inside pyRateDependent.cu:set_system_odes\n");
+        // set internal values, assume shapes are matching
         _cmodel->set_system_odes(
             convertPyArray<T, cuda_vector>(alpha_h_vec),
-            convertPyArray<T, cuda_vector>(delta_tau_bounded)
+            convertPyArray<T, cuda_vector>(delta_tau_div_alpha_h)
         );
     }
 
     // just pass forward model through
     void forward_model_batch()
     {
+        printf("inside pyRateDependent.cu:forward_model_batch\n");
         _cmodel->forward_model_batch();
     }
 };

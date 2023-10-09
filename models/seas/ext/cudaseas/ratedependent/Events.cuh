@@ -21,45 +21,19 @@ struct __ALIGNED__ SEASEvents {
     int units;
     int systems;
     int system_size;
-    int num_eq;
-    T * ychange; // [systems, num_eq=nevents-2, patches * 2] - first all velocities in one direction, then the other
-
-    // index function for delta_tau_bounded, 3D
-    int i_dtau (int i0, int i1, int i2) {
-        assert ((i0 < num_eq) && (i1 < patches) && (i2 < 2));
-        return (i2) + (i1 * 2) + (i0 * 2 * patches);
-    }
+    int num_eq; // unique number of events
+    int num_slips; // total number of events (including repeating ones)
+    T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
+    int* delta_tau_ix; // convert non-unique event_id to unique eq_id
 
     // an example constructor
-    SEASEvents (const int nevents_, const T* tevents_, const T* delta_tau, const T* alpha_h_vec, const int systems_, const int patches_, const int units_)
-        : nevents(nevents_), systems(systems_), patches(patches_), units(units_)
+    SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,
+                const int* delta_tau_ix_, const int systems_, const int patches_, const int units_)
+        : num_slips(num_slips_), num_eq(num_eq_), systems(systems_), patches(patches_), units(units_),
+          tevents(tevents_), delta_tau_ix(delta_tau_ix_), ychange(delta_tau_div_alpha_h_)
     {
         system_size = patches * units;
-        num_eq = nevents - 2;
-
-        // allocate the event time
-        cudaMallocManaged(&tevents, nevents * sizeof(T));
-        cudaMemcpy(tevents, tevents_, nevents * sizeof(T), cudaMemcpyDefault);
-        // for (auto i = 0; i < nevents; i++)
-        //     tevents[i] = tevents_[i];
-
-        // set up the event changes
-        // ychange has first all the patches for unit 1, then unit 2, etc., so need to change order
-        cudaMallocManaged(&ychange, systems * num_eq * patches * 2 * sizeof(T));
-        int iyoff;
-        int ialphaoff;
-        for (auto isys = 0; isys < systems; isys++) {
-            iyoff = isys * num_eq * patches * 2;
-            ialphaoff = isys * patches;
-            for (auto ievent = 0; ievent < num_eq; ievent++) {
-                for (auto i = 0; i < patches; i++) {
-                    ychange[iyoff + ievent * patches * 2 + i] =
-                        (T) delta_tau[iyoff + i_dtau(ievent, i, 0)] / alpha_h_vec[ialphaoff + i];
-                    ychange[iyoff + ievent * patches * 2 + patches + i] =
-                        (T) delta_tau[iyoff + i_dtau(ievent, i, 1)] / alpha_h_vec[ialphaoff + i];
-                }
-            }
-        }
+        nevents = num_slips + 2;
     }
 
     // keep this function
@@ -74,8 +48,12 @@ struct __ALIGNED__ SEASEvents {
         const int system_id, const int event_id, T* yn)
     {
         if (event_id == 0) return;
+        assert (event_id < nevents - 1); // just to be sure
 
-        auto yevent = ychange + (event_id - 1) * patches * 2 + system_id * num_eq * patches * 2;
+        // convert event_id (non-unique) to eq_id (unique)
+        auto eq_id = delta_tau_ix[event_id - 1];
+
+        auto yevent = ychange + system_id * num_eq * patches * 2 + eq_id * patches * 2;
         // note one thread per patch, the iteration is for system_size > #total threads
         for(int id = cta.thread_rank(); id < patches * 2; id += cta.size())
             yn[id + patches * 2] += yevent[id]; // simply add changes, only for velocity
