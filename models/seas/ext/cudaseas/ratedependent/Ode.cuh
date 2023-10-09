@@ -69,7 +69,9 @@ struct __ALIGNED__ RateDependentODE {
     };
 
     // debugging descriptor that has access to GPU data
-    __device__ void describe() {
+    void describe() {
+
+        cudaDeviceSynchronize();
         printf("RateDependentODE\n");
         printf("patches = %i, units = %i, system_size = %i, systems = %i\n",
                patches, units, system_size, systems);
@@ -78,6 +80,7 @@ struct __ALIGNED__ RateDependentODE {
         printf("K_int = %g ... %g\n", K_int[0], K_int[patches * patches * 4 - 1]);
         printf("K_ext = %g ... %g\n", K_ext[0], K_ext[2 * patches - 1]);
         printf("v_p = %g ... %g\n", v_p[0], v_p[2 * patches - 1]);
+
     }
 
     // constructor

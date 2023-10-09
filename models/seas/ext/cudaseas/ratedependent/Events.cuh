@@ -26,19 +26,10 @@ struct __ALIGNED__ SEASEvents {
     const T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
     const int* delta_tau_ix; // convert non-unique event_id to unique eq_id
 
-    // an example constructor
-    SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,
-                const int* delta_tau_ix_, const int systems_, const int patches_, const int units_)
-        : num_slips(num_slips_), num_eq(num_eq_), systems(systems_), patches(patches_), units(units_),
-          tevents(tevents_), delta_tau_ix(delta_tau_ix_), ychange(delta_tau_div_alpha_h_)
-    {
-        system_size = patches * units;
-        nevents = num_slips + 2;
-        describe();
-    }
-
     // debugging descriptor that has access to GPU data
-    __device__ void describe() {
+    // this is run on cpu, so only a host function, it could print results as below (by making all arrays in managed memory)
+    __host__ void describe() {
+        cudaDeviceSynchronize(); // needed to sync data from gpu memory to cpu memory
         printf("SEASEvents\n");
         printf("patches = %i, units = %i, system_size = %i, systems = %i\n",
                patches, units, system_size, systems);
@@ -47,6 +38,20 @@ struct __ALIGNED__ SEASEvents {
         printf("ychange = %g ... %g\n", ychange[0], ychange[systems * num_eq * patches * 2 - 1]);
         printf("delta_tau_ix = %i ... %i\n", delta_tau_ix[0], delta_tau_ix[num_slips - 1]);
     }
+
+    // an example constructor
+    SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,
+                const int* delta_tau_ix_, const int systems_, const int patches_, const int units_)
+        : num_slips(num_slips_), num_eq(num_eq_), systems(systems_), patches(patches_), units(units_),
+          tevents(tevents_), delta_tau_ix(delta_tau_ix_), ychange(delta_tau_div_alpha_h_)
+    {
+        system_size = patches * units;
+        nevents = num_slips + 2;
+        // this is run on cpu, so only a host function
+        describe();
+    }
+
+
 
     // keep this function
     __device__ const T* get_events_time(const int system_id)
