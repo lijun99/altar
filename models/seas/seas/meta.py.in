@@ -3,10 +3,11 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-2022 parasim inc
+# (c) 2010-2022 california institute of technology
 # all rights reserved
 #
+# author: Tobias Köhne
 
 # expansion placeholders
 date = "@TODAY@"
@@ -28,7 +29,7 @@ copyright = """
 """
 
 banner = f"""
-    PROJECT {major}.{minor} revision {revision}
+    linear {major}.{minor}.{micro} revision {revision}
 """ + copyright
 
 header = banner + """
@@ -42,6 +43,7 @@ authors:
     Leif Strand
     Hailiang Zhang
     Lijun Zhu           <ljzhu@caltech.edu>
+    Tobias Köhne        <tkoehne@caltech.edu>
 """
 
 license = header + """

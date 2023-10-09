@@ -8,6 +8,8 @@
 # all rights reserved
 #
 
+from datetime import datetime
+
 
 # declaration
 class AnnealingMethod:
@@ -15,17 +17,15 @@ class AnnealingMethod:
     Base class for the various annealing implementation strategies
     """
 
-
     # types
     from .CoolingStep import CoolingStep
 
-
     # public data
-    step = None # the current state of the solver
-    iteration = 0 # my iteration counter
+    step = None  # the current state of the solver
+    iteration = 0  # my iteration counter
 
-    wid = 0 # my worker id
-    workers = None # the total number of chain processors
+    wid = 0  # my worker id
+    workers = None  # the total number of chain processors
 
     @property
     def beta(self):
@@ -34,7 +34,6 @@ class AnnealingMethod:
         """
         # easy enough
         return self.step.beta
-
 
     # interface
     def initialize(self, application):
@@ -51,7 +50,6 @@ class AnnealingMethod:
         # all done
         return self
 
-
     def start(self, annealer):
         """
         Start the annealing process from scratch
@@ -61,14 +59,12 @@ class AnnealingMethod:
         # all done
         return self
 
-
     def restart(self, annealer):
         """
         Start the annealing process from a checkpoint
         """
         # NYI
         raise NotImplementedError()
-
 
     def top(self, annealer):
         """
@@ -79,7 +75,6 @@ class AnnealingMethod:
 
         # all done
         return self
-
 
     def cool(self, annealer):
         """
@@ -94,7 +89,6 @@ class AnnealingMethod:
         # all done
         return self
 
-
     def walk(self, annealer):
         """
         Explore configuration space by walking the Markov chains
@@ -105,7 +99,6 @@ class AnnealingMethod:
         stats = sampler.samplePosterior(annealer=annealer, step=self.step)
         # return the acceptance statistics
         return stats
-
 
     def resample(self, annealer, statistics):
         """
@@ -123,17 +116,18 @@ class AnnealingMethod:
         """
         Notify archiver to record
         """
-        info={'iteration': self.iteration,
-                    'beta' : self.beta,
-                    'scaling' : scaling,
-                    'stats' : stats}
-        channel = annealer.info;
-        channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
+        info = {'iteration': self.iteration,
+                'beta': self.beta,
+                'scaling': scaling,
+                'stats': stats}
+        channel = annealer.info
+        channel.log(f"time: {datetime.now().isoformat()}")
+        channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, "
+                    f"scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
         annealer.archiver.recordstep(step=self.step, stats=info, psets=annealer.model.psets)
         # all done
         return self
-
 
     def bottom(self, annealer):
         """
@@ -142,7 +136,7 @@ class AnnealingMethod:
         # notify the model
         annealer.model.bottom(annealer=annealer)
 
-        if self.wid == 0: # only master
+        if self.wid == 0:  # only master
             # get the state of the solution
             step = self.step
             # calculate the statistics of samples
@@ -152,7 +146,6 @@ class AnnealingMethod:
 
         # all done
         return self
-
 
     def finish(self, annealer):
         """
@@ -167,13 +160,11 @@ class AnnealingMethod:
         # all done
         return self
 
-
     # meta-methods
     def __init__(self, annealer, **kwds):
         # chain up; absorb the {annealer}
         super().__init__(**kwds)
         # all done
         return
-
 
 # end of file
