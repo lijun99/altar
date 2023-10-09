@@ -10,6 +10,7 @@
 
 // get my class declaration
 #include "RateDependent.h"
+#include <iostream>
 
 namespace altar::models::seas::cuda::ratedependent {
 
@@ -78,7 +79,7 @@ void RateDependent<T>::initialize(
     sim_state = sim_state_;
 }
 
-template <typename T> 
+template <typename T>
 void RateDependent<T>::set_system_odes(
     T* alpha_h_vec_,
     T* delta_tau_div_alpha_h_
@@ -88,33 +89,40 @@ void RateDependent<T>::set_system_odes(
     // save system-specific rheology and event realization
     alpha_h_vec = alpha_h_vec_;
     delta_tau_div_alpha_h = delta_tau_div_alpha_h_;
-    
+
     printf("  assigned pointers\n");
 
     // create an instance of odefunc
-    OdeType odefunc {num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
+    odefunc = new OdeType{num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
                      K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
-    
+
     printf("  initialized odefunc\n");
 
     // create an instance of events (including starting/ending time)
-    EventType events {num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
+    events = new EventType{num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
                       num_systems, num_inner_patches, UNITS};
-    
+
     printf("  initialized events\n");
 
     // create the solver
-    SolverType solver {odefunc, events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
-    
+    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
+
     printf("  initialized solver\n");
-    solver.set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
-    
+    solver->set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
+
     printf("  set dense output\n");
 }
 
-template <typename T> 
+template <typename T>
 void RateDependent<T>::forward_model_batch () {
     printf("inside RateDependent.cu:forward_model_batch\n");
+
+    std::cout << "Debug forward_model_batch "
+        << "num_systems " << num_systems
+        << "systems_batch " << systems_batch
+        << "system_size " << system_size
+        << std::endl;
+
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
         // check how many systems are left
@@ -122,6 +130,7 @@ void RateDependent<T>::forward_model_batch () {
         printf("  processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
          // set initial values
         solver->set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
+        printf("  set initial values done \n");
         // call the solver
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                                  conv_i_start, conv_i_stop, max_cycles);
