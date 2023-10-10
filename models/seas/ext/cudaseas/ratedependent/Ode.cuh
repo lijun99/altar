@@ -38,8 +38,6 @@ struct __ALIGNED__ RateDependentODE {
     // ode function called when solving a system with a thread block
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
-        printf("      dydt_block at t=%f\n", t);
-
         // update slip in both directions
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             f[patch_id] = v_0 * exp(y0[patch_id + 2 * patches]);
@@ -68,7 +66,7 @@ struct __ALIGNED__ RateDependentODE {
 
     };
 
-    // debugging descriptor that has access to GPU data
+    // debugging descriptor
     void describe() {
 
         cudaDeviceSynchronize();
@@ -89,7 +87,7 @@ struct __ALIGNED__ RateDependentODE {
         : patches(p), units(u), systems(sys), system_size(p*u), mu_over_2vs(mu_over_2vs_), v_0(v_0_),
           alpha_h(alpha_h_vec_), K_int(K_inner_inner_onfault_), K_ext(K_inner_asperities_v_plate_), v_p(v_plate_ddcs_proj_eff_inner_)
         {
-            describe();
+            // describe();
         }
 };
 

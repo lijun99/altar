@@ -26,7 +26,7 @@ struct __ALIGNED__ SEASEvents {
     const T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
     const int* delta_tau_ix; // convert non-unique event_id to unique eq_id
 
-    // debugging descriptor that has access to GPU data
+    // debugging descriptor
     // this is run on cpu, so only a host function, it could print results as below (by making all arrays in managed memory)
     __host__ void describe() {
         cudaDeviceSynchronize(); // needed to sync data from gpu memory to cpu memory
@@ -47,10 +47,9 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
-        // this is run on cpu, so only a host function
-        describe();
+        // // this is run on cpu, so only a host function
+        // describe();
     }
-
 
 
     // keep this function

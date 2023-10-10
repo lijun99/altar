@@ -50,7 +50,7 @@ class RateDependent {
             T* K_inner_inner_onfault_,
             T* K_inner_asperities_v_plate_,
             T* v_plate_ddcs_proj_eff_inner_,
-            T* v_init_,
+            T* state_init_,
             T* sim_state_,
             T atol_,
             T rtol_,
@@ -78,7 +78,7 @@ class RateDependent {
         int num_systems; // number of systems [-]
         int systems_batch; // number of num_systems to process in batch [-]
         const bool DENSE_OUT = true; // always output the dense last cycle [-]
-        const bool USE_V_INIT_FOR_ALL = true; // always use a single v_init for all systems [-]
+        const bool USE_STATE_INIT_FOR_ALL = true; // always use a single state_init for all systems [-]
 
         // cycles
         int max_cycles; // maximum number of cycles to simulate for each system [-]
@@ -105,7 +105,7 @@ class RateDependent {
         T* K_inner_inner_onfault; // inner stress kernel (num_inner_patches, 2, num_inner_patches, 2) [Pa/m]
         T* K_inner_asperities_v_plate; // inner stressing rate from locked asperities (num_inner_patches, 2) [Pa/s]
         T* v_plate_ddcs_proj_eff_inner; // plate velocity on patches (num_inner_patches, 2) [m/s]
-        T* v_init; // initial patch velocities (num_inner_patches, 2) [m/s]
+        T* state_init; // initial patch state (4 * num_inner_patches) [m|m|-|-]
 
         // ode
         T atol; // absolute tolerance for ODE integrator [-]

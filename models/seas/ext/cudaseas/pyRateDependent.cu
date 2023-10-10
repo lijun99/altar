@@ -56,7 +56,7 @@ public:
         py::capsule K_inner_inner_onfault,
         py::capsule K_inner_asperities_v_plate,
         py::capsule v_plate_ddcs_proj_eff_inner,
-        py::capsule v_init,
+        py::capsule state_init,
         py::capsule sim_state,
         T atol,
         T rtol,
@@ -64,7 +64,7 @@ public:
         T spinup_rtol
     )
     {
-        printf("inside pyRateDependent.cu:initialize\n");
+        // printf("inside pyRateDependent.cu:initialize\n");
         // initialize CUDA model, assuming all shapes are correct
         _cmodel->initialize(
             num_systems,
@@ -83,7 +83,7 @@ public:
             convertPyArray<T, cuda_vector>(K_inner_inner_onfault),
             convertPyArray<T, cuda_vector>(K_inner_asperities_v_plate),
             convertPyArray<T, cuda_vector>(v_plate_ddcs_proj_eff_inner),
-            convertPyArray<T, cuda_vector>(v_init),
+            convertPyArray<T, cuda_vector>(state_init),
             convertPyArray<T, cuda_vector>(sim_state),
             atol,
             rtol,
@@ -95,7 +95,7 @@ public:
     // set system ODEs
     void set_system_odes(py::capsule alpha_h_vec, py::capsule delta_tau_div_alpha_h)
     {
-        printf("inside pyRateDependent.cu:set_system_odes\n");
+        // printf("inside pyRateDependent.cu:set_system_odes\n");
         // set internal values, assume shapes are matching
         _cmodel->set_system_odes(
             convertPyArray<T, cuda_vector>(alpha_h_vec),
@@ -106,7 +106,7 @@ public:
     // just pass forward model through
     void forward_model_batch()
     {
-        printf("inside pyRateDependent.cu:forward_model_batch\n");
+        // printf("inside pyRateDependent.cu:forward_model_batch\n");
         _cmodel->forward_model_batch();
     }
 };

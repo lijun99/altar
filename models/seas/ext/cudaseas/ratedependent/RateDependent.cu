@@ -34,7 +34,7 @@ void RateDependent<T>::initialize(
         T* K_inner_inner_onfault_,
         T* K_inner_asperities_v_plate_,
         T* v_plate_ddcs_proj_eff_inner_,
-        T* v_init_,
+        T* state_init_,
         T* sim_state_,
         T atol_,
         T rtol_,
@@ -67,7 +67,7 @@ void RateDependent<T>::initialize(
     K_inner_inner_onfault = K_inner_inner_onfault_;
     K_inner_asperities_v_plate = K_inner_asperities_v_plate_;
     v_plate_ddcs_proj_eff_inner = v_plate_ddcs_proj_eff_inner_;
-    v_init = v_init_;
+    state_init = state_init_;
 
     // ode
     atol = atol_;
@@ -85,52 +85,51 @@ void RateDependent<T>::set_system_odes(
     T* delta_tau_div_alpha_h_
     )
 {
-    printf("inside RateDependent.cu:set_system_odes\n");
+    // printf("inside RateDependent.cu:set_system_odes\n");
     // save system-specific rheology and event realization
     alpha_h_vec = alpha_h_vec_;
     delta_tau_div_alpha_h = delta_tau_div_alpha_h_;
 
-    printf("  assigned pointers\n");
+    // printf("  assigned pointers\n");
 
     // create an instance of odefunc
     odefunc = new OdeType{num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
-                     K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
+                          K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
 
-    printf("  initialized odefunc\n");
+    // printf("  initialized odefunc\n");
 
     // create an instance of events (including starting/ending time)
     events = new EventType{num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
-                      num_systems, num_inner_patches, UNITS};
+                           num_systems, num_inner_patches, UNITS};
 
-    printf("  initialized events\n");
+    // printf("  initialized events\n");
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
 
-    printf("  initialized solver\n");
+    // printf("  initialized solver\n");
     solver->set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
 
-    printf("  set dense output\n");
+    // printf("  set dense output\n");
 }
 
 template <typename T>
 void RateDependent<T>::forward_model_batch () {
-    printf("inside RateDependent.cu:forward_model_batch\n");
+    // printf("inside RateDependent.cu:forward_model_batch\n");
 
-    std::cout << "Debug forward_model_batch: "
-        << "num_systems=" << num_systems
-        << ", systems_batch=" << systems_batch
-        << ", system_size=" << system_size
-        << std::endl;
+    // std::cout << "Debug forward_model_batch: "
+    //     << "num_systems=" << num_systems
+    //     << ", systems_batch=" << systems_batch
+    //     << ", system_size=" << system_size
+    //     << std::endl;
 
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
         // check how many systems are left
         auto systems_to_process = min(systems_batch, num_systems - system_offset);
-        printf("  processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
-         // set initial values
-        solver->set_init_values(v_init, USE_V_INIT_FOR_ALL, systems_to_process, system_offset);
-        printf("  set initial values done \n");
+        // printf("  processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
+        // set initial values
+        solver->set_init_values(state_init, USE_STATE_INIT_FOR_ALL, systems_to_process, system_offset);
         // call the solver
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                                  conv_i_start, conv_i_stop, max_cycles);

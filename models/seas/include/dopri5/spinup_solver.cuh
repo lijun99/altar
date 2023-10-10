@@ -121,9 +121,9 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     }
     //cta.sync();
 
-    // if debugging cycles
-    if(cta.thread_rank()==0)
-        printf("spinup cycles finished in %d steps, convergence is %s\n", icycle, converged ? "true" : "false");
+    // // if debugging cycles
+    // if(cta.thread_rank()==0)
+    //     printf("spinup cycles finished in %d steps, convergence is %s\n", icycle, converged ? "true" : "false");
 
     //converged, last run for dense_out
     if(dense_out)
@@ -162,8 +162,8 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
 
     int blocks = systems;
 
-    printf("    inside spinup_solver.cuh:solve_ivp_cycles (patches=%i, threads=%i, blocks=%i)\n",
-           patches, threads, blocks);
+    // printf("    inside spinup_solver.cuh:solve_ivp_cycles (patches=%i, threads=%i, blocks=%i)\n",
+    //        patches, threads, blocks);
 
     solve_ivp_cycles_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
         system_offset,
