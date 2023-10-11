@@ -55,7 +55,10 @@ class RateDependent {
             T atol_,
             T rtol_,
             T spinup_atol_,
-            T spinup_rtol_
+            T spinup_rtol_,
+            int num_stations_,
+            T* G_surf_,
+            T* obs_disp_
         );
 
         // set spin up data (initial values)
@@ -66,6 +69,9 @@ class RateDependent {
 
         // perform forward modeling
         void forward_model_batch();
+
+        // compute displacement
+        void compute_displacement();
 
     // parameters
     private:
@@ -114,7 +120,12 @@ class RateDependent {
         T spinup_rtol; // relative tolerance for spinup check [-]
         int conv_i_start; // starting index to check for spinup [-]
         int conv_i_stop; // stopping index to check for spinup (including) [-]
-        T* sim_state; // simulated state variables (num_systems, num_t_eval, system_size) [m|m|-|-]
+        T* sim_state; // simulated state variables (num_systems, num_t_eval, UNITS * num_inner_patches) [m|m|-|-]
+
+        // observations
+        int num_stations; // number of observers [-]
+        T* G_surf; // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
+        T* obs_disp; // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
 
     }; //end of class RateDependent
 

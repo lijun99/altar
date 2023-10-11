@@ -39,7 +39,10 @@ void RateDependent<T>::initialize(
         T atol_,
         T rtol_,
         T spinup_atol_,
-        T spinup_rtol_)
+        T spinup_rtol_,
+        int num_stations_,
+        T* G_surf_,
+        T* obs_disp_)
 {
     // general variables
     num_systems = num_systems_;
@@ -77,6 +80,11 @@ void RateDependent<T>::initialize(
     conv_i_start = (UNITS / 2) * num_inner_patches;
     conv_i_stop = UNITS * num_inner_patches - 1;
     sim_state = sim_state_;
+
+    // observers
+    num_stations =  num_stations_;
+    G_surf = G_surf_;
+    obs_disp = obs_disp_;
 }
 
 template <typename T>
@@ -134,6 +142,132 @@ void RateDependent<T>::forward_model_batch () {
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                                  conv_i_start, conv_i_stop, max_cycles);
         cudaDeviceSynchronize();
+    }
+
+    // convert exponential velocity to linear one
+    for (auto isys = 0; isys < num_systems; isys++)
+    for (auto iteval = 0; iteval < num_t_eval; iteval++)
+    for (auto iunit = 2; iunit < 4; iunit++)
+    for (auto ipatch = 0; ipatch < num_inner_patches; ipatch++)
+    {
+        // (num_systems, num_t_eval, UNITS * num_inner_patches)
+        int i = isys * num_t_eval * UNITS * num_inner_patches
+                + iteval * UNITS * num_inner_patches
+                + iunit * num_inner_patches
+                + ipatch;
+        sim_state[i] = v_0 * exp(sim_state[i]);
+    }
+}
+
+// need to rewrite to use block per system
+template<typename T>
+__global__
+void compute_displacement_kernel(const T* sim_state, const T* G_surf, T* obs_disp,
+        const int system_id, const int num_t_eval, const int num_inner_patches, const int num_stations,
+        const int UNITS)
+{
+    // T* sim_state; // simulated state variables (num_systems, num_t_eval, UNITS * num_inner_patches) [m|m|-|-]
+    // T* G_surf; // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
+    // T* obs_disp; // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
+
+    // setup
+    int i_time = blockIdx.y * blockDim.y + threadIdx.y;
+    int i_station = blockIdx.x * blockDim.x + threadIdx.x;
+    if ((i_time >= num_t_eval) || (i_station >= num_stations)) return;
+
+    // calculate tensor product
+    // loop over surface displacement components
+    for (auto i_dispcomp = 0; i_dispcomp < 3; i_dispcomp++)
+    {
+        int obs_ind = system_id * num_t_eval * 3 * num_stations
+                      + i_time * 3 * num_stations
+                      + i_dispcomp * num_stations
+                      + i_station;
+        obs_disp[obs_ind] = 0.0;
+        // loop over fault slip components
+        for (auto i_slipcomp = 0; i_slipcomp < 2; i_slipcomp++)
+        {
+            // loop over fault patches
+            for (auto i_patch = 0; i_patch < num_inner_patches; i_patch++)
+            {
+                obs_disp[obs_ind] += G_surf[i_slipcomp * num_inner_patches * 3 * num_stations
+                                            + i_patch * 3 * num_stations
+                                            + i_dispcomp * num_stations
+                                            + i_station]
+                                     * sim_state[system_id * num_t_eval * UNITS * num_inner_patches
+                                                 + i_time * UNITS * num_inner_patches
+                                                 + i_slipcomp * num_inner_patches
+                                                 + i_patch];
+            }
+        }
+    }
+}
+
+// compute displacement from slips
+// @note sim_state is arranged in shape (systems, times, 4*patches) - C-style
+//       G_surf is arranged in shape (times, 2*patches, 3*stations)
+//          - merged with data covariance, therefore, different for different t
+//          TODO check if merging still makes sense
+//       obs_disp is arranged in shape (systems, times, 3*stations)
+template <typename T>
+void RateDependent<T>::compute_displacement()
+{
+    // decide the execution size - one sample per thread
+    // const int threadsPerBlock = 128;
+    // const int numberOfBlocks = 8;
+    for (auto system_id = 0; system_id < num_systems; system_id++)
+    {
+        // // call kernel
+        // compute_displacement_kernel<T><<<numberOfBlocks, threadsPerBlock>>>(
+        //     sim_state, G_surf, obs_disp,
+        //     system_id, num_t_eval, num_inner_patches, num_stations, UNITS);
+        // cudaDeviceSynchronize();
+        
+        // setup
+        for (auto i_time = 0; i_time < num_t_eval; i_time++)
+        {
+            if (i_time % 100 == 0) printf("system=%i/%i, time=%i/%i\n", system_id + 1, num_systems, i_time + 1, num_t_eval);
+            for (auto i_station = 0; i_station < num_stations; i_station++)
+            {
+                // calculate tensor product
+                // loop over surface displacement components
+                for (auto i_dispcomp = 0; i_dispcomp < 3; i_dispcomp++)
+                {
+                    int obs_ind = system_id * num_t_eval * 3 * num_stations
+                                  + i_time * 3 * num_stations
+                                  + i_dispcomp * num_stations
+                                  + i_station;
+                    obs_disp[obs_ind] = 0.0;
+                    // printf("obs_disp[%i, %i, %i, %i]\n", system_id, i_time, i_dispcomp, i_station);
+                    // loop over fault slip components
+                    for (auto i_slipcomp = 0; i_slipcomp < 2; i_slipcomp++)
+                    {
+                        // loop over fault patches
+                        for (auto i_patch = 0; i_patch < num_inner_patches; i_patch++)
+                        {
+                            // printf("G[%i, %i, %i, %i] = %g\n", i_slipcomp, i_patch, i_dispcomp, i_station,
+                            //     G_surf[i_slipcomp * num_inner_patches * 3 * num_stations
+                            //                             + i_patch * 3 * num_stations
+                            //                             + i_dispcomp * num_stations
+                            //                             + i_station]);
+                            // printf("sim_state[%i, %i, %i, %i] = %g\n", system_id, i_time, i_slipcomp, i_patch,
+                            //     sim_state[system_id * num_t_eval * UNITS * num_inner_patches
+                            //                                 + i_time * UNITS * num_inner_patches
+                            //                                 + i_slipcomp * num_inner_patches
+                            //                                 + i_patch]);
+                            obs_disp[obs_ind] += G_surf[i_slipcomp * num_inner_patches * 3 * num_stations
+                                                        + i_patch * 3 * num_stations
+                                                        + i_dispcomp * num_stations
+                                                        + i_station]
+                                                * sim_state[system_id * num_t_eval * UNITS * num_inner_patches
+                                                            + i_time * UNITS * num_inner_patches
+                                                            + i_slipcomp * num_inner_patches
+                                                            + i_patch];
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 

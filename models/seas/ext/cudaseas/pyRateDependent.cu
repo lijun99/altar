@@ -61,7 +61,10 @@ public:
         T atol,
         T rtol,
         T spinup_atol,
-        T spinup_rtol
+        T spinup_rtol,
+        int num_stations,
+        py::capsule G_surf,
+        py::capsule obs_disp
     )
     {
         // printf("inside pyRateDependent.cu:initialize\n");
@@ -88,7 +91,10 @@ public:
             atol,
             rtol,
             spinup_atol,
-            spinup_rtol
+            spinup_rtol,
+            num_stations,
+            convertPyArray<T, cuda_vector>(G_surf),
+            convertPyArray<T, cuda_vector>(obs_disp)
         );
     }
 
@@ -109,6 +115,13 @@ public:
         // printf("inside pyRateDependent.cu:forward_model_batch\n");
         _cmodel->forward_model_batch();
     }
+
+    // just pass surface displacements through
+    void compute_displacement()
+    {
+        // printf("inside pyRateDependent.cu:compute_displacement\n");
+        _cmodel->compute_displacement();
+    }
 };
 
 // add bindings for the various cuda struct
@@ -122,12 +135,14 @@ module(py::module & m)
         .def(py::init())
         .def("initialize", &pyRateDependent_double::initialize)
         .def("set_system_odes", &pyRateDependent_double::set_system_odes)
-        .def("forward_model_batch", &pyRateDependent_double::forward_model_batch);
+        .def("forward_model_batch", &pyRateDependent_double::forward_model_batch)
+        .def("compute_displacement", &pyRateDependent_double::compute_displacement);
     py::class_<pyRateDependent_float>(m, "model_float")
         .def(py::init())
         .def("initialize", &pyRateDependent_float::initialize)
         .def("set_system_odes", &pyRateDependent_float::set_system_odes)
-        .def("forward_model_batch", &pyRateDependent_float::forward_model_batch);
+        .def("forward_model_batch", &pyRateDependent_float::forward_model_batch)
+        .def("compute_displacement", &pyRateDependent_float::compute_displacement);
 }
 
 } // end of namespace pycuda::seas::ratedependent
