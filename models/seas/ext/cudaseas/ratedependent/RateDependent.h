@@ -68,7 +68,12 @@ class RateDependent {
         );
 
         // perform forward modeling
-        void forward_model_batch();
+        void forward_model_batch (
+            T* predictions,  // [samples, t_steps, displacement_size]  displacement_size=stations*disp_components
+            const T* theta,  // alpha_h_vec [samples, patches]
+            const T* gf,     // [slip_size, displacement_size] slip_size = 2 * patches
+            const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
+        );
 
         // compute displacement
         void compute_displacement();
@@ -101,6 +106,7 @@ class RateDependent {
 
         // rheology
         const int UNITS = 4; // number of variables in each patch [-]
+        const int components = 2 ; // along strike and dip directions
         T v_0; // logarithmic normalization velocity [m/s]
         T mu_over_2vs; // radiation damping term [Pa * s/m]
         T* alpha_h_vec; // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]

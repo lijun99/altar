@@ -58,7 +58,7 @@ namespace cuda::error {
     {                                                                          \
         if ((x) != cudaSuccess)                                                \
         {                                                                      \
-            throw cuda::error::cudaRuntimeException(x, "", __FILE__, __LINE__); \
+            throw ::cuda::error::cudaRuntimeException(x, "", __FILE__, __LINE__); \
         }                                                                      \
     }
 #endif
@@ -70,7 +70,7 @@ namespace cuda::error {
         auto x = cudaGetLastError();                                            \
         if ((x) != cudaSuccess)                                                 \
         {                                                                       \
-            throw cuda::error::cudaRuntimeException(x, msg, __FILE__, __LINE__); \
+            throw ::cuda::error::cudaRuntimeException(x, msg, __FILE__, __LINE__); \
         }                                                                       \
     }
 #endif

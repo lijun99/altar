@@ -10,6 +10,10 @@
 
 // get my class declaration
 #include "RateDependent.h"
+
+// get displacement routines
+#include "Displacement.cuh"
+
 #include <iostream>
 
 namespace altar::models::seas::cuda::ratedependent {
@@ -116,13 +120,20 @@ void RateDependent<T>::set_system_odes(
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
 
     // printf("  initialized solver\n");
+    // t_eval_joint_sec [num_t_eval]
+    // sim_state [num_t_eval, ]
     solver->set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
 
     // printf("  set dense output\n");
 }
 
 template <typename T>
-void RateDependent<T>::forward_model_batch () {
+void RateDependent<T>::forward_model_batch (
+    T* predictions,  // [samples, t_steps, displacement_size]  displacement_size=stations*disp_components
+    const T* theta,  // alpha_h_vec [samples, patches]
+    const T* gf,     // [slip_size, displacement_size] slip_size = 2 * patches
+    const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
+) {
     // printf("inside RateDependent.cu:forward_model_batch\n");
 
     // std::cout << "Debug forward_model_batch: "
@@ -130,6 +141,9 @@ void RateDependent<T>::forward_model_batch () {
     //     << ", systems_batch=" << systems_batch
     //     << ", system_size=" << system_size
     //     << std::endl;
+
+    // set theta as alpha_h in ode functions
+    odefunc->alpha_h = theta;
 
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
@@ -141,9 +155,10 @@ void RateDependent<T>::forward_model_batch () {
         // call the solver
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                                  conv_i_start, conv_i_stop, max_cycles);
-        cudaDeviceSynchronize();
+        // cudaDeviceSynchronize();
     }
 
+    /*
     // convert exponential velocity to linear one
     for (auto isys = 0; isys < num_systems; isys++)
     for (auto iteval = 0; iteval < num_t_eval; iteval++)
@@ -157,8 +172,17 @@ void RateDependent<T>::forward_model_batch () {
                 + ipatch;
         sim_state[i] = v_0 * exp(sim_state[i]);
     }
+    */
+
+    // call displacement routines - see details in Displacement.cuh for different implementations
+    // assume Cd is a constant and gf is time independent
+    compute_displacement_impl1(
+        predictions, sim_state, gf, num_systems, num_t_eval, num_inner_patches, 3 * num_stations, v_0,
+        (T)1.0, (T)0.0); // alpha beta for gemm C = alpha A B + beta C
+
 }
 
+// OBSOLETE
 // need to rewrite to use block per system
 template<typename T>
 __global__
@@ -203,6 +227,7 @@ void compute_displacement_kernel(const T* sim_state, const T* G_surf, T* obs_dis
     }
 }
 
+// CPU Routine - may be used as a check
 // compute displacement from slips
 // @note sim_state is arranged in shape (systems, times, 4*patches) - C-style
 //       G_surf is arranged in shape (times, 2*patches, 3*stations)

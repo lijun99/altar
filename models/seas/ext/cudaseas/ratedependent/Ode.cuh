@@ -30,12 +30,23 @@ struct __ALIGNED__ RateDependentODE {
     // define indexing functions
 
     // for K_inner_inner_onfault, 4D
+    // K_int [patches, 2, patches, 2]
     __device__ __forceinline__ int i_Kii (int i0, int i1, int i2, int i3) {
         assert((i0 < patches) && (i1 < 2) && (i2 < patches) && (i3 < 2));
         return (i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2);
     }
 
     // ode function called when solving a system with a thread block
+    // y0, f [2(quantity: displacement, stress), 2(component: dip,strike), patches]
+    // f[0, :, :] = v = v0 exp(y0[1, :, :])
+    // f[1, :, :] = tau = [K_ext (v-vp) - K_int] / (mu_over_2vs * v - alpha_h)
+    // TBD - since ODE independent of displacement, may use only stress/velocity
+    // K_ext[component, patches]
+    // v_p [patches]
+    // K_int [patches, component, patches, component]
+    // TBD - maybe better reshaped as [component, patches, component, patches] to use matrix-matrix product form
+    // alpha_h [patches]
+
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
         // update slip in both directions

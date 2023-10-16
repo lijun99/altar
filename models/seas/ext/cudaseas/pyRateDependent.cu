@@ -110,10 +110,16 @@ public:
     }
 
     // just pass forward model through
-    void forward_model_batch()
+    void forward_model_batch(py::capsule predictions,
+        py::capsule theta, py::capsule gf, const int batches)
     {
         // printf("inside pyRateDependent.cu:forward_model_batch\n");
-        _cmodel->forward_model_batch();
+        _cmodel->forward_model_batch(
+            convertPyArray<T, cuda_matrix>(predictions), // [samples/systems, t_steps*3*stations]
+            convertPyArray<T, cuda_matrix>(theta),  // alpha_h_vec [samples, patches]
+            convertPyArray<T, cuda_matrix>(gf),   // [slip_size, displacement_size]
+            batches // batches <= samples/systems
+        );
     }
 
     // just pass surface displacements through
