@@ -30,26 +30,15 @@
 
 namespace altar::models::seas::cuda::ratedependent {
 
-// Implementation 1 - assume Cd is a constant (self-correlated, or diagonal) for all observed data.
-// Gf is therefore the same for all samples and t_steps
-// We compute d_pred [samples, t_steps, stations*displacement_components]
-//               = slip_rate [samples, t_steps, patches*slip_components] * Gf[patches*slip_components, stations*displacement_components]
-// This is achieved by batchedGemm, batch = samples/systems
-// and for each batch/sample/system, perform a matrix-matrix product (gemm)
-//     d_pred[t_steps, stations*displacement_components]
-//         = slip_rate [t_steps, patches*slip_components] * Gf[patches*slip_components, stations*displacement_components]
-
-// Routine to extract slip rate from yeval/sim_state
+// Routine to copy slip from yeval/sim_state
 // yeval/sim_state from ODE solvers are arranged as [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
-// we need to subtract slip_rate [systems, t_steps, 2(slip_components), patches]
-//                 = v0 exp( sim_state[systems, t_steps, 1, 2(slip_components), patches] )
+// we need to construct slip_history [systems, t_steps, 2(slip_components), patches]
+//                 = sim_state[systems, t_steps, 1, 2(slip_components), patches]
 // parallel scheme, use blocks = systems*t_steps, threads_per_block ~ patches
 // each thread process two components
 template <typename T>
-__global__ void slip_rate_kernel(T* slip_rate,
+__global__ void copy_slip_kernel(T* slip_history,
     const T* sim_state,
-    const int systems,
-    const int t_steps,
     const int patches,
     const T v_0)
 {
@@ -57,22 +46,22 @@ __global__ void slip_rate_kernel(T* slip_rate,
     auto thread_id = threadIdx.x; // patches
     auto block_id = blockIdx.x; // systems*t_steps
 
-    auto sim_state_index = block_id * 4 * patches + 2 * patches;
+    auto sim_state_index = block_id * 4 * patches;
     auto slip_rate_index = block_id * 2 * patches;
 
     // iterate over patches if total #patches > #threads per block
     for(auto patch = thread_id; patch < patches; patch += blockDim.x)
     {
         // get the slip rate from stress rate
-        slip_rate[slip_rate_index + patch] = v_0 * exp(sim_state[sim_state_index + patch]);
-        slip_rate[slip_rate_index + patch + patches] = v_0 * exp(sim_state[sim_state_index + patch + patches]);
+        slip_history[slip_rate_index + patch] = sim_state[sim_state_index + patch];
+        slip_history[slip_rate_index + patch + patches] = sim_state[sim_state_index + patch + patches];
     }
     // all done
 }
 
-// how to call the gpu kernel to extract slip rate
+// how to call the gpu kernel to copy slip
 template <typename T>
-void extract_slip_rate(T* slip_rate,
+void copy_slip(T* slip_history,
     const T* sim_state,
     const int systems,
     const int t_steps,
@@ -100,11 +89,80 @@ void extract_slip_rate(T* slip_rate,
     // total threads = blocks * threads
 
     // call the kernel
-    slip_rate_kernel<T><<<blocks, threads>>>(slip_rate, sim_state,
-        systems, t_steps, patches, v_0);
-    cudaCheckError("slip_rate_kernel error");
+    copy_slip_kernel<T><<<blocks, threads>>>(
+        slip_history, sim_state, patches, v_0);
+    cudaCheckError("copy_slip_kernel error");
     // all done
 }
+
+// Routine to convert slip rate in yeval/sim_state
+// parallel scheme, use blocks = systems*t_steps, threads_per_block ~ patches
+// each thread process two components
+template <typename T>
+__global__ void convert_slip_rate_kernel(
+    T* sim_state,
+    const int patches,
+    const T v_0)
+{
+    // thread blocks along x - systems*slip_size
+    auto thread_id = threadIdx.x; // patches
+    auto block_id = blockIdx.x; // systems*t_steps
+
+    auto sim_state_index = block_id * 4 * patches + 2 * patches;
+
+    // iterate over patches if total #patches > #threads per block
+    for(auto patch = thread_id; patch < patches; patch += blockDim.x)
+    {
+        // get the slip rate from stress rate
+        sim_state[sim_state_index + patch] = v_0 * exp(sim_state[sim_state_index + patch]);
+        sim_state[sim_state_index + patch + patches] = v_0 * exp(sim_state[sim_state_index + patch + patches]);
+    }
+    // all done
+}
+
+// how to call the gpu kernel to extract slip rate
+template <typename T>
+void convert_slip_rate(
+    T* sim_state,
+    const int systems,
+    const int t_steps,
+    const int patches,
+    const T v_0)
+{
+
+    // decide threads per block based on #patches
+    int threads;
+    if(patches <= 32)
+        threads = 32;
+    else if (patches <= 64)
+        threads = 64;
+    else if (patches <= 128)
+        threads =128;
+    else if (patches <= 256)
+        threads = 256;
+    else if (patches <=512 )
+        threads = 512;
+    else
+        threads = 1024;
+    // get the number of blocks
+    auto blocks = systems*t_steps;
+
+    // total threads = blocks * threads
+
+    // call the kernel
+    convert_slip_rate_kernel<T><<<blocks, threads>>>(sim_state, patches, v_0);
+    cudaCheckError("convert_slip_rate_kernel error");
+    // all done
+}
+
+// Implementation 1 - assume Cd is a constant (self-correlated, or diagonal) for all observed data.
+// Gf is therefore the same for all samples and t_steps
+// We compute d_pred [samples, t_steps, stations*displacement_components]
+//               = slip_rate [samples, t_steps, patches*slip_components] * Gf[patches*slip_components, stations*displacement_components]
+// This is achieved by batchedGemm, batch = samples/systems
+// and for each batch/sample/system, perform a matrix-matrix product (gemm)
+//     d_pred[t_steps, stations*displacement_components]
+//         = slip_rate [t_steps, patches*slip_components] * Gf[patches*slip_components, stations*displacement_components]
 
 template <typename T>
 void compute_displacement_impl1(
@@ -120,14 +178,14 @@ void compute_displacement_impl1(
     const T gemm_beta  // 0 or -alpha (if d_obs is copied to d to compute residue)
     )
 {
-    // allocate slip rate [samples, t_steps, 2*patches]
-    auto system_size = patches * 4; // sim_state size per system per t_step
+    // copy slip history into [samples, t_steps, 2*patches]
+    // auto system_size = patches * 4; // sim_state size per system per t_step
     auto slip_size = patches * 2; // slip rate size per system per t_step
-    T* slip_rate;
-    cudaSafeCall(cudaMallocManaged(&slip_rate, samples*t_steps*slip_size*sizeof(T)));
+    T* slip_history;
+    cudaSafeCall(cudaMallocManaged(&slip_history, samples*t_steps*slip_size*sizeof(T)));
 
-    // extract slip rate from sim_state
-    extract_slip_rate<T>(slip_rate, sim_state, samples, t_steps, patches, v_0);
+    // copy slip rate from sim_state
+    copy_slip<T>(slip_history, sim_state, samples, t_steps, patches, v_0);
 
     // create a cublas handle
     cublasHandle_t handle;
@@ -145,13 +203,13 @@ void compute_displacement_impl1(
         displacement_size, t_steps, slip_size,
         &gemm_alpha,
         gf, displacement_size, 0, // A, lda, strideA (0=same gf from all samples)
-        slip_rate, slip_size, slip_size*t_steps, // B, ldc, strideB
+        slip_history, slip_size, slip_size*t_steps, // B, ldc, strideB
         &gemm_beta,
         predictions, displacement_size, displacement_size*t_steps,
         samples));
 
-    // free slip_rate
-    cudaSafeCall(cudaFree(slip_rate));
+    // free slip_history
+    cudaSafeCall(cudaFree(slip_history));
 
     // free handle
     cublasSafeCall(cublasDestroy(handle));
@@ -173,6 +231,8 @@ void compute_displacement_impl1(
 // Routine to extract slip rate from yeval/sim_state
 // This is the same as slip_rate_kernel, but to transpose, or switch the indices of samples and t_steps
 //
+// WARNING still contains wrong case that the Green's functions is multiplying the velocities
+// (rather than the cumulative displacement)
 template <typename T>
 __global__ void slip_rate_transpose_kernel(
     T* slip_rate,  // [t_steps, systems, 2*patches]
@@ -294,6 +354,8 @@ void transpose_displacement(T* prediction,
 }
 
 template <typename T>
+// WARNING still contains wrong case that the Green's functions is multiplying the velocities
+// (rather than the cumulative displacement)
 void compute_displacement_impl2(cublasHandle_t handle,
     T* predictions, // [samples, t_steps, displacement_size],
     const T* sim_state, //[samples, t_steps, 4*patches]

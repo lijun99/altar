@@ -56,27 +56,17 @@ class RateDependent {
             T rtol_,
             T spinup_atol_,
             T spinup_rtol_,
-            int num_stations_,
-            T* G_surf_,
-            T* obs_disp_
-        );
-
-        // set spin up data (initial values)
-        void set_system_odes(
-            T* alpha_h_vec_,
-            T* delta_tau_bounded_compressed_
+            int num_stations_
         );
 
         // perform forward modeling
-        void forward_model_batch (
-            T* predictions,  // [samples, t_steps, displacement_size]  displacement_size=stations*disp_components
-            const T* theta,  // alpha_h_vec [samples, patches]
-            const T* gf,     // [slip_size, displacement_size] slip_size = 2 * patches
+        void forward_model_batch(
+            const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
+            const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
+            const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
+            T* obs_disp,  // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
             const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
         );
-
-        // compute displacement
-        void compute_displacement();
 
     // parameters
     private:
@@ -99,7 +89,6 @@ class RateDependent {
         // events
         int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
-        T* delta_tau_div_alpha_h; // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
         int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
         int* ix_eq_joint; // indices of earthquakes in t_eval_joint_sec (num_ix_eq, ) [-]
         T* t_events; // timestamps of start time, end time, and earthquakes (n_events, ) [s]
@@ -109,7 +98,6 @@ class RateDependent {
         const int components = 2 ; // along strike and dip directions
         T v_0; // logarithmic normalization velocity [m/s]
         T mu_over_2vs; // radiation damping term [Pa * s/m]
-        T* alpha_h_vec; // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
 
         // fault
         int num_inner_patches; // number of simulated patches [-]
@@ -130,8 +118,6 @@ class RateDependent {
 
         // observations
         int num_stations; // number of observers [-]
-        T* G_surf; // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-        T* obs_disp; // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
 
     }; //end of class RateDependent
 

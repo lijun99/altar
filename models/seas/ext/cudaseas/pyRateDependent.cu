@@ -62,9 +62,7 @@ public:
         T rtol,
         T spinup_atol,
         T spinup_rtol,
-        int num_stations,
-        py::capsule G_surf,
-        py::capsule obs_disp
+        int num_stations
     )
     {
         // printf("inside pyRateDependent.cu:initialize\n");
@@ -92,41 +90,26 @@ public:
             rtol,
             spinup_atol,
             spinup_rtol,
-            num_stations,
-            convertPyArray<T, cuda_vector>(G_surf),
-            convertPyArray<T, cuda_vector>(obs_disp)
-        );
-    }
-
-    // set system ODEs
-    void set_system_odes(py::capsule alpha_h_vec, py::capsule delta_tau_div_alpha_h)
-    {
-        // printf("inside pyRateDependent.cu:set_system_odes\n");
-        // set internal values, assume shapes are matching
-        _cmodel->set_system_odes(
-            convertPyArray<T, cuda_vector>(alpha_h_vec),
-            convertPyArray<T, cuda_vector>(delta_tau_div_alpha_h)
+            num_stations
         );
     }
 
     // just pass forward model through
-    void forward_model_batch(py::capsule predictions,
-        py::capsule theta, py::capsule gf, const int batches)
+    void forward_model_batch(
+        py::capsule alpha_h_vec,
+        py::capsule delta_tau_div_alpha_h,
+        py::capsule G_surf,
+        py::capsule obs_disp,
+        const int batches)
     {
         // printf("inside pyRateDependent.cu:forward_model_batch\n");
         _cmodel->forward_model_batch(
-            convertPyArray<T, cuda_matrix>(predictions), // [samples/systems, t_steps*3*stations]
-            convertPyArray<T, cuda_matrix>(theta),  // alpha_h_vec [samples, patches]
-            convertPyArray<T, cuda_matrix>(gf),   // [slip_size, displacement_size]
-            batches // batches <= samples/systems
+            convertPyArray<T, cuda_vector>(alpha_h_vec), // (num_systems, num_inner_patches, ) [Pa]
+            convertPyArray<T, cuda_vector>(delta_tau_div_alpha_h), // (num_systems, num_eq, num_inner_patches, 2) [-]
+            convertPyArray<T, cuda_matrix>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
+            convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_eval*3*num_stations) [m]
+            batches // batch size <=samples (in AlTar, not all samples are computed in simulations)
         );
-    }
-
-    // just pass surface displacements through
-    void compute_displacement()
-    {
-        // printf("inside pyRateDependent.cu:compute_displacement\n");
-        _cmodel->compute_displacement();
     }
 };
 
@@ -140,15 +123,11 @@ module(py::module & m)
     py::class_<pyRateDependent_double>(m, "model_double")
         .def(py::init())
         .def("initialize", &pyRateDependent_double::initialize)
-        .def("set_system_odes", &pyRateDependent_double::set_system_odes)
-        .def("forward_model_batch", &pyRateDependent_double::forward_model_batch)
-        .def("compute_displacement", &pyRateDependent_double::compute_displacement);
+        .def("forward_model_batch", &pyRateDependent_double::forward_model_batch);
     py::class_<pyRateDependent_float>(m, "model_float")
         .def(py::init())
         .def("initialize", &pyRateDependent_float::initialize)
-        .def("set_system_odes", &pyRateDependent_float::set_system_odes)
-        .def("forward_model_batch", &pyRateDependent_float::forward_model_batch)
-        .def("compute_displacement", &pyRateDependent_float::compute_displacement);
+        .def("forward_model_batch", &pyRateDependent_float::forward_model_batch);
 }
 
 } // end of namespace pycuda::seas::ratedependent
