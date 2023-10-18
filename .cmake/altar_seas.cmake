@@ -105,6 +105,8 @@ function(altar_seas_cuda_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/altar_seas
+    PROGRAMS bin/SEAS
+    PROGRAMS bin/SEAS3D
     DESTINATION bin
     )
   # all done

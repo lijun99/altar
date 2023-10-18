@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+
+# author: Tobias Köhne
+
+# get the package
+import altar
+import altar.cuda
+
+
+# make a specialized app that uses this model by default
+class SEAS3D(altar.shells.cudaapplication, family='altar.applications.seas3d'):
+    """
+    A specialized AlTar application that exercises the SEAS model
+    """
+
+    # user configurable state
+    model = altar.models.model(default='seas3d')
+    model.doc = "the AlTar model to sample"
+
+
+# bootstrap
+if __name__ == "__main__":
+    # build an instance of the default app
+    app = SEAS3D(name="SEAS3D")
+    # invoke the main entry point
+    status = app.run()
+    # share
+    raise SystemExit(status)
