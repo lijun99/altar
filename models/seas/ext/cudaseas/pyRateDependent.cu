@@ -43,8 +43,8 @@ public:
         int num_systems,
         int systems_batch,
         int max_cycles,
-        int num_t_eval,
-        py::capsule t_eval_joint_sec,
+        int num_t_obs,
+        py::capsule t_obs_sec,
         int num_ix_eq,
         int num_eq,
         py::capsule delta_tau_bounded_indices,
@@ -71,8 +71,8 @@ public:
             num_systems,
             systems_batch,
             max_cycles,
-            num_t_eval,
-            convertPyArray<T, cuda_vector>(t_eval_joint_sec),
+            num_t_obs,
+            convertPyArray<T, cuda_vector>(t_obs_sec),
             num_ix_eq,
             num_eq,
             convertPyArray<int, cuda_vector>(delta_tau_bounded_indices),
@@ -107,7 +107,7 @@ public:
             convertPyArray<T, cuda_vector>(alpha_h_vec), // (num_systems, num_inner_patches, ) [Pa]
             convertPyArray<T, cuda_vector>(delta_tau_div_alpha_h), // (num_systems, num_eq, num_inner_patches, 2) [-]
             convertPyArray<T, cuda_matrix>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
-            convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_eval*3*num_stations) [m]
+            convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_obs*3*num_stations) [m]
             batches // batch size <=samples (in AlTar, not all samples are computed in simulations)
         );
     }

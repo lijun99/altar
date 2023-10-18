@@ -37,8 +37,8 @@ class RateDependent {
             int num_systems_,
             int systems_batch_,
             int max_cycles_,
-            int num_t_eval_,
-            T* t_eval_joint_sec_,
+            int num_t_obs_,
+            T* t_obs_sec_,
             int num_ix_eq_,
             int num_eq_,
             int* delta_tau_bounded_indices_,
@@ -64,7 +64,7 @@ class RateDependent {
             const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
             const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
             const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-            T* obs_disp,  // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
+            T* obs_disp,  // Surface observations for all stations (num_systems, num_t_obs, 3*num_stations) [m]
             const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
         );
 
@@ -83,14 +83,14 @@ class RateDependent {
 
         // cycles
         int max_cycles; // maximum number of cycles to simulate for each system [-]
-        int num_t_eval; // number of timesteps [-]
-        T* t_eval_joint_sec; // timesteps to simulate (num_t_eval, ) [s]
+        int num_t_obs; // number of timesteps [-]
+        T* t_obs_sec; // timesteps to simulate (num_t_obs, ) [s]
 
         // events
         int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
         int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
-        int* ix_eq_joint; // indices of earthquakes in t_eval_joint_sec (num_ix_eq, ) [-]
+        int* ix_eq_joint; // indices of earthquakes in t_obs_sec (num_ix_eq, ) [-]
         T* t_events; // timestamps of start time, end time, and earthquakes (n_events, ) [s]
 
         // rheology
@@ -114,7 +114,7 @@ class RateDependent {
         T spinup_rtol; // relative tolerance for spinup check [-]
         int conv_i_start; // starting index to check for spinup [-]
         int conv_i_stop; // stopping index to check for spinup (including) [-]
-        T* sim_state; // simulated state variables (num_systems, num_t_eval, UNITS * num_inner_patches) [m|m|-|-]
+        T* sim_state; // simulated state variables (num_systems, num_t_obs, UNITS * num_inner_patches) [m|m|-|-]
 
         // observations
         int num_stations; // number of observers [-]

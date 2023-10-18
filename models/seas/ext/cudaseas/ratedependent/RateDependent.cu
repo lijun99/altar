@@ -25,8 +25,8 @@ void RateDependent<T>::initialize(
         int num_systems_,
         int systems_batch_,
         int max_cycles_,
-        int num_t_eval_,
-        T* t_eval_joint_sec_,
+        int num_t_obs_,
+        T* t_obs_sec_,
         int num_ix_eq_,
         int num_eq_,
         int* delta_tau_bounded_indices_,
@@ -52,8 +52,8 @@ void RateDependent<T>::initialize(
 
     // cycles
     max_cycles = max_cycles_;
-    num_t_eval = num_t_eval_;
-    t_eval_joint_sec = t_eval_joint_sec_;
+    num_t_obs = num_t_obs_;
+    t_obs_sec = t_obs_sec_;
 
     // events
     num_ix_eq = num_ix_eq_;
@@ -92,7 +92,7 @@ void RateDependent<T>::forward_model_batch(
     const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
     const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-    T* obs_disp,  // Surface observations for all stations (num_systems, num_t_eval, 3*num_stations) [m]
+    T* obs_disp,  // Surface observations for all stations (num_systems, num_t_obs, 3*num_stations) [m]
     const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
 ) {
     // create an instance of odefunc
@@ -105,7 +105,7 @@ void RateDependent<T>::forward_model_batch(
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
-    solver->set_dense_output(num_t_eval, t_eval_joint_sec, sim_state);
+    solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
     for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
     {
@@ -121,12 +121,12 @@ void RateDependent<T>::forward_model_batch(
     }
 
     // convert logairthmic velocity to linear one
-    convert_slip_rate<T>(sim_state, num_systems, num_t_eval, num_inner_patches, v_0);
+    convert_slip_rate<T>(sim_state, num_systems, num_t_obs, num_inner_patches, v_0);
 
     // call displacement routines - see details in Displacement.cuh for different implementations
     // assume Cd is a constant and gf is time independent
     compute_displacement_impl1(
-        obs_disp, sim_state, G_surf, num_systems, num_t_eval, num_inner_patches, 3 * num_stations, v_0,
+        obs_disp, sim_state, G_surf, num_systems, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
 
 }
