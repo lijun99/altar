@@ -14,7 +14,7 @@ class SEAS3D(altar.shells.cudaapplication, family='altar.applications.seas3d'):
     """
 
     # user configurable state
-    model = altar.models.model(default='seas3d')
+    model = altar.models.model(default='altar.models.seas.cuda.seas3d()')
     model.doc = "the AlTar model to sample"
 
 

@@ -23,12 +23,4 @@ def seas():
     return seas
 
 
-@altar.foundry(implements=altar.cuda.models.cudaBayesian,
-               tip="Sequences of Earthquakes and Aseismic Slip (3D, CUDA)")
-def seas3d():
-    # grab the factory
-    from .SEAS3D import SEAS3D as seas3d
-    # attach its docstring
-    __doc__ = seas3d.__doc__  # noqa: F841
-    # and return it
-    return seas3d
+

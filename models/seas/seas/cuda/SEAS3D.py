@@ -18,7 +18,7 @@ from seqeas.subduction3d import (RateStateSteadyLogarithmic, Fault3D, Subduction
                                  get_surface_displacements)
 
 
-class SEAS3D(cudaBayesian, family="altar.models.seas3d"):
+class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     """
     Wrapper around the subduction simulation class provided by
     ``seqeas.subduction3d.SubductionSimulation3D``.
