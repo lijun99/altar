@@ -81,8 +81,14 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             self.cd = self.loadFile(filename=self.cd_file, shape=(observations, observations))
         else:
             # use a constant covariance
-            self.cd = numpy.zeros(shape=(observations, observations), dtype=self.dtype_cd)
-            numpy.fill_diagonal(self.cd, self.cd_std**2)
+            self.gcd_inv = 1.0/self.cd_std
+            # in model, use the following to check whether cd is a constant or matrix
+            #     cd_inv = self.dataobs.gcd_inv
+            #     if isinstance(cd_inv, float):
+
+            ### delay creation of cd only if cp is considered
+            ## self.cd = numpy.zeros(shape=(observations, observations), dtype=self.dtype_cd)
+            ## numpy.fill_diagonal(self.cd, self.cd_std**2)
 
         # compute inverse of covariance, normalization
         self.initializeCovariance()
@@ -207,10 +213,42 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
 
         # initialize Cd
-        self.updateCovariance()
+        if isinstance(self.gcd_inv, float):
+            self.updateCovarianceConstantCd()
+        else:
+            self.updateCovariance()
 
         # all done
         return self
+
+    def updateCovarianceConstantCd(self):
+        """
+        initialize covariance related parameters for a constant cd w cd_std
+        :return:
+        """
+
+        from math import log, pi as π
+        # process cd info
+        cdinv = self.gcd_inv
+        observations = self.observations
+        # L2 normalization
+        self.normalization = (-0.5 * log(2 * π) + log(cdinv)) * observations
+
+        # prepare self.gdataObsBatch
+        # load data to gpu
+        gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
+
+        # merge Cchi to data
+        if self.merge_cd_to_data :
+            gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=gDataVec)
+
+        # make duplicates of data vector to a matrix
+        self.gdataObsBatch.duplicateVector(src=gDataVec)
+
+        # all done
+        return self
+
+
 
     def updateCovariance(self, cp=None):
         """
