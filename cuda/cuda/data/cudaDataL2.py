@@ -329,14 +329,16 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # make a copy of observed data
         gDataVec = data.clone()
 
-
-        # Cd^{-1} = LL^T
-        # d -> d (1, obs) x L (obs, obs)
-        cublas.trmv(A=cd_inv, x=gDataVec,
-                    uplo=cublas.FillModeUpper,
-                    transa = cublas.OpTrans
-                    )
-        # all done
+        if isinstance(cd_inv, float):
+            gDataVec *= cd_inv
+        else:
+            # Cd^{-1} = LL^T
+            # d -> d (1, obs) x L (obs, obs)
+            cublas.trmv(A=cd_inv, x=gDataVec,
+                        uplo=cublas.FillModeUpper,
+                        transa = cublas.OpTrans
+                        )
+            # all done
         return gDataVec
 
     # local variables
