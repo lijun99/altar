@@ -81,9 +81,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             .transpose(3, 2, 1, 0) \
             .reshape(2 * self.fault.inner_num_patches, 3 * self.sim.n_observers)
         self.G_surf = altar.cuda.matrix(source=np.ascontiguousarray(G_surf))
-        # self.obs_disp = altar.cuda.matrix(
-        #     shape=(application.job.chains, self.sim.t_obs.size * 3 * self.sim.n_observers))
-        # not necessary since prediction is deifned somewhere else?
+        self.obs_disp = altar.cuda.matrix(
+            shape=(application.job.chains, self.sim.t_obs.size * 3 * self.sim.n_observers))
         self.alpha_h = \
             altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches)
         self.delta_tau_div_alpha_h = altar.cuda.vector(
@@ -183,7 +182,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create new rheology instances
         ticks = []
         ticks.append(perf_counter())
-        rheos = [self.rheo_from_theta(theta.getRow(i).ndarray(copy=False))
+        rheos = [self.rheo_from_theta(theta.get_row(i).copy_to_host(type="numpy"))
                  for i in range(batch)]
 
         # create new simulation instances, reusing G_surf
@@ -212,7 +211,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.cmodel.forward_model_batch(self.alpha_h.data,
                                         self.delta_tau_div_alpha_h.data,
                                         self.G_surf.data,
-                                        prediction,
+                                        prediction.data,
                                         batch)
 
         # add locked slip if it was varied for samples
@@ -222,6 +221,13 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]).T.ravel()
                 for i in range(batch)], axis=0)
             prediction += altar.cuda.matrix(source=surf_disps_locked)
+
+        # multiply simulated observations with weights to match required cudaDataL2
+        # behavior merge_cd_to_data = True (whitening transformation)
+        if isinstance(self.dataobs.gcd_inv, float):
+            prediction *= self.dataobs.gcd_inv
+        else:
+            raise NotImplementedError
 
         # TODO subsample the CUDA forward model for each station according to its availability
 
@@ -242,7 +248,6 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # all done
         return prediction
 
-
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
         Compute the likelihood from my forward problem
@@ -252,13 +257,13 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         """
 
         # get the data storage for data prediction or residual
-        residuals = self.gDprediction
+        residuals = self.obs_disp
 
         # call forward model to calculate the data prediction or its difference between dataobs
         self.forwardModelBatched(theta=theta, prediction=residuals, batch=batch)
 
         # subtract from data observation
-        residuals -= self.gDataObsBatched
+        residuals -= self.dataobs.gdataObsBatch
 
         # call data method to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
