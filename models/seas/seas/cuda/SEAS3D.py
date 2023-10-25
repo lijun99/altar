@@ -241,3 +241,27 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # all done
         return prediction
+
+
+    def cuEvalLikelihood(self, theta, likelihood, batch):
+        """
+        Compute the likelihood from my forward problem
+        :param: theta - sampled parameters, matrix of (samples, parameters)
+        :param: likelihood - computed likelihood, vector of (samples)
+        :param: batch - number of samples to be computed
+        """
+
+        # get the data storage for data prediction or residual
+        residuals = self.gDprediction
+
+        # call forward model to calculate the data prediction or its difference between dataobs
+        self.forwardModelBatched(theta=theta, prediction=residuals, batch=batch)
+
+        # subtract from data observation
+        residuals -= self.gDataObsBatched
+
+        # call data method to calculate the l2 norm
+        self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
+                                      residual=True, batch=batch)
+        # return the likelihood
+        return likelihood

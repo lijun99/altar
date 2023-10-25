@@ -193,6 +193,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         calculate data likelihood and add it to step.prior or step.data
         """
         # model has to define this
+        print ("Warning: the model has no cuEvalLikelihood defined!")
         return self
 
 
