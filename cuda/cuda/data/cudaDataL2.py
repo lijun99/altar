@@ -42,6 +42,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     dtype_cd = altar.properties.str(default=None)
     dtype_cd.doc = "the data type (float32/64) for Cd computations if different from others"
 
+    datafile_dataset = altar.properties.str(default=None)
+    datafile_dataset.doc = "the datafile dataset name if the file type is h5"
 
     # the norm to use for computing the data log likelihood
     # the only implementation that works for now
@@ -74,7 +76,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
 
         # load the observed data to numpy array
-        self.dataobs = self.loadFile(filename=self.data_file, shape=observations)
+        self.dataobs = self.loadFile(filename=self.data_file, shape=observations,
+                                     dataset=self.datafile_dataset)
 
         # load the data covariance
         if self.cd_file is not None:
@@ -86,16 +89,15 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             #     cd_inv = self.dataobs.gcd_inv
             #     if isinstance(cd_inv, float):
 
-            ### delay creation of cd only if cp is considered
-            ## self.cd = numpy.zeros(shape=(observations, observations), dtype=self.dtype_cd)
-            ## numpy.fill_diagonal(self.cd, self.cd_std**2)
+            # # delay creation of cd only if cp is considered
+            # self.cd = numpy.zeros(shape=(observations, observations), dtype=self.dtype_cd)
+            # numpy.fill_diagonal(self.cd, self.cd_std**2)
 
         # compute inverse of covariance, normalization
         self.initializeCovariance()
 
         # all done
         return self
-
 
     def cuEvalLikelihood(self, prediction, likelihood, residual=True, batch=None):
         """
@@ -119,10 +121,10 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             prediction -= self.gdataObsBatch
 
         # call L2 norm to calculate the likelihood
-        normalization = self.normalization # norm constant
+        normalization = self.normalization  # norm constant
 
-        likelihood = self.norm.cuEvalLikelihood(data=prediction, constant=normalization,
-                out=likelihood, batch=batch)
+        likelihood = self.norm.cuEvalLikelihood(
+            data=prediction, constant=normalization, out=likelihood, batch=batch)
 
         # all done
         return likelihood
@@ -181,7 +183,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             # use .txt for non-binary input
             if suffix == '.txt':
                 # load to a cpu array
-                cpuData = numpy.loadtxt(file.uri.path, dtype = dtype).reshape(shape)
+                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype).reshape(shape)
             # binary data
             elif suffix == '.bin' or suffix == '.dat':
                 # read and reshape, users need to check the precision
@@ -200,7 +202,6 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
                 h5file.close()
         # all done
         return cpuData
-
 
     def initializeCovariance(self):
         """
@@ -239,7 +240,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
 
         # merge Cchi to data
-        if self.merge_cd_to_data :
+        if self.merge_cd_to_data:
             gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=gDataVec)
 
         # make duplicates of data vector to a matrix
@@ -247,8 +248,6 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # all done
         return self
-
-
 
     def updateCovariance(self, cp=None):
         """
@@ -271,12 +270,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             # add cp to cd
             gCchi += gCp
 
-        #self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi')
+        # self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi')
 
         # Inverse
         gCchi.inverse()
 
-        #self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi inverse')
+        # self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi inverse')
 
         # Choleseky decomposition
         gCchi.Cholesky(uplo=cublas.FillModeUpper)
@@ -286,7 +285,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         self.normalization = -0.5*log(2*π)*observations + logdet
 
         # keep a copy of inverse Cchi to gcd_inv for other operations
-        self.gcd_inv = gCchi if gCchi.dtype == self.precision else gCchi.copy_to_host(dtype=self.precision)
+        self.gcd_inv = (gCchi if gCchi.dtype == self.precision
+                        else gCchi.copy_to_host(dtype=self.precision))
 
         # load data to gpu
         gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
@@ -309,7 +309,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         import numpy
         name = name or 'Matrix'
         cm = matrix.copy_to_host(type='numpy')
-        eval= numpy.linalg.eigvalsh(cm)
+        eval = numpy.linalg.eigvalsh(cm)
         n = eval.shape[0]
         if eval[n-1] < 0:
             print(name, " is not positive definite!")
@@ -321,7 +321,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     def mergeCdtoData(self, cd_inv, data):
         """
         Merge the data covariance matrix to observed data
-        :param cd_inv: the inverse of covariance matrix in Cholesky-decomposed form, with Lower matrix filled
+        :param cd_inv: the inverse of covariance matrix in Cholesky-decomposed form,
+                       with lower matrix filled
         :param data: raw observed data
         :return:  cd_inv*data, a cuda vector
         """
@@ -334,22 +335,23 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         else:
             # Cd^{-1} = LL^T
             # d -> d (1, obs) x L (obs, obs)
-            cublas.trmv(A=cd_inv, x=gDataVec,
+            cublas.trmv(A=cd_inv,
+                        x=gDataVec,
                         uplo=cublas.FillModeUpper,
-                        transa = cublas.OpTrans
+                        transa=cublas.OpTrans
                         )
             # all done
         return gDataVec
 
     # local variables
-    ### from cpu class
+    # # from cpu class
     # dataobs = None
     # cd = None
     # cd_inv = None
-    ### gpu
+    # gpu
     normalization = 0
     precision = None
-    gdataObsBatch = None # kept in memory
-    gcd_inv = None # kept in memory, can be released upon request
+    gdataObsBatch = None  # kept in memory
+    gcd_inv = None  # kept in memory, can be released upon request
 
 # end of file
