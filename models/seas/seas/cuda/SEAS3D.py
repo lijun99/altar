@@ -161,9 +161,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             if key.startswith("log10_"):
                 val = 10**val
                 key = key[6:]
-            # check for km to m conversion
+            # check for 100km to 1m conversion
             if key in ["mid_transition", "deep_transition", "boundary_width"]:
-                val = val * 1e3
+                val = val * 1e5
             # apply update
             rheo_kw_args[key] = val
         # return new object instance
