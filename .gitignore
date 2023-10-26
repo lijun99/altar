@@ -49,4 +49,7 @@ BetaStatistics.txt
 # availabel upon request, due to large sizes
 models/seismic/examples/kinematicG_9patch/
 
+# VS Code
+.vscode/
+
 # end of file
