@@ -233,7 +233,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # log timings
         ticks.append(perf_counter())
-        infostr = (f"Ran forwardModelBatched in {ticks[-1] - ticks[0]}s\n"
+        infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s\n"
                    f"(Rheology instances = {ticks[1] - ticks[0]}s, "
                    f"Simulation instances = {ticks[2] - ticks[1]}s, "
                    f"Stacked parameters = {ticks[3] - ticks[2]}s, "
