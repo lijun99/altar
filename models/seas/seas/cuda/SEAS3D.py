@@ -136,12 +136,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # print timings
         ticks.append(perf_counter())
         channel = self.info
-        channel.log(f"Initialized SEAS3D in {ticks[-1] - ticks[0]}s\n"
-                    f"(Configuration = {ticks[1] - ticks[0]}s, "
-                    f"Python instances = {ticks[2] - ticks[1]}s, "
-                    f"GPU allocations = {ticks[3] - ticks[2]}s, "
-                    f"CUDA instance = {ticks[4] - ticks[3]}s, "
-                    f"Farfield effects = {ticks[5] - ticks[4]}s)")
+        channel.log(f"Initialized SEAS3D in {ticks[-1] - ticks[0]}s")
+        # channel.log(f"\n(Configuration = {ticks[1] - ticks[0]}s, "
+        #             f"Python instances = {ticks[2] - ticks[1]}s, "
+        #             f"GPU allocations = {ticks[3] - ticks[2]}s, "
+        #             f"CUDA instance = {ticks[4] - ticks[3]}s, "
+        #             f"Farfield effects = {ticks[5] - ticks[4]}s)")
 
         # done
         return self
@@ -233,15 +233,16 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # log timings
         ticks.append(perf_counter())
-        infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s\n"
-                   f"(Rheology instances = {ticks[1] - ticks[0]}s, "
-                   f"Simulation instances = {ticks[2] - ticks[1]}s, "
-                   f"Stacked parameters = {ticks[3] - ticks[2]}s, "
-                   f"CUDA forward model = {ticks[4] - ticks[3]}s")
-        if self.precomputed_locked_disps:
-            infostr += ")"
-        else:
-            infostr += f", Farfield effects = {ticks[5] - ticks[4]}s)"
+        infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s"
+                   f"(CUDA forward model = {ticks[4] - ticks[3]}s)")
+        # infostr += (f"\n(Rheology instances = {ticks[1] - ticks[0]}s, "
+        #             f"Simulation instances = {ticks[2] - ticks[1]}s, "
+        #             f"Stacked parameters = {ticks[3] - ticks[2]}s, "
+        #             f"CUDA forward model = {ticks[4] - ticks[3]}s")
+        # if self.precomputed_locked_disps:
+        #     infostr += ")"
+        # else:
+        #     infostr += f", Farfield effects = {ticks[5] - ticks[4]}s)"
         channel = self.info
         channel.log(infostr)
 
