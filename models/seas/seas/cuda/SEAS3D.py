@@ -36,6 +36,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # call the super class initialization
         # super class method loads and initializes dataobs
         super().initialize(application=application)
+        self.gpuprec = application.job.gpuprecision
 
         # parse configuration
         ticks = []
@@ -52,45 +53,59 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # allocate memory
         ticks.append(perf_counter())
         SEC_PER_YEAR = 86400 * 365.25
-        self.t_obs_sec = altar.cuda.vector(source=self.sim.t_obs * SEC_PER_YEAR)
+        self.t_obs_sec = altar.cuda.vector(
+            source=(self.sim.t_obs * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
         ievents = ([self.sim.ix_break_joint[-2]]
                    + [i for i in self.sim.ix_eq_joint if i > self.sim.ix_break_joint[-2]]
                    + [self.sim.ix_break_joint[-1]])
         tevents = self.sim.t_eval_joint[ievents] - self.sim.t_eval_joint[ievents[0]]
-        self.t_events = \
-            altar.cuda.vector(source=tevents * SEC_PER_YEAR)
+        self.t_events = altar.cuda.vector(
+            source=(tevents * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
         self.delta_tau_bounded_indices = \
             altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
         self.ix_eq_joint = \
             altar.cuda.vector(source=self.sim.ix_eq_joint.astype("int32"))
-        self.K_inner_inner_onfault = \
-            altar.cuda.vector(source=np.ascontiguousarray(self.fault.K_inner_inner[:, :2, :, :2]))
+        self.K_inner_inner_onfault = altar.cuda.vector(
+            source=np.ascontiguousarray(self.fault.K_inner_inner[:, :2, :, :2],
+                                        dtype=self.gpuprec))
         K_inner_asperities_v_plate = self.sim.K_inner_asperities_v_plate.T.ravel()
         self.K_inner_asperities_v_plate = \
-            altar.cuda.vector(source=np.ascontiguousarray(K_inner_asperities_v_plate))
+            altar.cuda.vector(source=np.ascontiguousarray(K_inner_asperities_v_plate,
+                                                          dtype=self.gpuprec))
         v_plate_ddcs_proj_eff_inner = \
             self.sim.v_plate_ddcs_proj_eff[self.fault.s_inner, :].T.ravel()
         self.v_plate_ddcs_proj_eff_inner = \
-            altar.cuda.vector(source=np.ascontiguousarray(v_plate_ddcs_proj_eff_inner))
+            altar.cuda.vector(source=np.ascontiguousarray(v_plate_ddcs_proj_eff_inner,
+                                                          dtype=self.gpuprec))
         state_init_arr = np.concatenate([np.zeros(2 * self.fault.inner_num_patches),
                                          np.log(self.sim.v_init / self.rheo.v_0).T.ravel()])
-        self.state_init = altar.cuda.vector(source=state_init_arr)
+        self.state_init = altar.cuda.vector(
+            source=state_init_arr.astype(self.gpuprec, order="C", copy=False))
         self.sim_state = altar.cuda.vector(
-            shape=application.job.chains * self.sim.t_obs.size * self.fault.inner_num_patches * 4)
+            shape=application.job.chains * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
+            dtype=self.gpuprec)
         G_surf = self.sim.G_surf[:, :, self.sim.fault.s_inner, :] \
             .transpose(3, 2, 1, 0) \
             .reshape(2 * self.fault.inner_num_patches, 3 * self.sim.n_observers)
-        self.G_surf = altar.cuda.matrix(source=np.ascontiguousarray(G_surf))
+        self.G_surf = altar.cuda.matrix(source=np.ascontiguousarray(G_surf, dtype=self.gpuprec))
         self.obs_disp = altar.cuda.matrix(
-            shape=(application.job.chains, self.sim.t_obs.size * 3 * self.sim.n_observers))
+            shape=(application.job.chains, self.sim.t_obs.size * 3 * self.sim.n_observers),
+            dtype=self.gpuprec)
         self.alpha_h = \
-            altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches)
+            altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
+                              dtype=self.gpuprec)
         self.delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=application.job.chains * self.sim.n_eq * self.fault.inner_num_patches * 2)
+            shape=application.job.chains * self.sim.n_eq * self.fault.inner_num_patches * 2,
+            dtype=self.gpuprec)
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(perf_counter())
-        self.cmodel = libcudaseas.ratedependent.model_double()
+        if self.gpuprec == "float64":
+            self.cmodel = libcudaseas.ratedependent.model_double()
+        elif self.gpuprec == "float32":
+            self.cmodel = libcudaseas.ratedependent.model_float()
+        else:
+            raise NotImplementedError
         self.cmodel.initialize(
             application.job.chains,  # = max batch size
             self.systems_batch,
@@ -125,13 +140,15 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         else:
             surf_disps_locked = get_surface_displacements(
                 self.sim.locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :])
-            self.dataobs.dataobs[:] -= surf_disps_locked.T.ravel()
+            self.dataobs.dataobs[:] -= \
+                surf_disps_locked.T.ravel().astype(self.gpuprec, order="C", copy=False)
             self.precomputed_locked_disps = True
         surf_disps_outer = get_surface_displacements(
             self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
         surf_disps_lower = get_surface_displacements(
             self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
-        self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower).T.ravel()
+        self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower
+                                    ).T.ravel().astype(self.gpuprec, order="C", copy=False)
 
         # print timings
         ticks.append(perf_counter())
@@ -194,7 +211,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(perf_counter())
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        self.alpha_h.copy_from_host(source=np.ascontiguousarray(alpha_h_vec_stacked))
+        self.alpha_h.copy_from_host(
+            source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
         delta_tau_bounded_compressed_stacked = \
             np.stack([s.delta_tau_bounded_compressed for s in sims])
         delta_tau_bound_comp_div_alpha = \
@@ -204,7 +222,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
         self.delta_tau_div_alpha_h.copy_from_host(
-            source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha))
+            source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha, dtype=self.gpuprec))
 
         # call CUDA forward model
         ticks.append(perf_counter())
@@ -219,7 +237,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             ticks.append(perf_counter())
             surf_disps_locked = np.stack([get_surface_displacements(
                 sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]).T.ravel()
-                for i in range(batch)], axis=0)
+                for i in range(batch)], axis=0, dtype=self.gpuprec)
             prediction += altar.cuda.matrix(source=surf_disps_locked)
 
         # multiply simulated observations with weights to match required cudaDataL2
@@ -233,7 +251,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # log timings
         ticks.append(perf_counter())
-        infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s"
+        infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s "
                    f"(CUDA forward model = {ticks[4] - ticks[3]}s)")
         # infostr += (f"\n(Rheology instances = {ticks[1] - ticks[0]}s, "
         #             f"Simulation instances = {ticks[2] - ticks[1]}s, "
