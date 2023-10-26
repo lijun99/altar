@@ -125,6 +125,10 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     // if(cta.thread_rank()==0)
     //     printf("spinup cycles finished in %d steps, convergence is %s\n", icycle, converged ? "true" : "false");
 
+    // TODO add warning output if not converged
+    if ((cta.thread_rank() == 0) && !converged)
+        printf("WARNING: spinup_solver did not converge\n");
+
     //converged, last run for dense_out
     if(dense_out)
     {
