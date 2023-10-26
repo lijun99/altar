@@ -25,7 +25,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     """
     # configurable properties
     config_file = altar.properties.str()
-    systems_batch = altar.properties.int()
+    systems_batch = altar.properties.int(default=None)
 
     @altar.export
     def initialize(self, application):
@@ -37,6 +37,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # super class method loads and initializes dataobs
         super().initialize(application=application)
         self.gpuprec = application.job.gpuprecision
+        channel = self.info
+        if self.systems_batch is None:
+            self.systems_batch = application.job.chains
 
         # parse configuration
         ticks = []
@@ -106,6 +109,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.cmodel = libcudaseas.ratedependent.model_float()
         else:
             raise NotImplementedError
+        channel.log(f"Running in {self.gpuprec} precision")
         self.cmodel.initialize(
             application.job.chains,  # = max batch size
             self.systems_batch,
@@ -152,7 +156,6 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # print timings
         ticks.append(perf_counter())
-        channel = self.info
         channel.log(f"Initialized SEAS3D in {ticks[-1] - ticks[0]}s")
         # channel.log(f"\n(Configuration = {ticks[1] - ticks[0]}s, "
         #             f"Python instances = {ticks[2] - ticks[1]}s, "
