@@ -35,7 +35,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # call the super class initialization
         # super class method loads and initializes dataobs
+        # ask dataobs not to create duplicated data vectors
+        self.dataobs.provide_batched_data = True
+        # the model will take care of the cd_inv scaling instead
+        self.dataobs.merge_cd_to_data = False
         super().initialize(application=application)
+
         self.gpuprec = application.job.gpuprecision
         channel = self.info
         if self.systems_batch is None:
@@ -151,8 +156,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
         surf_disps_lower = get_surface_displacements(
             self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
+        # actually, no need for type conversion for numpy objects
+        # altar.cuda.matrix/vector will take care of type conversion when initialized
         self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower
-                                    ).T.ravel().astype(self.gpuprec, order="C", copy=False)
+                                    ).T.ravel() #.astype(self.gpuprec, order="C", copy=False)
+        # after any change of dataobs, update to cuda objects is needed
+        self.dataobs.initializeCovariance()
 
         # print timings
         ticks.append(perf_counter())
@@ -245,10 +254,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # multiply simulated observations with weights to match required cudaDataL2
         # behavior merge_cd_to_data = True (whitening transformation)
-        if isinstance(self.dataobs.gcd_inv, float):
-            prediction *= self.dataobs.gcd_inv
-        else:
-            raise NotImplementedError
+        ## Delay the cd scaling later
+        ## if isinstance(self.dataobs.gcd_inv, float):
+        ##    prediction *= self.dataobs.gcd_inv
+        ## else:
+        ##     raise NotImplementedError
 
         # TODO subsample the CUDA forward model for each station according to its availability
 
@@ -287,8 +297,19 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # subtract from data observation
         residuals -= self.dataobs.gdataObsBatch
 
+        # consider cd_inv as a constant
+        if isinstance(self.dataobs.gcd_inv, float):
+            residuals *= self.dataobs.gcd_inv
+        else:
+            raise NotImplementedError
+
         # call data method to calculate the l2 norm
         self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
                                       residual=True, batch=batch)
+
+        # debug likelihood
+        # print("data likelihood")
+        # likelihood.print()
+
         # return the likelihood
         return likelihood

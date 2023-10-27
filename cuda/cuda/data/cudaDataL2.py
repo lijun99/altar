@@ -45,6 +45,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     datafile_dataset = altar.properties.str(default=None)
     datafile_dataset.doc = "the datafile dataset name if the file type is h5"
 
+
     # the norm to use for computing the data log likelihood
     # the only implementation that works for now
     norm = altar.cuda.norms.norm()
@@ -52,7 +53,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     norm.doc = "l2 norm for calculating likelihood"
 
     # constant variables
+    # whether merge cd/cp to observed data; to avoid repeating cd^{-1} d,
+    #     e.g. for models with d = G m
     merge_cd_to_data = True
+    # whether to allocate a data matrix (samples, observations) to keep copies of the data vector
+    #     only set it to false when the model deals with large amount of data
+    provide_batched_data = True
 
     @altar.export
     def initialize(self, application):
@@ -118,7 +124,14 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # subtract dataobs from prediction to get residual
         if not residual:
-            prediction -= self.gdataObsBatch
+            # check whether batched data is available
+            if self.provide_batched_data :
+                prediction -= self.gdataObsBatch
+            else:
+                # not, create it on the fly
+                gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
+                gdataObsBatch.duplicateVector(src=self.self.gDataVec)
+                prediction -= gdataObsBatch
 
         # call L2 norm to calculate the likelihood
         normalization = self.normalization  # norm constant
@@ -211,7 +224,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
         samples = self.samples
 
-        self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
+        if self.provide_batched_data:
+            self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
 
         # initialize Cd
         if isinstance(self.gcd_inv, float):
@@ -237,14 +251,15 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # prepare self.gdataObsBatch
         # load data to gpu
-        gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
+        self.gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
 
         # merge Cchi to data
         if self.merge_cd_to_data:
-            gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=gDataVec)
+            self.gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=self.gDataVec)
 
         # make duplicates of data vector to a matrix
-        self.gdataObsBatch.duplicateVector(src=gDataVec)
+        if self.provide_batched_data:
+            self.gdataObsBatch.duplicateVector(src=self.gDataVec)
 
         # all done
         return self
@@ -289,13 +304,13 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
                         else gCchi.copy_to_host(dtype=self.precision))
 
         # load data to gpu
-        gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
+        self.gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
 
         # merge Cchi to data
-        gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=gDataVec)
+        self.gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=self.gDataVec)
 
         # make duplicates of data vector to a matrix
-        self.gdataObsBatch.duplicateVector(src=gDataVec)
+        self.gdataObsBatch.duplicateVector(src=self.gDataVec)
 
         # all done
         return self
@@ -328,20 +343,20 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         """
 
         # make a copy of observed data
-        gDataVec = data.clone()
+        self.gDataVec = data.clone()
 
         if isinstance(cd_inv, float):
-            gDataVec *= cd_inv
+            self.gDataVec *= cd_inv
         else:
             # Cd^{-1} = LL^T
             # d -> d (1, obs) x L (obs, obs)
             cublas.trmv(A=cd_inv,
-                        x=gDataVec,
+                        x=self.gDataVec,
                         uplo=cublas.FillModeUpper,
                         transa=cublas.OpTrans
                         )
             # all done
-        return gDataVec
+        return self.gDataVec
 
     # local variables
     # # from cpu class
@@ -351,7 +366,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     # gpu
     normalization = 0
     precision = None
-    gdataObsBatch = None  # kept in memory
+    gDataVec = None # keep the data vector in memory
+    gdataObsBatch = None  # keep the duplicates (samples) of data vectors in memory
     gcd_inv = None  # kept in memory, can be released upon request
 
 # end of file
