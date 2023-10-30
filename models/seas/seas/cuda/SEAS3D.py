@@ -25,6 +25,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     """
     # configurable properties
     config_file = altar.properties.str()
+    max_batch = altar.properties.int(default=None)
     systems_batch = altar.properties.int(default=None)
 
     @altar.export
@@ -43,6 +44,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         self.gpuprec = application.job.gpuprecision
         channel = self.info
+        if self.max_batch is None:
+            self.max_batch = application.job.chains
         if self.systems_batch is None:
             self.systems_batch = application.job.chains
 
@@ -116,7 +119,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             raise NotImplementedError
         channel.log(f"Running in {self.gpuprec} precision")
         self.cmodel.initialize(
-            application.job.chains,  # = max batch size
+            self.max_batch,
             self.systems_batch,
             self.sim.n_cycles_max,
             self.sim.t_obs.size,
