@@ -36,7 +36,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # call the super class initialization
         # super class method loads and initializes dataobs
-        # ask dataobs not to create duplicated data vectors
+        # ask dataobs to create duplicated data vectors
         self.dataobs.provide_batched_data = True
         # the model will take care of the cd_inv scaling instead
         self.dataobs.merge_cd_to_data = False
@@ -152,17 +152,13 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         else:
             surf_disps_locked = get_surface_displacements(
                 self.sim.locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :])
-            self.dataobs.dataobs[:] -= \
-                surf_disps_locked.T.ravel().astype(self.gpuprec, order="C", copy=False)
+            self.dataobs.dataobs[:] -= surf_disps_locked.T.ravel()
             self.precomputed_locked_disps = True
         surf_disps_outer = get_surface_displacements(
             self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
         surf_disps_lower = get_surface_displacements(
             self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
-        # actually, no need for type conversion for numpy objects
-        # altar.cuda.matrix/vector will take care of type conversion when initialized
-        self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower
-                                    ).T.ravel() #.astype(self.gpuprec, order="C", copy=False)
+        self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower).T.ravel()
         # after any change of dataobs, update to cuda objects is needed
         self.dataobs.initializeCovariance()
 
@@ -254,14 +250,6 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]).T.ravel()
                 for i in range(batch)], axis=0, dtype=self.gpuprec)
             prediction += altar.cuda.matrix(source=surf_disps_locked)
-
-        # multiply simulated observations with weights to match required cudaDataL2
-        # behavior merge_cd_to_data = True (whitening transformation)
-        ## Delay the cd scaling later
-        ## if isinstance(self.dataobs.gcd_inv, float):
-        ##    prediction *= self.dataobs.gcd_inv
-        ## else:
-        ##     raise NotImplementedError
 
         # TODO subsample the CUDA forward model for each station according to its availability
 
