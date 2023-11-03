@@ -152,13 +152,14 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         else:
             surf_disps_locked = get_surface_displacements(
                 self.sim.locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :])
-            self.dataobs.dataobs[:] -= surf_disps_locked.T.ravel()
+            self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_locked).T.ravel()
             self.precomputed_locked_disps = True
         surf_disps_outer = get_surface_displacements(
             self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
         surf_disps_lower = get_surface_displacements(
             self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
-        self.dataobs.dataobs[:] -= (surf_disps_outer + surf_disps_lower).T.ravel()
+        self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_outer + surf_disps_lower
+                                                           ).T.ravel()
         # after any change of dataobs, update to cuda objects is needed
         self.dataobs.initializeCovariance()
 
@@ -243,12 +244,28 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         prediction.data,
                                         batch)
 
+        # reset observations to zero at beginning and at earthquakes
+        # TODO: do this on GPU
+        temp = prediction.copy_to_host(type="numpy").reshape(
+            -1, self.sim.t_obs.size, 3, self.sim.n_observers)
+        slips_obs = np.logical_and(self.sim.t_obs.min() <= self.sim.eq_df.index,
+                                   self.sim.t_obs.max() > self.sim.eq_df.index)
+        n_slips_obs = slips_obs.sum()
+        temp -= temp[:, 0, :, :][:, None, :, :]
+        if slips_obs.sum() > 0:
+            i_slips_obs = [np.argmax(self.sim.t_obs >= t_eq) for t_eq
+                           in self.sim.eq_df.index.values[slips_obs]]
+            for i in range(n_slips_obs):
+                temp[:, i_slips_obs[i]:, :, :] -= temp[:, i_slips_obs[i], :, :][:, None, :, :]
+        prediction.copy_from_host(temp)
+
         # add locked slip if it was varied for samples
         if not self.precomputed_locked_disps:
             ticks.append(perf_counter())
-            surf_disps_locked = np.stack([get_surface_displacements(
-                sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]).T.ravel()
-                for i in range(batch)], axis=0, dtype=self.gpuprec)
+            surf_disps_locked = np.stack(
+                [self.sim.zero_obs_at_eq(get_surface_displacements(
+                    sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]
+                 )).T.ravel() for i in range(batch)], axis=0, dtype=self.gpuprec)
             prediction += altar.cuda.matrix(source=surf_disps_locked)
 
         # TODO subsample the CUDA forward model for each station according to its availability
