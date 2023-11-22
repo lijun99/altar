@@ -224,16 +224,24 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
         samples = self.samples
 
+        self.gDataVec = altar.cuda.vector(shape=observations, dtype=self.precision)
+
         if self.provide_batched_data:
             self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
+
+        self.updateCovariance()
+
+        # all done
+        return self
+
+    def updateCovariance(self, cp=None):
 
         # initialize Cd
         if isinstance(self.gcd_inv, float):
             self.updateCovarianceConstantCd()
         else:
-            self.updateCovariance()
+            self.updateCovarianceMat(cp=cp)
 
-        # all done
         return self
 
     def updateCovarianceConstantCd(self):
@@ -251,7 +259,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # prepare self.gdataObsBatch
         # load data to gpu
-        self.gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
+        self.gDataVec.copy_from_host(source=self.dataobs)
 
         # merge Cchi to data
         if self.merge_cd_to_data:
@@ -264,7 +272,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # all done
         return self
 
-    def updateCovariance(self, cp=None):
+    def updateCovarianceMat(self, cp=None):
         """
         Update the data covariance C_chi = Cd + Cp
         :param cp: cuda matrix with shape(obs, obs), data covariance due to model uncertainty

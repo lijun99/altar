@@ -161,7 +161,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_outer + surf_disps_lower
                                                            ).T.ravel()
         # after any change of dataobs, update to cuda objects is needed
-        self.dataobs.initializeCovariance()
+        # self.dataobs.updateCovariance()
 
         # print timings
         ticks.append(perf_counter())
@@ -299,25 +299,40 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # get the data storage for data prediction or residual
         residuals = self.obs_disp
 
-        # call forward model to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=theta, prediction=residuals, batch=batch)
+        # solve forward modeling in batches
+        # get the max batch size and allocate temporary input/out for a batch
+        max_batch_size = self.systems_batch
+        parameters = theta.shape[1]
+        theta_batch = altar.cuda.matrix(shape=(max_batch_size, parameters), dtype=self.gpuprec)
+        likelihood_batch = altar.cuda.vector(shape=max_batch_size, dtype=self.gpuprec)
 
-        # subtract from data observation
-        residuals -= self.dataobs.gdataObsBatch
+        # iterate over batches
+        for system_start in range(0, batch, max_batch_size):
+            # get the actual batch size
+            batch_size = min(max_batch_size, batch-system_start)
+            # copy theta (a tile)
+            theta_batch.copytile(src=theta, src_start=(system_start, 0), shape=(batch_size, parameters))
+            # call forward model to calculate the data prediction or its difference between dataobs
+            self.forwardModelBatched(theta=theta_batch, prediction=residuals, batch=batch_size)
+
+            # call data method to calculate the l2 norm
+            print(residuals.shape, likelihood_batch.shape, batch_size)
+            self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood_batch,
+                                          residual=True, batch=batch_size)
+            # copy likelihood to global
+            likelihood.copytile(likelihood_batch, start=system_start, size=batch_size)
 
         # consider cd_inv as a constant
-        if isinstance(self.dataobs.gcd_inv, float):
-            residuals *= self.dataobs.gcd_inv
+        cd_inv = self.dataobs.gcd_inv
+        print(type(cd_inv), cd_inv)
+        if isinstance(cd_inv, float):
+            likelihood *= cd_inv
         else:
             raise NotImplementedError
 
-        # call data method to calculate the l2 norm
-        self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
-                                      residual=True, batch=batch)
-
         # debug likelihood
-        # print("data likelihood")
-        # likelihood.print()
+        print("data likelihood")
+        likelihood.print()
 
         # return the likelihood
         return likelihood
