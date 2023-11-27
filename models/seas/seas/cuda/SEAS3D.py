@@ -27,6 +27,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     config_file = altar.properties.str()
     max_batch = altar.properties.int(default=None)
     systems_batch = altar.properties.int(default=None)
+    v_init_file = altar.properties.str(default=None)
 
     @altar.export
     def initialize(self, application):
@@ -60,6 +61,20 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.rheo = RateStateSteadyLogarithmic(**self.rheo_dict)
         self.fault = Fault3D(**self.fault_dict)
         self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
+
+        # load initial velocity
+        if self.v_init_file is not None:
+            try:
+                v_init_loaded = np.load(self.v_init_file)
+                assert v_init_loaded.shape == \
+                    self.sim.v_plate_ddcs_proj_eff[self.sim.fault.s_inner, :].shape
+            except AssertionError:
+                print("Couldn't load initial velocities due to shape mismatch.")
+            except FileNotFoundError:
+                print("Couldn't find initial velocities file.")
+            else:
+                self.sim.v_init = v_init_loaded
+                print(f"Loaded initial velocities from '{self.v_init_file}'")
 
         # allocate memory
         ticks.append(perf_counter())
