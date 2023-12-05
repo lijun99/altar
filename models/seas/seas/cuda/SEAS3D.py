@@ -259,6 +259,14 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # reset observations to zero at beginning and at earthquakes
         # TODO: do this on GPU
+        """
+        Comment: to implement the following on GPU 
+        It's better to decide the logic in initialize, and provide 
+        num_t_eq - total number of starting point and earthquakes, t_eq
+        t_eq_indices - integer vector [num_t_eq], the indices of t_eq in t_obs, e.g, [0, 1000, ...]  
+        add these two variables to self.cmodel.initialize as inputs
+            I have added a subtract_displacement_from_teq method inside   
+        """
         temp = prediction.copy_to_host(type="numpy").reshape(
             -1, self.sim.t_obs.size, 3, self.sim.n_observers)
         slips_obs = np.logical_and(self.sim.t_obs.min() <= self.sim.eq_df.index,

@@ -119,6 +119,10 @@ class RateDependent {
         // observations
         int num_stations; // number of observers [-]
 
+        // for subtracting displacements at t_eq
+        int num_t_eq;
+        int* t_eq_indices; //indices of t_eq in t_obs
+
     }; //end of class RateDependent
 
 } // end of namespace

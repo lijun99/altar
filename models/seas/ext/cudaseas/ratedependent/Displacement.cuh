@@ -415,6 +415,66 @@ void compute_displacement_impl2(cublasHandle_t handle,
 // TO BE IMPLEMENTED
 
 
+// cuda kernel to transpose d[d0, d1, d2] to d'[d1, d0, d2]
+template <typename T>
+__global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
+     const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
+     const int * t_eq_indices, // indices of t_eq inside t_obs
+     const int num_t_eq)
+{
+    // get sample/system index
+    int system = blockIdx.x;
+    // iterate over observations
+    for (auto i_obs = threadIdx.x; i_obs < observations; i_obs += blockIdx.x)
+    {
+        // iterate over t_eq
+        for(auto i_t_eq = 0; i_t_eq < num_t_eq; i_t_eq++)
+        {
+            // get the start index
+            auto it_start = t_eq_indices[i_t_eq];
+            // get the end index (+1)
+            auto it_end = (i_t_eq == num_t_eq-1) ? num_t_obs : t_eq_indices[i_t_eq+1];
+            // get obs_disp value at i_t_eq
+            auto offset = obs_disp[(system*num_t_obs+it_start)*observations+i_obs];
+            // iterate over all time points
+            for(auto it = it_start; it < it_end; it++)
+                obs_disp[(system*num_t_obs+it)*observations+i_obs] -= offset;
+        }
+    }
+    // all done
+}
+
+// subtract surface displacements from t=t_eq
+//
+template<typename T>
+void subtract_displacement_from_teq(
+     T*  obs_disp, // (num_systems, num_t_obs, 3*num_stations)
+     const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
+     const int * t_eq_indices, // indices of t_eq inside t_obs
+     const int num_t_eq // total number of equations in t_obs
+)
+{
+    int threads;
+    if(observations <= 32)
+        threads = 32;
+    else if (observations <= 64)
+        threads = 64;
+    else if (observations <= 128)
+        threads =128;
+    else if (observations <= 256)
+        threads = 256;
+    else if (observations <=512)
+        threads = 512;
+    else
+        threads = 1024;
+
+    subtract_displacement_from_teq_kernel<<<num_systems, threads>>>(
+        obs_disp, num_systems, num_t_obs, observations,
+        t_eq_indices, num_t_eq);
+    cudaCheckError("subtract_displacement_from_teq_kernel");
+}
+
+
 } // end of namespace
 
 #endif
