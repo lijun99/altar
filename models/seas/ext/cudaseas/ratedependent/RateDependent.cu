@@ -146,12 +146,12 @@ void RateDependent<T>::forward_model_batch(
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
 
     // uncomment following to use the displacement subtraction from t_num_eq
-
+    /*
     if(num_t_eq > 0)
         subtract_displacement_from_teq(
             obs_disp, num_systems, num_t_obs, 3 * num_stations,
             t_eq_indices, num_t_eq);
-
+    */
 
 }
 
