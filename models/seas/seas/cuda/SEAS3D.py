@@ -161,7 +161,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_outer + surf_disps_lower
                                                            ).T.ravel()
         # after any change of dataobs, update to cuda objects is needed
-        # self.dataobs.updateCovariance()
+        self.dataobs.updateCovariance()
 
         # print timings
         ticks.append(perf_counter())
@@ -332,9 +332,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             # compute the residual
             data_obs = self.dataobs.gDataVec
             observations = data_obs.shape
+
             # print("data_obs", data_obs.shape)
             # print("data_pre")
             # predictions.print()
+
             predictions.subtractVector(vector=data_obs, size=(batch_size, observations))
             # call data method to calculate the l2 norm
             self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
