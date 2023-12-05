@@ -120,6 +120,22 @@ void RateDependent<T>::forward_model_batch(
         // cudaDeviceSynchronize();
     }
 
+    // save the t=0 sim_state for the first sample to state_int, to be used the init
+    // state_int [2(slip/stress), 2(slip_components), patches]
+    // sim_state [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
+    // only save slip rate (stress)
+    auto state_init_copy_start = state_init + 2*num_inner_patches;
+    auto sim_state_copy_start = sim_state + 2*num_inner_patches;
+    cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
+        2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
+
+    // cudaDeviceSynchronize();
+    // for(auto i=0; i<4*num_inner_patches; i++)
+    //    std::cout << i<< " "
+    //        << state_init[i] << " "
+    //        << sim_state[i] << " "
+    //        << sim_state[num_t_obs*4*num_inner_patches+i] << "\n";
+
     // convert logairthmic velocity to linear one
     convert_slip_rate<T>(sim_state, num_systems, num_t_obs, num_inner_patches, v_0);
 
@@ -128,6 +144,14 @@ void RateDependent<T>::forward_model_batch(
     compute_displacement_impl1(
         obs_disp, sim_state, G_surf, num_systems, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
+
+    // uncomment following to use the displacement subtraction from t_num_eq
+
+    if(num_t_eq > 0)
+        subtract_displacement_from_teq(
+            obs_disp, num_systems, num_t_obs, 3 * num_stations,
+            t_eq_indices, num_t_eq);
+
 
 }
 
