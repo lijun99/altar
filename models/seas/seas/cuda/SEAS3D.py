@@ -36,8 +36,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # call the super class initialization
         # super class method loads and initializes dataobs
-        # ask dataobs to create duplicated data vectors
-        self.dataobs.provide_batched_data = True
+        # ask dataobs not to create duplicated data vectors
+        self.dataobs.provide_batched_data = False
         # the model will take care of the cd_inv scaling instead
         self.dataobs.merge_cd_to_data = False
         super().initialize(application=application)
@@ -92,22 +92,22 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                          np.log(self.sim.v_init / self.rheo.v_0).T.ravel()])
         self.state_init = altar.cuda.vector(
             source=state_init_arr.astype(self.gpuprec, order="C", copy=False))
-        self.sim_state = altar.cuda.vector(
-            shape=application.job.chains * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
-            dtype=self.gpuprec)
+
         G_surf = self.sim.G_surf[:, :, self.sim.fault.s_inner, :] \
             .transpose(3, 2, 1, 0) \
             .reshape(2 * self.fault.inner_num_patches, 3 * self.sim.n_observers)
         self.G_surf = altar.cuda.matrix(source=np.ascontiguousarray(G_surf, dtype=self.gpuprec))
+
+        # simulate state - yeval in ode
+        self.sim_state = altar.cuda.vector(
+            shape=self.max_batch * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
+            dtype=self.gpuprec)
+
+        # predicted observations
         self.obs_disp = altar.cuda.matrix(
-            shape=(application.job.chains, self.sim.t_obs.size * 3 * self.sim.n_observers),
+            shape=(self.max_batch, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
-        self.alpha_h = \
-            altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
-                              dtype=self.gpuprec)
-        self.delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=application.job.chains * self.sim.n_eq * self.fault.inner_num_patches * 2,
-            dtype=self.gpuprec)
+
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(perf_counter())
@@ -221,10 +221,15 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 for i in range(batch)]
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
+
         ticks.append(perf_counter())
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        self.alpha_h.copy_from_host(
-            source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
+        #self.alpha_h = \
+        #    altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
+        #                      dtype=self.gpuprec)
+        alpha_h = altar.cuda.vector(shape=batch*self.fault.inner_num_patches, dtype=self.gpuprec)
+        alpha_h.copy_from_host(source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
+
         delta_tau_bounded_compressed_stacked = \
             np.stack([s.delta_tau_bounded_compressed for s in sims])
         delta_tau_bound_comp_div_alpha = \
@@ -233,13 +238,21 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             [delta_tau_bound_comp_div_alpha[:, :, :, 0],
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
-        self.delta_tau_div_alpha_h.copy_from_host(
-            source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha, dtype=self.gpuprec))
+
+        # self.delta_tau_div_alpha_h = altar.cuda.vector(
+        #    shape=batch * self.sim.n_eq * self.fault.inner_num_patches * 2,
+        #     dtype=self.gpuprec)
+        delta_tau_div_alpha_h = altar.cuda.vector(
+            shape=batch*self.sim.n_eq * self.fault.inner_num_patches * 2,
+            dtype=self.gpuprec)
+        delta_tau_div_alpha_h.copy_from_host(
+            source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
+                                        dtype=self.gpuprec))
 
         # call CUDA forward model
         ticks.append(perf_counter())
-        self.cmodel.forward_model_batch(self.alpha_h.data,
-                                        self.delta_tau_div_alpha_h.data,
+        self.cmodel.forward_model_batch(alpha_h.data,
+                                        delta_tau_div_alpha_h.data,
                                         self.G_surf.data,
                                         prediction.data,
                                         batch)
@@ -297,13 +310,15 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         """
 
         # get the data storage for data prediction or residual
-        residuals = self.obs_disp
+        predictions = self.obs_disp
 
         # solve forward modeling in batches
         # get the max batch size and allocate temporary input/out for a batch
-        max_batch_size = self.systems_batch
+        max_batch_size = self.max_batch
         parameters = theta.shape[1]
+        # input
         theta_batch = altar.cuda.matrix(shape=(max_batch_size, parameters), dtype=self.gpuprec)
+        # output
         likelihood_batch = altar.cuda.vector(shape=max_batch_size, dtype=self.gpuprec)
 
         # iterate over batches
@@ -312,27 +327,27 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             batch_size = min(max_batch_size, batch-system_start)
             # copy theta (a tile)
             theta_batch.copytile(src=theta, src_start=(system_start, 0), shape=(batch_size, parameters))
-            # call forward model to calculate the data prediction or its difference between dataobs
-            self.forwardModelBatched(theta=theta_batch, prediction=residuals, batch=batch_size)
-
+            # call forward model to calculate the data prediction
+            self.forwardModelBatched(theta=theta_batch, prediction=predictions, batch=batch_size)
+            # compute the residual
+            data_obs = self.dataobs.gDataVec
+            observations = data_obs.shape
+            # print("data_obs", data_obs.shape)
+            # print("data_pre")
+            # predictions.print()
+            predictions.subtractVector(vector=data_obs, size=(batch_size, observations))
             # call data method to calculate the l2 norm
-            print(residuals.shape, likelihood_batch.shape, batch_size)
-            self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood_batch,
+            self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
                                           residual=True, batch=batch_size)
             # copy likelihood to global
             likelihood.copytile(likelihood_batch, start=system_start, size=batch_size)
 
         # consider cd_inv as a constant
         cd_inv = self.dataobs.gcd_inv
-        print(type(cd_inv), cd_inv)
         if isinstance(cd_inv, float):
             likelihood *= cd_inv
         else:
             raise NotImplementedError
-
-        # debug likelihood
-        print("data likelihood")
-        likelihood.print()
 
         # return the likelihood
         return likelihood
