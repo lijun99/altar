@@ -177,6 +177,9 @@ __device__ void solve_device( const cg::thread_block & cta,
         // set events at t0
         events.set_events_block(cta, system_id, it, stepper.y0);
         cta.sync();
+        if (threadIdx.x == 0)
+            printf("Applied step %i/%i\n", it + 1, events.nevents - 1);
+
         // need to recompute f0 = f(t0, y0) due to the possible y0 update
         stepper.set_f0_value(cta, t0, system_id, ode);
         cta.sync();

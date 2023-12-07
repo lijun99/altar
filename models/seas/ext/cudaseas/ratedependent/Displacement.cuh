@@ -178,11 +178,18 @@ void compute_displacement_impl1(
     const T gemm_beta  // 0 or -alpha (if d_obs is copied to d to compute residue)
     )
 {
+
+    printf("predictions needs to have shape (%i, %i, %i) = %i\n",
+           samples, t_steps, displacement_size, samples * t_steps * displacement_size);
+    printf("sim_state needs to have shape (%i, %i, %i*4) = %i\n",
+           samples, t_steps, patches, samples * t_steps * patches * 4);
     // copy slip history into [samples, t_steps, 2*patches]
     // auto system_size = patches * 4; // sim_state size per system per t_step
     auto slip_size = patches * 2; // slip rate size per system per t_step
     T* slip_history;
     cudaSafeCall(cudaMallocManaged(&slip_history, samples*t_steps*slip_size*sizeof(T)));
+    printf("gf needs to have shape (%i, %i) = %i\n",
+           slip_size, displacement_size, slip_size * displacement_size);
 
     // copy slip rate from sim_state
     copy_slip<T>(slip_history, sim_state, samples, t_steps, patches, v_0);

@@ -42,8 +42,10 @@ class RateDependent {
             int num_ix_eq_,
             int num_eq_,
             int* delta_tau_bounded_indices_,
-            int* ix_eq_joint_,
+            // int* ix_eq_joint_,
             T* t_events_,
+            int* i_slips_obs,
+            int n_slips_obs,
             T v_0_,
             T mu_over_2vs_,
             int num_inner_patches_,
@@ -90,8 +92,10 @@ class RateDependent {
         int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
         int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
-        int* ix_eq_joint; // indices of earthquakes in t_obs_sec (num_ix_eq, ) [-]
+        // int* ix_eq_joint; // indices of earthquakes in t_obs_sec (num_ix_eq, ) [-]
         T* t_events; // timestamps of start time, end time, and earthquakes (n_events, ) [s]
+        int* i_slips_obs; // indices of earthquakes in t_obs
+        int n_slips_obs;  // number of observed indices
 
         // rheology
         const int UNITS = 4; // number of variables in each patch [-]

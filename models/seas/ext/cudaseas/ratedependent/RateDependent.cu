@@ -30,8 +30,10 @@ void RateDependent<T>::initialize(
         int num_ix_eq_,
         int num_eq_,
         int* delta_tau_bounded_indices_,
-        int* ix_eq_joint_,
+        // int* ix_eq_joint_,
         T* t_events_,
+        int* i_slips_obs_,
+        int n_slips_obs_,
         T v_0_,
         T mu_over_2vs_,
         int num_inner_patches_,
@@ -58,9 +60,11 @@ void RateDependent<T>::initialize(
     // events
     num_ix_eq = num_ix_eq_;
     num_eq = num_eq_;
-    ix_eq_joint = ix_eq_joint_;
+    // ix_eq_joint = ix_eq_joint_;
     delta_tau_bounded_indices = delta_tau_bounded_indices_;
     t_events = t_events_;
+    i_slips_obs = i_slips_obs_;
+    n_slips_obs = n_slips_obs_;
 
     // rheology
     v_0 = v_0_;
@@ -145,13 +149,10 @@ void RateDependent<T>::forward_model_batch(
         obs_disp, sim_state, G_surf, num_systems, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
 
-    // uncomment following to use the displacement subtraction from t_num_eq
-    /*
-    if(num_t_eq > 0)
-        subtract_displacement_from_teq(
-            obs_disp, num_systems, num_t_obs, 3 * num_stations,
-            t_eq_indices, num_t_eq);
-    */
+    // displacement subtraction from t_num_eq
+    subtract_displacement_from_teq(
+        obs_disp, num_systems, num_t_obs, 3 * num_stations,
+        i_slips_obs, n_slips_obs);
 
 }
 

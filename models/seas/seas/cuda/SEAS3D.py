@@ -29,6 +29,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     systems_batch = altar.properties.int(default=None)
     v_init_file = altar.properties.str(default=None)
 
+    # helper function to time
+    def sync_and_time(self):
+        self.device.synchronize()
+        return perf_counter()
+
     @altar.export
     def initialize(self, application):
         """
@@ -43,21 +48,22 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.dataobs.merge_cd_to_data = False
         super().initialize(application=application)
 
+        # additional preparations
         self.gpuprec = application.job.gpuprecision
         channel = self.info
         if self.max_batch is None:
             self.max_batch = application.job.chains
         if self.systems_batch is None:
-            self.systems_batch = application.job.chains
+            self.systems_batch = self.max_batch
 
         # parse configuration
         ticks = []
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         self.rheo_dict, self.fault_dict, self.sim_dict = \
             SubductionSimulation3D.read_config_file(self.config_file)
 
         # create reference simulation
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         self.rheo = RateStateSteadyLogarithmic(**self.rheo_dict)
         self.fault = Fault3D(**self.fault_dict)
         self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
@@ -77,7 +83,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 print(f"Loaded initial velocities from '{self.v_init_file}'")
 
         # allocate memory
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         SEC_PER_YEAR = 86400 * 365.25
         self.t_obs_sec = altar.cuda.vector(
             source=(self.sim.t_obs * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
@@ -87,6 +93,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         tevents = self.sim.t_eval_joint[ievents] - self.sim.t_eval_joint[ievents[0]]
         self.t_events = altar.cuda.vector(
             source=(tevents * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
+        self.i_slips_obs = \
+            altar.cuda.vector(source=np.array(self.sim.i_slips_obs).astype("int32"))
         self.delta_tau_bounded_indices = \
             altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
         self.ix_eq_joint = \
@@ -123,9 +131,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             shape=(self.max_batch, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
 
-
         # create CUDA model for all samples (need to reduce to batch size)
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         if self.gpuprec == "float64":
             self.cmodel = libcudaseas.ratedependent.model_double()
         elif self.gpuprec == "float32":
@@ -142,8 +149,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.n_slips,  # = tevents.size - 2
             self.sim.n_eq,
             self.delta_tau_bounded_indices.data,
-            self.ix_eq_joint.data,
+            # self.ix_eq_joint.data,
             self.t_events.data,
+            self.i_slips_obs.data,
+            self.sim.n_slips_obs,
             self.rheo.v_0,
             self.fault.mu_over_2vs,
             self.fault.inner_num_patches,
@@ -159,16 +168,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.n_observers)
 
         # remove precomputed farfield effects on observations
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         if np.any(self.sim.T_rec_logsigma) or (not self.sim.enforce_v_plate):
             raise NotImplementedError
-        if np.any(self.sim.D_0_logsigma):
-            self.precomputed_locked_disps = False
-        else:
-            surf_disps_locked = get_surface_displacements(
-                self.sim.locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :])
-            self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_locked).T.ravel()
-            self.precomputed_locked_disps = True
         surf_disps_outer = get_surface_displacements(
             self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
         surf_disps_lower = get_surface_displacements(
@@ -179,7 +181,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.dataobs.updateCovariance()
 
         # print timings
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         channel.log(f"Initialized SEAS3D in {ticks[-1] - ticks[0]}s")
         # channel.log(f"\n(Configuration = {ticks[1] - ticks[0]}s, "
         #             f"Python instances = {ticks[2] - ticks[1]}s, "
@@ -225,25 +227,25 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # create new rheology instances
         ticks = []
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         rheos = [self.rheo_from_theta(theta.get_row(i).copy_to_host(type="numpy"))
                  for i in range(batch)]
 
         # create new simulation instances, reusing G_surf
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         sims = [SubductionSimulation3D(**self.sim_dict, rheo=rheos[i],
                                        fault=self.fault, G_surf=self.sim.G_surf)
                 for i in range(batch)]
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
-
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        #self.alpha_h = \
-        #    altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
-        #                      dtype=self.gpuprec)
+        # self.alpha_h = \
+        #     altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
+        #                       dtype=self.gpuprec)
         alpha_h = altar.cuda.vector(shape=batch*self.fault.inner_num_patches, dtype=self.gpuprec)
-        alpha_h.copy_from_host(source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
+        alpha_h.copy_from_host(
+            source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
 
         delta_tau_bounded_compressed_stacked = \
             np.stack([s.delta_tau_bounded_compressed for s in sims])
@@ -265,7 +267,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         dtype=self.gpuprec))
 
         # call CUDA forward model
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         self.cmodel.forward_model_batch(alpha_h.data,
                                         delta_tau_div_alpha_h.data,
                                         self.G_surf.data,
@@ -275,12 +277,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # reset observations to zero at beginning and at earthquakes
         # TODO: do this on GPU
         """
-        Comment: to implement the following on GPU 
-        It's better to decide the logic in initialize, and provide 
+        Comment: to implement the following on GPU
+        It's better to decide the logic in initialize, and provide
         num_t_eq - total number of starting point and earthquakes, t_eq
-        t_eq_indices - integer vector [num_t_eq], the indices of t_eq in t_obs, e.g, [0, 1000, ...]  
+        t_eq_indices - integer vector [num_t_eq], the indices of t_eq in t_obs, e.g, [0, 1000, ...]
         add these two variables to self.cmodel.initialize as inputs
-            I have added a subtract_displacement_from_teq method inside   
+            I have added a subtract_displacement_from_teq method inside
         """
         temp = prediction.copy_to_host(type="numpy").reshape(
             -1, self.sim.t_obs.size, 3, self.sim.n_observers)
@@ -295,29 +297,16 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 temp[:, i_slips_obs[i]:, :, :] -= temp[:, i_slips_obs[i], :, :][:, None, :, :]
         prediction.copy_from_host(temp)
 
-        # add locked slip if it was varied for samples
-        if not self.precomputed_locked_disps:
-            ticks.append(perf_counter())
-            surf_disps_locked = np.stack(
-                [self.sim.zero_obs_at_eq(get_surface_displacements(
-                    sims[i].locked_slip, self.sim.G_surf[:, :, self.fault.s_asperities, :]
-                 )).T.ravel() for i in range(batch)], axis=0, dtype=self.gpuprec)
-            prediction += altar.cuda.matrix(source=surf_disps_locked)
-
         # TODO subsample the CUDA forward model for each station according to its availability
 
         # log timings
-        ticks.append(perf_counter())
+        ticks.append(self.sync_and_time())
         infostr = (f"Ran forwardModelBatched for {batch} samples in {ticks[-1] - ticks[0]}s "
                    f"(CUDA forward model = {ticks[4] - ticks[3]}s)")
         # infostr += (f"\n(Rheology instances = {ticks[1] - ticks[0]}s, "
         #             f"Simulation instances = {ticks[2] - ticks[1]}s, "
         #             f"Stacked parameters = {ticks[3] - ticks[2]}s, "
-        #             f"CUDA forward model = {ticks[4] - ticks[3]}s")
-        # if self.precomputed_locked_disps:
-        #     infostr += ")"
-        # else:
-        #     infostr += f", Farfield effects = {ticks[5] - ticks[4]}s)"
+        #             f"CUDA forward model = {ticks[4] - ticks[3]}s)")
         channel = self.info
         channel.log(infostr)
 
@@ -349,7 +338,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             # get the actual batch size
             batch_size = min(max_batch_size, batch-system_start)
             # copy theta (a tile)
-            theta_batch.copytile(src=theta, src_start=(system_start, 0), shape=(batch_size, parameters))
+            theta_batch.copytile(src=theta,
+                                 src_start=(system_start, 0),
+                                 shape=(batch_size, parameters))
             # call forward model to calculate the data prediction
             self.forwardModelBatched(theta=theta_batch, prediction=predictions, batch=batch_size)
             # compute the residual

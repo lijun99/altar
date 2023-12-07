@@ -118,6 +118,8 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
         // keep record of the final y(tn) for next convergence check
         spinup_controller.record(cta, stepper.yn, index_start, index_end);
         cta.sync();
+        if (cta.thread_rank() == 0)
+            printf("Cycle %i completed\n", icycle);
     }
     //cta.sync();
 
