@@ -145,14 +145,35 @@ void RateDependent<T>::forward_model_batch(
 
     // call displacement routines - see details in Displacement.cuh for different implementations
     // assume Cd is a constant and gf is time independent
-    compute_displacement_impl1(
+    compute_displacement_impl1<T>(
         obs_disp, sim_state, G_surf, num_systems, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
 
+    /*
     // displacement subtraction from t_num_eq
+    std::cout << "subtract displacement " << num_systems << " "
+        << num_t_obs << " " << n_slips_obs << "\n";
+    cudaDeviceSynchronize();
+    for(auto i=0; i< n_slips_obs; i++)
+        std::cout << "t_eq " << i  << ": " << i_slips_obs[i] << "\n";
+    auto n_observations =  3 * num_stations;
+    // debug for two observations before subtraction
+    std::cout << obs_disp[i_slips_obs[0]*n_observations] << ": " << obs_disp[(i_slips_obs[0]+1)*n_observations] << "\n";
+    std::cout << obs_disp[i_slips_obs[0]*n_observations+n_observations/2] << ": "
+        << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
+    */
+
     subtract_displacement_from_teq(
         obs_disp, num_systems, num_t_obs, 3 * num_stations,
         i_slips_obs, n_slips_obs);
+
+    /*
+    // debug for two observations after subtraction
+    cudaDeviceSynchronize();
+    std::cout << obs_disp[i_slips_obs[0]*n_observations] << ": " << obs_disp[(i_slips_obs[0]+1)*n_observations] << "\n";
+    std::cout << obs_disp[i_slips_obs[0]*n_observations+n_observations/2] << ": "
+        << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
+    */
 
 }
 

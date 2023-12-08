@@ -187,12 +187,15 @@ void compute_displacement_impl1(
     // auto system_size = patches * 4; // sim_state size per system per t_step
     auto slip_size = patches * 2; // slip rate size per system per t_step
     T* slip_history;
-    cudaSafeCall(cudaMallocManaged(&slip_history, samples*t_steps*slip_size*sizeof(T)));
+    std::size_t allocate_size = samples*t_steps*slip_size*sizeof(T);
+    cudaSafeCall(cudaMallocManaged(&slip_history, allocate_size));
     printf("gf needs to have shape (%i, %i) = %i\n",
            slip_size, displacement_size, slip_size * displacement_size);
 
     // copy slip rate from sim_state
     copy_slip<T>(slip_history, sim_state, samples, t_steps, patches, v_0);
+    printf("copy slip done (%i, %i) = %i\n",
+           slip_size, displacement_size, slip_size * displacement_size);
 
     // create a cublas handle
     cublasHandle_t handle;
@@ -215,11 +218,11 @@ void compute_displacement_impl1(
         predictions, displacement_size, displacement_size*t_steps,
         samples));
 
-    // free slip_history
-    cudaSafeCall(cudaFree(slip_history));
-
     // free handle
     cublasSafeCall(cublasDestroy(handle));
+
+    // free slip_history
+    cudaSafeCall(cudaFree(slip_history));
 
     // all done, return predictions as d_pred or d_pred-d_obs
 }
@@ -422,7 +425,8 @@ void compute_displacement_impl2(cublasHandle_t handle,
 // TO BE IMPLEMENTED
 
 
-// cuda kernel to transpose d[d0, d1, d2] to d'[d1, d0, d2]
+// cuda kernel to subtract displacements from the values at t_eq
+//
 template <typename T>
 __global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
      const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
@@ -432,7 +436,7 @@ __global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
     // get sample/system index
     int system = blockIdx.x;
     // iterate over observations
-    for (auto i_obs = threadIdx.x; i_obs < observations; i_obs += blockIdx.x)
+    for (auto i_obs = threadIdx.x; i_obs < observations; i_obs += blockDim.x)
     {
         // iterate over t_eq
         for(auto i_t_eq = 0; i_t_eq < num_t_eq; i_t_eq++)

@@ -9,6 +9,7 @@
 #define __CUBLAS_CXX_WRAPPERS__
 
 #include <cublas_v2.h>
+#include <iostream>
 
 // gemm c++ template wrapper
 template <class T>
@@ -105,6 +106,7 @@ cublasStatus_t cuBLASGemmStridedBatched(
     T* C, int ldc, long long int strideC,
     int batchCount
 ) {
+    std::cout << "gemm batched only defined for float and double\n";
     return CUBLAS_STATUS_NOT_SUPPORTED;
 }
 
@@ -121,7 +123,9 @@ cublasStatus_t cuBLASGemmStridedBatched<float>(
     float* C, int ldc, long long int strideC,
     int batchCount
 ) {
-    return cublasSgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
+    std::cout << "gemm float version called with" << batchCount << " batches \n";
+    cublasStatus_t status = cublasSgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
+    return status;
 }
 
 template <>
@@ -137,8 +141,10 @@ cublasStatus_t cuBLASGemmStridedBatched<double>(
     double* C, int ldc, long long int strideC,
     int batchCount
 ) {
-    return cublasDgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
-}
+    std::cout << "gemm double version called with" << batchCount << " batches \n";
+    cublasStatus_t status = cublasDgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
+    return status;
+   }
 
 // more to be added when needed
 
