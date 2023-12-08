@@ -86,7 +86,7 @@ struct __ALIGNED__ SpinupController
         if(cta.thread_rank() == 0)
         {
             converge = (err <= static_cast<T>(1.0));
-            // printf("inside spinup controller err: %g  convergence: %d yn[0]: %g\n", err, converge, ynew_check[0]);
+            printf("inside spinup controller err: %g  convergence: %d yn[0]: %g\n", err, converge, ynew_check[0]);
         }
         cta.sync();
         return converge;

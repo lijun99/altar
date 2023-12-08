@@ -42,7 +42,6 @@ class RateDependent {
             int num_ix_eq_,
             int num_eq_,
             int* delta_tau_bounded_indices_,
-            // int* ix_eq_joint_,
             T* t_events_,
             int* i_slips_obs,
             int n_slips_obs,
@@ -63,12 +62,19 @@ class RateDependent {
 
         // perform forward modeling
         void forward_model_batch(
-            const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
-            const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
+            const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_forward_batch, num_inner_patches, ) [Pa]
+            const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches, 2) [-]
             const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-            T* obs_disp,  // Surface observations for all stations (num_systems, num_t_obs, 3*num_stations) [m]
-            const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
+            T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+            const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
+            bool verbose // whether to print info and progress indicators or not
         );
+
+        // estimate model size
+        long estimate_model_size();
+
+        // estimate forward problem size
+        long estimate_forward_size(const int num_forward_batch);
 
     // parameters
     private:
@@ -78,8 +84,8 @@ class RateDependent {
         SolverType* solver;
 
         // general variables
-        int num_systems; // number of systems [-]
-        int systems_batch; // number of num_systems to process in batch [-]
+        int num_systems; // maximum number of systems [-]
+        int systems_batch; // maximum number of systems to process in batch inside forward model [-]
         const bool DENSE_OUT = true; // always output the dense last cycle [-]
         const bool USE_STATE_INIT_FOR_ALL = true; // always use a single state_init for all systems [-]
 
@@ -92,8 +98,7 @@ class RateDependent {
         int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
         int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
-        // int* ix_eq_joint; // indices of earthquakes in t_obs_sec (num_ix_eq, ) [-]
-        T* t_events; // timestamps of start time, end time, and earthquakes (n_events, ) [s]
+        T* t_events; // timestamps of start time, end time, and earthquakes (n_events = num_ix_eq + 2, ) [s]
         int* i_slips_obs; // indices of earthquakes in t_obs
         int n_slips_obs;  // number of observed indices
 

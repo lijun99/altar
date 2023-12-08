@@ -28,6 +28,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     max_batch = altar.properties.int(default=None)
     systems_batch = altar.properties.int(default=None)
     v_init_file = altar.properties.str(default=None)
+    verbose = altar.properties.bool(default=False)
 
     # helper function to time
     def sync_and_time(self):
@@ -94,11 +95,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.t_events = altar.cuda.vector(
             source=(tevents * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
         self.i_slips_obs = \
-            altar.cuda.vector(source=np.array(self.sim.i_slips_obs).astype("int32"))
+            altar.cuda.vector(source=np.array([0] + self.sim.i_slips_obs).astype("int32"))
         self.delta_tau_bounded_indices = \
             altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
-        self.ix_eq_joint = \
-            altar.cuda.vector(source=self.sim.ix_eq_joint.astype("int32"))
         self.K_inner_inner_onfault = altar.cuda.vector(
             source=np.ascontiguousarray(self.fault.K_inner_inner[:, :2, :, :2],
                                         dtype=self.gpuprec))
@@ -149,10 +148,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.n_slips,  # = tevents.size - 2
             self.sim.n_eq,
             self.delta_tau_bounded_indices.data,
-            # self.ix_eq_joint.data,
             self.t_events.data,
             self.i_slips_obs.data,
-            self.sim.n_slips_obs,
+            self.sim.n_slips_obs + 1,
             self.rheo.v_0,
             self.fault.mu_over_2vs,
             self.fault.inner_num_patches,
@@ -240,13 +238,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(self.sync_and_time())
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        # self.alpha_h = \
-        #     altar.cuda.vector(shape=application.job.chains * self.fault.inner_num_patches,
-        #                       dtype=self.gpuprec)
-        alpha_h = altar.cuda.vector(shape=batch*self.fault.inner_num_patches, dtype=self.gpuprec)
+        alpha_h = altar.cuda.vector(shape=batch * self.fault.inner_num_patches, dtype=self.gpuprec)
         alpha_h.copy_from_host(
             source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
-
         delta_tau_bounded_compressed_stacked = \
             np.stack([s.delta_tau_bounded_compressed for s in sims])
         delta_tau_bound_comp_div_alpha = \
@@ -255,12 +249,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             [delta_tau_bound_comp_div_alpha[:, :, :, 0],
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
-
-        # self.delta_tau_div_alpha_h = altar.cuda.vector(
-        #    shape=batch * self.sim.n_eq * self.fault.inner_num_patches * 2,
-        #     dtype=self.gpuprec)
         delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=batch*self.sim.n_eq * self.fault.inner_num_patches * 2,
+            shape=batch * self.sim.n_eq * self.fault.inner_num_patches * 2,
             dtype=self.gpuprec)
         delta_tau_div_alpha_h.copy_from_host(
             source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
@@ -272,30 +262,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         delta_tau_div_alpha_h.data,
                                         self.G_surf.data,
                                         prediction.data,
-                                        batch)
-
-        # reset observations to zero at beginning and at earthquakes
-        # TODO: do this on GPU
-        """
-        Comment: to implement the following on GPU
-        It's better to decide the logic in initialize, and provide
-        num_t_eq - total number of starting point and earthquakes, t_eq
-        t_eq_indices - integer vector [num_t_eq], the indices of t_eq in t_obs, e.g, [0, 1000, ...]
-        add these two variables to self.cmodel.initialize as inputs
-            I have added a subtract_displacement_from_teq method inside
-        """
-        temp = prediction.copy_to_host(type="numpy").reshape(
-            -1, self.sim.t_obs.size, 3, self.sim.n_observers)
-        slips_obs = np.logical_and(self.sim.t_obs.min() <= self.sim.eq_df.index,
-                                   self.sim.t_obs.max() > self.sim.eq_df.index)
-        n_slips_obs = slips_obs.sum()
-        temp -= temp[:, 0, :, :][:, None, :, :]
-        if slips_obs.sum() > 0:
-            i_slips_obs = [np.argmax(self.sim.t_obs >= t_eq) for t_eq
-                           in self.sim.eq_df.index.values[slips_obs]]
-            for i in range(n_slips_obs):
-                temp[:, i_slips_obs[i]:, :, :] -= temp[:, i_slips_obs[i], :, :][:, None, :, :]
-        prediction.copy_from_host(temp)
+                                        batch,
+                                        self.verbose)
 
         # TODO subsample the CUDA forward model for each station according to its availability
 

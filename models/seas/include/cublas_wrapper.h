@@ -123,7 +123,7 @@ cublasStatus_t cuBLASGemmStridedBatched<float>(
     float* C, int ldc, long long int strideC,
     int batchCount
 ) {
-    std::cout << "gemm float version called with" << batchCount << " batches \n";
+    // std::cout << "gemm float version called with " << batchCount << " batches \n";
     cublasStatus_t status = cublasSgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
     return status;
 }
@@ -141,7 +141,7 @@ cublasStatus_t cuBLASGemmStridedBatched<double>(
     double* C, int ldc, long long int strideC,
     int batchCount
 ) {
-    std::cout << "gemm double version called with" << batchCount << " batches \n";
+    // std::cout << "gemm double version called with " << batchCount << " batches \n";
     cublasStatus_t status = cublasDgemmStridedBatched(handle, transa, transb, m, n, k, alpha, A, lda, strideA, B, ldb, strideB, beta, C, ldc, strideC, batchCount);
     return status;
    }

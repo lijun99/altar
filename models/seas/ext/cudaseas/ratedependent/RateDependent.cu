@@ -30,7 +30,6 @@ void RateDependent<T>::initialize(
         int num_ix_eq_,
         int num_eq_,
         int* delta_tau_bounded_indices_,
-        // int* ix_eq_joint_,
         T* t_events_,
         int* i_slips_obs_,
         int n_slips_obs_,
@@ -60,7 +59,6 @@ void RateDependent<T>::initialize(
     // events
     num_ix_eq = num_ix_eq_;
     num_eq = num_eq_;
-    // ix_eq_joint = ix_eq_joint_;
     delta_tau_bounded_indices = delta_tau_bounded_indices_;
     t_events = t_events_;
     i_slips_obs = i_slips_obs_;
@@ -93,34 +91,36 @@ void RateDependent<T>::initialize(
 
 template <typename T>
 void RateDependent<T>::forward_model_batch(
-    const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_systems, num_inner_patches, ) [Pa]
-    const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_systems, num_eq, num_inner_patches, 2) [-]
+    const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_forward_batch, num_inner_patches, ) [Pa]
+    const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches * 2) [-]
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-    T* obs_disp,  // Surface observations for all stations (num_systems, num_t_obs, 3*num_stations) [m]
-    const int num_systems // batch size <=samples (in AlTar, not all samples are computed in simulations)
+    T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+    const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
+    bool verbose = false // whether to print info and progress indicators or not
 ) {
     // create an instance of odefunc
-    odefunc = new OdeType{num_inner_patches, UNITS, num_systems, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
+    odefunc = new OdeType{num_inner_patches, UNITS, num_forward_batch, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
                           K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
 
     // create an instance of events (including starting/ending time)
     events = new EventType{num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
-                           num_systems, num_inner_patches, UNITS};
+                           num_forward_batch, num_inner_patches, UNITS};
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
     solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
-    for (int system_offset = 0; system_offset < num_systems; system_offset += systems_batch)
+    for (int system_offset = 0; system_offset < num_forward_batch; system_offset += systems_batch)
     {
         // check how many systems are left
-        auto systems_to_process = min(systems_batch, num_systems - system_offset);
-        // printf("  processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
+        auto systems_to_process = min(systems_batch, num_forward_batch - system_offset);
+        if (verbose)
+            printf("Processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
         // set initial values
         solver->set_init_values(state_init, USE_STATE_INIT_FOR_ALL, systems_to_process, system_offset);
         // call the solver
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
-                                 conv_i_start, conv_i_stop, max_cycles);
+                                 conv_i_start, conv_i_stop, max_cycles, verbose);
         // cudaDeviceSynchronize();
     }
 
@@ -128,6 +128,7 @@ void RateDependent<T>::forward_model_batch(
     // state_int [2(slip/stress), 2(slip_components), patches]
     // sim_state [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
     // only save slip rate (stress)
+    // TODO should be last time step and different for all samples
     auto state_init_copy_start = state_init + 2*num_inner_patches;
     auto sim_state_copy_start = sim_state + 2*num_inner_patches;
     cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
@@ -140,18 +141,18 @@ void RateDependent<T>::forward_model_batch(
     //        << sim_state[i] << " "
     //        << sim_state[num_t_obs*4*num_inner_patches+i] << "\n";
 
-    // convert logairthmic velocity to linear one
-    convert_slip_rate<T>(sim_state, num_systems, num_t_obs, num_inner_patches, v_0);
+    // convert logarithmic velocity to linear one
+    convert_slip_rate<T>(sim_state, num_forward_batch, num_t_obs, num_inner_patches, v_0);
 
     // call displacement routines - see details in Displacement.cuh for different implementations
     // assume Cd is a constant and gf is time independent
     compute_displacement_impl1<T>(
-        obs_disp, sim_state, G_surf, num_systems, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
+        obs_disp, sim_state, G_surf, num_forward_batch, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
         (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
 
     /*
     // displacement subtraction from t_num_eq
-    std::cout << "subtract displacement " << num_systems << " "
+    std::cout << "subtract displacement " << num_forward_batch << " "
         << num_t_obs << " " << n_slips_obs << "\n";
     cudaDeviceSynchronize();
     for(auto i=0; i< n_slips_obs; i++)
@@ -163,9 +164,10 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
-    subtract_displacement_from_teq(
-        obs_disp, num_systems, num_t_obs, 3 * num_stations,
-        i_slips_obs, n_slips_obs);
+    if (n_slips_obs > 0)
+        subtract_displacement_from_teq(
+            obs_disp, num_forward_batch, num_t_obs, 3 * num_stations,
+            i_slips_obs, n_slips_obs);
 
     /*
     // debug for two observations after subtraction
@@ -175,6 +177,41 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
+}
+
+// size estimation methods
+
+// estimate model size
+template <typename T>
+long RateDependent<T>::estimate_model_size() {
+    auto s = (2 * sizeof(bool) + 
+              (15 +
+               num_ix_eq +
+               n_slips_obs +
+               num_t_eq) * sizeof(int) +
+              (6 +
+               num_t_obs +
+               (num_ix_eq + 2) +
+               (num_inner_patches * 2 * num_inner_patches * 2) +
+               (num_inner_patches * 2) +
+               (num_inner_patches * 2) +
+               (UNITS * num_inner_patches) +
+               (num_systems * num_t_obs * UNITS * num_inner_patches)) * sizeof(T));
+    return s;
+}
+
+// estimate forward problem size
+template <typename T>
+long RateDependent<T>::estimate_forward_size(const int num_forward_batch) {
+    auto s = (1 * sizeof(int) +
+              ((num_forward_batch * num_inner_patches) +
+               (num_forward_batch * num_eq * num_inner_patches * 2) +
+               (2 * num_inner_patches * 3 * num_stations) +
+               (num_forward_batch * num_t_obs * 3 * num_stations) +
+               (5 * num_inner_patches * UNITS * systems_batch) +
+               (10 * num_inner_patches * UNITS * systems_batch) +
+               (num_forward_batch * num_t_obs * num_inner_patches * 2)) *sizeof(T));
+    return s;
 }
 
 // explicit instantiation

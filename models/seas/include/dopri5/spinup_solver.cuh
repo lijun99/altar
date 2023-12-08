@@ -48,7 +48,7 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset,
-        const int index_start, const int index_end, const int max_cycles);
+        const int index_start, const int index_end, const int max_cycles, const bool verbose);
 
 };
 
@@ -79,7 +79,8 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     SpinupController<real_type> * spinup_controllers,
     DenseOutput<real_type> * outputs,
     const int index_start, const int index_end,
-    const int max_cycles)
+    const int max_cycles,
+    const bool verbose)
 {
     // get the system index and patch index
     auto block_id = blockIdx.x;
@@ -103,13 +104,16 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     while (!converged && icycle<max_cycles)
     {
         // make another cycle
+        if (verbose && (cta.thread_rank() == 0))
+           printf("%i", icycle);
         reset_f0_value(cta, system_id, ode, events, stepper);
         solve_device(cta, system_id, dense_out_run,
             ode,
             events,
             stepper,
             controller,
-            outputter);
+            outputter,
+            verbose);
         cta.sync();
 
         // check for convergence
@@ -118,21 +122,19 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
         // keep record of the final y(tn) for next convergence check
         spinup_controller.record(cta, stepper.yn, index_start, index_end);
         cta.sync();
-        //if (cta.thread_rank() == 0)
-        //    printf("Cycle %i completed\n", icycle);
     }
     //cta.sync();
 
-    // // if debugging cycles
-    // if(cta.thread_rank()==0)
-    //     printf("spinup cycles finished in %d steps, convergence is %s\n", icycle, converged ? "true" : "false");
-
-    // TODO add warning output if not converged
-    if ((cta.thread_rank() == 0) && !converged)
-        printf("WARNING: spinup_solver did not converge\n");
+    // if debugging cycles
+    if (verbose && (cta.thread_rank() == 0)) {
+        if (converged)
+            printf("%i>", icycle);
+        else
+            printf("%i[WARNING: maximum iterations reached]", icycle);
+    }
 
     //converged, last run for dense_out
-    if(dense_out)
+    if (dense_out)
     {
         reset_f0_value(cta, system_id, ode, events, stepper);
         solve_device(cta, system_id, dense_out,
@@ -140,7 +142,8 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
             events,
             stepper,
             controller,
-            outputter);
+            outputter,
+            verbose);
     }
     // all done
 }
@@ -149,7 +152,7 @@ template <class real_type, class ode_system_type, class event_type>
 void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
     const bool dense_out, const int systems, const int system_offset,
     const int index_start, const int index_end, // start end end indices of yn for convergence check
-    const int max_cycles)
+    const int max_cycles, const bool verbose = false)
 {
     auto patches = this->ode.patches;
     int threads;
@@ -181,16 +184,18 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
         spinup_controller_holder->controllers,
         this->output_holder->outputters,
         index_start, index_end,
-        max_cycles);
+        max_cycles,
+        verbose);
     cudaCheckError("solve_ivp_kernel error");
     // all done, return the yevals
 }
 
 template <class real_type, class ode_system_type, class event_type>
-void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles)
+void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
+    const bool dense_out, const int systems, const int system_offset, const int max_cycles)
 {
     solve_ivp_cycles(dense_out, systems, system_offset,
-        0, this->system_size-1, max_cycles);
+        0, this->system_size-1, max_cycles, false);
 }
 
 } // end of namespace cuda::ode::dopri5
