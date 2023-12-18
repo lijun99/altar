@@ -178,8 +178,8 @@ void Stepper<T>::integrate(
     auto block_size = cta.size();
 
     //*** stage 1 - k1 = f(t0, y0) - copied or precomputed
-    // ode.dydt_block(cta, system_id, t0, y0, k1);
-    // cta.sync();
+    ode.dydt_block(cta, system_id, t0, y0, k1);
+    cta.sync();
 
     //*** stage 2 - k2 = f(t0+c2*h, y0+h*a21*k1)
     // compute y0+h*a21*k1

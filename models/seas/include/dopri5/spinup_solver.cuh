@@ -103,10 +103,11 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     int icycle = 0;
     while (!converged && icycle<max_cycles)
     {
-        // make another cycle
         if (verbose && (cta.thread_rank() == 0))
-           printf("%i", icycle);
-        reset_f0_value(cta, system_id, ode, events, stepper);
+           printf("%i %i", system_id, icycle);
+        // make another cycle
+        // reset is not needed
+        // reset_f0_value(cta, system_id, ode, events, stepper);
         solve_device(cta, system_id, dense_out_run,
             ode,
             events,
@@ -128,7 +129,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     // if debugging cycles
     if (verbose && (cta.thread_rank() == 0)) {
         if (converged)
-            printf("%i>", icycle);
+            printf("%i %i>", system_id, icycle);
         else
             printf("%i[WARNING: maximum iterations reached]", icycle);
     }
@@ -156,15 +157,15 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
 {
     auto patches = this->ode.patches;
     int threads;
-    if(patches <= 32)
+    if(patches < 64)
         threads = 32;
-    else if (patches <= 64)
+    else if (patches < 128)
         threads = 64;
-    else if (patches <= 128)
+    else if (patches < 256)
         threads =128;
-    else if (patches <= 256)
+    else if (patches < 512)
         threads = 256;
-    else if (patches <=512 )
+    else if (patches < 1024 )
         threads = 512;
     else
         threads = 1024;

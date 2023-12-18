@@ -157,87 +157,82 @@ __device__ void solve_device( const cg::thread_block & cta,
     const bool verbose
     )
 {
-    bool converged, t1reached;
-    // iterate over events
-    auto tevents = events.get_events_time(system_id);
 
     outputter.reset(cta);
 
-    /*if(threadIdx.x==0) {
-        printf("tevents\n");
-        for(auto i=0; i!=events.nevents; ++i)
-            printf("%d %g, ", i, tevents[i]);
-        printf("\n");
-    }*/
-
+    // iterate over events
     for(auto it=0; it<events.nevents-1; it++)
     {
-        auto t0 = tevents[it];
-        auto t1 = tevents[it+1];
+        // get the event times and initialize controller
+        if(cta.thread_rank()==0)
+        {
+            auto tevents = events.get_events_time(system_id);
+            controller.t0 = tevents[it];
+            controller.t1 = tevents[it+1];
+            controller.converged = false;
+            controller.t1reached = false;
+            controller.set_init_h();
+
+            if (verbose)
+                printf(".");
+        }
+        cta.sync();
 
         // set events at t0
         events.set_events_block(cta, system_id, it, stepper.y0);
         cta.sync();
-        if (verbose && (threadIdx.x == 0))
-           printf(".");
 
+
+        // Safe option: to ask stepper compute anyway, no need to call set_f0
         // need to recompute f0 = f(t0, y0) due to the possible y0 update
-        stepper.set_f0_value(cta, t0, system_id, ode);
-        cta.sync();
+        // stepper.set_f0_value(cta, controller.t0, system_id, ode);
+        // cta.sync();
 
         // adaptive steps from t0 to t1
-        t1reached = false;
-        // take steps from t0 to t1
-
-        controller.set_init_h(cta, t1-t0);
-
-        while(!t1reached)
+        while(!controller.t1reached)
         {
-            auto h = controller.hnext;
-            if(t0+h>=t1) {
-                h = t1-t0;
-                t1reached = true;
+            if(cta.thread_rank()==0)
+            {
+                // check whether t0+h >= t1
+                // if so, set t1reached=true
+                controller.check_reach_t1();
+                // reset converged flag
+                controller.converged = false;
             }
-            converged = false;
+            cta.sync();
 
-            auto h_run = h;
-
-            while(!converged)
+            // adjust step length to reach convergence
+            while(!controller.converged)
             {
                 // integrate over step h
+                auto t0 = controller.t0;
+                auto h = controller.hnext;
                 stepper.integrate(cta, system_id, t0, h, ode);
-                // save a copy of h before proposing new one below
-                h_run = h;
-                // check the convergence and propose a new step h
-                converged = controller.success(cta, stepper, h);
+                // check the convergence and propose a new step hnext
+                controller.check_convergence(cta, stepper);
 
-                // if(threadIdx.x==0) {
-                //    printf("h value before and after %g %g \n", h_run, h);
-                //    }
-
-                /* if(threadIdx.x==0) {
-                     printf("test solver step: hnext, t0, h, t1, converged, t1reached: %g %g %g %g %d %d\n",
-                         controller.hnext, t0, h, t1, converged, t1reached);
-                    // printf("i, y0[i], y1[i], yerr[i]\n");
-                    // for(auto i=0; i!=stepper.system_size; ++i)
-                    // auto i=0;
-                    //     printf("%d %g %g %g\n", i, stepper.y0[i], stepper.yn[i], stepper.en[i]);
-                }*/
-
+                // printf("test solver %d %d %d %g %g\n", cta.thread_rank(),
+                //     controller.converged, controller.t1reached,
+                //    controller.hnext, controller.hrun);
             }
-            if (dense_out)
-                outputter.output(cta, stepper, system_id, t0, h_run);
+            if (dense_out){
+                // compute output if t_eval is within this range
+                outputter.output(cta, stepper, system_id, controller.t0, controller.hrun);
+            }
 
             // copy from last t state to initial state
             // yn -> y0 // cta, T* dst, const T* src, const int N)
             cuda::detail::vector_copy(cta, stepper.y0, stepper.yn, stepper.system_size);
-            // k7 (fn) -> k1 (f0)
-            cuda::detail::vector_copy(cta, stepper.k1, stepper.k7, stepper.system_size);
-
-            t0 += h_run;
-        }
-    }
-    cta.sync();
+            cta.sync();
+            // k7 (fn) -> k1 (f0), recompute anyway, no need to copy
+            // cuda::detail::vector_copy(cta, stepper.k1, stepper.k7, stepper.system_size);
+            // cta.sync();
+            // increase t0 -> t0+h
+            if(cta.thread_rank()==0)
+                controller.t0_increment();
+            cta.sync();
+        } // end of t steps iteration
+    } // end of events iteration
     // all done
 }
 
@@ -274,15 +269,15 @@ void Solver<real_type, ode_system_type, event_type>::solve_ivp(const bool dense_
 {
     auto patches = ode.patches;
     int threads;
-    if(patches <= 32)
+    if(patches < 64)
         threads = 32;
-    else if (patches <= 64)
+    else if (patches < 128)
         threads = 64;
-    else if (patches <= 128)
+    else if (patches < 256)
         threads =128;
-    else if (patches <= 256)
+    else if (patches < 512)
         threads = 256;
-    else if (patches <=512 )
+    else if (patches < 1024 )
         threads = 512;
     else
         threads = 1024;
