@@ -50,6 +50,7 @@ struct __ALIGNED__ RateDependentODE {
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
         // update slip in both directions
+        // each thread processes one patch (or more if patches>threads)
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             f[patch_id] = v_0 * exp(y0[patch_id + 2 * patches]);
             f[patch_id + patches] = v_0 * exp(y0[patch_id + 3 * patches]);
@@ -58,6 +59,9 @@ struct __ALIGNED__ RateDependentODE {
         // wait for completion
         cta.sync();
 
+        // uncomment this block to use old implementation
+        // /*
+        // old implementation : each thread treats one patch
         // update velocities in both directions
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             // initialize with external influence
@@ -73,7 +77,86 @@ struct __ALIGNED__ RateDependentODE {
             // rescaling due to radiation damping
             f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[system_id * patches + patch_id];
             f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[system_id * patches + patch_id];
+            // printf("debug ode %d %g %g %g %g %g\n", patch_id, t, f[patch_id + 2 * patches],
+            //          f[patch_id + 3 * patches], f[patch_id], alpha_h[system_id * patches + patch_id] );
         }
+        //cta.sync();
+        // end of old implementation
+        // */
+
+        // uncomment this block to use new implementation
+        /*
+        // new implementation : all threads work on one patch, and repeat for all patches
+        // this is to take advantage of the block reduction algorithm to compute gemv
+        // the block reduction divides all threads into tiles x (32 threads per tile),
+        // 1. use warp reduction to sum over all threads in a tile
+        // 2. use atomAdd to sum over all tiles
+
+        // get a tile (32-threads) for sum over each warp
+        auto tile = cg::tiled_partition<32>(cta);
+
+        // iterate over patches; and for each patch use all threads in the block for summation
+        for(auto patch_id = 0; patch_id < patches; patch_id++)
+        {
+            // these are local variables, each thread has its own copy
+            auto thread_sum1 = static_cast<T>(0.0);
+            auto thread_sum2 = static_cast<T>(0.0);
+
+            // compute local f[patch]_j = K_int [patch_id, j] (v[j] - vp[j])
+            // iteration is for patches > total #threads
+            for(auto j = cta.thread_rank(); j < patches; j += cta.size())
+            {
+                auto delv0 = f[j] - v_p[j];
+                auto delv1 = f[j + patches] - v_p[j + patches];
+                thread_sum1 += K_int[i_Kii(patch_id, 0, j, 0)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1)] * delv1;
+                thread_sum2 += K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1;
+            };
+            // wait till all threads are done
+            cta.sync();
+
+            // global sum,
+            // a shared memory object is shared by all threads in this block
+	        __shared__ T sum1, sum2;
+            // use thread 0 to initialize
+            if(cta.thread_rank()==0)
+            {
+		        sum1 = - K_ext[patch_id];
+		        sum2 = - K_ext[patch_id + patches];
+	        }
+	        cta.sync();
+
+            // 1. use warp reduction to sum over all threads in a tile
+            auto tile_sum = cg::reduce(tile, thread_sum1, cg::plus<T>());
+	        // 2. use atomAdd to sum over all tiles
+            if(tile.thread_rank()==0)
+            {
+                atomicAdd(&sum1, tile_sum);
+            }
+            cta.sync();
+
+            // repeat for sum2
+            // reuse tile_sum to reduce the # of shared/register memory objects
+            tile_sum = cg::reduce(tile, thread_sum2, cg::plus<T>());
+            if(tile.thread_rank()==0)
+            {
+                atomicAdd(&sum2, tile_sum);
+            }
+            cta.sync();
+
+            // now assign the values to f[...]
+            if(cta.thread_rank()==0) {
+                sum1/= mu_over_2vs * f[patch_id] + alpha_h[system_id * patches + patch_id];
+                sum2/= mu_over_2vs * f[patch_id + patches] + alpha_h[system_id * patches + patch_id];
+                // printf("debug ode %d %g %g %g %g %g\n", patch_id, t, sum1, f[patch_id + 2 * patches], sum2,
+                //     f[patch_id + 3 * patches]);
+                f[patch_id + 2 * patches] = sum1;
+                f[patch_id + 3 * patches] = sum2;
+
+            }
+            // cta.sync();
+        }
+        // end of new implementation
+        */
 
     };
 
