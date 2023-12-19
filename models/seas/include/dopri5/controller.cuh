@@ -36,17 +36,32 @@ struct __ALIGNED__ Controller
     bool converged;
     bool t1reached;
 
+    int counter;
+
     // methods
     __device__ void init (T atol_, T rtol_);
     __device__ void check_convergence(const cg::thread_block & cta, Stepper<T>& s);
     template <class OdeFuncType, class... Args>
     __device__ T find_initial_step(const cg::thread_block & cta, const int system_id,
         Stepper<T>& s, OdeFuncType& func, Args... args);
+
+    __device__ void init_run(const T t0_, const T t1_)
+    {
+        t0 = t0_;
+        t1 = t1_;
+        converged = false;
+        t1reached = false;
+        reject = false;
+        errold = static_cast<T>(1e-4);
+        counter = 0;
+    }
+
     // use a simple version for now
     // TBD: implement find_initial_step
     __device__ void set_init_h()
     {
-        hnext = static_cast<T>(0.01)*(t1-t0);
+        // a small number for exponential functions
+        hnext = static_cast<T>(0.001)*(t1-t0);
     };
     __device__ void check_reach_t1()
     {
@@ -58,6 +73,12 @@ struct __ALIGNED__ Controller
     __device__ void t0_increment()
     {
         t0 += hrun;
+    }
+
+    __device__ void debug_info()
+    {
+        printf("step controller debug %d %d %d %g %g %g %g %g\n",
+                   counter, converged, t1reached, t0, t1, hnext, hrun, errold);
     }
 
 };
@@ -73,7 +94,7 @@ struct ControllerHolder {
 
     __host__ void set_tolerance(const T atol, const T rtol);
 
-    ControllerHolder(const int systems_batch_, const T atol_=1e-8, const T rtol_=1e-6)
+    ControllerHolder(const int systems_batch_, const T atol_=1e-6, const T rtol_=1e-3)
         : systems_batch(systems_batch_)
     {
         cudaSafeCall(cudaMallocManaged(&controllers, systems_batch*sizeof(Controller<T>)));
@@ -93,9 +114,6 @@ Controller<T>::init (const T atol_, const T rtol_)
 {
     atol = atol_;
     rtol = rtol_;
-    reject = false;
-    errold = static_cast<T>(1.e-4);
-    hnext = static_cast<T>(1.e-4);
 }
 
 // Check whether the error is within tolerance
@@ -108,11 +126,12 @@ __device__ void Controller<T>::check_convergence(
     const cg::thread_block & cta,
     Stepper<T>& s)
 {
-	static const T beta = 0.0;
-	static const T alpha = 0.2-beta*0.75;
-	static const T minscale = 0.2;
-	static const T maxscale = 10.0;
-	static const T safe = 0.9;
+	static const T beta = static_cast<T>(0.0); // 0.4/k
+	static const T alpha = static_cast<T>(0.2)
+	    -beta*static_cast<T>(0.75); // 1/k - 0.75\beta
+	static const T minscale = static_cast<T>(0.2);
+	static const T maxscale = static_cast<T>(10.0);
+	static const T safety = static_cast<T>(0.9);
 
 
     // compute error
@@ -151,27 +170,28 @@ __device__ void Controller<T>::check_convergence(
                 scale = maxscale;
             else
             {
-                scale=safe*pow(err,-alpha)*pow(errold,beta);
+                scale=safety*pow(err,-alpha)*pow(errold,beta);
                 if (scale<minscale) scale=minscale;
                 if (scale>maxscale) scale=maxscale;
             }
             // check whether h was rejected in the previous run
             if (reject)
-                hnext=hrun*min(scale,static_cast<T>(1.0));
-            else
-                hnext=hrun*scale;
+                scale = min(scale,static_cast<T>(1.0));
+
+            hnext *= scale;
             errold=max(err,1.0e-4);
         }
         else
         {
             // not converged
             // reduce h for next trial
-            scale=max(safe*pow(err,-alpha),minscale);
+            scale=max(safety*pow(err,-alpha),minscale);
             hnext *= scale;
             reject = true;
             converged = false;
         }
         //printf("test controller err h scale hnext %g %g %g %g \n", err, h, scale, hnext);
+        counter++;
     }
     // sync and broadcast
     cta.sync();

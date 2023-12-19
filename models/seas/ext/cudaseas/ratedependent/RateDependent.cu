@@ -121,7 +121,7 @@ void RateDependent<T>::forward_model_batch(
         // call the solver
         solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                                  conv_i_start, conv_i_stop, max_cycles, verbose);
-        // cudaDeviceSynchronize();
+        cudaDeviceSynchronize();
     }
 
     // save the t=0 sim_state for the first sample to state_int, to be used the init

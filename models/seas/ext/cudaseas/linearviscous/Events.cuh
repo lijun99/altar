@@ -51,8 +51,8 @@ struct __ALIGNED__ Events {
         // note one thread per patch, the iteration is for system_size > #total threads
         for(int id = cta.thread_rank(); id<system_size; id+=cta.size())
             yn[id] += yevent[id]; // simply add coseismic changes
-        cta.sync();
-        return;
+        // cta.sync();
+        // return;
     };
 };
 

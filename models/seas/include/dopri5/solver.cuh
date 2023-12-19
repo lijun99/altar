@@ -167,10 +167,7 @@ __device__ void solve_device( const cg::thread_block & cta,
         if(cta.thread_rank()==0)
         {
             auto tevents = events.get_events_time(system_id);
-            controller.t0 = tevents[it];
-            controller.t1 = tevents[it+1];
-            controller.converged = false;
-            controller.t1reached = false;
+            controller.init_run(tevents[it], tevents[it+1]);
             controller.set_init_h();
 
             if (verbose)
@@ -202,6 +199,7 @@ __device__ void solve_device( const cg::thread_block & cta,
             cta.sync();
 
             // adjust step length to reach convergence
+
             while(!controller.converged)
             {
                 // integrate over step h
@@ -211,9 +209,9 @@ __device__ void solve_device( const cg::thread_block & cta,
                 // check the convergence and propose a new step hnext
                 controller.check_convergence(cta, stepper);
 
-                // printf("test solver %d %d %d %g %g\n", cta.thread_rank(),
-                //     controller.converged, controller.t1reached,
-                //    controller.hnext, controller.hrun);
+                // to check the adaptive steps
+                // if(cta.thread_rank()==0)
+                //     controller.debug_info();
             }
             if (dense_out){
                 // compute output if t_eval is within this range

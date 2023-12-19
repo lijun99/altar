@@ -305,6 +305,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         for system_start in range(0, batch, max_batch_size):
             # get the actual batch size
             batch_size = min(max_batch_size, batch-system_start)
+            print(f"Python Loop Processing systems {system_start} to {system_start+batch_size-1} ... ...")
             # copy theta (a tile)
             theta_batch.copytile(src=theta,
                                  src_start=(system_start, 0),

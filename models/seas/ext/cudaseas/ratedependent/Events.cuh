@@ -74,8 +74,8 @@ struct __ALIGNED__ SEASEvents {
         for(int id = cta.thread_rank(); id < patches * 2; id += cta.size())
             yn[id + patches * 2] += yevent[id]; // simply add changes, only for velocity
 
-        cta.sync();
-        return;
+        // cta.sync();
+        // return;
     };
 };
 
