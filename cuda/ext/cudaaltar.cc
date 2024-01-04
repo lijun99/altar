@@ -47,6 +47,7 @@ namespace altar { namespace cuda {
             // norms
             { cudaL2::norm__name__, cudaL2::norm, METH_VARARGS, cudaL2::norm__doc__},
             { cudaL2::normllk__name__, cudaL2::normllk, METH_VARARGS, cudaL2::normllk__doc__},
+            { cudaL2::normllk_weighted__name__, cudaL2::normllk_weighted, METH_VARARGS, cudaL2::normllk_weighted__doc__},
 
             // metropolis sampler
             { cudaMetropolis::setValidSampleIndices__name__, cudaMetropolis::setValidSampleIndices, METH_VARARGS, cudaMetropolis::setValidSampleIndices__doc__},

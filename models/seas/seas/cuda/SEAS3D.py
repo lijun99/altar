@@ -29,6 +29,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     systems_batch = altar.properties.int(default=None)
     v_init_file = altar.properties.str(default=None)
     verbose = altar.properties.bool(default=False)
+    mask_file = altar.properties.path(default=None)
 
     # helper function to time
     def sync_and_time(self):
@@ -129,6 +130,15 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.obs_disp = altar.cuda.matrix(
             shape=(self.max_batch, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
+
+        # mask/weight for observations
+        if self.mask_file is None:
+            self.mask = None
+            # or create a unit vector
+            # self.mask = altar.cuda.vector(shape=self.dataobs.gDataVec.shape, dtype=self.gpuprec).fill(1)
+        else:
+            # please implement this - to read mask of data from a file
+            self.mask = None
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(self.sync_and_time())
@@ -323,7 +333,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             predictions.subtractVector(vector=data_obs, size=(batch_size, observations))
             # call data method to calculate the l2 norm
             self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
-                                          residual=True, batch=batch_size)
+                                          residual=True, batch=batch_size, weight=self.mask)
             # copy likelihood to global
             likelihood.copytile(likelihood_batch, start=system_start, size=batch_size)
 

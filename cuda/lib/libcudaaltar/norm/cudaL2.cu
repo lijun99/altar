@@ -23,6 +23,11 @@ namespace cudaL2_kernels {
     template <typename real_type>
     __global__ void _normllk(const real_type * const data, real_type * const probability,
         const size_t batch, const size_t parameters, const real_type constant);
+    // weighted normllk constant-0.5 \sum_i x_i^2 w_i
+    template <typename real_type>
+    __global__ void _normllk_weighted(const real_type * const data, real_type * const probability,
+        const real_type * const weight,
+        const size_t batch, const size_t parameters, const real_type constant);
 }
 
 // l2 norm
@@ -81,6 +86,35 @@ template void altar::cuda::norms::cudaL2::normllk<float>(
 template void altar::cuda::norms::cudaL2::normllk<double>(
     const double * const, double * const, const size_t, const size_t, const double, cudaStream_t);
 
+// weighted l2 normllk
+// probability = -0.5 \sum_i x_i^2 w_i  + l2constant
+template <typename real_type>
+void altar::cuda::norms::cudaL2::
+normllk_weighted(const real_type * const data, // input data , matrix(samples, parameters)
+    real_type * const probability, // output norm, vector(samples)
+    const real_type * const weight, // weight for each component , vector(parameters)
+    const size_t batch, // first batch of samples to be computed batch<=samples
+    const size_t parameters, // number of parameters/observations
+    const real_type l2constant, // constant to be added to probability
+    cudaStream_t stream)
+{
+    // determine the block/grid size
+    // one thread for one
+    int blockSize = NTHREADS;
+    int gridSize = IDIVUP(batch, blockSize);
+
+    // call cuda kernels
+    cudaL2_kernels::_normllk_weighted<real_type><<<gridSize, blockSize, 0, stream>>>(
+        data, probability, weight, batch, parameters, l2constant);
+    cudaCheckError("cudaL2::L2normLLKWeighted error");
+}
+
+// explicit instantiation
+template void altar::cuda::norms::cudaL2::normllk_weighted<float>(
+    const float * const, float * const, const float * const, const size_t, const size_t, const float, cudaStream_t);
+template void altar::cuda::norms::cudaL2::normllk_weighted<double>(
+    const double * const, double * const, const double * const, const size_t, const size_t, const double, cudaStream_t);
+
 
 namespace cudaL2_kernels {
 // norm_kernel
@@ -123,6 +157,30 @@ _normllk(const real_type* const data, real_type* const probability,
     {
         real_type value = data_sample[i];
         prob += value*value;
+    }
+
+    probability[sample] = l2constant - 0.5*prob;
+}
+
+// weighted_normllk_kernel
+template <typename real_type>
+__global__ void
+_normllk_weighted(const real_type* const data, real_type* const probability,
+    const real_type* const weight,
+    const size_t batch, const size_t parameters,
+    const real_type l2constant)
+{
+    int sample = blockIdx.x*blockDim.x + threadIdx.x;
+    if (sample >= batch) return;
+
+    real_type prob = 0.0f;
+    // get the pointer for a given sample
+    const real_type * data_sample = data + sample*parameters;
+
+    for(int i=0; i<parameters; ++i)
+    {
+        real_type value = data_sample[i];
+        prob += value*value*weight[i];
     }
 
     probability[sample] = l2constant - 0.5*prob;

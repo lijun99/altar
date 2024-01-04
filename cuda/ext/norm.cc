@@ -129,4 +129,57 @@ normllk(const real_type* const data, // input data , matrix(samples, parameters)
     Py_INCREF(Py_None);
     return Py_None;
 }
+
+
+// cudaL2_normllk_weighted l2const - w||x||^2/2
+const char * const altar::cuda::extensions::cudaL2::normllk_weighted__name__ = "cudaL2_normllk_weighted";
+const char * const altar::cuda::extensions::cudaL2::normllk_weighted__doc__ =
+    "cudaL2 normllk of a batch of data with weight";
+
+PyObject *
+altar::cuda::extensions::cudaL2::normllk_weighted(PyObject *, PyObject * args) {
+    // the args
+    // normllk(data, , batch) batch <= samples
+    // data (samples, parameters) proba
+    PyObject * dataCapsule, *resultCapsule, *weightCapsule;
+    size_t batch;
+    double l2constant;
+
+    int status = PyArg_ParseTuple(args, "O!O!O!kd:cudaL2_normllk",
+                                    &PyCapsule_Type, &dataCapsule, &PyCapsule_Type, &resultCapsule,
+                                    &PyCapsule_Type, &weightCapsule,
+                                    &batch, &l2constant);
+    if(!status) return 0;
+    if (!PyCapsule_IsValid(dataCapsule, altar::cuda::extensions::matrix::capsule_t) ||
+        !PyCapsule_IsValid(resultCapsule, altar::cuda::extensions::vector::capsule_t) ||
+        !PyCapsule_IsValid(weightCapsule, altar::cuda::extensions::vector::capsule_t)) {
+        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsule");
+        return 0;
+    }
+
+    cuda_matrix * data = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(dataCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_vector * result = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(resultCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * weight = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(weightCapsule, altar::cuda::extensions::vector::capsule_t));
+
+    size_t parameters = data->size2;
+    switch(data->dtype) {
+        case PYCUDA_DOUBLE:
+            altar::cuda::norms::cudaL2::normllk_weighted<double>((double *)data->data, (double *)result->data, (double *)weight->data, batch, parameters, l2constant);
+            break;
+        case PYCUDA_FLOAT:
+            altar::cuda::norms::cudaL2::normllk_weighted<float>((float *)data->data, (float *)result->data, (float *)weight->data, batch, parameters, (float)l2constant);
+            break;
+        default:
+            PyErr_SetString(PyExc_TypeError, "not a real type");
+    }
+
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
 // end of file

@@ -33,7 +33,16 @@ namespace altar {
                 void normllk(const real_type * const data, real_type * const probability, 
                     const size_t batch, const size_t parameters,
                     const real_type constant=0.0, cudaStream_t stream=0);
-                    
+
+                // compute l2 llk directly for a batch of data with weights for each parameter/observation
+                // return probability (samples)
+                // probability = constant - 0.5 \sum_i data_i^2 w_i
+                template <typename real_type>
+                void normllk_weighted(const real_type * const data, real_type * const probability,
+                    const real_type * const weight,
+                    const size_t batch, const size_t parameters,
+                    const real_type constant=0.0, cudaStream_t stream=0);
+
             } // of namespace cudaL2
         } // of namespace norms
     } // of namespace cuda

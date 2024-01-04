@@ -23,6 +23,11 @@ namespace altar{ namespace cuda { namespace extensions {
             extern const char * const normllk__name__;
             extern const char * const normllk__doc__;
             PyObject * normllk(PyObject *, PyObject *);
+
+            extern const char * const normllk_weighted__name__;
+            extern const char * const normllk_weighted__doc__;
+            PyObject * normllk_weighted(PyObject *, PyObject *);
+
         } 
 } } } // of namespace altar.cuda.extensions
 

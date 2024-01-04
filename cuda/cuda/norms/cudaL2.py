@@ -57,7 +57,7 @@ class cudaL2(L2, family="altar.norms.cudal2"):
         return out
 
 
-    def cuEvalLikelihood(self, data, constant=0.0, out=None, batch=None, cdinv=None):
+    def cuEvalLikelihood(self, data, constant=0.0, out=None, batch=None, cdinv=None, weight=None):
         """
         Compute the L2 norm data likelihood of the given data  const - ||x||^2/2
         Arguments:
@@ -85,8 +85,11 @@ class cudaL2(L2, family="altar.norms.cudal2"):
                 alpha=1.0, uplo=cublas.FillModeUpper, side=cublas.SideRight,
                 transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit)
                 
-        # compute the norm 
-        libcudaaltar.cudaL2_normllk(data.data, out.data, batch, constant)
+        # compute the norm
+        if weight is None:
+            libcudaaltar.cudaL2_normllk(data.data, out.data, batch, constant)
+        else:
+            libcudaaltar.cudaL2_normllk_weighted(data.data, out.data, weight.data, batch, constant)
         # return the result
         return out
 

@@ -105,7 +105,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # all done
         return self
 
-    def cuEvalLikelihood(self, prediction, likelihood, residual=True, batch=None):
+    def cuEvalLikelihood(self, prediction, likelihood, residual=True, batch=None, weight=None):
         """
         compute the datalikelihood for prediction
         :param prediction: (samples x observations) input of predicted data
@@ -137,7 +137,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         normalization = self.normalization  # norm constant
 
         likelihood = self.norm.cuEvalLikelihood(
-            data=prediction, constant=normalization, out=likelihood, batch=batch)
+            data=prediction, constant=normalization, out=likelihood, batch=batch, weight=weight)
 
         # all done
         return likelihood
