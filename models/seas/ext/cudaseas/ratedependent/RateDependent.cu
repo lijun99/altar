@@ -123,16 +123,17 @@ void RateDependent<T>::forward_model_batch(
                                  conv_i_start, conv_i_stop, max_cycles, verbose);
         cudaDeviceSynchronize();
     }
+    cudaCheckError("forward_model_batch solver error");
 
     // save the t=0 sim_state for the first sample to state_int, to be used the init
     // state_int [2(slip/stress), 2(slip_components), patches]
     // sim_state [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
     // only save slip rate (stress)
     // TODO should be last time step and different for all samples
-    auto state_init_copy_start = state_init + 2*num_inner_patches;
-    auto sim_state_copy_start = sim_state + 2*num_inner_patches;
-    cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
-        2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
+    // auto state_init_copy_start = state_init + 2*num_inner_patches;
+    // auto sim_state_copy_start = sim_state + 2*num_inner_patches;
+    // cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
+    //     2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
 
     // cudaDeviceSynchronize();
     // for(auto i=0; i<4*num_inner_patches; i++)

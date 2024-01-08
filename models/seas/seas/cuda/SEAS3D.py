@@ -14,7 +14,7 @@ from altar.cuda.models.cudaBayesian import cudaBayesian
 from altar.models.seas.ext import cudaseas as libcudaseas
 
 # import the earthquake cycle simulator
-from seqeas.subduction3d import (RateStateSteadyLogarithmic, Fault3D, SubductionSimulation3D,
+from seqeas.subduction3d import (RateStateSteadyLogarithmic2D, Fault3D, SubductionSimulation3D,
                                  get_surface_displacements)
 
 
@@ -66,7 +66,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # create reference simulation
         ticks.append(self.sync_and_time())
-        self.rheo = RateStateSteadyLogarithmic(**self.rheo_dict)
+        self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
         self.fault = Fault3D(**self.fault_dict)
         self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
 
@@ -135,9 +135,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         if self.mask_file is None:
             self.mask = None
             # or create a unit vector
-            # self.mask = altar.cuda.vector(shape=self.dataobs.gDataVec.shape, dtype=self.gpuprec).fill(1)
+            # self.mask = altar.cuda.vector(shape=self.dataobs.gDataVec.shape,
+            #                               dtype=self.gpuprec).fill(1)
         else:
             # please implement this - to read mask of data from a file
+            # TODO
             self.mask = None
 
         # create CUDA model for all samples (need to reduce to batch size)
@@ -206,22 +208,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         """
         # loop over theta entries
         rheo_kw_args = deepcopy(self.rheo_dict)
-        for i, name in enumerate(self.psets_list):
-            # get value
-            assert self.psets[name].count == 1
-            key = name
-            val = theta_arr[i]
-            # check if we need to convert from log space
-            if key.startswith("log10_"):
-                val = 10**val
-                key = key[6:]
-            # check for 100km to 1m conversion
-            if key in ["mid_transition", "deep_transition", "boundary_width"]:
-                val = val * 1e5
-            # apply update
-            rheo_kw_args[key] = val
+        assert self.psets_list == ["log10_alpha_h_mat"]
+        rheo_kw_args["alpha_h_mat"] = 10**np.array(theta_arr)
         # return new object instance
-        return RateStateSteadyLogarithmic(**rheo_kw_args)
+        return RateStateSteadyLogarithmic2D(**rheo_kw_args)
 
     def forwardModelBatched(self, theta, prediction, batch):
         """
@@ -315,7 +305,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         for system_start in range(0, batch, max_batch_size):
             # get the actual batch size
             batch_size = min(max_batch_size, batch-system_start)
-            print(f"Python Loop Processing systems {system_start} to {system_start+batch_size-1} ... ...")
+            print(f"Python Loop Processing systems {system_start} to "
+                  f"{system_start+batch_size-1}...")
             # copy theta (a tile)
             theta_batch.copytile(src=theta,
                                  src_start=(system_start, 0),

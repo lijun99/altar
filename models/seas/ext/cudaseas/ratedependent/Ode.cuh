@@ -3,6 +3,9 @@
  *
  */
 
+#include <cmath>
+#include <assert.h>
+
 #ifndef __rd_ode_cuh__
 #define __rd_ode_cuh__
 
@@ -54,6 +57,12 @@ struct __ALIGNED__ RateDependentODE {
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             f[patch_id] = v_0 * exp(y0[patch_id + 2 * patches]);
             f[patch_id + patches] = v_0 * exp(y0[patch_id + 3 * patches]);
+            // if ((!std::isfinite(f[patch_id])) || (!std::isfinite(f[patch_id + patches]))) {
+            //     printf("ode id=%d v1=%g v2=%g zeta1=%g zeta2=%g\n",
+            //            patch_id, f[patch_id], f[patch_id + patches],
+            //            y0[patch_id + 2 * patches], y0[patch_id + 3 * patches]);
+            //     assert(false);
+            // }
         }
 
         // wait for completion
