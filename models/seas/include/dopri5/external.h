@@ -18,6 +18,10 @@
 #include <cublas_v2.h>
 #include <cusolverDn.h>
 
+#include <cuda/std/limits>
+#include <cuda/std/cmath>
+
+
 // cooperative groups
 #include <cooperative_groups.h>
 #include <cooperative_groups/reduce.h>

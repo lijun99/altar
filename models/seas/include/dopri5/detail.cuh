@@ -229,11 +229,11 @@ __device__  void vector_copy(const cg::thread_block & cta, T* dst, const T* src,
 //     block_process<T, decltype(axpy)>(N, axpy);
 template<class T, class ProcType, class... Args>
 __device__ auto block_process(
+    const cg::thread_block& cta,
     const int N,
-    const ProcType & func,
+    const ProcType& func,
     Args... args)
 {
-    auto cta = cg::this_thread_block();
     for (auto tid = cta.thread_rank(); tid<N; tid+=cta.size())
         func(tid, args...);
 }

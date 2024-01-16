@@ -185,7 +185,7 @@ void Stepper<T>::integrate(
     // compute y0+h*a21*k1
 	// this loop is needed since the #patches could be larger than #threads
 	auto yn2 = [=] (const int i) -> void { yn[i] = y0[i]+ h*static_cast<T>(0.2)*k1[i]; };
-    cuda::detail::block_process<T, decltype(yn2)>(system_size, yn2);
+    cuda::detail::block_process<T, decltype(yn2)>(cta, system_size, yn2);
     // wait till all threads have updated
 	cta.sync();
     // compute k2 for each patch
@@ -200,7 +200,7 @@ void Stepper<T>::integrate(
 	            + h*(static_cast<T>(3.0/40.0)*k1[i]
 	                +static_cast<T>(9.0/40.0)*k2[i]);
 	};
-    cuda::detail::block_process<T, decltype(yn3)>(system_size, yn3);
+    cuda::detail::block_process<T, decltype(yn3)>(cta, system_size, yn3);
 	cta.sync();
     // compute k3 for each patch
     ode.dydt_block(cta, system_id, t0+static_cast<T>(0.3)*h, yn, k3);
@@ -215,7 +215,7 @@ void Stepper<T>::integrate(
                 +static_cast<T>(32.0/9.0)*k3[index]
                 );
 	};
-	cuda::detail::block_process<T, decltype(yn4)>(system_size, yn4);
+	cuda::detail::block_process<T, decltype(yn4)>(cta, system_size, yn4);
 	cta.sync();
     // compute k4 for each patch
     ode.dydt_block(cta, system_id, t0+static_cast<T>(0.8)*h, yn, k4);
@@ -231,7 +231,7 @@ void Stepper<T>::integrate(
                 +static_cast<T>(-212.0/729.0)*k4[index]
                 );
 	};
-	cuda::detail::block_process<T, decltype(yn5)>(system_size, yn5);
+	cuda::detail::block_process<T, decltype(yn5)>(cta, system_size, yn5);
 	cta.sync();
     // compute k5 for each patch
     ode.dydt_block(cta, system_id, t0+static_cast<T>(8.0/9.0)*h, yn, k5);
@@ -248,7 +248,7 @@ void Stepper<T>::integrate(
                 +static_cast<T>(-5103.0/18656.0)*k5[index]
                 );
     };
-    cuda::detail::block_process<T, decltype(yn6)>(system_size, yn6);
+    cuda::detail::block_process<T, decltype(yn6)>(cta, system_size, yn6);
 	cta.sync();
     // compute k6 for each patch
     ode.dydt_block(cta, system_id, t0+h, yn, k6);
@@ -265,7 +265,7 @@ void Stepper<T>::integrate(
                 +static_cast<T>(11.0/84.0)*k6[index]
                 );
     };
-    cuda::detail::block_process<T, decltype(yn7)>(system_size, yn7);
+    cuda::detail::block_process<T, decltype(yn7)>(cta, system_size, yn7);
 	cta.sync();
 
 	// if(threadIdx.x ==0) {
@@ -288,7 +288,7 @@ void Stepper<T>::integrate(
                 +static_cast<T>(-1.0/40.0)*k7[index]
                 );
 	};
-	cuda::detail::block_process<T, decltype(enf)>(system_size, enf);
+	cuda::detail::block_process<T, decltype(enf)>(cta, system_size, enf);
 	cta.sync();
     // all done
 }

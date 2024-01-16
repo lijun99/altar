@@ -175,10 +175,15 @@ __device__ void solve_device( const cg::thread_block & cta,
         }
         cta.sync();
 
+
+
         // set events at t0
         events.set_events_block(cta, system_id, it, stepper.y0);
         cta.sync();
 
+        // determine a step to start
+        controller.select_initial_step(cta, system_id, stepper, ode);
+        cta.sync();
 
         // Safe option: to ask stepper compute anyway, no need to call set_f0
         // need to recompute f0 = f(t0, y0) due to the possible y0 update
