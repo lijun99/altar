@@ -76,7 +76,7 @@ void copy_slip(T* slip_history,
     else if (patches <= 64)
         threads = 64;
     else if (patches <= 128)
-        threads =128;
+        threads = 128;
     else if (patches <= 256)
         threads = 256;
     else if (patches <=512 )
@@ -137,7 +137,7 @@ void convert_slip_rate(
     else if (patches <= 64)
         threads = 64;
     else if (patches <= 128)
-        threads =128;
+        threads = 128;
     else if (patches <= 256)
         threads = 256;
     else if (patches <=512 )
@@ -287,7 +287,7 @@ void extract_slip_rate_transpose(T* slip_rate,
     else if (patches <= 64)
         threads = 64;
     else if (patches <= 128)
-        patches =128;
+        threads = 128;
     else if (patches <= 256)
         threads = 256;
     else if (patches <=512 )
@@ -342,7 +342,7 @@ void transpose_displacement(T* prediction,
     else if (displacement_size <= 64)
         threads = 64;
     else if (displacement_size <= 128)
-        threads =128;
+        threads = 128;
     else if (displacement_size <= 256)
         threads = 256;
     else if (displacement_size <=512)
@@ -471,7 +471,7 @@ void subtract_displacement_from_teq(
     else if (observations <= 64)
         threads = 64;
     else if (observations <= 128)
-        threads =128;
+        threads = 128;
     else if (observations <= 256)
         threads = 256;
     else if (observations <=512)
