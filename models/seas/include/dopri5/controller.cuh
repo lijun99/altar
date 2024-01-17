@@ -169,10 +169,11 @@ struct __ALIGNED__ Controller
             if (d1 <= 1e-15 && d2 <= 1e-15)
                 h1 = max(1e-6, h0 * 1e-3);
             else
-                h1 = pow(0.01 / max(d1, d2), static_cast<T>(0.2));
-            hnext = min(100 * h0, h1);
-            // printf("set initial h %g\n", hnext);
+                h1 = pow(static_cast<T>(0.01) / max(d1, d2), static_cast<T>(0.2));
+            hnext = min(static_cast<T>(100) * h0, h1);
+            printf("set initial h %d %g\n", system_id, hnext);
         }
+        cta.sync();
     }
 
 };
@@ -232,12 +233,13 @@ __device__ void Controller<T>::check_convergence(
     auto y0 = s.y0;
     auto yn = s.yn;
     auto yerr = s.en;
+    auto N = s.system_size;
 
     // error function for each element
-    auto lambda = [=] (const int i)
+    auto lambda = [=] (const int i) -> T
     {
         auto val = yerr[i]/(atol + rtol*max(abs(yn[i]), abs(y0[i])));
-        return val*val;
+        return val*val/N;
     };
     // sum over all elements
     auto val = cuda::detail::sum_block<T, decltype(lambda)>(cta, s.system_size, lambda);
@@ -247,7 +249,7 @@ __device__ void Controller<T>::check_convergence(
 	if(cta.thread_rank() == 0)
 	{
         // compute the error
-	    auto err = sqrt(val/s.system_size);
+	    auto err = sqrt(val);
 	    // scale h for next run
         T scale;
         // keep info of current running h step
@@ -260,7 +262,7 @@ __device__ void Controller<T>::check_convergence(
             converged = true;
             reject = false;
             // prepare h for next step
-            if (err < cuda::std::numeric_limits<T>::epsilon())
+            if (err == static_cast<T>(0)) //  < cuda::std::numeric_limits<T>::epsilon())
                 scale = maxscale;
             else
             {
@@ -273,7 +275,7 @@ __device__ void Controller<T>::check_convergence(
                 scale = min(scale,static_cast<T>(1.0));
 
             hnext *= scale;
-            errold=max(err,1.0e-4);
+            errold=max(err,static_cast<T>(1.0e-4));
         }
         else
         {
@@ -284,8 +286,8 @@ __device__ void Controller<T>::check_convergence(
             reject = true;
             converged = false;
         }
-        // printf("test controller err h scale hnext %d %d %g %g %g %g \n",
-        //     blockIdx.x, counter, err, hrun, scale, hnext);
+        printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
+               blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
         counter++;
     }
     // sync and broadcast
