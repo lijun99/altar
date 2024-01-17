@@ -193,11 +193,11 @@ long RateDependent<T>::estimate_model_size() {
               (6 +
                num_t_obs +
                (num_ix_eq + 2) +
-               (num_inner_patches * 2 * num_inner_patches * 2) +
-               (num_inner_patches * 2) +
-               (num_inner_patches * 2) +
-               (UNITS * num_inner_patches) +
-               (num_systems * num_t_obs * UNITS * num_inner_patches)) * sizeof(T));
+               ((long)num_inner_patches * 2 * (long)num_inner_patches * 2) +
+               ((long)num_inner_patches * 2) +
+               ((long)num_inner_patches * 2) +
+               ((long)UNITS * (long)num_inner_patches) +
+               ((long)num_systems * (long)num_t_obs * (long)UNITS * (long)num_inner_patches)) * sizeof(T));
     return s;
 }
 
@@ -205,13 +205,13 @@ long RateDependent<T>::estimate_model_size() {
 template <typename T>
 long RateDependent<T>::estimate_forward_size(const int num_forward_batch) {
     auto s = (1 * sizeof(int) +
-              ((num_forward_batch * num_inner_patches) +
-               (num_forward_batch * num_eq * num_inner_patches * 2) +
-               (2 * num_inner_patches * 3 * num_stations) +
-               (num_forward_batch * num_t_obs * 3 * num_stations) +
-               (5 * num_inner_patches * UNITS * systems_batch) +
-               (10 * num_inner_patches * UNITS * systems_batch) +
-               (num_forward_batch * num_t_obs * num_inner_patches * 2)) *sizeof(T));
+              (((long)num_forward_batch * (long)num_inner_patches) +
+               ((long)num_forward_batch * (long)num_eq * (long)num_inner_patches * 2) +
+               (2 * (long)num_inner_patches * 3 * (long)num_stations) +
+               ((long)num_forward_batch * (long)num_t_obs * 3 * (long)num_stations) +
+               (5 * (long)num_inner_patches * (long)UNITS * (long)systems_batch) +
+               (10 * (long)num_inner_patches * (long)UNITS * (long)systems_batch) +
+               ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2)) * sizeof(T));
     return s;
 }
 
