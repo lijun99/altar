@@ -40,8 +40,7 @@ public:
 
     // initialize cmodel parameters
     void initialize(
-        int num_systems,
-        int systems_batch,
+        int cuda_batch_size,
         int max_cycles,
         int num_t_obs,
         py::capsule t_obs_sec,
@@ -70,8 +69,7 @@ public:
         // printf("inside pyRateDependent.cu:initialize\n");
         // initialize CUDA model, assuming all shapes are correct
         _cmodel->initialize(
-            num_systems,
-            systems_batch,
+            cuda_batch_size,
             max_cycles,
             num_t_obs,
             convertPyArray<T, cuda_vector>(t_obs_sec),

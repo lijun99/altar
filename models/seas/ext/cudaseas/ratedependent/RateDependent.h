@@ -34,8 +34,7 @@ class RateDependent {
 
         // initial parameters and data
         void initialize(
-            int num_systems_,
-            int systems_batch_,
+            int cuda_batch_size_,
             int max_cycles_,
             int num_t_obs_,
             T* t_obs_sec_,
@@ -85,8 +84,7 @@ class RateDependent {
         SolverType* solver;
 
         // general variables
-        int num_systems; // maximum number of systems [-]
-        int systems_batch; // maximum number of systems to process in batch inside forward model [-]
+        int cuda_batch_size; // maximum number of systems in a cuda batch[-]
         const bool DENSE_OUT = true; // always output the dense last cycle [-]
         const bool USE_STATE_INIT_FOR_ALL = true; // always use a single state_init for all systems [-]
 

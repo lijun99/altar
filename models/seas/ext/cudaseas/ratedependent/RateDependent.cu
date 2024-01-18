@@ -22,8 +22,7 @@ namespace altar::models::seas::cuda::ratedependent {
 // suffix underline indicate class parameters
 template <typename T>
 void RateDependent<T>::initialize(
-        int num_systems_,
-        int systems_batch_,
+        int cuda_batch_size_,
         int max_cycles_,
         int num_t_obs_,
         T* t_obs_sec_,
@@ -48,8 +47,7 @@ void RateDependent<T>::initialize(
         int num_stations_)
 {
     // general variables
-    num_systems = num_systems_;
-    systems_batch = systems_batch_;
+    cuda_batch_size  = cuda_batch_size_;
 
     // cycles
     max_cycles = max_cycles_;
@@ -95,10 +93,14 @@ void RateDependent<T>::forward_model_batch(
     const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches * 2) [-]
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
     T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
-    const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
+    const int num_forward_batch, // forward model batch(system) size <= cuda_batch_size (in AlTar, not all samples are computed in simulations)
     const int num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
     bool verbose = false // whether to print info and progress indicators or not
 ) {
+
+    // make sure the total number of systems to process is smaller than the max batch size by cuda
+    assert(num_forward_batch <= cuda_batch_size);
+
     // create an instance of odefunc
     odefunc = new OdeType{num_inner_patches, UNITS, num_forward_batch, alpha_h_vec, mu_over_2vs, v_0, K_inner_inner_onfault,
                           K_inner_asperities_v_plate, v_plate_ddcs_proj_eff_inner};
@@ -108,33 +110,36 @@ void RateDependent<T>::forward_model_batch(
                            num_forward_batch, num_inner_patches, UNITS};
 
     // create the solver
-    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch, num_threads};
+    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, num_forward_batch, num_threads};
     solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
-    for (int system_offset = 0; system_offset < num_forward_batch; system_offset += systems_batch)
-    {
-        // check how many systems are left
-        auto systems_to_process = min(systems_batch, num_forward_batch - system_offset);
-        if (verbose)
-            printf("Processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
-        // set initial values
-        solver->set_init_values(state_init, USE_STATE_INIT_FOR_ALL, systems_to_process, system_offset);
-        // call the solver
-        solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
-                                 conv_i_start, conv_i_stop, max_cycles, verbose);
-        cudaDeviceSynchronize();
-    }
-    cudaCheckError("forward_model_batch solver error");
+    int system_offset = 0;
+    auto systems_to_process = num_forward_batch;
+
+    // move this to python
+    // if (verbose)
+    //     printf("Processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
+
+    // set initial values
+    solver->set_init_values(state_init, USE_STATE_INIT_FOR_ALL, systems_to_process, system_offset);
+    // call the solver
+    solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
+                             conv_i_start, conv_i_stop, max_cycles, verbose);
+    cudaDeviceSynchronize();
+
 
     // save the t=0 sim_state for the first sample to state_int, to be used the init
     // state_int [2(slip/stress), 2(slip_components), patches]
     // sim_state [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
     // only save slip rate (stress)
     // TODO should be last time step and different for all samples
-    // auto state_init_copy_start = state_init + 2*num_inner_patches;
-    // auto sim_state_copy_start = sim_state + 2*num_inner_patches;
-    // cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
-    //     2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
+
+
+    // temp solution: save the final state for one system to be copied as the initial state for all systems in the next run
+    auto state_init_copy_start = state_init + 2*num_inner_patches;
+    auto sim_state_copy_start = sim_state + 2*num_inner_patches;
+    cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
+         2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
 
     // cudaDeviceSynchronize();
     // for(auto i=0; i<4*num_inner_patches; i++)
@@ -186,7 +191,7 @@ void RateDependent<T>::forward_model_batch(
 // estimate model size
 template <typename T>
 long RateDependent<T>::estimate_model_size() {
-    auto s = (2 * sizeof(bool) + 
+    auto s = (2 * sizeof(bool) +
               (15 +
                num_ix_eq +
                n_slips_obs +
@@ -198,7 +203,7 @@ long RateDependent<T>::estimate_model_size() {
                ((long)num_inner_patches * 2) +
                ((long)num_inner_patches * 2) +
                ((long)UNITS * (long)num_inner_patches) +
-               ((long)num_systems * (long)num_t_obs * (long)UNITS * (long)num_inner_patches)) * sizeof(T));
+               ((long)cuda_batch_size * (long)num_t_obs * (long)UNITS * (long)num_inner_patches)) * sizeof(T));
     return s;
 }
 
@@ -210,8 +215,8 @@ long RateDependent<T>::estimate_forward_size(const int num_forward_batch) {
                ((long)num_forward_batch * (long)num_eq * (long)num_inner_patches * 2) +
                (2 * (long)num_inner_patches * 3 * (long)num_stations) +
                ((long)num_forward_batch * (long)num_t_obs * 3 * (long)num_stations) +
-               (5 * (long)num_inner_patches * (long)UNITS * (long)systems_batch) +
-               (10 * (long)num_inner_patches * (long)UNITS * (long)systems_batch) +
+               (5 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
+               (10 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
                ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2)) * sizeof(T));
     return s;
 }

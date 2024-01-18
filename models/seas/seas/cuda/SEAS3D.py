@@ -25,8 +25,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     """
     # configurable properties
     config_file = altar.properties.str()
-    num_systems = altar.properties.int(default=None)
-    systems_batch = altar.properties.int(default=None)
+    cuda_batch_size = altar.properties.int(default=None)
+    cuda_batch_size.doc = "max system/sample size to be processed by cuda in a batch, as limited by gpu memory"
     v_init_file = altar.properties.str(default=None)
     cuda_threads = altar.properties.int(default=0)
     verbose = altar.properties.bool(default=False)
@@ -54,10 +54,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # additional preparations
         self.gpuprec = application.job.gpuprecision
         channel = self.info
-        if self.num_systems is None:
-            self.num_systems = application.job.chains
-        if self.systems_batch is None:
-            self.systems_batch = self.num_systems
+        # total number of systems to process per task
+        self.num_systems = application.job.chains
+        # if the cuda_batch_size is not given, use the total number of systems
+        # alternatively, use a memory estimate to compute
+        if self.cuda_batch_size is None:
+            self.cuda_batch_size = self.num_systems
 
         # parse configuration
         ticks = []
@@ -128,12 +130,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # simulate state - yeval in ode
         self.sim_state = altar.cuda.vector(
-            shape=self.num_systems * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
+            shape=self.cuda_batch_size * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
             dtype=self.gpuprec)
 
         # predicted observations
         self.obs_disp = altar.cuda.matrix(
-            shape=(self.num_systems, self.sim.t_obs.size * 3 * self.sim.n_observers),
+            shape=(self.cuda_batch_size, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
 
         # mask/weight for observations
@@ -157,8 +159,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             raise NotImplementedError
         channel.log(f"Running in {self.gpuprec} precision")
         self.cmodel.initialize(
-            self.num_systems,
-            self.systems_batch,
+            self.cuda_batch_size,
             self.sim.n_cycles_max,
             self.sim.t_obs.size,
             self.t_obs_sec.data,
@@ -301,39 +302,38 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # solve forward modeling in batches
         # get the max batch size and allocate temporary input/out for a batch
-        max_batch_size = self.num_systems
+        cuda_batch_size = self.cuda_batch_size
         parameters = theta.shape[1]
         # input
-        theta_batch = altar.cuda.matrix(shape=(max_batch_size, parameters), dtype=self.gpuprec)
+        theta_batch = altar.cuda.matrix(shape=(cuda_batch_size, parameters), dtype=self.gpuprec)
         # output
-        likelihood_batch = altar.cuda.vector(shape=max_batch_size, dtype=self.gpuprec)
+        likelihood_batch = altar.cuda.vector(shape=cuda_batch_size, dtype=self.gpuprec)
 
         # iterate over batches
-        for system_start in range(0, batch, max_batch_size):
+        for system_start in range(0, batch, cuda_batch_size):
             # get the actual batch size
-            batch_size = min(max_batch_size, batch-system_start)
+            batch_size_run = min(cuda_batch_size, batch-system_start)
             print(f"Python Loop Processing systems {system_start} to "
                   f"{system_start+batch_size-1}...")
             # copy theta (a tile)
             theta_batch.copytile(src=theta,
                                  src_start=(system_start, 0),
-                                 shape=(batch_size, parameters))
+                                 shape=(batch_size_run, parameters))
             # call forward model to calculate the data prediction
-            self.forwardModelBatched(theta=theta_batch, prediction=predictions, batch=batch_size)
+            self.forwardModelBatched(theta=theta_batch, prediction=predictions, batch=batch_size_run)
             # compute the residual
             data_obs = self.dataobs.gDataVec
             observations = data_obs.shape
 
-            # print("data_obs", data_obs.shape)
-            # print("data_pre")
-            # predictions.print()
+            # NOTE: prediction here is the surface displacement.
+            # If you want to correct them in python, you may add code here.
 
-            predictions.subtractVector(vector=data_obs, size=(batch_size, observations))
+            predictions.subtractVector(vector=data_obs, size=(batch_size_run, observations))
             # call data method to calculate the l2 norm
             self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
-                                          residual=True, batch=batch_size, weight=self.mask)
+                                          residual=True, batch=batch_size_run, weight=self.mask)
             # copy likelihood to global
-            likelihood.copytile(likelihood_batch, start=system_start, size=batch_size)
+            likelihood.copytile(likelihood_batch, start=system_start, size=batch_size_run)
 
         # consider cd_inv as a constant
         cd_inv = self.dataobs.gcd_inv
