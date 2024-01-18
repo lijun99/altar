@@ -250,6 +250,7 @@ __device__ void Controller<T>::check_convergence(
 	{
         // compute the error
 	    auto err = sqrt(val);
+	    printf("test err %d %g %g\n", blockIdx.x, val, err);
 	    // scale h for next run
         T scale;
         // keep info of current running h step

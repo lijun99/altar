@@ -134,9 +134,12 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
     // printf("      threads=%i\n", threads);
 
     int blocks = systems;
+
+    int sMemSize = threads*sizeof(real_type);
+
     // printf("      blocks=%i\n", blocks);
     // printf("      system_offset=%i\n", system_offset);
-    set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
+    set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads, sMemSize>>>(
         system_offset,
         ode,
         events,
