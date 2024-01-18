@@ -18,6 +18,7 @@
 #include "controller.cuh"
 #include "dense_output.cuh"
 #include "events.cuh"
+#include <assert.h>
 
 
 // enclosed in namespace
@@ -39,6 +40,7 @@ struct Solver
     // variables
     int systems_batch; // Batch of systems allocated, each system is processed by one block
     int system_size; // number of elements in one system, patches*units
+    int threads; // number of threads to use
 
     ode_system_type ode; // define the ode system
     event_type events; // define the event
@@ -49,7 +51,8 @@ struct Solver
     output_holder_type * output_holder;
 
     // constructor
-    Solver(ode_system_type& o, event_type& e, const real_type atol, const real_type rtol, const int systems_batch);
+    Solver(ode_system_type& o, event_type& e, const real_type atol, const real_type rtol,
+           const int systems_batch, const int threads);
 
     // set initial y(t0) values
     // @note if there are many batches, this needs to be called multiple times
@@ -70,7 +73,7 @@ struct Solver
 // solver constructor
 template <class real_type, class ode_system_type, class event_type>
 Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, event_type & events_,
-    const real_type atol=1e-8, const real_type rtol=1e-6, const int systems_batch_=8192)
+    const real_type atol=1e-8, const real_type rtol=1e-6, const int systems_batch_=8192, const int threads_=0)
     : ode(ode_), events(events_)
 {
     // if the total number of systems is smaller than provide batch, use real number of systems instead
@@ -78,6 +81,32 @@ Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, e
     system_size = ode.system_size;
     stepper_holder = new stepper_holder_type(ode.patches, ode.units, systems_batch);
     controller_holder = new controller_holder_type(systems_batch, atol, rtol);
+
+    // set number of patches
+    if (threads_ == 0) // keep default values based on number of patches
+    {
+        auto patches = ode.patches;
+        if (patches < 64)
+            threads = 32;
+        else if (patches < 128)
+            threads = 64;
+        else if (patches < 256)
+            threads =128;
+        else if (patches < 512)
+            threads = 256;
+        else if (patches < 1024 )
+            threads = 512;
+        else
+            threads = 1024;
+        printf("Solver initialized with %i threads based on %i patches\n", threads, patches);
+    }
+    else
+    {
+        assert(threads_ >= 1);
+        assert(threads_ <= 5120);
+        threads = threads_;
+        printf("Solver initialized with user-defined %i threads\n", threads);
+    }
 }
 
 // cuda kernel for setting initial values y0
@@ -116,22 +145,6 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
     const real_type* y0, const bool use_y0_for_all, const int systems, const int system_offset=0)
 {
     // printf("    inside solver.cuh:set_init_values\n");
-    auto patches = ode.patches;
-    // printf("      patches=%i\n", patches);
-    int threads;
-    if(patches <= 32)
-        threads = 32;
-    else if (patches <= 64)
-        threads = 64;
-    else if (patches <= 128)
-        threads =128;
-    else if (patches <= 256)
-        threads = 256;
-    else if (patches <=512 )
-        threads = 512;
-    else
-        threads = 1024;
-    // printf("      threads=%i\n", threads);
 
     int blocks = systems;
     // printf("      blocks=%i\n", blocks);
@@ -270,21 +283,6 @@ __global__ void solve_ivp_kernel(
 template <class real_type, class ode_system_type, class event_type>
 void Solver<real_type, ode_system_type, event_type>::solve_ivp(const bool dense_out, const int systems, const int system_offset)
 {
-    auto patches = ode.patches;
-    int threads;
-    if(patches < 64)
-        threads = 32;
-    else if (patches < 128)
-        threads = 64;
-    else if (patches < 256)
-        threads =128;
-    else if (patches < 512)
-        threads = 256;
-    else if (patches < 1024 )
-        threads = 512;
-    else
-        threads = 1024;
-
     int blocks = systems;
 
     solve_ivp_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(

@@ -15,6 +15,7 @@
 
 #include "solver.cuh"
 #include "spinup_controller.cuh"
+#include <assert.h>
 
 
 // enclosed in namespace
@@ -38,11 +39,12 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
     SpinupSolver(ode_system_type & ode_, event_type & events_,
         const real_type atol_=1e-8, const real_type rtol_=1e-6,
         const real_type spinup_atol_ = 1e-6, const real_type spinup_rtol_ = 1e-3,
-        const int systems_batch_=8192)
-        : single_solver_type(ode_, events_, atol_, rtol_, systems_batch_)
+        const int systems_batch_=8192, const int threads_=0)
+        : single_solver_type(ode_, events_, atol_, rtol_, systems_batch_, threads_)
     {
         spinup_controller_holder = new spinup_controller_holder_type(this->systems_batch, this->system_size,
             spinup_atol_, spinup_rtol_);
+        printf("SpinupSolver initialized with %i threads\n", this->threads);
     };
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);
@@ -155,27 +157,12 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
     const int index_start, const int index_end, // start end end indices of yn for convergence check
     const int max_cycles, const bool verbose = false)
 {
-    auto patches = this->ode.patches;
-    int threads;
-    if(patches < 64)
-        threads = 32;
-    else if (patches < 128)
-        threads = 64;
-    else if (patches < 256)
-        threads =128;
-    else if (patches < 512)
-        threads = 256;
-    else if (patches < 1024 )
-        threads = 512;
-    else
-        threads = 1024;
-
     int blocks = systems;
 
     // printf("    inside spinup_solver.cuh:solve_ivp_cycles (patches=%i, threads=%i, blocks=%i)\n",
     //        patches, threads, blocks);
 
-    solve_ivp_cycles_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
+    solve_ivp_cycles_kernel<real_type, ode_system_type, event_type><<<blocks, this->threads>>>(
         system_offset,
         dense_out,
         this->ode,

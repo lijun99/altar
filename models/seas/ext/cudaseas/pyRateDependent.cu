@@ -105,6 +105,7 @@ public:
         py::capsule G_surf,
         py::capsule obs_disp,
         const int batches,
+        const int num_threads = 0,
         const bool verbose = false)
     {
         // printf("inside pyRateDependent.cu:forward_model_batch\n");
@@ -114,7 +115,8 @@ public:
             convertPyArray<T, cuda_matrix>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
             convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_obs*3*num_stations) [m]
             batches, // batch size <=samples (in AlTar, not all samples are computed in simulations)
-            verbose
+            num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
+            verbose // whether to print info and progress indicators or not
         );
     }
 
@@ -141,7 +143,8 @@ module(py::module & m)
         .def("initialize", &pyRateDependent_double::initialize)
         .def("forward_model_batch", &pyRateDependent_double::forward_model_batch,
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"), py::arg("verbose") = false)
+             py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"),
+             py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_model_size", &pyRateDependent_double::estimate_model_size)
         .def("estimate_forward_size", &pyRateDependent_double::estimate_forward_size);
     py::class_<pyRateDependent_float>(m, "model_float")
@@ -149,7 +152,8 @@ module(py::module & m)
         .def("initialize", &pyRateDependent_float::initialize)
         .def("forward_model_batch", &pyRateDependent_float::forward_model_batch,
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"), py::arg("verbose") = false)
+             py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"),
+             py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_model_size", &pyRateDependent_float::estimate_model_size)
         .def("estimate_forward_size", &pyRateDependent_float::estimate_forward_size);
 }

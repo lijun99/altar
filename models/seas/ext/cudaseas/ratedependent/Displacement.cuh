@@ -66,23 +66,9 @@ void copy_slip(T* slip_history,
     const int systems,
     const int t_steps,
     const int patches,
-    const T v_0)
+    const T v_0,
+    const int threads)
 {
-
-    // decide threads per block based on #patches
-    int threads;
-    if(patches <= 32)
-        threads = 32;
-    else if (patches <= 64)
-        threads = 64;
-    else if (patches <= 128)
-        threads = 128;
-    else if (patches <= 256)
-        threads = 256;
-    else if (patches <=512 )
-        threads = 512;
-    else
-        threads = 1024;
     // get the number of blocks
     auto blocks = systems*t_steps;
 
@@ -127,23 +113,9 @@ void convert_slip_rate(
     const int systems,
     const int t_steps,
     const int patches,
-    const T v_0)
+    const T v_0,
+    const int threads)
 {
-
-    // decide threads per block based on #patches
-    int threads;
-    if(patches <= 32)
-        threads = 32;
-    else if (patches <= 64)
-        threads = 64;
-    else if (patches <= 128)
-        threads = 128;
-    else if (patches <= 256)
-        threads = 256;
-    else if (patches <=512 )
-        threads = 512;
-    else
-        threads = 1024;
     // get the number of blocks
     auto blocks = systems*t_steps;
 
@@ -175,7 +147,8 @@ void compute_displacement_impl1(
     const int displacement_size, // stations*displacement_components
     const T v_0, // v_0
     const T gemm_alpha, // d = alpha G* M + beta d, alpha may be cd^{-1}
-    const T gemm_beta  // 0 or -alpha (if d_obs is copied to d to compute residue)
+    const T gemm_beta,  // 0 or -alpha (if d_obs is copied to d to compute residue)
+    const int threads
     )
 {
 
@@ -193,7 +166,7 @@ void compute_displacement_impl1(
     //        slip_size, displacement_size, slip_size * displacement_size);
 
     // copy slip rate from sim_state
-    copy_slip<T>(slip_history, sim_state, samples, t_steps, patches, v_0);
+    copy_slip<T>(slip_history, sim_state, samples, t_steps, patches, v_0, threads);
     // printf("copy slip done (%i, %i) = %i\n",
     //        slip_size, displacement_size, slip_size * displacement_size);
 
@@ -278,22 +251,9 @@ void extract_slip_rate_transpose(T* slip_rate,
     const int systems,
     const int t_steps,
     const int patches,
-    const T v_0)
+    const T v_0,
+    const int threads)
 {
-    // decide threads per block based on #patches
-    int threads;
-    if(patches <= 32)
-        threads = 32;
-    else if (patches <= 64)
-        threads = 64;
-    else if (patches <= 128)
-        threads = 128;
-    else if (patches <= 256)
-        threads = 256;
-    else if (patches <=512 )
-        threads = 512;
-    else
-        threads = 1024;
     // get the number of blocks
     dim3 threads_per_block(threads, 1); // #threads along x, y
     dim3 blocks(systems, t_steps);
@@ -327,28 +287,12 @@ __global__ void tensor3d_transpose_102_kernel (T* d_out, const T* d_in,
 //  samples, t_steps, displacement_size]
 template <typename T>
 void transpose_displacement(T* prediction,
-    const int samples, const int t_steps, const int displacement_size)
+    const int samples, const int t_steps, const int displacement_size, const int threads)
 {
     // make a copy of prediction at first
     T* pred_copy;
     cudaSafeCall(cudaMalloc(&pred_copy, samples*t_steps*displacement_size*sizeof(T)));
     cudaSafeCall(cudaMemcpy(pred_copy, prediction, samples*t_steps*displacement_size*sizeof(T), cudaMemcpyDeviceToDevice));
-
-    // decide the cuda execution size
-    // assume displacement_size is large
-    int threads;
-    if(displacement_size <= 32)
-        threads = 32;
-    else if (displacement_size <= 64)
-        threads = 64;
-    else if (displacement_size <= 128)
-        threads = 128;
-    else if (displacement_size <= 256)
-        threads = 256;
-    else if (displacement_size <=512)
-        threads = 512;
-    else
-        threads = 1024;
 
     dim3 blocks{1, samples, t_steps};
     dim3 threads_per_block{threads, 1, 1};
@@ -462,22 +406,10 @@ void subtract_displacement_from_teq(
      T*  obs_disp, // (num_systems, num_t_obs, 3*num_stations)
      const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
      const int * t_eq_indices, // indices of t_eq inside t_obs
-     const int num_t_eq // total number of equations in t_obs
+     const int num_t_eq, // total number of equations in t_obs
+     const int threads
 )
 {
-    int threads;
-    if(observations <= 32)
-        threads = 32;
-    else if (observations <= 64)
-        threads = 64;
-    else if (observations <= 128)
-        threads = 128;
-    else if (observations <= 256)
-        threads = 256;
-    else if (observations <=512)
-        threads = 512;
-    else
-        threads = 1024;
 
     subtract_displacement_from_teq_kernel<<<num_systems, threads>>>(
         obs_disp, num_systems, num_t_obs, observations,

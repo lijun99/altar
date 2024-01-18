@@ -96,6 +96,7 @@ void RateDependent<T>::forward_model_batch(
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
     T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
     const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
+    const int num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
     bool verbose = false // whether to print info and progress indicators or not
 ) {
     // create an instance of odefunc
@@ -107,7 +108,7 @@ void RateDependent<T>::forward_model_batch(
                            num_forward_batch, num_inner_patches, UNITS};
 
     // create the solver
-    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch};
+    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, systems_batch, num_threads};
     solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
     for (int system_offset = 0; system_offset < num_forward_batch; system_offset += systems_batch)
@@ -143,13 +144,13 @@ void RateDependent<T>::forward_model_batch(
     //        << sim_state[num_t_obs*4*num_inner_patches+i] << "\n";
 
     // convert logarithmic velocity to linear one
-    convert_slip_rate<T>(sim_state, num_forward_batch, num_t_obs, num_inner_patches, v_0);
+    convert_slip_rate<T>(sim_state, num_forward_batch, num_t_obs, num_inner_patches, v_0, solver->threads);
 
     // call displacement routines - see details in Displacement.cuh for different implementations
     // assume Cd is a constant and gf is time independent
     compute_displacement_impl1<T>(
         obs_disp, sim_state, G_surf, num_forward_batch, num_t_obs, num_inner_patches, 3 * num_stations, v_0,
-        (T) 1.0, (T) 0.0); // alpha beta for gemm C = alpha A B + beta C
+        (T) 1.0, (T) 0.0, solver->threads); // alpha beta for gemm C = alpha A B + beta C
 
     /*
     // displacement subtraction from t_num_eq
@@ -168,7 +169,7 @@ void RateDependent<T>::forward_model_batch(
     if (n_slips_obs > 0)
         subtract_displacement_from_teq(
             obs_disp, num_forward_batch, num_t_obs, 3 * num_stations,
-            i_slips_obs, n_slips_obs);
+            i_slips_obs, n_slips_obs, solver->threads);
 
     /*
     // debug for two observations after subtraction
