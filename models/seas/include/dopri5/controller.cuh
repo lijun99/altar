@@ -171,7 +171,7 @@ struct __ALIGNED__ Controller
             else
                 h1 = pow(static_cast<T>(0.01) / max(d1, d2), static_cast<T>(0.2));
             hnext = min(static_cast<T>(100) * h0, h1);
-            printf("set initial h %d %g\n", system_id, hnext);
+            // printf("set initial h %d %g\n", system_id, hnext);
         }
         cta.sync();
     }
@@ -250,7 +250,7 @@ __device__ void Controller<T>::check_convergence(
 	{
         // compute the error
 	    auto err = sqrt(val);
-	    printf("test err %d %g %g\n", blockIdx.x, val, err);
+	    // printf("test err %d %g %g\n", blockIdx.x, val, err);
 	    // scale h for next run
         T scale;
         // keep info of current running h step
@@ -287,8 +287,8 @@ __device__ void Controller<T>::check_convergence(
             reject = true;
             converged = false;
         }
-        printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
-               blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
+        // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
+        //        blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
         counter++;
     }
     // sync and broadcast
