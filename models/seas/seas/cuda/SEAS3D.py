@@ -25,9 +25,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     """
     # configurable properties
     config_file = altar.properties.str()
-    max_batch = altar.properties.int(default=None)
+    num_systems = altar.properties.int(default=None)
     systems_batch = altar.properties.int(default=None)
     v_init_file = altar.properties.str(default=None)
+    cuda_threads = altar.properties.int(default=0)
     verbose = altar.properties.bool(default=False)
     mask_file = altar.properties.path(default=None)
 
@@ -53,10 +54,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # additional preparations
         self.gpuprec = application.job.gpuprecision
         channel = self.info
-        if self.max_batch is None:
-            self.max_batch = application.job.chains
+        if self.num_systems is None:
+            self.num_systems = application.job.chains
         if self.systems_batch is None:
-            self.systems_batch = self.max_batch
+            self.systems_batch = self.num_systems
 
         # parse configuration
         ticks = []
@@ -74,12 +75,16 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         if self.v_init_file is not None:
             try:
                 v_init_loaded = np.load(self.v_init_file)
-                assert v_init_loaded.shape == \
-                    self.sim.v_plate_ddcs_proj_eff[self.sim.fault.s_inner, :].shape
-            except AssertionError:
-                print("Couldn't load initial velocities due to shape mismatch.")
-            except FileNotFoundError:
-                print("Couldn't find initial velocities file.")
+                exp_shape = self.sim.v_plate_ddcs_proj_eff[self.sim.fault.s_inner, :].shape
+                assert v_init_loaded.shape == exp_shape
+            except AssertionError as e:
+                raise AssertionError("Couldn't load initial velocities due to shape mismatch:\n"
+                                     f"Loaded = {v_init_loaded.shape}, expected = {exp_shape}."
+                                     ).with_traceback(e.__traceback__) from e
+            except FileNotFoundError as e:
+                raise FileNotFoundError("Couldn't find initial velocities file "
+                                        f"'{self.v_init_file}'."
+                                        ).with_traceback(e.__traceback__) from e
             else:
                 self.sim.v_init = v_init_loaded
                 print(f"Loaded initial velocities from '{self.v_init_file}'")
@@ -123,12 +128,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # simulate state - yeval in ode
         self.sim_state = altar.cuda.vector(
-            shape=self.max_batch * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
+            shape=self.num_systems * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
             dtype=self.gpuprec)
 
         # predicted observations
         self.obs_disp = altar.cuda.matrix(
-            shape=(self.max_batch, self.sim.t_obs.size * 3 * self.sim.n_observers),
+            shape=(self.num_systems, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
 
         # mask/weight for observations
@@ -152,13 +157,13 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             raise NotImplementedError
         channel.log(f"Running in {self.gpuprec} precision")
         self.cmodel.initialize(
-            self.max_batch,
+            self.num_systems,
             self.systems_batch,
             self.sim.n_cycles_max,
             self.sim.t_obs.size,
             self.t_obs_sec.data,
-            self.sim.n_slips,  # = tevents.size - 2
-            self.sim.n_eq,
+            self.sim.n_slips,
+            self.sim.delta_tau_bounded_compressed.shape[0],
             self.delta_tau_bounded_indices.data,
             self.t_events.data,
             self.i_slips_obs.data,
@@ -250,7 +255,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
         delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=batch * self.sim.n_eq * self.fault.inner_num_patches * 2,
+            shape=(batch * self.sim.delta_tau_bounded_compressed.shape[0]
+                   * self.fault.inner_num_patches * 2),
             dtype=self.gpuprec)
         delta_tau_div_alpha_h.copy_from_host(
             source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
@@ -263,6 +269,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         self.G_surf.data,
                                         prediction.data,
                                         batch,
+                                        self.cuda_threads,
                                         self.verbose)
 
         # TODO subsample the CUDA forward model for each station according to its availability
@@ -294,7 +301,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # solve forward modeling in batches
         # get the max batch size and allocate temporary input/out for a batch
-        max_batch_size = self.max_batch
+        max_batch_size = self.num_systems
         parameters = theta.shape[1]
         # input
         theta_batch = altar.cuda.matrix(shape=(max_batch_size, parameters), dtype=self.gpuprec)
