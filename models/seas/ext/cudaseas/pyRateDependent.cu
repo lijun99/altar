@@ -119,12 +119,14 @@ public:
     }
 
     // estimator functions
-    long estimate_model_size() {
-        auto s = _cmodel->estimate_model_size();
-        return s;
-    }
-    long estimate_forward_size(const int batches) {
-        auto s = _cmodel->estimate_forward_size(batches);
+    long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+                              const int num_t_obs, const int num_inner_patches, const int UNITS,
+                              const int cuda_batch_size, const int num_forward_batch,
+                              const int num_eq, const int num_stations) {
+        auto s = _cmodel->estimate_object_size(num_ix_eq, n_slips_obs,
+                                               num_t_obs, num_inner_patches, UNITS,
+                                               cuda_batch_size, num_forward_batch,
+                                               num_eq, num_stations);
         return s;
     }
 };
@@ -143,8 +145,7 @@ module(py::module & m)
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"),
              py::arg("num_threads") = 0, py::arg("verbose") = false)
-        .def("estimate_model_size", &pyRateDependent_double::estimate_model_size)
-        .def("estimate_forward_size", &pyRateDependent_double::estimate_forward_size);
+        .def("estimate_object_size", &pyRateDependent_double::estimate_object_size);
     py::class_<pyRateDependent_float>(m, "model_float")
         .def(py::init())
         .def("initialize", &pyRateDependent_float::initialize)
@@ -152,8 +153,7 @@ module(py::module & m)
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("G_surf"), py::arg("obs_disp"), py::arg("batches"),
              py::arg("num_threads") = 0, py::arg("verbose") = false)
-        .def("estimate_model_size", &pyRateDependent_float::estimate_model_size)
-        .def("estimate_forward_size", &pyRateDependent_float::estimate_forward_size);
+        .def("estimate_object_size", &pyRateDependent_float::estimate_object_size);
 }
 
 } // end of namespace pycuda::seas::ratedependent

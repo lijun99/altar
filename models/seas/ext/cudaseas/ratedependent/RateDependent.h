@@ -70,11 +70,11 @@ class RateDependent {
             bool verbose // whether to print info and progress indicators or not
         );
 
-        // estimate model size
-        long estimate_model_size();
-
-        // estimate forward problem size
-        long estimate_forward_size(const int num_forward_batch);
+        // estimate object size
+        static long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+                                         const int num_t_obs, const int num_inner_patches, const int UNITS,
+                                         const int cuda_batch_size, const int num_forward_batch,
+                                         const int num_eq, const int num_stations);
 
     // parameters
     private:
