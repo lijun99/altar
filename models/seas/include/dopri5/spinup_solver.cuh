@@ -44,7 +44,7 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
     {
         spinup_controller_holder = new spinup_controller_holder_type(this->systems_batch, this->system_size,
             spinup_atol_, spinup_rtol_);
-        printf("SpinupSolver initialized with %i threads\n", this->threads);
+        // printf("SpinupSolver initialized with %i threads\n", this->threads);
     };
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);

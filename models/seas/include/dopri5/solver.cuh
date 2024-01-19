@@ -98,14 +98,14 @@ Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, e
             threads = 512;
         else
             threads = 1024;
-        printf("Solver initialized with %i threads based on %i patches\n", threads, patches);
+        // printf("Solver initialized with %i threads based on %i patches\n", threads, patches);
     }
     else
     {
         assert(threads_ >= 1);
         assert(threads_ <= 5120);
         threads = threads_;
-        printf("Solver initialized with user-defined %i threads\n", threads);
+        // printf("Solver initialized with user-defined %i threads\n", threads);
     }
 }
 
