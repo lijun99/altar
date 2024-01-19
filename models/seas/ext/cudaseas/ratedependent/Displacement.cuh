@@ -374,8 +374,8 @@ void compute_displacement_impl2(cublasHandle_t handle,
 template <typename T>
 __global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
      const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
-     const int * t_eq_indices, // indices of t_eq inside t_obs
-     const int num_t_eq)
+     const int * i_slips_obs, // indices of t_eq inside t_obs
+     const int n_slips_obs)
 {
     // get sample/system index
     int system = blockIdx.x;
@@ -383,12 +383,12 @@ __global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
     for (auto i_obs = threadIdx.x; i_obs < observations; i_obs += blockDim.x)
     {
         // iterate over t_eq
-        for(auto i_t_eq = 0; i_t_eq < num_t_eq; i_t_eq++)
+        for(auto i_t_eq = 0; i_t_eq < n_slips_obs; i_t_eq++)
         {
             // get the start index
-            auto it_start = t_eq_indices[i_t_eq];
+            auto it_start = i_slips_obs[i_t_eq];
             // get the end index (+1)
-            auto it_end = (i_t_eq == num_t_eq-1) ? num_t_obs : t_eq_indices[i_t_eq+1];
+            auto it_end = (i_t_eq == n_slips_obs-1) ? num_t_obs : i_slips_obs[i_t_eq+1];
             // get obs_disp value at i_t_eq
             auto offset = obs_disp[(system*num_t_obs+it_start)*observations+i_obs];
             // iterate over all time points
@@ -405,15 +405,15 @@ template<typename T>
 void subtract_displacement_from_teq(
      T*  obs_disp, // (num_systems, num_t_obs, 3*num_stations)
      const int num_systems, const int num_t_obs, const int observations, // observations = 3*num_stations
-     const int * t_eq_indices, // indices of t_eq inside t_obs
-     const int num_t_eq, // total number of equations in t_obs
+     const int * i_slips_obs, // indices of t_eq inside t_obs
+     const int n_slips_obs, // total number of equations in t_obs = n_slips_obs
      const int threads
 )
 {
 
     subtract_displacement_from_teq_kernel<<<num_systems, threads>>>(
         obs_disp, num_systems, num_t_obs, observations,
-        t_eq_indices, num_t_eq);
+        i_slips_obs, n_slips_obs);
     cudaCheckError("subtract_displacement_from_teq_kernel");
 }
 
