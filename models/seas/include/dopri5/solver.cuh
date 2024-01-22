@@ -40,7 +40,7 @@ struct Solver
     // variables
     int systems_batch; // Batch of systems allocated, each system is processed by one block
     int system_size; // number of elements in one system, patches*units
-    int threads; // number of threads to use
+    int threads; // number of threads to use for each system (one thread block)
 
     ode_system_type ode; // define the ode system
     event_type events; // define the event
@@ -83,7 +83,7 @@ Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, e
     controller_holder = new controller_holder_type(systems_batch, atol, rtol);
 
     // set number of patches
-    if (threads_ == 0) // keep default values based on number of patches
+    if (threads_ <= 0 || threads_ > 1024) // keep default values based on number of patches
     {
         auto patches = ode.patches;
         if (patches < 64)
@@ -102,8 +102,6 @@ Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, e
     }
     else
     {
-        assert(threads_ >= 1);
-        assert(threads_ <= 5120);
         threads = threads_;
         // printf("Solver initialized with user-defined %i threads\n", threads);
     }
