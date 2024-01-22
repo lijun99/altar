@@ -15,6 +15,8 @@
 
 namespace altar::cuda::py::seas::ratedependent {
 
+using size_type = std::size_t;
+
 template <typename T, typename D>
 T* convertPyArray(py::capsule pycap)
 {
@@ -119,7 +121,7 @@ public:
     }
 
     // estimator functions
-    long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+    size_type estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                               const int num_t_obs, const int num_inner_patches, const int UNITS,
                               const int cuda_batch_size, const int num_forward_batch,
                               const int num_eq, const int num_stations) {

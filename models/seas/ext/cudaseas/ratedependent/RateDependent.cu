@@ -190,11 +190,11 @@ void RateDependent<T>::forward_model_batch(
 
 // estimate object size
 template <typename T>
-long RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+RateDependent<T>::size_type RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                                             const int num_t_obs, const int num_inner_patches, const int UNITS,
                                             const int cuda_batch_size, const int num_forward_batch,
                                             const int num_eq, const int num_stations) {
-    long size_model = (2 * sizeof(bool) +
+    size_type size_model = (2 * sizeof(bool) +
                        (15 +
                         num_ix_eq +
                         n_slips_obs +
@@ -202,19 +202,19 @@ long RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_sli
                        (6 +
                         num_t_obs +
                         (num_ix_eq + 2) +
-                        ((long)num_inner_patches * 2 * (long)num_inner_patches * 2) +
-                        ((long)num_inner_patches * 2) +
-                        ((long)num_inner_patches * 2) +
-                        ((long)UNITS * (long)num_inner_patches) +
-                        ((long)cuda_batch_size * (long)num_t_obs * (long)UNITS * (long)num_inner_patches)) * sizeof(T));
-    long size_forward = (1 * sizeof(int) +
-                         (((long)num_forward_batch * (long)num_inner_patches) +
-                          ((long)num_forward_batch * (long)num_eq * (long)num_inner_patches * 2) +
-                          (2 * (long)num_inner_patches * 3 * (long)num_stations) +
-                          ((long)num_forward_batch * (long)num_t_obs * 3 * (long)num_stations) +
-                          (5 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
-                          (10 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
-                          ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2)) * sizeof(T));
+                        ((size_type)num_inner_patches * 2 * (size_type)num_inner_patches * 2) +
+                        ((size_type)num_inner_patches * 2) +
+                        ((size_type)num_inner_patches * 2) +
+                        ((size_type)UNITS * (size_type)num_inner_patches) +
+                        ((size_type)cuda_batch_size * (size_type)num_t_obs * (size_type)UNITS * (size_type)num_inner_patches)) * sizeof(T));
+    size_type size_forward = (1 * sizeof(int) +
+                         (((size_type)num_forward_batch * (size_type)num_inner_patches) +
+                          ((size_type)num_forward_batch * (size_type)num_eq * (size_type)num_inner_patches * 2) +
+                          (2 * (size_type)num_inner_patches * 3 * (size_type)num_stations) +
+                          ((size_type)num_forward_batch * (size_type)num_t_obs * 3 * (size_type)num_stations) +
+                          (5 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
+                          (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
+                          ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2)) * sizeof(T));
     return size_model + size_forward;
 }
 

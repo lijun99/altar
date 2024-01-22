@@ -29,6 +29,8 @@ class RateDependent {
         // this is an ode solver with spin up procedure built-in
         using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
 
+        using size_type = std::size_t;
+
         RateDependent() = default; // default constructor
         ~RateDependent() = default; // default destructor
 
@@ -71,7 +73,7 @@ class RateDependent {
         );
 
         // estimate object size
-        static long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+        static size_type estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                                          const int num_t_obs, const int num_inner_patches, const int UNITS,
                                          const int cuda_batch_size, const int num_forward_batch,
                                          const int num_eq, const int num_stations);
