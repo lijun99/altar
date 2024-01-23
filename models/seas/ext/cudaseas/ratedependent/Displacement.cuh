@@ -30,6 +30,56 @@
 
 namespace altar::models::seas::cuda::ratedependent {
 
+// Routine to copy velocity from sim_state to state_init for next run
+// state_init [systems, 4*patches]
+// sim_state [systems, n_obs, 4*patches], only the first num_forward_batch systems have been updated
+// when copy to state_init, we only copy from systems which have been updated, in cyclic
+template <typename T>
+__global__ void copy_velocity_kernel(T* state_init,
+    const T* sim_state,
+    const int patches,
+    const int num_t_obs,
+    const int num_forward_batch)
+{
+    // thread blocks along x - systems*slip_size
+    auto thread_id = threadIdx.x; // patches
+    auto block_id = blockIdx.x; // system index
+
+
+    auto sim_state_index = (block_id % num_forward_batch) * num_t_obs * 4 * patches;
+    auto state_init_index = block_id * 4 * patches;
+
+    // iterate over patches if total #patches > #threads per block
+    for(auto patch = thread_id; patch < patches; patch += blockDim.x)
+    {
+        // get the slip rate from stress rate
+        state_init[state_init_index + 2*patches + patch] = sim_state[sim_state_index + 2*patches + patch];
+        state_init[state_init_index + 3*patches + patch] = sim_state[sim_state_index + 3*patches + patch];
+    }
+    // all done
+}
+
+// how to call the gpu kernel to copy slip
+template <typename T>
+void copy_velocity(T* state_init,
+    const T* sim_state,
+    const int patches,
+    const int num_t_obs,
+    const int num_forward_batch,
+    const int cuda_batch_size,
+    const int threads)
+{
+    // get the number of blocks
+    auto blocks = cuda_batch_size;
+
+    // call the kernel
+    copy_velocity_kernel<T><<<blocks, threads>>>(
+        state_init, sim_state, patches, num_t_obs, num_forward_batch);
+    cudaCheckError("copy_velocity_kernel error");
+    // all done
+}
+
+
 // Routine to copy slip from yeval/sim_state
 // yeval/sim_state from ODE solvers are arranged as [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
 // we need to construct slip_history [systems, t_steps, 2(slip_components), patches]

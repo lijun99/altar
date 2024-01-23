@@ -121,8 +121,17 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                                           dtype=self.gpuprec))
         state_init_arr = np.concatenate([np.zeros(2 * self.fault.inner_num_patches),
                                          np.log(self.sim.v_init / self.rheo.v_0).T.ravel()])
-        self.state_init = altar.cuda.vector(
+
+        state_init_single = altar.cuda.vector(
             source=state_init_arr.astype(self.gpuprec, order="C", copy=False))
+
+        # change state_init to keep several copies of initial state
+        self.state_init = altar.cuda.matrix(
+            shape=(self.cuda_batch_size, state_init_single.size),
+            dtype=self.gpuprec)
+        self.state_init.duplicateVector(src=state_init_single)
+
+
 
         G_surf = self.sim.G_surf[:, :, self.sim.fault.s_inner, :] \
             .transpose(3, 2, 1, 0) \
@@ -133,6 +142,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.sim_state = altar.cuda.vector(
             shape=self.cuda_batch_size * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
             dtype=self.gpuprec)
+
+        print(self.state_init.shape, self.t_obs.size, self.sim_state.shape)
 
         # predicted observations
         self.obs_disp = altar.cuda.matrix(

@@ -88,7 +88,6 @@ class RateDependent {
         // general variables
         int cuda_batch_size; // maximum number of systems in a cuda batch[-]
         const bool DENSE_OUT = true; // always output the dense last cycle [-]
-        const bool USE_STATE_INIT_FOR_ALL = true; // always use a single state_init for all systems [-]
 
         // cycles
         int max_cycles; // maximum number of cycles to simulate for each system [-]
@@ -115,7 +114,7 @@ class RateDependent {
         T* K_inner_inner_onfault; // inner stress kernel (num_inner_patches, 2, num_inner_patches, 2) [Pa/m]
         T* K_inner_asperities_v_plate; // inner stressing rate from locked asperities (num_inner_patches, 2) [Pa/s]
         T* v_plate_ddcs_proj_eff_inner; // plate velocity on patches (num_inner_patches, 2) [m/s]
-        T* state_init; // initial patch state (4 * num_inner_patches) [m|m|-|-]
+        T* state_init; // initial patch state,  cuda_batch_size*(4 * num_inner_patches) [m|m|-|-]
 
         // ode
         T atol; // absolute tolerance for ODE integrator [-]
