@@ -593,21 +593,25 @@ void reference_subtract_reset_displacements(
     const int threads
 )
 {
-    // allocate reference timeseries
-    T* ref_obs;
-    cudaSafeCall(cudaMallocManaged(&ref_obs, num_systems * num_t_obs * 3 * sizeof(T)));
 
-    // calculate reference timeseries
-    calculate_ref_timeseries_kernel<<<num_systems, threads>>>(
-        obs_disp, num_t_obs, num_stations, obs_mask, i_stat_ref, n_stat_ref, ref_obs);
-    cudaCheckError("calculate_ref_timeseries_kernel");
-    cudaDeviceSynchronize();
+    // calculate and remove reference timeseries only if they are provided
+    if (n_stat_ref > 0) {
+        // allocate reference timeseries
+        T* ref_obs;
+        cudaSafeCall(cudaMallocManaged(&ref_obs, num_systems * num_t_obs * 3 * sizeof(T)));
 
-    // remove reference timeseries from all stations
-    remove_ref_timeseries_kernel<<<num_systems, threads>>>(
-        obs_disp, num_t_obs, num_stations, ref_obs);
-    cudaCheckError("remove_ref_timeseries_kernel");
-    cudaDeviceSynchronize();
+        // calculate reference timeseries
+        calculate_ref_timeseries_kernel<<<num_systems, threads>>>(
+            obs_disp, num_t_obs, num_stations, obs_mask, i_stat_ref, n_stat_ref, ref_obs);
+        cudaCheckError("calculate_ref_timeseries_kernel");
+        cudaDeviceSynchronize();
+
+        // remove reference timeseries from all stations
+        remove_ref_timeseries_kernel<<<num_systems, threads>>>(
+            obs_disp, num_t_obs, num_stations, ref_obs);
+        cudaCheckError("remove_ref_timeseries_kernel");
+        cudaDeviceSynchronize();
+    }
 
     // reset the observations to zero at the first valid observation after an event
     subtract_displacement_from_teq_masked_kernel<<<num_systems, threads>>>(
