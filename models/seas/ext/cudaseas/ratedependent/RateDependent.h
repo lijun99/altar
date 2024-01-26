@@ -60,8 +60,8 @@ class RateDependent {
             T spinup_rtol_,
             int num_stations_,
             bool* obs_mask_,
-            int* i_stat_ref,
-            int n_stat_ref
+            int* i_stat_ref_,
+            int n_stat_ref_
         );
 
         // perform forward modeling

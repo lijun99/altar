@@ -65,7 +65,10 @@ public:
         T rtol,
         T spinup_atol,
         T spinup_rtol,
-        int num_stations
+        int num_stations,
+        py::capsule obs_mask,
+        py::capsule i_stat_ref,
+        int n_stat_ref
     )
     {
         // printf("inside pyRateDependent.cu:initialize\n");
@@ -94,7 +97,10 @@ public:
             rtol,
             spinup_atol,
             spinup_rtol,
-            num_stations
+            num_stations,
+            convertPyArray<bool, cuda_vector>(obs_mask),
+            convertPyArray<int, cuda_vector>(i_stat_ref),
+            n_stat_ref
         );
     }
 

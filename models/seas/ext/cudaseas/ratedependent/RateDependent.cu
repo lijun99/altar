@@ -231,7 +231,7 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
          (5 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2) +
-         ((size_type)num_forward_batch * (size_type)num_t_obs * 3) * sizeof(T));
+         ((size_type)num_forward_batch * (size_type)num_t_obs * 3)) * sizeof(T));
     return size_model + size_forward;
 }
 

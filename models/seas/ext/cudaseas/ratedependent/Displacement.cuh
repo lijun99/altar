@@ -468,9 +468,9 @@ void subtract_displacement_from_teq(
 }
 
 
-// cuda kernel to calculate reference displacement timeseries and remove it
+// cuda kernel to calculate reference displacement timeseries
 template <typename T>
-__global__ void calculate_ref_timeseries_and_remove_kernel (
+__global__ void calculate_ref_timeseries_kernel (
     T* obs_disp,
     const int num_t_obs,
     const int num_stations,
@@ -482,7 +482,6 @@ __global__ void calculate_ref_timeseries_and_remove_kernel (
     // get sample/system index
     int system = blockIdx.x;
 
-    // part 1: get reference timeseries
     // iterate over timestamps and components
     for (auto i_t_comp = threadIdx.x; i_t_comp < num_t_obs * 3; i_t_comp += blockDim.x)
     {
@@ -499,9 +498,20 @@ __global__ void calculate_ref_timeseries_and_remove_kernel (
         // divide to get mean
         ref_obs[i_ref_obs] /= n_stat_ref;
     }
-    cudaDeviceSynchronize();
+}
 
-    // part 2: remove reference timeseries from all stations
+
+// cuda kernel to remove reference displacement timeseries
+template <typename T>
+__global__ void remove_ref_timeseries_kernel (
+    T* obs_disp,
+    const int num_t_obs,
+    const int num_stations,
+    T* ref_obs) // (num_systems * num_t_obs * 3)
+{
+    // get sample/system index
+    int system = blockIdx.x;
+
     // iterate over timestamps and components
     for (auto i_t_comp = threadIdx.x; i_t_comp < num_t_obs * 3; i_t_comp += blockDim.x)
     {
@@ -510,11 +520,9 @@ __global__ void calculate_ref_timeseries_and_remove_kernel (
         {
             // remove reference value
             obs_disp[system * num_t_obs * 3 * num_stations
-                     + i_t_comp * num_stations + i_stat] -= ref_obs[system * num_t_obs * 3 + i_t_comp]
+                     + i_t_comp * num_stations + i_stat] -= ref_obs[system * num_t_obs * 3 + i_t_comp];
         }
     }
-
-    // done
 }
 
 
@@ -549,7 +557,7 @@ __global__ void subtract_displacement_from_teq_masked_kernel(
             for(auto it = it_start; it < it_end; it++)
             {
                 // skip if the observation isn't valid
-                if (obs_mask[it * 3 * num_stations + i_obs])
+                if (obs_mask[it * observations + i_obs])
                 {
                     // if this is the first observation after an event, get current offset
                     if (!offset_found)
@@ -589,10 +597,16 @@ void reference_subtract_reset_displacements(
     T* ref_obs;
     cudaSafeCall(cudaMallocManaged(&ref_obs, num_systems * num_t_obs * 3 * sizeof(T)));
 
-    // calculate reference timeseries and remove it from all stations
-    calculate_ref_timeseries_and_remove_kernel<<<num_systems, threads>>>(
+    // calculate reference timeseries
+    calculate_ref_timeseries_kernel<<<num_systems, threads>>>(
         obs_disp, num_t_obs, num_stations, obs_mask, i_stat_ref, n_stat_ref, ref_obs);
-    cudaCheckError("calculate_ref_timeseries_and_remove_kernel");
+    cudaCheckError("calculate_ref_timeseries_kernel");
+    cudaDeviceSynchronize();
+
+    // remove reference timeseries from all stations
+    remove_ref_timeseries_kernel<<<num_systems, threads>>>(
+        obs_disp, num_t_obs, num_stations, ref_obs);
+    cudaCheckError("remove_ref_timeseries_kernel");
     cudaDeviceSynchronize();
 
     // reset the observations to zero at the first valid observation after an event
