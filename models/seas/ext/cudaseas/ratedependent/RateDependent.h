@@ -29,6 +29,8 @@ class RateDependent {
         // this is an ode solver with spin up procedure built-in
         using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
 
+        using size_type = std::size_t;
+
         RateDependent() = default; // default constructor
         ~RateDependent() = default; // default destructor
 
@@ -69,15 +71,15 @@ class RateDependent {
             const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
             T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
             const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
-            const int num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
+            const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
             bool verbose // whether to print info and progress indicators or not
         );
 
         // estimate object size
-        static long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
-                                         const int num_t_obs, const int num_inner_patches, const int UNITS,
-                                         const int cuda_batch_size, const int num_forward_batch,
-                                         const int num_eq, const int num_stations, const int n_stat_ref);
+        static size_type estimate_object_size(const int num_ix_eq, const int n_slips_obs,
+                                              const int num_t_obs, const int num_inner_patches, const int UNITS,
+                                              const int cuda_batch_size, const int num_forward_batch,
+                                              const int num_eq, const int num_stations, const int n_stat_ref);
 
     // parameters
     private:

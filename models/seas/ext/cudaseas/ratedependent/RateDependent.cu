@@ -101,7 +101,7 @@ void RateDependent<T>::forward_model_batch(
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
     T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
     const int num_forward_batch, // forward model batch(system) size <= cuda_batch_size (in AlTar, not all samples are computed in simulations)
-    const int num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
+    const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
     bool verbose = false // whether to print info and progress indicators or not
 ) {
 
@@ -203,34 +203,37 @@ void RateDependent<T>::forward_model_batch(
 
 // estimate object size
 template <typename T>
-long RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_slips_obs,
-                                            const int num_t_obs, const int num_inner_patches, const int UNITS,
-                                            const int cuda_batch_size, const int num_forward_batch,
-                                            const int num_eq, const int num_stations, const int n_stat_ref) {
-    long size_model = ((2 +
-                        ((long)num_t_obs * 3 * (long)num_stations)) * sizeof(bool) +
-                       (15 +
-                        num_ix_eq +
-                        n_slips_obs +
-                        n_slips_obs +
-                        n_stat_ref + 1) * sizeof(int) +
-                       (6 +
-                        num_t_obs +
-                        (num_ix_eq + 2) +
-                        ((long)num_inner_patches * 2 * (long)num_inner_patches * 2) +
-                        ((long)num_inner_patches * 2) +
-                        ((long)num_inner_patches * 2) +
-                        ((long)UNITS * (long)num_inner_patches) +
-                        ((long)cuda_batch_size * (long)num_t_obs * (long)UNITS * (long)num_inner_patches)) * sizeof(T));
-    long size_forward = (1 * sizeof(int) +
-                         (((long)num_forward_batch * (long)num_inner_patches) +
-                          ((long)num_forward_batch * (long)num_eq * (long)num_inner_patches * 2) +
-                          (2 * (long)num_inner_patches * 3 * (long)num_stations) +
-                          ((long)num_forward_batch * (long)num_t_obs * 3 * (long)num_stations) +
-                          (5 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
-                          (10 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
-                          ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2) +
-                          ((long)num_forward_batch * (long)num_t_obs * 3) * sizeof(T));
+RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
+    const int num_ix_eq, const int n_slips_obs,
+    const int num_t_obs, const int num_inner_patches, const int UNITS,
+    const int cuda_batch_size, const int num_forward_batch,
+    const int num_eq, const int num_stations, const int n_stat_ref) {
+    size_type size_model = (
+        (2 +
+         ((size_type)num_t_obs * 3 * (size_type)num_stations)) * sizeof(bool) +
+        (15 +
+         num_ix_eq +
+         n_slips_obs +
+         n_slips_obs +
+         n_stat_ref + 1) * sizeof(int) +
+        (6 +
+         num_t_obs +
+         (num_ix_eq + 2) +
+         ((size_type)num_inner_patches * 2 * (size_type)num_inner_patches * 2) +
+         ((size_type)num_inner_patches * 2) +
+         ((size_type)num_inner_patches * 2) +
+         ((size_type)UNITS * (size_type)num_inner_patches) +
+         ((size_type)cuda_batch_size * (size_type)num_t_obs * (size_type)UNITS * (size_type)num_inner_patches)) * sizeof(T));
+    size_type size_forward = (
+        1 * sizeof(int) +
+        (((size_type)num_forward_batch * (size_type)num_inner_patches) +
+         ((size_type)num_forward_batch * (size_type)num_eq * (size_type)num_inner_patches * 2) +
+         (2 * (size_type)num_inner_patches * 3 * (size_type)num_stations) +
+         ((size_type)num_forward_batch * (size_type)num_t_obs * 3 * (size_type)num_stations) +
+         (5 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
+         (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
+         ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2) +
+         ((size_type)num_forward_batch * (size_type)num_t_obs * 3) * sizeof(T));
     return size_model + size_forward;
 }
 
