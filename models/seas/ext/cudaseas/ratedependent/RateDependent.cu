@@ -127,8 +127,8 @@ void RateDependent<T>::forward_model_batch(
     // if (verbose)
     //     printf("Processing systems %i to %i\n", system_offset, system_offset + systems_to_process - 1);
 
-    // set initial values
-    solver->set_init_values(state_init, USE_STATE_INIT_FOR_ALL, systems_to_process, system_offset);
+    // set initial values, false means each system gets an own copy
+    solver->set_init_values(state_init, false, systems_to_process, system_offset);
     // call the solver
     solver->solve_ivp_cycles(DENSE_OUT, systems_to_process, system_offset,
                              conv_i_start, conv_i_stop, max_cycles, verbose);
@@ -136,24 +136,22 @@ void RateDependent<T>::forward_model_batch(
 
 
     // save the t=0 sim_state for the first sample to state_int, to be used the init
-    // state_int [2(slip/stress), 2(slip_components), patches]
+    // @NOTE there should not be an event update at t=0. Otherwise, make sure last t_obs is t_final and copy it instead.
+    // state_int [systems, 2(slip/stress), 2(slip_components), patches]
     // sim_state [systems, t_steps, 2(slip/stress), 2(slip_components), patches]
-    // only save slip rate (stress)
-    // TODO should be last time step and different for all samples
+    // only save velocity/slip rate (stress)
+    // copy from updated systems, when systems_to_process< cuda_batch_size, restart copying from beginning
+    copy_velocity(state_init, sim_state, num_inner_patches, num_t_obs,
+        systems_to_process, cuda_batch_size, solver->threads);
 
-
-    // temp solution: save the final state for one system to be copied as the initial state for all systems in the next run
-    auto state_init_copy_start = state_init + 2*num_inner_patches;
-    auto sim_state_copy_start = sim_state + 2*num_inner_patches;
-    cudaSafeCall(cudaMemcpy(state_init_copy_start, sim_state_copy_start,
-         2*num_inner_patches*sizeof(T), cudaMemcpyDeviceToDevice));
 
     // cudaDeviceSynchronize();
-    // for(auto i=0; i<4*num_inner_patches; i++)
-    //    std::cout << i<< " "
-    //        << state_init[i] << " "
-    //        << sim_state[i] << " "
-    //        << sim_state[num_t_obs*4*num_inner_patches+i] << "\n";
+    // for(auto i=0; i<cuda_batch_size; i++)
+    //     std::cout << i<< " "
+    //         << state_init[i*4*num_inner_patches] << " "
+    //         << state_init[i*4*num_inner_patches + 2*num_inner_patches] << " "
+    //         << sim_state[i*num_t_obs*4*num_inner_patches] << " "
+    //         << sim_state[i*num_t_obs*4*num_inner_patches + 2*num_inner_patches] << "\n";
 
     // convert logarithmic velocity to linear one
     convert_slip_rate<T>(sim_state, num_forward_batch, num_t_obs, num_inner_patches, v_0, solver->threads);

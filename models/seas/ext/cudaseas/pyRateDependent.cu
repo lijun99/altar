@@ -88,7 +88,7 @@ public:
             convertPyArray<T, cuda_vector>(K_inner_inner_onfault),
             convertPyArray<T, cuda_vector>(K_inner_asperities_v_plate),
             convertPyArray<T, cuda_vector>(v_plate_ddcs_proj_eff_inner),
-            convertPyArray<T, cuda_vector>(state_init),
+            convertPyArray<T, cuda_matrix>(state_init),
             convertPyArray<T, cuda_vector>(sim_state),
             atol,
             rtol,
