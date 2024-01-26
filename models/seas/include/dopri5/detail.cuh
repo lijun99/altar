@@ -17,6 +17,45 @@
 
 #include "external.h"
 
+// shared memory
+template <class T>
+struct SharedMemory {
+  __device__ inline operator T *() {
+    extern __shared__ int __smem[];
+    return (T *)__smem;
+  }
+
+  __device__ inline operator const T *() const {
+    extern __shared__ int __smem[];
+    return (T *)__smem;
+  }
+};
+
+template <class T>
+__device__ __forceinline__ T warpReduceSum(unsigned int mask, T mySum) {
+  for (int offset = warpSize / 2; offset > 0; offset /= 2) {
+    mySum += __shfl_down_sync(mask, mySum, offset);
+  }
+  return mySum;
+}
+
+
+// specialize for double to avoid unaligned memory
+// access compile errors
+template <>
+struct SharedMemory<double> {
+  __device__ inline operator double *() {
+    extern __shared__ double __smem_d[];
+    return (double *)__smem_d;
+  }
+
+  __device__ inline operator const double *() const {
+    extern __shared__ double __smem_d[];
+    return (double *)__smem_d;
+  }
+};
+
+
 // check atomicAdd double is defined
 #if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 600
 static inline __device__ double atomicAdd(double* address, double val) {
@@ -90,7 +129,7 @@ namespace cuda::detail {
 
 // sum reduction within a thread block for values returned by func(args...)
 template<class T, class FuncType, class... Args>
-__device__  auto sum_block(
+__device__  auto sum_block2(
     const cg::thread_block & cta,
     const int N,
     FuncType func,
@@ -103,6 +142,7 @@ __device__  auto sum_block(
         auto sk = func(i, args...);
         thread_sum += sk;
     }
+    cta.sync();
 
     // sum over each warp (32-threads tile)
     auto tile = cg::tiled_partition<32>(cta);
@@ -126,6 +166,58 @@ __device__  auto sum_block(
     if(cta.thread_rank()==0)
         return sum;
 }
+
+
+// sum reduction within a thread block for values returned by func(args...)
+template<class T, class FuncType, class... Args>
+__device__  auto sum_block(
+    const cg::thread_block & cta,
+    const int N,
+    FuncType func,
+    Args... args) -> T
+{
+
+    T *sdata = SharedMemory<T>();
+    auto tid = cta.thread_rank();
+
+    // each thread tid sum errors over elements of tid, tid+block_size, tid+2*block_size ...
+    T mySum = static_cast<T>(0);
+    for(int i=cta.thread_rank(); i<N; i+=cta.size())
+    {
+        auto sk = func(i, args...);
+        mySum += sk;
+    }
+    sdata[tid] = mySum;
+    cta.sync();
+
+    // do reduction in shared mem
+    for (unsigned int s = blockDim.x / 2; s > 32; s >>= 1) {
+        if (tid < s) {
+            sdata[tid] = mySum = mySum + sdata[tid + s];
+        }
+        cta.sync();
+    }
+
+    // sum over each warp (32-threads tile)
+    auto tile32 = cg::tiled_partition<32>(cta);
+
+    if (cta.thread_rank() < 32) {
+        // Fetch final intermediate sum from 2nd warp
+        if (blockDim.x >= 64) mySum += sdata[tid + 32];
+        // Reduce final warp using shuffle
+        for (int offset = tile32.size() / 2; offset > 0; offset /= 2) {
+            mySum += tile32.shfl_down(mySum, offset);
+        }
+    }
+
+    // define/init the block sum
+	__shared__ T sum;
+    if(cta.thread_rank()==0) {
+        sum = mySum;
+        return sum;
+    }
+}
+
 
 // max reduction within a thread block for values returned by func(args...)
 // assume all elements are positive
