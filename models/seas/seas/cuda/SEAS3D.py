@@ -216,6 +216,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         #             f"CUDA instance = {ticks[4] - ticks[3]:.1f}s, "
         #             f"Farfield effects = {ticks[5] - ticks[4]:.1f}s)")
 
+        # keep a timer instance to check time between forwardModelBatched calls
+        self.timer_fmb = self.sync_and_time()
+
         # done
         return self
 
@@ -241,6 +244,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                batch_size_run<=samples
         :return: prediction as predicted data
         """
+
+        # print info
+        channel = self.info
+        channel.log("Time between forwardModelBatched calls: "
+                    f"{self.sync_and_time() - self.timer_fmb}s")
 
         # create new rheology instances
         ticks = []
@@ -291,10 +299,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                     f"Simulation instances = {ticks[2] - ticks[1]:.1f}s, "
                     f"Stacked parameters = {ticks[3] - ticks[2]:.1f}s, ")
         infostr += f"CUDA forward model = {ticks[4] - ticks[3]:.1f}s)"
-        channel = self.info
         channel.log(infostr)
 
         # all done
+        self.timer_fmb = self.sync_and_time()
         return prediction
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
