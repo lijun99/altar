@@ -44,7 +44,10 @@ void RateDependent<T>::initialize(
         T rtol_,
         T spinup_atol_,
         T spinup_rtol_,
-        int num_stations_)
+        int num_stations_,
+        bool* obs_mask_,
+        int* i_stat_ref_,
+        int n_stat_ref_)
 {
     // general variables
     cuda_batch_size  = cuda_batch_size_;
@@ -85,6 +88,10 @@ void RateDependent<T>::initialize(
 
     // observers
     num_stations =  num_stations_;
+    obs_mask = obs_mask_;
+    i_stat_ref = i_stat_ref_;
+    n_stat_ref = n_stat_ref_;
+
 }
 
 template <typename T>
@@ -171,10 +178,16 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
-    if (n_slips_obs > 0)
-        subtract_displacement_from_teq(
-            obs_disp, num_forward_batch, num_t_obs, 3 * num_stations,
-            i_slips_obs, n_slips_obs, solver->threads);
+    // if (n_slips_obs > 0)
+    //     subtract_displacement_from_teq(
+    //         obs_disp, num_forward_batch, num_t_obs, 3 * num_stations,
+    //         i_slips_obs, n_slips_obs, solver->threads);
+
+    // calculate reference observation timeseries, remove it from each other
+    // station, and reset the observations to zero at the first timestep past an event
+    reference_subtract_reset_displacements(
+        obs_disp, num_forward_batch, num_t_obs, num_stations,
+        i_slips_obs, n_slips_obs, obs_mask, i_stat_ref, n_stat_ref, solver->threads);
 
     /*
     // debug for two observations after subtraction
@@ -193,12 +206,14 @@ template <typename T>
 long RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                                             const int num_t_obs, const int num_inner_patches, const int UNITS,
                                             const int cuda_batch_size, const int num_forward_batch,
-                                            const int num_eq, const int num_stations) {
-    long size_model = (2 * sizeof(bool) +
+                                            const int num_eq, const int num_stations, const int n_stat_ref) {
+    long size_model = ((2 +
+                        ((long)num_t_obs * 3 * (long)num_stations)) * sizeof(bool) +
                        (15 +
                         num_ix_eq +
                         n_slips_obs +
-                        n_slips_obs) * sizeof(int) +
+                        n_slips_obs +
+                        n_stat_ref + 1) * sizeof(int) +
                        (6 +
                         num_t_obs +
                         (num_ix_eq + 2) +
@@ -214,7 +229,8 @@ long RateDependent<T>::estimate_object_size(const int num_ix_eq, const int n_sli
                           ((long)num_forward_batch * (long)num_t_obs * 3 * (long)num_stations) +
                           (5 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
                           (10 * (long)num_inner_patches * (long)UNITS * (long)num_forward_batch) +
-                          ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2)) * sizeof(T));
+                          ((long)num_forward_batch * (long)num_t_obs * (long)num_inner_patches * 2) +
+                          ((long)num_forward_batch * (long)num_t_obs * 3) * sizeof(T));
     return size_model + size_forward;
 }
 

@@ -122,11 +122,11 @@ public:
     long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                               const int num_t_obs, const int num_inner_patches, const int UNITS,
                               const int cuda_batch_size, const int num_forward_batch,
-                              const int num_eq, const int num_stations) {
+                              const int num_eq, const int num_stations, const int n_stat_ref) {
         auto s = _cmodel->estimate_object_size(num_ix_eq, n_slips_obs,
                                                num_t_obs, num_inner_patches, UNITS,
                                                cuda_batch_size, num_forward_batch,
-                                               num_eq, num_stations);
+                                               num_eq, num_stations, n_stat_ref);
         return s;
     }
 };

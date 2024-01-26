@@ -56,7 +56,10 @@ class RateDependent {
             T rtol_,
             T spinup_atol_,
             T spinup_rtol_,
-            int num_stations_
+            int num_stations_,
+            bool* obs_mask_,
+            int* i_stat_ref,
+            int n_stat_ref
         );
 
         // perform forward modeling
@@ -74,7 +77,7 @@ class RateDependent {
         static long estimate_object_size(const int num_ix_eq, const int n_slips_obs,
                                          const int num_t_obs, const int num_inner_patches, const int UNITS,
                                          const int cuda_batch_size, const int num_forward_batch,
-                                         const int num_eq, const int num_stations);
+                                         const int num_eq, const int num_stations, const int n_stat_ref);
 
     // parameters
     private:
@@ -126,6 +129,9 @@ class RateDependent {
 
         // observations
         int num_stations; // number of observers [-]
+        bool* obs_mask; // mask of where observations are valid/present, shape (num_t_obs, 3*num_stations)
+        int* i_stat_ref; // index list of reference stations
+        int n_stat_ref; // number of reference stations
 
     }; //end of class RateDependent
 

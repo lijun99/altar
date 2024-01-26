@@ -418,6 +418,142 @@ void subtract_displacement_from_teq(
 }
 
 
+// cuda kernel to calculate reference displacement timeseries and remove it
+template <typename T>
+__global__ void calculate_ref_timeseries_and_remove_kernel (
+    T* obs_disp,
+    const int num_t_obs,
+    const int num_stations,
+    const bool* obs_mask,
+    const int* i_stat_ref,
+    const int n_stat_ref,
+    T* ref_obs) // (num_systems * num_t_obs * 3)
+{
+    // get sample/system index
+    int system = blockIdx.x;
+
+    // part 1: get reference timeseries
+    // iterate over timestamps and components
+    for (auto i_t_comp = threadIdx.x; i_t_comp < num_t_obs * 3; i_t_comp += blockDim.x)
+    {
+        // accumulate reference station values
+        auto i_ref_obs = system * num_t_obs * 3 + i_t_comp;
+        ref_obs[i_ref_obs] = 0;
+        for (auto ii_stat = 0; ii_stat < n_stat_ref; ii_stat++)
+        {
+            auto i_stat = i_stat_ref[ii_stat];
+            assert(obs_mask[i_t_comp * num_stations + i_stat]);
+            ref_obs[i_ref_obs] += obs_disp[system * num_t_obs * 3 * num_stations
+                                           + i_t_comp * num_stations + i_stat];
+        }
+        // divide to get mean
+        ref_obs[i_ref_obs] /= n_stat_ref;
+    }
+    cudaDeviceSynchronize();
+
+    // part 2: remove reference timeseries from all stations
+    // iterate over timestamps and components
+    for (auto i_t_comp = threadIdx.x; i_t_comp < num_t_obs * 3; i_t_comp += blockDim.x)
+    {
+        // iterate over all stations
+        for (auto i_stat = 0; i_stat < num_stations; i_stat++)
+        {
+            // remove reference value
+            obs_disp[system * num_t_obs * 3 * num_stations
+                     + i_t_comp * num_stations + i_stat] -= ref_obs[system * num_t_obs * 3 + i_t_comp]
+        }
+    }
+
+    // done
+}
+
+
+// cuda kernel to reset to zero after every event, considering data masks
+template <typename T>
+__global__ void subtract_displacement_from_teq_masked_kernel(
+    T* obs_disp,
+    const int num_systems,
+    const int num_t_obs,
+    const int observations, // observations = 3*num_stations
+    const int * i_slips_obs, // indices of t_eq inside t_obs
+    const int n_slips_obs,
+    const bool* obs_mask)
+{
+    // get sample/system index
+    int system = blockIdx.x;
+    // iterate over observations
+    for (auto i_obs = threadIdx.x; i_obs < observations; i_obs += blockDim.x)
+    {
+        // iterate over t_eq
+        for(auto i_t_eq = 0; i_t_eq < n_slips_obs; i_t_eq++)
+        {
+            // get the start index
+            auto it_start = i_slips_obs[i_t_eq];
+            // get the end index (+1)
+            auto it_end = (i_t_eq == n_slips_obs-1) ? num_t_obs : i_slips_obs[i_t_eq+1];
+            // get obs_disp value at i_t_eq
+            // declare offset but keep it undefined until we find the first valid observation
+            T offset;
+            bool offset_found = false;
+            // iterate over all time points
+            for(auto it = it_start; it < it_end; it++)
+            {
+                // skip if the observation isn't valid
+                if (obs_mask[it * 3 * num_stations + i_obs])
+                {
+                    // if this is the first observation after an event, get current offset
+                    if (!offset_found)
+                    {
+                        offset = obs_disp[(system * num_t_obs + it) * observations + i_obs];
+                        offset_found = true;
+                    }
+
+                    // remove offset
+                    obs_disp[(system * num_t_obs + it) * observations + i_obs] -= offset;
+                }
+            }
+        }
+    }
+    // all done
+}
+
+
+// reference all observations to a set of reference stations,
+// remove that displacement from everyone,
+// then reset to zero at the first valid observation past an event
+template<typename T>
+void reference_subtract_reset_displacements(
+    T* obs_disp, // (num_systems, num_t_obs, 3*num_stations)
+    const int num_systems,
+    const int num_t_obs,
+    const int num_stations,
+    const int* i_slips_obs,
+    const int n_slips_obs,
+    const bool* obs_mask,  // (num_t_obs, 3*num_stations)
+    const int* i_stat_ref,
+    const int n_stat_ref,
+    const int threads
+)
+{
+    // allocate reference timeseries
+    T* ref_obs;
+    cudaSafeCall(cudaMallocManaged(&ref_obs, num_systems * num_t_obs * 3 * sizeof(T)));
+
+    // calculate reference timeseries and remove it from all stations
+    calculate_ref_timeseries_and_remove_kernel<<<num_systems, threads>>>(
+        obs_disp, num_t_obs, num_stations, obs_mask, i_stat_ref, n_stat_ref, ref_obs);
+    cudaCheckError("calculate_ref_timeseries_and_remove_kernel");
+    cudaDeviceSynchronize();
+
+    // reset the observations to zero at the first valid observation after an event
+    subtract_displacement_from_teq_masked_kernel<<<num_systems, threads>>>(
+        obs_disp, num_systems, num_t_obs, 3 * num_stations,
+        i_slips_obs, n_slips_obs, obs_mask);
+    cudaCheckError("subtract_displacement_from_teq_masked_kernel");
+    cudaDeviceSynchronize();
+}
+
+
 } // end of namespace
 
 #endif
