@@ -29,7 +29,8 @@ from cuda import (
     Device,
     manager,
     stats,
-    cuda as libcuda,
+    libcuda,
+    use_device,
     )
 
 # my extension modules
@@ -41,12 +42,6 @@ def get_current_device():
     Return current cuda device
     """
     return manager.current_device
-
-def use_device(id):
-    """
-    Set current device to device with id
-    """
-    return manager.device(did=id)
 
 def curand_generator():
     device = get_current_device()
