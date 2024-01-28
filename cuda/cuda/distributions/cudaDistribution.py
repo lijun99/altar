@@ -70,7 +70,7 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return mask
 
-    def cuEvalPrior(self, theta, prior):
+    def cuEvalPrior(self, theta, prior, batch):
         """
         cuda process to compute the prior
         """
