@@ -100,6 +100,7 @@ void RateDependent<T>::forward_model_batch(
     const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches * 2) [-]
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
     T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+    const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
     const int num_forward_batch, // forward model batch(system) size <= cuda_batch_size (in AlTar, not all samples are computed in simulations)
     const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
     bool verbose = false // whether to print info and progress indicators or not
@@ -176,10 +177,10 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
-    // if (n_slips_obs > 0)
-    //     subtract_displacement_from_teq(
-    //         obs_disp, num_forward_batch, num_t_obs, 3 * num_stations,
-    //         i_slips_obs, n_slips_obs, solver->threads);
+    // add farfield effects that were computed outside of GPU
+    add_farfield_effects(obs_disp, obs_farfield, num_forward_batch,
+                         num_t_obs, num_stations, solver->threads);
+    cudaDeviceSynchronize();
 
     // calculate reference observation timeseries, remove it from each other
     // station, and reset the observations to zero at the first timestep past an event
@@ -227,7 +228,7 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
         (((size_type)num_forward_batch * (size_type)num_inner_patches) +
          ((size_type)num_forward_batch * (size_type)num_eq * (size_type)num_inner_patches * 2) +
          (2 * (size_type)num_inner_patches * 3 * (size_type)num_stations) +
-         ((size_type)num_forward_batch * (size_type)num_t_obs * 3 * (size_type)num_stations) +
+         ((size_type)(num_forward_batch + 1) * (size_type)num_t_obs * 3 * (size_type)num_stations) +
          (5 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2) +

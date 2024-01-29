@@ -70,6 +70,7 @@ class RateDependent {
             const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches, 2) [-]
             const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
             T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+            const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
             const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
             const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
             bool verbose // whether to print info and progress indicators or not

@@ -419,6 +419,46 @@ void compute_displacement_impl2(cublasHandle_t handle,
 // TO BE IMPLEMENTED
 
 
+// cuda kernel to add farfield effects
+template <typename T>
+__global__ void add_farfield_effects_kernel(
+    T* obs_disp,
+    const T* obs_farfield,
+    const int num_t_obs,
+    const int observations) // = 3 * num_stations
+{
+    // get system index
+    int system = blockIdx.x;
+    // iterate over all times
+    for (auto i_t = threadIdx.x; i_t < num_t_obs; i_t += blockDim.x)
+    {
+        // iterate over components and stations
+        for (auto i_obs = 0; i_obs < observations; i_obs++)
+        {
+            obs_disp[system * num_t_obs * observations
+                     + i_t * observations
+                     + i_obs] += obs_farfield[i_t * observations + i_obs];
+        }
+    }
+    // all done
+}
+
+// cuda funtion to add farfield effects
+template<typename T>
+void add_farfield_effects(
+    T* obs_disp,
+    const T* obs_farfield,
+    const int num_systems,
+    const int num_t_obs,
+    const int num_stations,
+    const int threads)
+{
+    add_farfield_effects_kernel<<<num_systems, threads>>>(
+        obs_disp, obs_farfield, num_t_obs, 3 * num_stations);
+    cudaCheckError("add_farfield_effects_kernel");
+}
+
+
 // cuda kernel to subtract displacements from the values at t_eq
 //
 template <typename T>
