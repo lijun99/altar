@@ -14,7 +14,8 @@ from altar.cuda.models.cudaBayesian import cudaBayesian
 from altar.models.seas.ext import cudaseas as libcudaseas
 
 # import the earthquake cycle simulator
-from seqeas.subduction3d import RateStateSteadyLogarithmic2D, Fault3D, SubductionSimulation3D
+from seqeas.subduction3d import (RateStateSteadyLogarithmic2D, Fault3D, SubductionSimulation3D,
+                                 get_surface_displacements)
 
 
 class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
@@ -30,8 +31,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     v_init_file = altar.properties.str(default=None)
     cuda_threads = altar.properties.int(default=0)
     verbose = altar.properties.bool(default=False)
+    ref_station_indices = altar.properties.list(default=None)
     alpha_h_mat_rows = altar.properties.int()
-    mask_file = altar.properties.path(default=None)
 
     # helper function to time
     def sync_and_time(self):
@@ -141,23 +142,32 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             shape=self.cuda_batch_size * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
             dtype=self.gpuprec)
 
-        # print(self.state_init.shape, self.t_obs.size, self.sim_state.shape)
+        # copy the boolean observation mask onto the GPU
+        if self.dataobs.mask is None:
+            self.obs_mask = altar.cuda.vector(
+                source=np.ones(self.sim.t_obs.size * 3 * self.sim.n_observers
+                               ).astype(bool, order="C"))
+            print("Assuming no masked values or reference stations")
+        else:
+            self.obs_mask = altar.cuda.vector(source=self.dataobs.mask)
+            print(f"Loaded mask with {(~self.dataobs.mask).sum()} masked values")
+
+        # load reference stations, if present
+        if self.ref_station_indices is not None:
+            self.i_stat_ref = altar.cuda.vector(
+                source=np.asarray(self.ref_station_indices, dtype="int32"))
+            self.n_stat_ref = len(self.ref_station_indices)
+            print(f"Found {self.n_stat_ref} reference stations")
+        else:
+            self.i_stat_ref = altar.cuda.vector(
+                source=np.asarray([]).astype(dtype="int32", order="C"))
+            self.n_stat_ref = 0
+            print("No reference stations used")
 
         # predicted observations
         self.obs_disp = altar.cuda.matrix(
             shape=(self.cuda_batch_size, self.sim.t_obs.size * 3 * self.sim.n_observers),
             dtype=self.gpuprec)
-
-        # mask/weight for observations
-        if self.mask_file is None:
-            self.mask = None
-            # or create a unit vector
-            # self.mask = altar.cuda.vector(shape=self.dataobs.gDataVec.shape,
-            #                               dtype=self.gpuprec).fill(1)
-        else:
-            # please implement this - to read mask of data from a file
-            # TODO
-            self.mask = None
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(self.sync_and_time())
@@ -191,21 +201,22 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.rtol,
             self.sim.spinup_atol,
             self.sim.spinup_rtol,
-            self.sim.n_observers)
+            self.sim.n_observers,
+            self.obs_mask.data,
+            self.i_stat_ref.data,
+            self.n_stat_ref)
 
-        # TODO: this is still necessary!!!
-        # # remove precomputed farfield effects on observations
-        # ticks.append(self.sync_and_time())
-        # if np.any(self.sim.T_rec_logsigma) or (not self.sim.enforce_v_plate):
-        #     raise NotImplementedError
-        # surf_disps_outer = get_surface_displacements(
-        #     self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
-        # surf_disps_lower = get_surface_displacements(
-        #     self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
-        # self.dataobs.dataobs[:] -= self.sim.zero_obs_at_eq(surf_disps_outer + surf_disps_lower
-        #                                                    ).T.ravel()
-        # # after any change of dataobs, update to cuda objects is needed
-        # self.dataobs.updateCovariance()
+        # remove precomputed farfield effects on observations
+        ticks.append(self.sync_and_time())
+        if np.any(self.sim.T_rec_logsigma) or (not self.sim.enforce_v_plate):
+            raise NotImplementedError
+        surf_disps_outer = get_surface_displacements(
+            self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :])
+        surf_disps_lower = get_surface_displacements(
+            self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :])
+        obs_farfield = (surf_disps_outer + surf_disps_lower).T  # to change into CUDA ordering
+        self.obs_farfield = altar.cuda.vector(
+            source=obs_farfield.ravel().astype(dtype=self.gpuprec, order="C"))
 
         # initialize forward model variables on GPU
         ticks.append(self.sync_and_time())
@@ -294,11 +305,10 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         self.delta_tau_div_alpha_h.data,
                                         self.G_surf.data,
                                         prediction.data,
+                                        self.obs_farfield.data,
                                         batch_size_run,
                                         self.cuda_threads,
                                         self.verbose)
-
-        # TODO subsample the CUDA forward model for each station according to its availability
 
         # log timings
         ticks.append(self.sync_and_time())
@@ -353,14 +363,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             # compute the residual
             data_obs = self.dataobs.gDataVec
             observations = data_obs.shape
-
-            # NOTE: prediction here is the surface displacement.
-            # If you want to correct them in python, you may add code here.
-
             predictions.subtractVector(vector=data_obs, size=(batch_size_run, observations))
             # call data method to calculate the l2 norm
             self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
-                                          residual=True, batch=batch_size_run, weight=self.mask)
+                                          residual=True, batch=batch_size_run,
+                                          weight=self.dataobs.gWeight)
             # copy likelihood to global
             likelihood.copytile(likelihood_batch, start=system_start, size=batch_size_run)
 
