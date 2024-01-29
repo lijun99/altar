@@ -45,6 +45,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     datafile_dataset = altar.properties.str(default=None)
     datafile_dataset.doc = "the datafile dataset name if the file type is h5"
 
+    mask_dataset = altar.properties.str(default=None)
+    mask_dataset.doc = "the mask dataset name if the file type is h5"
 
     # the norm to use for computing the data log likelihood
     # the only implementation that works for now
@@ -84,6 +86,13 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # load the observed data to numpy array
         self.dataobs = self.loadFile(filename=self.data_file, shape=observations,
                                      dataset=self.datafile_dataset)
+
+        # load a mask inside the .h5 file
+        if self.mask_dataset is not None:
+            self.mask = self.loadFile(filename=self.data_file, shape=observations,
+                                      dataset=self.mask_dataset, dtype=bool)
+        else:
+            self.mask = None
 
         # load the data covariance
         if self.cd_file is not None:
@@ -125,11 +134,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # subtract dataobs from prediction to get residual
         if not residual:
             # check whether batched data is available
-            if self.provide_batched_data :
+            if self.provide_batched_data:
                 prediction -= self.gdataObsBatch
             else:
                 # not, create it on the fly
-                gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
+                gdataObsBatch = altar.cuda.matrix(
+                    shape=(self.samples, self.observations), dtype=self.precision)
                 gdataObsBatch.duplicateVector(src=self.self.gDataVec)
                 prediction -= gdataObsBatch
 
@@ -227,7 +237,11 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         self.gDataVec = altar.cuda.vector(shape=observations, dtype=self.precision)
 
         if self.provide_batched_data:
-            self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
+            self.gdataObsBatch = altar.cuda.matrix(
+                shape=(samples, observations), dtype=self.precision)
+
+        if self.mask is not None:
+            self.gWeight = altar.cuda.vector(source=self.mask.astype(self.precision))
 
         self.updateCovariance()
 
@@ -374,7 +388,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     # gpu
     normalization = 0
     precision = None
-    gDataVec = None # keep the data vector in memory
+    gDataVec = None  # keep the data vector in memory
     gdataObsBatch = None  # keep the duplicates (samples) of data vectors in memory
     gcd_inv = None  # kept in memory, can be released upon request
 
