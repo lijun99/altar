@@ -88,11 +88,11 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
                                      dataset=self.datafile_dataset)
 
         # load a mask inside the .h5 file
-        if self.mask_dataset is not None:
+        if self.mask_dataset is None:
+            self.mask = None
+        else:
             self.mask = self.loadFile(filename=self.data_file, shape=observations,
                                       dataset=self.mask_dataset, dtype=bool)
-        else:
-            self.mask = None
 
         # load the data covariance
         if self.cd_file is not None:
@@ -240,7 +240,9 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             self.gdataObsBatch = altar.cuda.matrix(
                 shape=(samples, observations), dtype=self.precision)
 
-        if self.mask is not None:
+        if self.mask is None:
+            self.gWeight = None
+        else:
             self.gWeight = altar.cuda.vector(source=self.mask.astype(self.precision))
 
         self.updateCovariance()
