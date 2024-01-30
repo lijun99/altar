@@ -82,16 +82,18 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 exp_shape = self.sim.v_plate_ddcs_proj_eff[self.sim.fault.s_inner, :].shape
                 assert v_init_loaded.shape == exp_shape
             except AssertionError as e:
-                raise AssertionError("Couldn't load initial velocities due to shape mismatch:\n"
-                                     f"Loaded = {v_init_loaded.shape}, expected = {exp_shape}."
+                raise AssertionError(f"Worker {self.wid}: Couldn't load initial velocities due "
+                                     f"to shape mismatch:\nLoaded = {v_init_loaded.shape}, "
+                                     f"expected = {exp_shape}."
                                      ).with_traceback(e.__traceback__) from e
             except FileNotFoundError as e:
-                raise FileNotFoundError("Couldn't find initial velocities file "
-                                        f"'{self.v_init_file}'."
+                raise FileNotFoundError(f"Worker {self.wid}: Couldn't find initial velocities "
+                                        f"file '{self.v_init_file}'."
                                         ).with_traceback(e.__traceback__) from e
             else:
                 self.sim.v_init = v_init_loaded
-                print(f"Loaded initial velocities from '{self.v_init_file}'")
+                channel.log(f"Worker {self.wid}: Loaded initial velocities "
+                            f"from '{self.v_init_file}'")
 
         # allocate memory
         ticks.append(self.sync_and_time())
@@ -147,22 +149,23 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.obs_mask = altar.cuda.vector(
                 source=np.ones(self.sim.t_obs.size * 3 * self.sim.n_observers
                                ).astype(bool, order="C"))
-            print("Assuming no masked values or reference stations")
+            channel.log(f"Worker {self.wid}: Assuming no masked values")
         else:
             self.obs_mask = altar.cuda.vector(source=self.dataobs.mask)
-            print(f"Loaded mask with {(~self.dataobs.mask).sum()} masked values")
+            channel.log(f"Worker {self.wid}: Loaded mask with "
+                        f"{(~self.dataobs.mask).sum()} masked values")
 
         # load reference stations, if present
         if self.ref_station_indices is not None:
             self.i_stat_ref = altar.cuda.vector(
                 source=np.asarray(self.ref_station_indices, dtype="int32"))
             self.n_stat_ref = len(self.ref_station_indices)
-            print(f"Found {self.n_stat_ref} reference stations")
+            channel.log(f"Worker {self.wid}: Found {self.n_stat_ref} reference stations")
         else:
             self.i_stat_ref = altar.cuda.vector(
                 source=np.asarray([]).astype(dtype="int32", order="C"))
             self.n_stat_ref = 0
-            print("No reference stations used")
+            channel.log(f"Worker {self.wid}: No reference stations used")
 
         # predicted observations
         self.obs_disp = altar.cuda.matrix(
@@ -177,7 +180,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.cmodel = libcudaseas.ratedependent.model_float()
         else:
             raise NotImplementedError
-        channel.log(f"Running in {self.gpuprec} precision")
+        channel.log(f"Worker {self.wid}: Running in {self.gpuprec} precision")
         self.cmodel.initialize(
             self.cuda_batch_size,
             self.sim.n_cycles_max,
@@ -229,7 +232,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # print timings
         ticks.append(self.sync_and_time())
-        channel.log(f"Initialized SEAS3D in {ticks[-1] - ticks[0]:.1f}s")
+        channel.log(f"Worker {self.wid}: Initialized SEAS3D in {ticks[-1] - ticks[0]:.1f}s")
         # channel.log(f"\n(Configuration = {ticks[1] - ticks[0]:.1f}s, "
         #             f"Python instances = {ticks[2] - ticks[1]:.1f}s, "
         #             f"GPU allocations = {ticks[3] - ticks[2]:.1f}s, "
@@ -267,7 +270,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # print info
         channel = self.info
-        channel.log("Time between forwardModelBatched calls: "
+        channel.log(f"Worker {self.wid}: Time between forwardModelBatched calls: "
                     f"{self.sync_and_time() - self.timer_fmb}s")
 
         # create new rheology instances
@@ -312,8 +315,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # log timings
         ticks.append(self.sync_and_time())
-        infostr = (f"Ran forwardModelBatched for {batch_size_run} samples in "
-                   f"{ticks[-1] - ticks[0]:.1f}s (")
+        infostr = (f"Worker {self.wid}: Ran forwardModelBatched for {batch_size_run} "
+                   f"samples in {ticks[-1] - ticks[0]:.1f}s (")
         infostr += (f"Rheology instances = {ticks[1] - ticks[0]:.1f}s, "
                     f"Simulation instances = {ticks[2] - ticks[1]:.1f}s, "
                     f"Stacked parameters = {ticks[3] - ticks[2]:.1f}s, ")
@@ -351,8 +354,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         for system_start in range(0, batch, cuda_batch_size):
             # get the actual batch size
             batch_size_run = min(cuda_batch_size, batch - system_start)
-            channel.log(f"cuEvalLikelihood loop processing systems {system_start} to "
-                        f"{system_start + batch_size_run - 1}")
+            channel.log(f"Worker {self.wid}: cuEvalLikelihood loop processing systems "
+                        f"{system_start} to {system_start + batch_size_run - 1}")
             # copy theta (a tile)
             theta_batch.copytile(src=theta,
                                  src_start=(system_start, 0),
