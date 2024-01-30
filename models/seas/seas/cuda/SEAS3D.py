@@ -369,8 +369,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             predictions.subtractVector(vector=data_obs, size=(batch_size_run, observations))
             # call data method to calculate the l2 norm
             self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
-                                          residual=True, batch=batch_size_run,
-                                          weight=self.dataobs.gWeight)
+                                          residual=True, batch=batch_size_run)
             # copy likelihood to global
             likelihood.copytile(likelihood_batch, start=system_start, size=batch_size_run)
 
