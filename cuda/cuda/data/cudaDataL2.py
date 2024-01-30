@@ -277,9 +277,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         from math import log, pi as π
         # process cd info
         cdinv = self.gcd_inv
-        observations = self.observations
+        if self.mask is None:
+            observations_effective = self.observations
+        else:
+            observations_effective = int(self.mask.sum())
         # L2 normalization
-        self.normalization = (-0.5 * log(2 * π) + log(cdinv)) * observations
+        self.normalization = (-0.5 * log(2 * π) + log(cdinv)) * observations_effective
 
         # prepare self.gdataObsBatch
         # load data to gpu
@@ -302,6 +305,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         :param cp: cuda matrix with shape(obs, obs), data covariance due to model uncertainty
         :return:
         """
+        if self.mask is not None:
+            raise NotImplementedError
 
         from math import log, pi as π
         # process cd info
