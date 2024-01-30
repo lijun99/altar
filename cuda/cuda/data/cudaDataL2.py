@@ -11,6 +11,7 @@
 # the package
 import altar
 import altar.cuda
+import numpy as np
 from altar.cuda import libcuda
 from altar.cuda import cublas as cublas
 
@@ -90,9 +91,15 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # load a mask inside the .h5 file
         if self.mask_dataset is None:
             self.mask = None
+            if np.isfinite(self.dataobs).sum() != self.dataobs.size:
+                raise ValueError("Found non-finite values in dataobs but no mask provided!")
         else:
             self.mask = self.loadFile(filename=self.data_file, shape=observations,
                                       dataset=self.mask_dataset, dtype=bool)
+            if np.isfinite(self.dataobs[self.mask]).sum() != self.mask.sum():
+                raise ValueError(
+                    "Found non-finite values in dataobs even after applying the mask!")
+            self.dataobs[~self.mask] = 0
 
         # load the data covariance
         if self.cd_file is not None:
