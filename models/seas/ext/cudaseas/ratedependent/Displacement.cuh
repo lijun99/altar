@@ -435,9 +435,9 @@ __global__ void add_farfield_effects_kernel(
         // iterate over components and stations
         for (auto i_obs = 0; i_obs < observations; i_obs++)
         {
-            obs_disp[system * num_t_obs * observations
-                     + i_t * observations
-                     + i_obs] += obs_farfield[i_t * observations + i_obs];
+            obs_disp[system * (size_t)num_t_obs * (size_t)observations
+                     + i_t * (size_t)observations
+                     + i_obs] += obs_farfield[i_t * (size_t)observations + i_obs];
         }
     }
     // all done
@@ -480,10 +480,10 @@ __global__ void subtract_displacement_from_teq_kernel (T*  obs_disp,
             // get the end index (+1)
             auto it_end = (i_t_eq == n_slips_obs-1) ? num_t_obs : i_slips_obs[i_t_eq+1];
             // get obs_disp value at i_t_eq
-            auto offset = obs_disp[(system*num_t_obs+it_start)*observations+i_obs];
+            auto offset = obs_disp[(system * (size_t)num_t_obs + it_start) * (size_t)observations + i_obs];
             // iterate over all time points
             for(auto it = it_start; it < it_end; it++)
-                obs_disp[(system*num_t_obs+it)*observations+i_obs] -= offset;
+                obs_disp[(system * (size_t)num_t_obs + it) * (size_t)observations + i_obs] -= offset;
         }
     }
     // all done
@@ -532,8 +532,8 @@ __global__ void calculate_ref_timeseries_kernel (
         {
             auto i_stat = i_stat_ref[ii_stat];
             assert(obs_mask[i_t_comp * num_stations + i_stat]);
-            ref_obs[i_ref_obs] += obs_disp[system * num_t_obs * 3 * num_stations
-                                           + i_t_comp * num_stations + i_stat];
+            ref_obs[i_ref_obs] += obs_disp[system * (size_t)num_t_obs * 3 * (size_t)num_stations
+                                           + i_t_comp * (size_t)num_stations + i_stat];
         }
         // divide to get mean
         ref_obs[i_ref_obs] /= n_stat_ref;
@@ -559,8 +559,9 @@ __global__ void remove_ref_timeseries_kernel (
         for (auto i_stat = 0; i_stat < num_stations; i_stat++)
         {
             // remove reference value
-            obs_disp[system * num_t_obs * 3 * num_stations
-                     + i_t_comp * num_stations + i_stat] -= ref_obs[system * num_t_obs * 3 + i_t_comp];
+            obs_disp[system * (size_t)num_t_obs * 3 * (size_t)num_stations
+                     + i_t_comp * (size_t)num_stations + i_stat]
+                -= ref_obs[system * num_t_obs * 3 + i_t_comp];
         }
     }
 }
@@ -602,12 +603,12 @@ __global__ void subtract_displacement_from_teq_masked_kernel(
                     // if this is the first observation after an event, get current offset
                     if (!offset_found)
                     {
-                        offset = obs_disp[(system * num_t_obs + it) * observations + i_obs];
+                        offset = obs_disp[(system * (size_t)num_t_obs + it) * (size_t)observations + i_obs];
                         offset_found = true;
                     }
 
                     // remove offset
-                    obs_disp[(system * num_t_obs + it) * observations + i_obs] -= offset;
+                    obs_disp[(system * (size_t)num_t_obs + it) * (size_t)observations + i_obs] -= offset;
                 }
             }
         }
