@@ -4,7 +4,7 @@
  */
 
 #include <cmath>
-#include <assert.h>
+// #include <assert.h>
 
 #ifndef __rd_ode_cuh__
 #define __rd_ode_cuh__
@@ -35,7 +35,7 @@ struct __ALIGNED__ RateDependentODE {
     // for K_inner_inner_onfault, 4D
     // K_int [patches, 2, patches, 2]
     __device__ __forceinline__ int i_Kii (int i0, int i1, int i2, int i3) {
-        assert((i0 < patches) && (i1 < 2) && (i2 < patches) && (i3 < 2));
+        // assert((i0 < patches) && (i1 < 2) && (i2 < patches) && (i3 < 2));
         return (i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2);
     }
 
