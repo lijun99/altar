@@ -196,6 +196,11 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
+    // clean up memory usage
+    delete odefunc;
+    delete events;
+    delete solver;
+
 }
 
 // size estimation methods
