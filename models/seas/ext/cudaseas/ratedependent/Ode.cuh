@@ -9,6 +9,11 @@
 #ifndef __rd_ode_cuh__
 #define __rd_ode_cuh__
 
+#define i_Kii(i0, i1, i2, i3, patches)  \
+    ((i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2))
+
+
+
 // an example ode function
 // please follow(copy) this example for naming conventions
 template <class T>
@@ -34,10 +39,10 @@ struct __ALIGNED__ RateDependentODE {
 
     // for K_inner_inner_onfault, 4D
     // K_int [patches, 2, patches, 2]
-    __device__ __forceinline__ int i_Kii (int i0, int i1, int i2, int i3) {
-        // assert((i0 < patches) && (i1 < 2) && (i2 < patches) && (i3 < 2));
-        return (i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2);
-    }
+    // __device__ __forceinline__ int i_Kii (int i0, int i1, int i2, int i3) {
+    //     // assert((i0 < patches) && (i1 < 2) && (i2 < patches) && (i3 < 2));
+    //     return (i3) + (i2 * 2) + (i1 * 2 * patches) + (i0 * 2 * patches * 2);
+    // }
 
     // ode function called when solving a system with a thread block
     // y0, f [2(quantity: displacement, stress), 2(component: dip,strike), patches]
@@ -74,18 +79,18 @@ struct __ALIGNED__ RateDependentODE {
         // update velocities in both directions
         for (int patch_id = cta.thread_rank(); patch_id < patches; patch_id += cta.size()) {
             // initialize with external influence
-            f[patch_id + 2 * patches] = -K_ext[patch_id];
-            f[patch_id + 3 * patches] = -K_ext[patch_id + patches];
+            auto tau0 = -K_ext[patch_id];
+            auto tau1 = -K_ext[patch_id + patches];
             // tensor product with all other patches
             for (auto j = 0; j < patches; j++) {
                 auto delv0 = f[j] - v_p[j];
                 auto delv1 = f[j + patches] - v_p[j + patches];
-                f[patch_id + 2 * patches] += K_int[i_Kii(patch_id, 0, j, 0)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1)] * delv1;
-                f[patch_id + 3 * patches] += K_int[i_Kii(patch_id, 1, j, 0)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1)] * delv1;
+                tau0 += K_int[i_Kii(patch_id, 0, j, 0, patches)] * delv0 + K_int[i_Kii(patch_id, 0, j, 1, patches)] * delv1;
+                tau1 += K_int[i_Kii(patch_id, 1, j, 0, patches)] * delv0 + K_int[i_Kii(patch_id, 1, j, 1, patches)] * delv1;
             }
             // rescaling due to radiation damping
-            f[patch_id + 2 * patches] /= mu_over_2vs * f[patch_id] + alpha_h[system_id * patches + patch_id];
-            f[patch_id + 3 * patches] /= mu_over_2vs * f[patch_id + patches] + alpha_h[system_id * patches + patch_id];
+            f[patch_id + 2 * patches] = tau0 / (mu_over_2vs * f[patch_id] + alpha_h[system_id * patches + patch_id]);
+            f[patch_id + 3 * patches] = tau1 / (mu_over_2vs * f[patch_id + patches] + alpha_h[system_id * patches + patch_id]);
             // printf("debug ode %d %g %g %g %g %g\n", patch_id, t, f[patch_id + 2 * patches],
             //          f[patch_id + 3 * patches], f[patch_id], alpha_h[system_id * patches + patch_id] );
         }
