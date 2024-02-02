@@ -26,7 +26,7 @@ struct __ALIGNED__ SEASEvents {
     const T* ychange; // [systems, num_eq, patches * 2] - first all velocities in one direction, then the other
     const int* delta_tau_ix; // convert non-unique event_id to unique eq_id
     const int* delta_tau_ix_final; // same as before but for the final, spun-up period - can be switched to
-    bool spun_up = false; // marker to decide with delta_tau_ix to use
+    bool* spun_up; // markers for each system to decide with delta_tau_ix to use
 
     // debugging descriptor
     // this is run on cpu, so only a host function, it could print results as below (by making all arrays in managed memory)
@@ -51,6 +51,7 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
+        cudaSafeCall(cudaMallocManaged(&spun_up, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
     }
@@ -64,6 +65,7 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
+        cudaSafeCall(cudaMallocManaged(&spun_up, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
     }
@@ -77,9 +79,9 @@ struct __ALIGNED__ SEASEvents {
     }
 
     // set spun-up marker
-    __device__ void set_spun_up(bool new_status)
+    __device__ void set_spun_up(const int system_id, const bool new_status)
     {
-        spun_up = new_status;
+        spun_up[system_id] = new_status;
     }
 
     // default hook to be called by the ode solver
@@ -90,7 +92,7 @@ struct __ALIGNED__ SEASEvents {
         assert (event_id < nevents - 1); // just to be sure
 
         // convert event_id (non-unique) to eq_id (unique)
-        auto eq_id = (spun_up) ? delta_tau_ix_final[event_id - 1] : delta_tau_ix[event_id - 1];
+        auto eq_id = (spun_up[system_id]) ? delta_tau_ix_final[event_id - 1] : delta_tau_ix[event_id - 1];
 
         auto yevent = ychange + system_id * num_eq * patches * 2 + eq_id * patches * 2;
         // note one thread per patch, the iteration is for system_size > #total threads

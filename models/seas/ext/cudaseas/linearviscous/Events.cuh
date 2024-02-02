@@ -43,7 +43,7 @@ struct __ALIGNED__ Events {
     };
 
     // compatibility with ratedependent object
-    __device__ void set_spun_up(bool new_status)
+    __device__ void set_spun_up(const int system_id, const bool new_status)
     {
         return;
     }

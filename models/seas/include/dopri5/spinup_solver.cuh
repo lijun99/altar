@@ -141,7 +141,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     {
         if (cta.thread_rank() == 0)
         {
-            events.set_spun_up(true);
+            events.set_spun_up(system_id, true);
         }
         cta.sync();
         reset_f0_value(cta, system_id, ode, events, stepper);
