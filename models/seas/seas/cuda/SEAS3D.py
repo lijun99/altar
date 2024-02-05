@@ -388,5 +388,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         else:
             raise NotImplementedError
 
+        theta_batch.free()
+        likelihood_batch.free()
+
         # return the likelihood
         return likelihood
