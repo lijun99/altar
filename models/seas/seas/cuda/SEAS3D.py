@@ -223,12 +223,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # initialize forward model variables on GPU
         ticks.append(self.sync_and_time())
-        self.alpha_h = altar.cuda.vector(
-            shape=self.cuda_batch_size * self.fault.inner_num_patches, dtype=self.gpuprec)
-        self.delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=(self.cuda_batch_size * self.sim.delta_tau_bounded_compressed.shape[0]
-                   * self.fault.inner_num_patches * 2),
-            dtype=self.gpuprec)
+        # self.alpha_h = altar.cuda.vector(
+        #     shape=self.cuda_batch_size * self.fault.inner_num_patches, dtype=self.gpuprec)
+        # self.delta_tau_div_alpha_h = altar.cuda.vector(
+        #     shape=(self.cuda_batch_size * self.sim.delta_tau_bounded_compressed.shape[0]
+        #            * self.fault.inner_num_patches * 2),
+        #     dtype=self.gpuprec)
 
         # print timings
         ticks.append(self.sync_and_time())
@@ -287,6 +287,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(self.sync_and_time())
+        self.alpha_h = altar.cuda.vector(
+            shape=batch_size_run * self.fault.inner_num_patches, dtype=self.gpuprec)
+        self.delta_tau_div_alpha_h = altar.cuda.vector(
+            shape=(batch_size_run * self.sim.delta_tau_bounded_compressed.shape[0]
+                   * self.fault.inner_num_patches * 2),
+            dtype=self.gpuprec)
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
         self.alpha_h.copy_from_host(
             source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
@@ -325,6 +331,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # all done
         self.timer_fmb = self.sync_and_time()
+        self.alpha_h.free()
+        self.delta_tau_div_alpha_h.free()
         return prediction
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
