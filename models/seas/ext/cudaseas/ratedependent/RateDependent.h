@@ -42,7 +42,6 @@ class RateDependent {
             T* t_obs_sec_,
             int num_ix_eq_,
             int num_eq_,
-            int* delta_tau_bounded_indices_,
             T* t_events_,
             int* i_slips_obs,
             int n_slips_obs,
@@ -68,6 +67,8 @@ class RateDependent {
         void forward_model_batch(
             const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_forward_batch, num_inner_patches, ) [Pa]
             const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches, 2) [-]
+            int* delta_tau_bounded_indices, // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
+            int* delta_tau_bounded_indices_final, // same as before but for the final, spun-up period
             const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
             T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
             const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
@@ -101,7 +102,6 @@ class RateDependent {
         // events
         int num_ix_eq; // = num_slips, number of non-unique earthquakes [-]
         int num_eq; // number of unique earthquakes [-]
-        int* delta_tau_bounded_indices; // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
         T* t_events; // timestamps of start time, end time, and earthquakes (n_events = num_ix_eq + 2, ) [s]
         int* i_slips_obs; // indices of earthquakes in t_obs
         int n_slips_obs;  // number of observed indices

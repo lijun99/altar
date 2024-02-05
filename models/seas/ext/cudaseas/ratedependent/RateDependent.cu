@@ -28,7 +28,6 @@ void RateDependent<T>::initialize(
         T* t_obs_sec_,
         int num_ix_eq_,
         int num_eq_,
-        int* delta_tau_bounded_indices_,
         T* t_events_,
         int* i_slips_obs_,
         int n_slips_obs_,
@@ -60,7 +59,6 @@ void RateDependent<T>::initialize(
     // events
     num_ix_eq = num_ix_eq_;
     num_eq = num_eq_;
-    delta_tau_bounded_indices = delta_tau_bounded_indices_;
     t_events = t_events_;
     i_slips_obs = i_slips_obs_;
     n_slips_obs = n_slips_obs_;
@@ -98,6 +96,8 @@ template <typename T>
 void RateDependent<T>::forward_model_batch(
     const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_forward_batch, num_inner_patches, ) [Pa]
     const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches * 2) [-]
+    int* delta_tau_bounded_indices, // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
+    int* delta_tau_bounded_indices_final, // same as before but for the final, spun-up period
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
     T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
     const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
@@ -115,7 +115,7 @@ void RateDependent<T>::forward_model_batch(
 
     // create an instance of events (including starting/ending time)
     events = new EventType{num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
-                           num_forward_batch, num_inner_patches, UNITS};
+                           delta_tau_bounded_indices_final, num_forward_batch, num_inner_patches, UNITS};
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, num_forward_batch, num_threads};
@@ -216,7 +216,6 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
         (2 +
          ((size_type)num_t_obs * 3 * (size_type)num_stations)) * sizeof(bool) +
         (15 +
-         num_ix_eq +
          n_slips_obs +
          n_slips_obs +
          n_stat_ref + 1) * sizeof(int) +
@@ -229,7 +228,8 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
          ((size_type)UNITS * (size_type)num_inner_patches) +
          ((size_type)cuda_batch_size * (size_type)num_t_obs * (size_type)UNITS * (size_type)num_inner_patches)) * sizeof(T));
     size_type size_forward = (
-        1 * sizeof(int) +
+        num_forward_batch * sizeof(bool) +
+        (1 + 2 * num_ix_eq) * sizeof(int) +
         (((size_type)num_forward_batch * (size_type)num_inner_patches) +
          ((size_type)num_forward_batch * (size_type)num_eq * (size_type)num_inner_patches * 2) +
          (2 * (size_type)num_inner_patches * 3 * (size_type)num_stations) +

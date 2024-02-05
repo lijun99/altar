@@ -42,6 +42,12 @@ struct __ALIGNED__ Events {
         return tevents;
     };
 
+    // compatibility with ratedependent object
+    __device__ void set_spun_up(const int system_id, const bool new_status)
+    {
+        return;
+    }
+
     // default hook to be called by the ode solver
     // here, we simply add the changes (yevents) to y(tevent)
     __device__ void set_events_block(const cg::thread_block & cta,

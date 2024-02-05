@@ -139,6 +139,11 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     //converged, last run for dense_out
     if (dense_out)
     {
+        if (cta.thread_rank() == 0)
+        {
+            events.set_spun_up(system_id, true);
+        }
+        cta.sync();
         reset_f0_value(cta, system_id, ode, events, stepper);
         solve_device(cta, system_id, dense_out,
             ode,
