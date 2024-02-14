@@ -33,6 +33,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     verbose = altar.properties.bool(default=False)
     ref_station_indices = altar.properties.list(default=None)
     alpha_h_mat_rows = altar.properties.int()
+    final_nonuniform_slip_file = altar.properties.str(default=None)
 
     # helper function to time
     def sync_and_time(self):
@@ -69,11 +70,20 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.rheo_dict, self.fault_dict, self.sim_dict = \
             SubductionSimulation3D.read_config_file(self.config_file)
 
+        # check for final nonuniform slip
+        if self.final_nonuniform_slip_file is None:
+            self.final_nonuniform_slip = None
+            channel.log(f"Device {self.device.id}: Uniform slip")
+        else:
+            self.final_nonuniform_slip = np.load(self.final_nonuniform_slip_file)
+            channel.log(f"Device {self.device.id}: Non-uniform slip loaded")
+
         # create reference simulation
         ticks.append(self.sync_and_time())
         self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
         self.fault = Fault3D(**self.fault_dict)
-        self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
+        self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault,
+                                          final_nonuniform_slip=self.final_nonuniform_slip)
 
         # load initial velocity
         if self.v_init_file is not None:
@@ -95,6 +105,13 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 channel.log(f"Device {self.device.id}: Loaded initial velocities "
                             f"from '{self.v_init_file}'")
 
+        # get number of unique earthquakes
+        num_orig_eq = self.sim.delta_tau_bounded_compressed.shape[0]
+        self.num_eq = num_orig_eq
+        if self.final_nonuniform_slip is not None:
+            num_final_eq = self.final_nonuniform_slip.shape[0]
+            self.num_eq += num_final_eq
+
         # allocate memory
         ticks.append(self.sync_and_time())
         SEC_PER_YEAR = 86400 * 365.25
@@ -108,8 +125,6 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             source=(tevents * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
         self.i_slips_obs = \
             altar.cuda.vector(source=np.array([0] + self.sim.i_slips_obs).astype("int32"))
-        self.delta_tau_bounded_indices = \
-            altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
         self.K_inner_inner_onfault = altar.cuda.vector(
             source=np.ascontiguousarray(self.fault.K_inner_inner[:, :2, :, :2],
                                         dtype=self.gpuprec))
@@ -187,8 +202,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.t_obs.size,
             self.t_obs_sec.data,
             self.sim.n_slips,
-            self.sim.delta_tau_bounded_compressed.shape[0],
-            self.delta_tau_bounded_indices.data,
+            self.num_eq,
             self.t_events.data,
             self.i_slips_obs.data,
             self.sim.n_slips_obs + 1,
@@ -223,12 +237,15 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # initialize forward model variables on GPU
         ticks.append(self.sync_and_time())
-        # self.alpha_h = altar.cuda.vector(
-        #     shape=self.cuda_batch_size * self.fault.inner_num_patches, dtype=self.gpuprec)
-        # self.delta_tau_div_alpha_h = altar.cuda.vector(
-        #     shape=(self.cuda_batch_size * self.sim.delta_tau_bounded_compressed.shape[0]
-        #            * self.fault.inner_num_patches * 2),
-        #     dtype=self.gpuprec)
+        self.delta_tau_bounded_indices = \
+            altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
+        if self.final_nonuniform_slip is None:
+            self.delta_tau_bounded_indices_final = self.delta_tau_bounded_indices
+        else:
+            delta_tau_bounded_indices_final = self.sim.delta_tau_bounded_indices.copy()
+            delta_tau_bounded_indices_final[-num_final_eq:] = np.arange(num_orig_eq, self.num_eq)
+            self.delta_tau_bounded_indices_final = \
+                altar.cuda.vector(source=delta_tau_bounded_indices_final.astype("int32"))
 
         # print timings
         ticks.append(self.sync_and_time())
@@ -282,36 +299,43 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create new simulation instances, reusing G_surf
         ticks.append(self.sync_and_time())
         sims = [SubductionSimulation3D(**self.sim_dict, rheo=rheos[i],
-                                       fault=self.fault, G_surf=self.sim.G_surf)
+                                       fault=self.fault, G_surf=self.sim.G_surf,
+                                       final_nonuniform_slip=self.final_nonuniform_slip)
                 for i in range(batch_size_run)]
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(self.sync_and_time())
-        self.alpha_h = altar.cuda.vector(
+        alpha_h = altar.cuda.vector(
             shape=batch_size_run * self.fault.inner_num_patches, dtype=self.gpuprec)
-        self.delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=(batch_size_run * self.sim.delta_tau_bounded_compressed.shape[0]
-                   * self.fault.inner_num_patches * 2),
+        delta_tau_div_alpha_h = altar.cuda.vector(
+            shape=(batch_size_run * self.num_eq * self.fault.inner_num_patches * 2),
             dtype=self.gpuprec)
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        self.alpha_h.copy_from_host(
+        alpha_h.copy_from_host(
             source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
-        delta_tau_bounded_compressed_stacked = \
-            np.stack([s.delta_tau_bounded_compressed for s in sims])
+        if self.final_nonuniform_slip is None:
+            dtau_bound_comp_list = [s.delta_tau_bounded_compressed for s in sims]
+        else:
+            dtau_bound_comp_list = [np.concatenate([s.delta_tau_bounded_compressed,
+                                                    s.delta_tau_bounded_nonuni], axis=0)
+                                    for s in sims]
+        delta_tau_bounded_compressed_stacked = np.stack(dtau_bound_comp_list)
         delta_tau_bound_comp_div_alpha = \
             delta_tau_bounded_compressed_stacked / alpha_h_vec_stacked[:, None, :, None]
         delta_tau_bound_comp_div_alpha = np.concatenate(
             [delta_tau_bound_comp_div_alpha[:, :, :, 0],
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
-        self.delta_tau_div_alpha_h.copy_from_host(
+        delta_tau_div_alpha_h.copy_from_host(
             source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
                                         dtype=self.gpuprec))
 
         # call CUDA forward model
         ticks.append(self.sync_and_time())
-        self.cmodel.forward_model_batch(self.alpha_h.data,
-                                        self.delta_tau_div_alpha_h.data,
+        self.cmodel.forward_model_batch(alpha_h.data,
+                                        delta_tau_div_alpha_h.data,
+                                        self.delta_tau_bounded_indices.data,
+                                        self.delta_tau_bounded_indices_final.data,
                                         self.G_surf.data,
                                         prediction.data,
                                         self.obs_farfield.data,
@@ -331,8 +355,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # all done
         self.timer_fmb = self.sync_and_time()
-        self.alpha_h.free()
-        self.delta_tau_div_alpha_h.free()
+        alpha_h.free()
+        delta_tau_div_alpha_h.free()
         return prediction
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
