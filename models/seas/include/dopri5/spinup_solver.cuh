@@ -129,11 +129,11 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     //cta.sync();
 
     // if debugging cycles
-    if (verbose && (cta.thread_rank() == 0)) {
-        if (converged)
+    if (cta.thread_rank() == 0) {
+        if (converged && verbose)
             printf("%i %i>", system_id, icycle);
-        else
-            printf("%i[WARNING: maximum iterations reached]", icycle);
+        else if (!converged)
+            printf("%i[WARNING: maximum iterations reached for system %i]", icycle, system_id);
     }
 
     //converged, last run for dense_out
