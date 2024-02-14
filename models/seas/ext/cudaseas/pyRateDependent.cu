@@ -108,6 +108,7 @@ public:
         py::capsule delta_tau_bounded_indices_final,
         py::capsule G_surf,
         py::capsule obs_disp,
+        py::capsule ref_obs,
         py::capsule obs_farfield,
         const int batches,
         const int num_threads = 0,
@@ -121,6 +122,7 @@ public:
             convertPyArray<int, cuda_vector>(delta_tau_bounded_indices_final), // same as before but for the last, spun-up cycle
             convertPyArray<T, cuda_matrix>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
             convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_obs*3*num_stations) [m]
+            convertPyArray<T, cuda_matrix>(ref_obs), // (num_systems, num_t_obs*3) [m]
             convertPyArray<T, cuda_vector>(obs_farfield), // (num_t_obs*3*num_stations) [m]
             batches, // batch size <=samples (in AlTar, not all samples are computed in simulations)
             num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
@@ -154,7 +156,7 @@ module(py::module & m)
         .def("forward_model_batch", &pyRateDependent_double::forward_model_batch,
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("obs_farfield"),
+             py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"),
              py::arg("batches"), py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_object_size", &pyRateDependent_double::estimate_object_size);
     py::class_<pyRateDependent_float>(m, "model_float")
@@ -163,7 +165,7 @@ module(py::module & m)
         .def("forward_model_batch", &pyRateDependent_float::forward_model_batch,
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("obs_farfield"),
+             py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"),
              py::arg("batches"), py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_object_size", &pyRateDependent_float::estimate_object_size);
 }

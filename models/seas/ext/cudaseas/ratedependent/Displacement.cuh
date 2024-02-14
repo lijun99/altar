@@ -623,6 +623,7 @@ __global__ void subtract_displacement_from_teq_masked_kernel(
 template<typename T>
 void reference_subtract_reset_displacements(
     T* obs_disp, // (num_systems, num_t_obs, 3*num_stations)
+    T* ref_obs, // (num_systems, num_t_obs, 3)
     const int num_systems,
     const int num_t_obs,
     const int num_stations,
@@ -637,10 +638,6 @@ void reference_subtract_reset_displacements(
 
     // calculate and remove reference timeseries only if they are provided
     if (n_stat_ref > 0) {
-        // allocate reference timeseries
-        T* ref_obs;
-        cudaSafeCall(cudaMallocManaged(&ref_obs, num_systems * num_t_obs * 3 * sizeof(T)));
-
         // calculate reference timeseries
         calculate_ref_timeseries_kernel<<<num_systems, threads>>>(
             obs_disp, num_t_obs, num_stations, obs_mask, i_stat_ref, n_stat_ref, ref_obs);

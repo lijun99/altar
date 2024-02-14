@@ -99,7 +99,8 @@ void RateDependent<T>::forward_model_batch(
     int* delta_tau_bounded_indices, // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
     int* delta_tau_bounded_indices_final, // same as before but for the final, spun-up period
     const T* G_surf, // Displacement kernel for all stations (1, 2*num_inner_patches, 3*num_stations) [-]
-    T* obs_disp,  // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+    T* obs_disp, // Surface observations for all stations (num_forward_batch, num_t_obs, 3*num_stations) [m]
+    T* ref_obs, // Array for the calculation of the reference surface displacement timeseries (num_forward_batch, num_t_obs, 3) [m]
     const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
     const int num_forward_batch, // forward model batch(system) size <= cuda_batch_size (in AlTar, not all samples are computed in simulations)
     const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
@@ -185,7 +186,7 @@ void RateDependent<T>::forward_model_batch(
     // calculate reference observation timeseries, remove it from each other
     // station, and reset the observations to zero at the first timestep past an event
     reference_subtract_reset_displacements(
-        obs_disp, num_forward_batch, num_t_obs, num_stations,
+        obs_disp, ref_obs, num_forward_batch, num_t_obs, num_stations,
         i_slips_obs, n_slips_obs, obs_mask, i_stat_ref, n_stat_ref, solver->threads);
 
     /*
