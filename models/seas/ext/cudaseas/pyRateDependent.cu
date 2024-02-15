@@ -66,7 +66,8 @@ public:
         int num_stations,
         py::capsule obs_mask,
         py::capsule i_stat_ref,
-        int n_stat_ref
+        int n_stat_ref,
+        int ref_vel_index
     )
     {
         // printf("inside pyRateDependent.cu:initialize\n");
@@ -96,7 +97,8 @@ public:
             num_stations,
             convertPyArray<bool, cuda_vector>(obs_mask),
             convertPyArray<int, cuda_vector>(i_stat_ref),
-            n_stat_ref
+            n_stat_ref,
+            ref_vel_index
         );
     }
 

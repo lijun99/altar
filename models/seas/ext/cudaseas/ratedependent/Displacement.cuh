@@ -507,6 +507,96 @@ void subtract_displacement_from_teq(
     cudaCheckError("subtract_displacement_from_teq_kernel");
 }
 
+// cuda kernel to calculate reference surface velocities
+template <typename T>
+__global__ void calculate_reference_surface_velocity_kernel (
+    const T* sim_state, // (num_systems, num_t_obs, 4 * num_inner_patches)
+    const T* G_surf, // (2*num_inner_patches, 3*num_stations)
+    const int num_t_obs,
+    const int num_inner_patches,
+    const int num_stations,
+    const int ref_vel_index,
+    T* ref_vels // (num_systems, 3 * num_stations)
+    )
+{
+    // get sample/system index
+    int system = blockIdx.x;
+    // iterate over observations = 3 * num_stations
+    for (auto i_obs = threadIdx.x; i_obs < 3 * num_stations; i_obs += blockDim.x)
+    {
+        // get relevant indices
+        auto i_sim_state_start = system * num_t_obs * 4 * num_inner_patches
+                                 + ref_vel_index * 4 * num_inner_patches
+                                 + 2 * num_inner_patches;
+        // perform Green's function multiplication
+        T temp = 0;
+        for (auto i_patch = 0; i_patch < 2 * num_inner_patches; i_patch++)
+            temp += G_surf[i_patch * 3 * num_stations + i_obs]
+                    * sim_state[i_sim_state_start + i_patch];
+        // assign to output
+        ref_vels[system * 3 * num_stations + i_obs] = temp;
+    }
+
+}
+
+// cuda kernel to remove reference surface velocities from timeseries
+template <typename T>
+__global__ void remove_reference_surface_velocity_kernel (
+    T* obs_disp, // (num_systems, num_t_obs, 3*num_stations) [m]
+    const T* t_obs_sec, // (num_t_obs, ) [s]
+    const int num_t_obs,
+    const int num_stations,
+    T* ref_vels // (num_systems, 3 * num_stations)
+    )
+{
+    // get sample/system index
+    int system = blockIdx.x;
+    // iterate over observations = 3 * num_stations
+    for (auto i_obs = threadIdx.x; i_obs < 3 * num_stations; i_obs += blockDim.x)
+    {
+        // iterate over timesteps
+        for (auto i_t = 1; i_t < num_t_obs; i_t++)
+            // remove v*t
+            obs_disp[system * num_t_obs * 3 * num_stations
+                     + i_t * 3 * num_stations
+                     + i_obs] -= ref_vels[system * 3 * num_stations + i_obs]
+                                 * (t_obs_sec[i_t] - t_obs_sec[0]);
+    }
+
+}
+
+// remove reference velocity
+template <typename T>
+void remove_reference_surface_velocities (
+    T* obs_disp,
+    const T* sim_state,
+    const T* G_surf,
+    const T* t_obs_sec,
+    const int num_systems,
+    const int num_t_obs,
+    const int num_inner_patches,
+    const int num_stations,
+    const int ref_vel_index,
+    const int threads)
+{
+    // first, calculate reference surface velocities in all systems, stations, and components
+    T* ref_vels;
+    cudaSafeCall(cudaMalloc(&ref_vels, num_systems * 3 * num_stations * sizeof(T)));
+    calculate_reference_surface_velocity_kernel<<<num_systems, threads>>>(
+        sim_state, G_surf, num_t_obs, num_inner_patches, num_stations, ref_vel_index, ref_vels);
+    cudaCheckError("subtract_displacement_from_teq_masked_kernel");
+    cudaDeviceSynchronize();
+
+    // second, remove this velocity from the displacement timeseries
+    remove_reference_surface_velocity_kernel<<<num_systems, threads>>>(
+        obs_disp, t_obs_sec, num_t_obs, num_stations, ref_vels);
+    cudaCheckError("remove_reference_surface_velocity_kernel");
+    cudaDeviceSynchronize();
+
+    // free up space
+    cudaSafeCall(cudaFree(ref_vels))
+}
+
 
 // cuda kernel to calculate reference displacement timeseries
 template <typename T>

@@ -46,7 +46,8 @@ void RateDependent<T>::initialize(
         int num_stations_,
         bool* obs_mask_,
         int* i_stat_ref_,
-        int n_stat_ref_)
+        int n_stat_ref_,
+        int ref_vel_index_)
 {
     // general variables
     cuda_batch_size  = cuda_batch_size_;
@@ -89,6 +90,7 @@ void RateDependent<T>::initialize(
     obs_mask = obs_mask_;
     i_stat_ref = i_stat_ref_;
     n_stat_ref = n_stat_ref_;
+    ref_vel_index = ref_vel_index_;
 
 }
 
@@ -178,9 +180,17 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
-    // add farfield effects that were computed outside of GPU
-    add_farfield_effects(obs_disp, obs_farfield, num_forward_batch,
-                         num_t_obs, num_stations, solver->threads);
+    if (ref_vel_index >= 0) {
+        // remove reference surface velocities, if desired
+        remove_reference_surface_velocities<T>(
+            obs_disp, sim_state, G_surf, t_obs_sec, num_forward_batch, num_t_obs,
+            num_inner_patches, num_stations, ref_vel_index, solver->threads);
+    }
+    else {
+        // else, add farfield effects that were computed outside of GPU
+        add_farfield_effects(obs_disp, obs_farfield, num_forward_batch,
+                            num_t_obs, num_stations, solver->threads);
+    }
     cudaDeviceSynchronize();
 
     // calculate reference observation timeseries, remove it from each other
@@ -216,7 +226,7 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
     size_type size_model = (
         (2 +
          ((size_type)num_t_obs * 3 * (size_type)num_stations)) * sizeof(bool) +
-        (15 +
+        (16 +
          n_slips_obs +
          n_slips_obs +
          n_stat_ref + 1) * sizeof(int) +
@@ -238,7 +248,8 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
          (5 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2) +
-         ((size_type)num_forward_batch * (size_type)num_t_obs * 3)) * sizeof(T));
+         ((size_type)num_forward_batch * (size_type)num_t_obs * 3) +
+          (size_type)num_forward_batch * 3 * (size_type)num_stations) * sizeof(T));
     return size_model + size_forward;
 }
 
