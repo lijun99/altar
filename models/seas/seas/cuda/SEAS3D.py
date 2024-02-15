@@ -34,6 +34,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     ref_station_indices = altar.properties.list(default=None)
     alpha_h_mat_rows = altar.properties.int()
     final_nonuniform_slip_file = altar.properties.str(default=None)
+    velocity_reference_index = altar.properties.int(default=-1)
 
     # helper function to time
     def sync_and_time(self):
@@ -221,7 +222,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.sim.n_observers,
             self.obs_mask.data,
             self.i_stat_ref.data,
-            self.n_stat_ref)
+            self.n_stat_ref,
+            self.velocity_reference_index)
 
         # remove precomputed farfield effects on observations
         ticks.append(self.sync_and_time())
@@ -329,6 +331,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         delta_tau_div_alpha_h.copy_from_host(
             source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
                                         dtype=self.gpuprec))
+        obs_ref = altar.cuda.matrix(shape=(batch_size_run, self.sim.t_obs.size * 3),
+                                    dtype=self.gpuprec)
 
         # call CUDA forward model
         ticks.append(self.sync_and_time())
@@ -338,6 +342,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         self.delta_tau_bounded_indices_final.data,
                                         self.G_surf.data,
                                         prediction.data,
+                                        obs_ref.data,
                                         self.obs_farfield.data,
                                         batch_size_run,
                                         self.cuda_threads,
@@ -357,6 +362,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.timer_fmb = self.sync_and_time()
         alpha_h.free()
         delta_tau_div_alpha_h.free()
+        obs_ref.free()
         return prediction
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
