@@ -41,6 +41,7 @@ namespace altar {
 
             { dbeta_grid__name__, dbeta_grid, METH_VARARGS, dbeta_grid__doc__},
             { dbeta_brent__name__, dbeta_brent, METH_VARARGS, dbeta_brent__doc__},
+            { low_variance_random__name__, low_variance_random, METH_VARARGS, low_variance_random__doc__},
 
             // matrix condition for positive definite
             { matrix_condition__name__, matrix_condition, METH_VARARGS, matrix_condition__doc__},

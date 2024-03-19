@@ -214,5 +214,62 @@ altar::extensions::free(PyObject * capsule)
     return;
 }
 
+// low variance random generator for importance resampling
+const char * const altar::extensions::low_variance_random__name__ = "low_variance_random";
+const char * const altar::extensions::low_variance_random__doc__ =
+    "low variance random generator for importance resampling";
+
+PyObject *
+altar::extensions::low_variance_random(PyObject *, PyObject * args) {
+    // the arguments
+    PyObject * rngCapsule;
+    PyObject * rCapsule;
+
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args,
+                                  "O!O!:low_variance_random",
+                                  &PyCapsule_Type, &rngCapsule,
+                                  &PyCapsule_Type, &rCapsule
+                                  );
+    // if something went wrong, bail
+    if (!status) return 0;
+
+    // bail out if the rng capsule is not valid
+    if (!PyCapsule_IsValid(rngCapsule, gsl::rng::capsule_t)) {
+        PyErr_SetString(PyExc_TypeError, "invalid rng capsule");
+        return 0;
+    }
+
+    // bail out if the {r} capsule is not valid
+    if (!PyCapsule_IsValid(rCapsule, altar::vector::capsule_t)) {
+        PyErr_SetString(PyExc_TypeError, "invalid vector capsule for r");
+        return 0;
+    }
+
+    // get the rng
+    gsl_rng * rng = static_cast<gsl_rng *>(PyCapsule_GetPointer(rngCapsule, gsl::rng::capsule_t));
+
+    // get the vector
+    gsl_vector * r =
+        static_cast<gsl_vector *>(PyCapsule_GetPointer(rCapsule, altar::vector::capsule_t));
+
+    // get the length of the vector
+    auto n = r->size;
+
+    auto step = double(1.0/n);
+
+    // generate a random number (starting position)
+    auto s = gsl_rng_uniform(rng)*step;
+
+    // generate the equal spacing sequence
+    for(int i=0; i<n; ++i) {
+        gsl_vector_set(r, i, s);
+        s += step;
+    }
+
+    // all done
+    return Py_None;
+}
 
 // end of file
