@@ -26,17 +26,16 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
     sigma = altar.properties.float(default=1.0)
     sigma.doc = " the standard deviation"
 
-    def cuInitSample(self, theta):
+    def cuInitSample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
-        batch = theta.shape[0]
         # call cuda c extension
         libcudaaltar.cudaGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma))
         # and return
         return self
 
-    def cuVerify(self, theta, mask):
+    def cuVerify(self, theta, mask, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones

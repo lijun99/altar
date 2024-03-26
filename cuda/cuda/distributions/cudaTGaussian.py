@@ -25,7 +25,7 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.tgaussian
     mean.doc = "the mean value"
     sigma = altar.properties.float(default=1.0)
     sigma.doc = " the standard deviation"
-    support = altar.properties.array(schema=altar.properties.float(), default=(0,1))
+    support = altar.properties.array(default=(0,1))
     support.doc = "the support interval of the truncated gaussian distribution"
 
     def cuInitialize(self, application):
@@ -44,25 +44,24 @@ class cudaTGaussian(cudaDistribution, family="altar.cuda.distributions.tgaussian
         # all done
         return self
 
-    def cuInitSample(self, theta):
+    def cuInitSample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
-        batch = theta.shape[0]
+
         # call cuda c extension
         libcudaaltar.cudaTGaussian_sample(theta.data, batch, self.idx_range, (self.mean, self.sigma), self.support_normalized)
         # and return
         return self
 
-    def cuVerify(self, theta, mask):
+    def cuVerify(self, theta, mask, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         Arguments:
             theta cuArray (samples x total_parameters)
         """
-        # number of samples to be processed
-        batch = theta.shape[0]
+
         # call cuda c extension
         libcudaaltar.cudaRanged_verify(theta.data, mask.data, batch, self.idx_range, self.support)
         # return the invalidity flags

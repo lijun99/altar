@@ -299,7 +299,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                 # reset the mask and ask the model to verify the sample validity
                 # note that I have redefined model.verify to use theta as input
 
-                model.cuVerify(theta=θproposal, mask=invalid_flags.zero())
+                model.cuVerify(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
 
                 invalid_step = int(invalid_flags.sum())
                 valid = samples - invalid_step

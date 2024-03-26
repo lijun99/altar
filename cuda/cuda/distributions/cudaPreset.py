@@ -61,21 +61,21 @@ class cudaPreset(cudaDistribution, family="altar.cuda.distributions.preset"):
         return self
 
 
-    def cuInitSample(self, theta):
+    def cuInitSample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
 
         """
 
         # load from hdf5
-        self._loadhdf5(theta=theta)
+        self._loadhdf5(theta=theta, batch=batch)
 
         # and return
         return self
 
 
     # local methods
-    def _loadhdf5(self, theta):
+    def _loadhdf5(self, theta, batch):
         """
         load from hdf5 file
         """
@@ -114,7 +114,7 @@ class cudaPreset(cudaDistribution, family="altar.cuda.distributions.preset"):
         # users need to check
         # 1. there are enough samples to draw
         # 2. the numbers of parameters should be the same
-        samples = theta.shape[0]
+        samples = batch
         sample_start = samples * self.rank
         sample_end = sample_start + samples
         parameter_start = 0

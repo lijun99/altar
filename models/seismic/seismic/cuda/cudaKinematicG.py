@@ -57,7 +57,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
     dt = altar.properties.float(default=1.0)
     dt.doc = "the time unit for each time interval (in s)"
 
-    t0s = altar.properties.array(schema=altar.properties.float(), default=None)
+    t0s = altar.properties.array(default=None)
     t0s.doc = "the start time for each patch"
 
     # public data

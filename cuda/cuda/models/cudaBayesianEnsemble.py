@@ -116,19 +116,19 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my controller to help me sample my posterior distribution
         return self.controller.posterior(model=self)
 
-    def cuInitSample(self, theta):
+    def cuInitSample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         # ask my subsets
         for name, pset in self.psets.items():
             # and ask each one to verify the sample
-            pset.prep.cuInitSample(theta=theta)
+            pset.prep.cuInitSample(theta=theta, batch=batch)
 
         # all done
         return self
 
-    def cuVerify(self, theta, mask):
+    def cuVerify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -136,7 +136,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.prior.cuVerify(theta=theta, mask=mask)
+            pset.prior.cuVerify(theta=theta, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
@@ -144,7 +144,6 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         """
         Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
         """
-        batch = batch if batch is not None else theta.rows
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample

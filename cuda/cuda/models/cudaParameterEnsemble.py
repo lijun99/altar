@@ -53,7 +53,7 @@ class cudaParameterEnsemble(cudaParameter, family="altar.models.parameters.cudae
         return parameters
 
 
-    def cuInitSample(self, theta, batch=None):
+    def cuInitSample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
@@ -67,7 +67,7 @@ class cudaParameterEnsemble(cudaParameter, family="altar.models.parameters.cudae
 
 
 
-    def cuEvalPrior(self, theta, prior, batch=None):
+    def cuEvalPrior(self, theta, prior, batch):
         """
         Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
         """
@@ -80,7 +80,7 @@ class cudaParameterEnsemble(cudaParameter, family="altar.models.parameters.cudae
         return self
 
 
-    def cuVerify(self, theta, mask, batch=None):
+    def cuVerify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
