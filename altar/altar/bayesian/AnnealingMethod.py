@@ -8,6 +8,7 @@
 # all rights reserved
 #
 
+from datetime import datetime
 
 # declaration
 class AnnealingMethod:
@@ -128,6 +129,7 @@ class AnnealingMethod:
                     'scaling' : scaling,
                     'stats' : stats}
         channel = annealer.info;
+        channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
         annealer.archiver.recordstep(step=self.step, stats=info, psets=annealer.model.psets)
