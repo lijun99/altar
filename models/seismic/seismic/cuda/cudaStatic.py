@@ -19,6 +19,8 @@ import altar.cuda
 from altar.cuda import cublas as cublas
 from altar.cuda import libcuda
 from altar.cuda.models.cudaBayesian import cudaBayesian
+from altar.models.seismic.ext import cudaseismic as libcudaseismic
+
 import numpy
 
 # declaration
@@ -216,6 +218,33 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
 
         # all done
         return
+
+    def gradient(self, controller, step, index, batch):
+        """
+        compute the Langevin gradient
+        """
+
+        theta = step.theta
+
+        prior = step.prior
+        # compute prior gradient
+        self.cuEvalPriorGradient(theta, index, prior, batch)
+
+        # compute likelihood gradient
+        # log P = - ({\tilde G}\theta-{\tilde d})^2
+        # d(\log P)/d theta = -2 (G\theta-d)_j G_{ji}
+        residuals = self.gDataPred
+        # call forward to caculate the data prediction or its difference between dataobs
+        self.forwardModelBatched(theta=theta, green=self.gGF,
+                                 prediction=residuals, batch=batch,
+                                 observation= self.dataobs.gdataObsBatch)
+        # residuals (samples, observations), G(observations, parameters)
+        likelihood = step.data
+        factor = -0.5/self.dataobs.observations
+        libcudaseismic.static_gemm_col(residuals.data, self.gGF.data, likelihood.data, index, factor)
+
+        # all done
+        return self
 
     # private data
     # inputs

@@ -76,6 +76,13 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
+    def cuPriorGradient(self, theta, index, prior, batch):
+        """
+        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        """
+        # default, assume 0
+        return self
+
     # private data
     device = None
     idx_range = None

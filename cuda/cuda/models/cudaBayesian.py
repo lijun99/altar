@@ -187,6 +187,20 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return self
 
+    def cuEvalPriorGradient(self, theta, index, prior, batch):
+        """
+        Fill {prior} with the log pdf gradient to {theta[index]}of the samples
+        """
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            idx_begin, idx_end = pset.prior.idx_range
+            if index >= idx_begin and index < idx_end:
+                pset.prior.cuPriorGradient(theta=theta, index=index, prior=prior, batch=batch)
+
+        # all done
+        return self
+
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """
@@ -244,6 +258,14 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
         # enable chaining
         return self
+
+    def gradient(self, controller, step, parameter, batch=None):
+        """
+        Compute the gradient of posterior for Langevin dynamics
+        step: theta
+        """
+        raise NotImplementedError("The model needs to define Langevin gradient method")
+
 
 
     @altar.export

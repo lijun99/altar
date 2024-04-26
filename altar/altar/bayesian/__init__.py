@@ -31,6 +31,17 @@ def annealer():
     # and return it
     return Annealer
 
+@altar.foundry(
+    implements=controller,
+    tip="a Bayesian controller that implements stochastic Stochastic gradient Langevin dynamics")
+def langevin():
+    # grab the factory
+    from .Langevin import Langevin
+    # attach its docstring
+    __doc__ = Langevin.__doc__
+    # and return it
+    return Langevin
+
 
 @altar.foundry(
     implements=scheduler,

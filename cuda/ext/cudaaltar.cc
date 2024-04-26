@@ -18,6 +18,7 @@
 #include "distributions.h"
 #include "norm.h"
 #include "metropolis.h"
+#include "langevin.h"
 
 // put everything in my private namespace
 namespace altar { namespace cuda {
@@ -40,6 +41,7 @@ namespace altar { namespace cuda {
             // cudaGaussian
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
             { cudaGaussian::logpdf__name__, cudaGaussian::logpdf, METH_VARARGS, cudaGaussian::logpdf__doc__},
+            { cudaGaussian::logpdfgradient__name__, cudaGaussian::logpdfgradient, METH_VARARGS, cudaGaussian::logpdfgradient__doc__},
             // cudaTGaussian
             { cudaTGaussian::sample__name__, cudaTGaussian::sample, METH_VARARGS, cudaTGaussian::sample__doc__},
             { cudaTGaussian::logpdf__name__, cudaTGaussian::logpdf, METH_VARARGS, cudaTGaussian::logpdf__doc__},
@@ -53,6 +55,8 @@ namespace altar { namespace cuda {
             { cudaMetropolis::queueValidSamples__name__, cudaMetropolis::queueValidSamples, METH_VARARGS, cudaMetropolis::queueValidSamples__doc__},
             { cudaMetropolis::metropolisUpdate__name__, cudaMetropolis::metropolisUpdate, METH_VARARGS, cudaMetropolis::metropolisUpdate__doc__},
 
+            // Langevin sampler
+            { cudaLangevin::updateTheta__name__, cudaLangevin::updateTheta, METH_VARARGS, cudaLangevin::updateTheta__doc__},
 
             // sentinel
             {0, 0, 0, 0}

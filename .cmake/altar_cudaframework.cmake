@@ -43,6 +43,7 @@ function(altar_cuda_buildLibrary)
   target_sources(
     libcudaaltar PRIVATE
     lib/libcudaaltar/bayesian/cudaMetropolis.cu
+    lib/libcudaaltar/bayesian/cudaLangevin.cu
     lib/libcudaaltar/norm/cudaL2.cu
     lib/libcudaaltar/distributions/cudaTGaussian.cu
     lib/libcudaaltar/distributions/cudaGaussian.cu
@@ -105,6 +106,7 @@ function(altar_cuda_buildModule)
     ext/metadata.cc
     ext/distributions.cc
     ext/metropolis.cc
+    ext/langevin.cc
     ext/norm.cc
     )
 

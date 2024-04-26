@@ -31,6 +31,7 @@ class Gaussian(base, family="altar.distributions.gaussian"):
     sigma = altar.properties.float(default=1)
     sigma.doc = "the standard deviation of the distribution"
 
+    sigma_invsqr = None
 
     # protocol obligations
     @altar.export
@@ -38,6 +39,10 @@ class Gaussian(base, family="altar.distributions.gaussian"):
         """
         Initialize with the given random number generator
         """
+        # set up sigma^2
+        sigma = self.sigma
+        self.sigma_invsqr = 1/(sigma*sigma)
+
         # set up my pdf
         self.pdf = altar.pdf.gaussian(rng=rng.rng, mean=self.mean, sigma=self.sigma)
         # all done
@@ -52,6 +57,30 @@ class Gaussian(base, family="altar.distributions.gaussian"):
         """
         # all samples are valid, so there is nothing to do
         return mask
+
+    @altar.provides
+    def priorGradient(self, theta, index, prior):
+        """
+        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        """
+        # unpack my support
+        low, high = self.support
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=theta)
+
+        # find out how many samples in the set
+        samples = θ.rows
+        # and how many parameters belong to me
+        parameters = θ.columns
+
+        # go through the samples in θ
+        for sample in range(samples):
+            # and the parameters in this sample
+            gradient = (self.mean-θ[index])*self.sigma_invsqr
+            prior[sample] += gradient
+
+        # all done
+        return self
 
 
 # end of file

@@ -55,6 +55,14 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         # all done
         return self
 
+    def cuPriorGradient(self, theta, index, prior, batch):
+        """
+        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        """
+        # call extension
+        libcudaaltar.cudaGaussian_logpdf_gradient(theta.data, prior.data, batch, self.idx_range, index, (self.mean, self.sigma))
+        return self
+
     # local variables
 
 # end of file

@@ -50,6 +50,12 @@ class Distribution(altar.protocol, family="altar.distributions"):
         """
 
     @altar.provides
+    def priorGradient(self, theta, index, prior):
+        """
+        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        """
+
+    @altar.provides
     def verify(self, theta, mask):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and

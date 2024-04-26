@@ -16,6 +16,7 @@
 // the module method declarations
 #include "metadata.h"
 #include "kinematicg.h"
+#include "static.h"
 
 // put everything in my private namespace
 namespace altar {
@@ -43,6 +44,9 @@ module_methods[] = {
     { kinematicg_forward_batched__name__, kinematicg_forward_batched, METH_VARARGS, kinematicg_forward_batched__doc__ },
     { kinematicg_castMb__name__, kinematicg_castMb, METH_VARARGS, kinematicg_castMb__doc__ },
     { kinematicg_linearGM__name__, kinematicg_linearGM, METH_VARARGS, kinematicg_linearGM__doc__},
+
+    // static model
+    { static_gemm_col__name__, static_gemm_col, METH_VARARGS, static_gemm_col__doc__},
 
     // sentinel
     {0, 0, 0, 0}
