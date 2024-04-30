@@ -18,6 +18,7 @@ from .Scheduler import Scheduler as scheduler
 from altar.simulations.Monitor import Monitor as monitor
 from altar.simulations.Archiver import Archiver as archiver
 from .Solver import Solver as solver
+from .LangevinScheduler import LangevinScheduler as langevinscheduler
 
 # implementations
 @altar.foundry(
@@ -42,6 +43,27 @@ def langevin():
     # and return it
     return Langevin
 
+@altar.foundry(
+    implements=langevinscheduler,
+    tip="a Langevin sceduler")
+def powerdecay():
+    # grab the factory
+    from .PowerDecay import PowerDecay
+    # attach its docstring
+    __doc__ = PowerDecay.__doc__
+    # and return it
+    return PowerDecay
+
+@altar.foundry(
+    implements=langevinscheduler,
+    tip="a Langevin sceduler")
+def expdecay():
+    # grab the factory
+    from .ExpDecay import ExpDecay
+    # attach its docstring
+    __doc__ = ExpDecay.__doc__
+    # and return it
+    return ExpDecay
 
 @altar.foundry(
     implements=scheduler,

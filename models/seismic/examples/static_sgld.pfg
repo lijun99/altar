@@ -73,12 +73,19 @@ slipmodel:
 
     controller = altar.bayesian.langevin
     controller:
-        a = 0.001
-        b = 1
-        gamma = 0.55
         tsteps = 10000
-        sweeps = 10
+        sweeps = 100
 
+        ; scheduler = altar.bayesian.powerdecay
+        ; scheduler:
+        ;     a = 0.001
+        ;     b = 1
+        ;     gamma = 0.55
+
+        scheduler = altar.bayesian.expdecay
+        scheduler:
+             a = 0.01
+             b = 0.001
 
     ; run configuration
     job:

@@ -30,23 +30,17 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
     archiver = altar.simulations.archiver(default=Recorder)
     archiver.doc = "the archiver of simulation state"
 
-    a = altar.properties.float(default=1)
-    a.doc = "a in step size formula \epsilon_t = a/(b+t)^\gamma"
-
-    b = altar.properties.float(default=0)
-    b.doc = "b in step size formula \epsilon_t = a/(b+t)^\gamma"
-
-    gamma = altar.properties.float(default=0.9)
-    gamma.doc = "gamma in step size formula \epsilon_t = a/(b+t)^\gamma, \gamma \in (0.5, 1]"
+    scheduler = altar.bayesian.langevinscheduler()
+    scheduler.doc = "the scheduler for epsilon_t"
 
     tsteps = altar.properties.int(default=100)
-    tsteps.doc = "t=[0, tsteps], t in step size formula \epsilon_t = a/(b+t)^\gamma, \gamma \in (0.5, 1]"
+    tsteps.doc = "time steps"
 
     tsteps_report = altar.properties.int(default=None)
     tsteps_report.doc = "number of tsteps to create a report"
 
     sweeps = altar.properties.int(default=1)
-    sweeps.doc = "number of sweeps with one epsilon_t"
+    sweeps.doc = "number of sweeps at a fixed t"
 
     # public data
     epsilon_t = None
@@ -66,6 +60,9 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
 
         # initialize the dispatcher
         self.dispatcher.initialize(application=application)
+
+        # initialize scheduler
+        self.scheduler.initialize(application=application)
 
         # deduce my annealing method
         self.worker = self.deduceAnnealingMethod(job=application.job)
@@ -115,7 +112,7 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         # iterate t to tsteps
         for t in range(self.tsteps):
             # step size
-            self.epsilon_t = self.a*pow(self.b+t+1, -self.gamma)
+            self.epsilon_t = self.scheduler.epsilon_t(t)
 
             # walk the chains
             worker.walk(controller=self)
