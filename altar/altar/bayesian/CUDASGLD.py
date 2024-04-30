@@ -12,6 +12,8 @@
 # dependencies
 import altar.cuda
 from altar.cuda import libcudaaltar
+# externals
+import math
 
 # declaration
 class CUDASGLD:
@@ -96,6 +98,7 @@ class CUDASGLD:
         # get the step size
         epsilon_t = controller.epsilon_t
         half_epsilon_t = epsilon_t/2.0
+        sqrt_epsilon_t = math.sqrt(epsilon_t)
 
         model = controller.model
         parameters = model.parameters
@@ -108,7 +111,7 @@ class CUDASGLD:
                 # compute prior and data likelihood gradients
                 model.gradient(controller=controller, step=step, index=p, batch=step.samples)
                 # generate gaussian random numbers (samples x parameters)
-                altar.cuda.curand.gaussian(out=self.eta_t, scale=epsilon_t)
+                altar.cuda.curand.gaussian(out=self.eta_t, scale=sqrt_epsilon_t)
                 # theta += epsilon_t/2(prior_graident + data_gradient) + eta_t
                 libcudaaltar.cudaLangevin_updateTheta(step.theta.data, step.prior.data, step.data.data,
                                                       half_epsilon_t, self.eta_t.data, p)
