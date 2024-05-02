@@ -78,7 +78,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
             self.fault = Fault3D(**self.fault_dict)
             self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
-        if True:  # self.verbose:
+        if self.verbose:
             channel.log(f"Device {self.device.id}: Simulation object initialization output"
                         f"\n{init_output.getvalue()}")
 
@@ -304,8 +304,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # print info
         channel = self.info
-        channel.log(f"Device {self.device.id}: Time between forwardModelBatched calls: "
-                    f"{self.sync_and_time() - self.timer_fmb}s")
+        # channel.log(f"Device {self.device.id}: Time between forwardModelBatched calls: "
+        #             f"{self.sync_and_time() - self.timer_fmb}s")
 
         # create new rheology instances
         ticks = []
@@ -390,8 +390,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # get the data storage for data prediction or residual
         predictions = self.obs_disp
 
-        # get logger
-        channel = self.info
+        # # get logger
+        # channel = self.info
 
         # solve forward modeling in batches
         # get the max batch size and allocate temporary input/out for a batch
@@ -406,8 +406,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         for system_start in range(0, batch, cuda_batch_size):
             # get the actual batch size
             batch_size_run = min(cuda_batch_size, batch - system_start)
-            channel.log(f"Device {self.device.id}: cuEvalLikelihood loop processing systems "
-                        f"{system_start} to {system_start + batch_size_run - 1}")
+            # channel.log(f"Device {self.device.id}: cuEvalLikelihood loop processing systems "
+            #             f"{system_start} to {system_start + batch_size_run - 1}")
             # copy theta (a tile)
             theta_batch.copytile(src=theta,
                                  src_start=(system_start, 0),
