@@ -226,21 +226,21 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
 
         theta = step.theta
 
-        prior = step.prior
+        prior = step.prior.zero()
         # compute prior gradient
         self.cuEvalPriorGradient(theta, index, prior, batch)
 
         # compute likelihood gradient
-        # log P = - ({\tilde G}\theta-{\tilde d})^2
-        # d(\log P)/d theta = -2 (G\theta-d)_j G_{ji}
+        # log P = - 1/2({\tilde G}\theta-{\tilde d})^2
+        # d(\log P)/d theta = - (G\theta-d)_j G_{ji}
         residuals = self.gDataPred
-        # call forward to caculate the data prediction or its difference between dataobs
+        # call forward to calculate the data prediction or its difference between dataobs
         self.forwardModelBatched(theta=theta, green=self.gGF,
                                  prediction=residuals, batch=batch,
                                  observation= self.dataobs.gdataObsBatch)
         # residuals (samples, observations), G(observations, parameters)
         likelihood = step.data
-        factor = -0.5/self.dataobs.observations
+        factor = -1
         libcudaseismic.static_gemm_col(residuals.data, self.gGF.data, likelihood.data, index, factor)
 
         # all done

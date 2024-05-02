@@ -22,29 +22,21 @@ slipmodel:
     model = altar.models.seismic.cuda.static
     model:
 
-        ; settings for running forward problem only
-        ; forward theta input
-        theta_input = static_mean_model.txt
-        ; forward output file
-        forward_output = forward_prediction.h5
-
         ; the name of the test case, also as directory for input files
-        case = 9patch
+        case = synthetic
 
         ; number of patches
-        patches = 9
+        patches = 8
 
         ; green's function (observations, parameters)
-        green = static.gf.h5
+        green = green.txt
 
         ; data observations - use L2 norm for likelihood
         dataobs = altar.cuda.data.datal2
         dataobs:
-            observations = 108
-            data_file = static.data.h5
-            cd_file = static.Cd.h5
-            ; or constant variance
-            ; cd_std = 1e-2
+            observations = 2*{slipmodel.model.patches}
+            data_file = data.txt
+            cd_std = 0.1
 
         ; list of parametersets
         ; the order should be consistent with the green's function
@@ -59,21 +51,17 @@ slipmodel:
                 count = {slipmodel.model.patches}
                 prior = altar.cuda.distributions.gaussian
                 prior.mean = 0
-                prior.sigma = 0.5
+                prior.sigma = 5
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prior = altar.models.seismic.cuda.moment
+                prior = altar.cuda.distributions.uniform
                 prior:
-                    support = (-0.5, 20) ; slip range
-                    Mw_mean = 7.3
-                    Mw_sigma = 0.2
-                    Mu = [30] ; in GPa
-                    area = [400] ; patch area in km^2
+                    support = (-0.5, 1.5) ; slip range
 
     controller = altar.bayesian.langevin
     controller:
-        tsteps = 100
+        tsteps = 10000
         tsteps_report = 10
         sweeps = 100
 
@@ -88,14 +76,13 @@ slipmodel:
         ;     a = 0.01/{slipmodel.model.dataobs.observations}
         ;     b = 0.01
 
-
     ; run configuration
     job:
         tasks = 1 ; number of tasks per host
         gpus = 1  ; number of gpus per task
         gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
         ;gpuids = [0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
-        chains = 2**10 ; number of chains per task
+        chains = 2**8 ; number of chains per task
         steps = 1000 ; MC burn-in steps for each beta step
 
     ; shell

@@ -112,6 +112,14 @@ class CUDASGLD:
                 model.gradient(controller=controller, step=step, index=p, batch=step.samples)
                 # generate gaussian random numbers (samples x parameters)
                 altar.cuda.curand.gaussian(out=self.eta_t, scale=sqrt_epsilon_t)
+
+                # step.theta.print()
+                # print("prior")
+                # step.prior.print()
+                # print("data")
+                # step.data.print()
+                # print(half_epsilon_t)
+                # self.eta_t.print()
                 # theta += epsilon_t/2(prior_graident + data_gradient) + eta_t
                 libcudaaltar.cudaLangevin_updateTheta(step.theta.data, step.prior.data, step.data.data,
                                                       half_epsilon_t, self.eta_t.data, p)
