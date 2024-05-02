@@ -4,8 +4,10 @@
 # author(s): Tobias Köhne
 
 # general imports
+import io
 from time import perf_counter
 from copy import deepcopy
+from contextlib import redirect_stdout
 import numpy as np
 
 # import altar
@@ -28,13 +30,12 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     cuda_batch_size = altar.properties.int(default=None)
     cuda_batch_size.doc = \
         "max system/sample size to be processed by cuda in a batch, as limited by gpu memory"
-    v_init_file = altar.properties.str(default=None)
     cuda_threads = altar.properties.int(default=0)
     verbose = altar.properties.bool(default=False)
     ref_station_indices = altar.properties.list(default=None)
-    alpha_h_mat_rows = altar.properties.int()
-    final_nonuniform_slip_file = altar.properties.str(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
+    estimate_row_indices = altar.properties.list(default=None, schema=altar.properties.int())
+    estimate_column_indices = altar.properties.list(default=None, schema=altar.properties.int())
 
     # helper function to time
     def sync_and_time(self):
@@ -71,46 +72,46 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.rheo_dict, self.fault_dict, self.sim_dict = \
             SubductionSimulation3D.read_config_file(self.config_file)
 
-        # check for final nonuniform slip
-        if self.final_nonuniform_slip_file is None:
-            self.final_nonuniform_slip = None
-            channel.log(f"Device {self.device.id}: Uniform slip")
-        else:
-            self.final_nonuniform_slip = np.load(self.final_nonuniform_slip_file)
-            channel.log(f"Device {self.device.id}: Non-uniform slip loaded")
-
         # create reference simulation
         ticks.append(self.sync_and_time())
-        self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
-        self.fault = Fault3D(**self.fault_dict)
-        self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault,
-                                          final_nonuniform_slip=self.final_nonuniform_slip)
+        with redirect_stdout(io.StringIO()) as init_output:
+            self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
+            self.fault = Fault3D(**self.fault_dict)
+            self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
+        if True:  # self.verbose:
+            channel.log(f"Device {self.device.id}: Simulation object initialization output"
+                        f"\n{init_output.getvalue()}")
 
-        # load initial velocity
-        if self.v_init_file is not None:
-            try:
-                v_init_loaded = np.load(self.v_init_file)
-                exp_shape = self.sim.v_plate_ddcs_proj_eff[self.sim.fault.s_inner, :].shape
-                assert v_init_loaded.shape == exp_shape
-            except AssertionError as e:
-                raise AssertionError(f"Device {self.device.id}: Couldn't load initial "
-                                     "velocities due to shape mismatch:\nLoaded = "
-                                     f"{v_init_loaded.shape}, expected = {exp_shape}."
-                                     ).with_traceback(e.__traceback__) from e
-            except FileNotFoundError as e:
-                raise FileNotFoundError(f"Device {self.device.id}: Couldn't find initial "
-                                        f"velocities file '{self.v_init_file}'."
-                                        ).with_traceback(e.__traceback__) from e
-            else:
-                self.sim.v_init = v_init_loaded
-                channel.log(f"Device {self.device.id}: Loaded initial velocities "
-                            f"from '{self.v_init_file}'")
+        # read number of rows/columns of alpha_h
+        self.alpha_h_mat_rows = self.rheo.num_bases_depth
+        self.alpha_h_mat_cols = self.rheo.num_bases_horiz
+
+        # get index subset of values to estimate
+        if self.estimate_row_indices is None:
+            self.ix_estim_row = list(range(self.alpha_h_mat_rows))
+        else:
+            assert all([i < self.alpha_h_mat_rows for i in self.estimate_row_indices]), \
+                "'estimate_row_indices' contains indices larger than the number of rows: " \
+                f"{self.estimate_row_indices} >= {self.alpha_h_mat_rows}"
+            self.ix_estim_row = self.estimate_row_indices
+        if self.estimate_column_indices is None:
+            self.ix_estim_col = list(range(self.alpha_h_mat_cols))
+        else:
+            assert all([i < self.alpha_h_mat_cols for i in self.estimate_column_indices]), \
+                "'estimate_column_indices' contains indices larger than the number of columns: " \
+                f"{self.estimate_column_indices} >= {self.alpha_h_mat_cols}"
+            self.ix_estim_col = self.estimate_column_indices
+        self.theta_subset_indices = \
+            np.ix_(self.ix_estim_row, self.ix_estim_col)
+        self.n_estim_row = len(self.ix_estim_row)
+        self.n_estim_col = len(self.ix_estim_col)
+        self.ordered_psets_list = [f"log10_alpha_h_{i}" for i in range(self.n_estim_row)]
 
         # get number of unique earthquakes
         num_orig_eq = self.sim.delta_tau_bounded_compressed.shape[0]
         self.num_eq = num_orig_eq
-        if self.final_nonuniform_slip is not None:
-            num_final_eq = self.final_nonuniform_slip.shape[0]
+        if self.sim.delta_tau_bounded_nonuni is not None:
+            num_final_eq = self.sim.delta_tau_unbounded_nonuni.shape[0]
             self.num_eq += num_final_eq
 
         # allocate memory
@@ -241,7 +242,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         ticks.append(self.sync_and_time())
         self.delta_tau_bounded_indices = \
             altar.cuda.vector(source=self.sim.delta_tau_bounded_indices.astype("int32"))
-        if self.final_nonuniform_slip is None:
+        if self.sim.delta_tau_bounded_nonuni is None:
             self.delta_tau_bounded_indices_final = self.delta_tau_bounded_indices
         else:
             delta_tau_bounded_indices_final = self.sim.delta_tau_bounded_indices.copy()
@@ -270,9 +271,23 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         """
         # loop over theta entries
         rheo_kw_args = deepcopy(self.rheo_dict)
-        assert self.psets_list == ["log10_alpha_h_mat"]
-        rheo_kw_args["alpha_h_mat"] = \
-            10**np.array(theta_arr).reshape(self.alpha_h_mat_rows, -1)
+        if self.psets_list == ["log10_alpha_h_mat"]:  # single pset for entire matrix
+            rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = \
+                10**theta_arr.reshape(self.alpha_h_mat_rows, -1)
+        else:  # parse individual rows of theta
+            n_theta_rows = len(self.psets_list)
+            n_theta_cols = list(set([self.psets[name].count for name in self.psets_list]))
+            assert len(n_theta_cols) == 1, "Different lengths of psets."
+            n_theta_cols = n_theta_cols[0]
+            assert (n_theta_rows, n_theta_cols) == (self.n_estim_row, self.n_estim_col), \
+                f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)}, got " \
+                f"shape {(n_theta_rows, n_theta_cols)}."
+            theta_out = np.full((n_theta_rows, n_theta_cols), np.NaN)
+            assert len(self.psets_list) == n_theta_rows
+            for irow, name in enumerate(self.ordered_psets_list):
+                itheta = self.psets_list.index(name)
+                theta_out[irow, :] = theta_arr[itheta * n_theta_cols:(itheta + 1) * n_theta_cols]
+            rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = 10**theta_out
         # return new object instance
         return RateStateSteadyLogarithmic2D(**rheo_kw_args)
 
@@ -301,8 +316,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create new simulation instances, reusing G_surf
         ticks.append(self.sync_and_time())
         sims = [SubductionSimulation3D(**self.sim_dict, rheo=rheos[i],
-                                       fault=self.fault, G_surf=self.sim.G_surf,
-                                       final_nonuniform_slip=self.final_nonuniform_slip)
+                                       fault=self.fault, G_surf=self.sim.G_surf)
                 for i in range(batch_size_run)]
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
@@ -315,7 +329,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
         alpha_h.copy_from_host(
             source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
-        if self.final_nonuniform_slip is None:
+        if self.sim.delta_tau_bounded_nonuni is None:
             dtau_bound_comp_list = [s.delta_tau_bounded_compressed for s in sims]
         else:
             dtau_bound_comp_list = [np.concatenate([s.delta_tau_bounded_compressed,
