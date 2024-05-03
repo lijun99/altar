@@ -81,14 +81,8 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # prediction = Green * theta
         # in c/python pred (samples, obs), green (obs, parameters), theta (samples, params)
 
-        # cublas.gemm(A=theta, B=green, transa=0, transb=1,
-        #                out=prediction,
-        #                handle=self.cublas_handle,
-        #                alpha=1.0, beta=beta,
-        #                rows=batch)
-
         # use cublas interface directly, as in cascaded problem, only the first few parameters are used
-        # in column major: translated to pred (obsxsamples) green(param obs) theta (params x samples)
+        # in column major: translated to pred (obs, samples) green(param obs) theta (params x samples)
         # we therefore use pred = G^T x theta
 
         libcuda.cublas_gemm(self.cublas_handle,
@@ -243,11 +237,12 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
                                  observation= observation)
 
         likelihood = step.data_gradient
+        # print(likelihood.shape, residuals.shape, green.shape)
         # likelihood (samples, parameters) =  residuals (samples, observations) x G(observations, parameters)
         # in col-major likelihood (parameters, samples) = G (parameters, observations) x residuals (observations, samples)
         libcuda.cublas_gemm(self.cublas_handle,
                             0, 0, # transa, transb
-                            likelihood.shape[1], batch, green.shape[1], # m, n, k
+                            likelihood.shape[1], batch, green.shape[0], # m, n, k
                             -1.0,   # alpha
                             green.data, green.shape[1], # A, lda
                             residuals.data, residuals.shape[1], # B, ldb

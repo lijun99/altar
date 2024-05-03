@@ -73,13 +73,13 @@ slipmodel:
 
     controller = altar.bayesian.langevin
     controller:
-        tsteps = 100
+        tsteps = 200
         tsteps_report = 10
         sweeps = 100
 
         scheduler = altar.bayesian.powerdecay
         scheduler:
-             a = 0.1/{slipmodel.model.dataobs.observations}
+             a = 0.05/{slipmodel.model.dataobs.observations}
              b = 10
              gamma = 0.33
 
