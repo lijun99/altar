@@ -44,9 +44,16 @@ namespace cudaGaussian_kernels {
 
     // log pdf gradient
     template<typename real_type>
-    __global__ void _logpdfgradient(const real_type * const theta, real_type * const probability,
+    __global__ void _logpdfgradient_index(const real_type * const theta, real_type * const probability,
         const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end, const int index,
+        const real_type mean, const real_type sigma);
+
+        // log pdf gradient
+    template<typename real_type>
+    __global__ void _logpdfgradient(const real_type * const theta, real_type * const probability,
+        const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end,
         const real_type mean, const real_type sigma);
 }  
  
@@ -108,7 +115,7 @@ template void altar::cuda::distributions::cudaGaussian::logpdf<double>(const dou
 
 template <typename real_type>
 void altar::cuda::distributions::cudaGaussian::
-logpdfgradient(const real_type * const theta, real_type * const probability,
+logpdfgradient_i(const real_type * const theta, real_type * const probability,
                     const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end, const size_t index,
                     const real_type mean, const real_type sigma,
@@ -118,16 +125,40 @@ logpdfgradient(const real_type * const theta, real_type * const probability,
     int gridSize = IDIVUP(samples, blockSize);
 
     // call cuda kernels
-    cudaGaussian_kernels::_logpdfgradient<real_type><<<gridSize, blockSize, 0, stream>>>(
+    cudaGaussian_kernels::_logpdfgradient_index<real_type><<<gridSize, blockSize, 0, stream>>>(
         theta, probability, samples, parameters, idx_begin, idx_end, index, mean, sigma);
+    cudaCheckError("cudaGaussian:: log_pdf_gradient_index error");
+}
+
+// explicit instantiation
+template void altar::cuda::distributions::cudaGaussian::logpdfgradient_i<float>(const float * const, float * const, const size_t, const size_t,
+                    const size_t, const size_t, const size_t, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaGaussian::logpdfgradient_i<double>(const double * const, double * const, const size_t, const size_t,
+                    const size_t, const size_t, const size_t, const double, const double, cudaStream_t);
+
+// gradient of log prior for all parameters
+template <typename real_type>
+void altar::cuda::distributions::cudaGaussian::
+logpdfgradient(const real_type * const theta, real_type * const probability,
+                    const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type mean, const real_type sigma,
+                    cudaStream_t stream)
+{
+    int blockSize = NTHREADS;
+    int gridSize = IDIVUP(samples, blockSize);
+
+    // call cuda kernels
+    cudaGaussian_kernels::_logpdfgradient<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, probability, samples, parameters, idx_begin, idx_end, mean, sigma);
     cudaCheckError("cudaGaussian:: log_pdf_gradient error");
 }
 
 // explicit instantiation
 template void altar::cuda::distributions::cudaGaussian::logpdfgradient<float>(const float * const, float * const, const size_t, const size_t,
-                    const size_t, const size_t, const size_t, const float, const float, cudaStream_t);
+                    const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaGaussian::logpdfgradient<double>(const double * const, double * const, const size_t, const size_t,
-                    const size_t, const size_t, const size_t, const double, const double, cudaStream_t);
+                    const size_t, const size_t, const double, const double, cudaStream_t);
 
 // put explicit specialization in a namespace due to a bug in gcc6
 namespace cudaGaussian_kernels {
@@ -216,7 +247,7 @@ _logpdf(const real_type * const theta, real_type * const probability, const size
 template <typename real_type>
 __global__ void
 cudaGaussian_kernels::
-_logpdfgradient(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
+_logpdfgradient_index(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end, const int index, const real_type mean, const real_type sigma)
 {
     // get the thread/sample id
@@ -232,6 +263,29 @@ _logpdfgradient(const real_type * const theta, real_type * const probability, co
     real_type log_pdf_gradient = (mean-theta_sample[index])/(sigma*sigma);
 
     probability[sample] += log_pdf_gradient;
+}
+
+//log_pdf kernel
+// probability - log prior gradient (samples, parameters)
+template <typename real_type>
+__global__ void
+cudaGaussian_kernels::
+_logpdfgradient(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end, const real_type mean, const real_type sigma)
+{
+     // get the thread/sample id
+    int sample = blockIdx.x*blockDim.x + threadIdx.x;
+    if (sample >= samples) return;
+
+    // get the theta pointer
+    const real_type * theta_sample = theta + sample*parameters;
+    real_type * probability_sample = probability + sample*parameters;
+
+    real_type c2 = static_cast<real_type>(1.0)/(sigma*sigma);
+
+    // gradient
+    for (int i=idx_begin; i<idx_end; ++i)
+        probability_sample[i] = (mean-theta_sample[i])*c2;
 }
 
 // end of file

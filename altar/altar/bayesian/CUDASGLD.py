@@ -23,7 +23,7 @@ class CUDASGLD:
 
     # classes to save step data
     from .CoolingStep import CoolingStep
-    from altar.cuda.bayesian.cudaCoolingStep import cudaCoolingStep
+    from altar.cuda.bayesian.cudaLangevinStep import cudaLangevinStep
 
     # public data
     step = None # the current state of the solver
@@ -32,10 +32,6 @@ class CUDASGLD:
     wid = 0     # my worker id
     workers = 1 # i don't manage anybody else
     device = None
-
-    # private data
-    eta_t = None
-    theta_copy = None
 
     def initialize(self, application):
         """
@@ -72,7 +68,7 @@ class CUDASGLD:
         # assign a cuda device to worker in sequence of the worker id
         # create both cpu/gpu steps to hold the state of the problem
         self.step = self.CoolingStep.allocate(annealer=controller)
-        self.gstep = self.cudaCoolingStep.start(annealer=controller)
+        self.gstep = self.cudaLangevinStep.start(controller=controller)
 
         # initialize it
         model = controller.model
@@ -83,8 +79,6 @@ class CUDASGLD:
         # return to cpu
         gstep.copyToCPU(step=self.step)
 
-        self.eta_t = altar.cuda.vector(shape=gstep.samples, dtype=model.job.gpuprecision)
-
         # all done
         return self
 
@@ -92,38 +86,24 @@ class CUDASGLD:
         """
         SGLD walk
         """
-
+        # increment the iteration index
         self.iteration += 1
 
-        # get the step size
-        epsilon_t = controller.epsilon_t
-        half_epsilon_t = epsilon_t/2.0
-        sqrt_epsilon_t = math.sqrt(epsilon_t)
-
-        model = controller.model
-        parameters = model.parameters
-
+        # grab the state
         step = self.gstep
-        #
+        # get and set the sampling rate
+        step.epsilon_t = controller.epsilon_t
+
+        # grab the model
+        model = controller.model
+
+        # iterate {sweep} times for a given epsilon_t
         for sweep in range(controller.sweeps):
-            # iterative over parameter
-            for p in range(parameters):
-                # compute prior and data likelihood gradients
-                model.gradient(controller=controller, step=step, index=p, batch=step.samples)
-                # generate gaussian random numbers (samples x parameters)
-                altar.cuda.curand.gaussian(out=self.eta_t, scale=sqrt_epsilon_t)
 
-                # step.theta.print()
-                # print("prior")
-                # step.prior.print()
-                # print("data")
-                # step.data.print()
-                # print(half_epsilon_t)
-                # self.eta_t.print()
-                # theta += epsilon_t/2(prior_graident + data_gradient) + eta_t
-                libcudaaltar.cudaLangevin_updateTheta(step.theta.data, step.prior.data, step.data.data,
-                                                      half_epsilon_t, self.eta_t.data, p)
-
+            # compute prior and data likelihood gradients
+            model.gradient(controller=controller, step=step,  batch=step.samples)
+            # update theta
+            step.updateTheta()
 
         # all done
         return self
@@ -140,7 +120,6 @@ class CUDASGLD:
             # get the state of the solution
             self.gstep.copyToCPU(step=self.step)
             step = self.step
-            step.beta = controller.epsilon_t
             # calculate the statistics of samples
             step.statistics()
             # print a summary of current state

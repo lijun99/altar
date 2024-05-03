@@ -47,6 +47,10 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
             // compute log probability gradient
+            extern const char * const logpdfgradient_i__name__;
+            extern const char * const logpdfgradient_i__doc__;
+            PyObject * logpdfgradient_i(PyObject *, PyObject *);
+            // compute log probability gradient
             extern const char * const logpdfgradient__name__;
             extern const char * const logpdfgradient__doc__;
             PyObject * logpdfgradient(PyObject *, PyObject *);

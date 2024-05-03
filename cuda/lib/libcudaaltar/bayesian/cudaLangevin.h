@@ -24,6 +24,14 @@ namespace altar { namespace cuda {
                 const realtype_t half_epsilon_t, const realtype_t * const eta_t,
                 const size_t samples, const size_t parameters, const size_t index,
                 cudaStream_t stream=0);
+            // batched
+            template <typename realtype_t>
+            void updateThetaBatched(realtype_t * const theta,
+                const realtype_t alpha1, const realtype_t * const prior_gradient,
+                const realtype_t alpha2, const realtype_t * const datalikelihood_gradient,
+                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
+                const size_t samples, const size_t parameters,
+                cudaStream_t stream=0);
         } // of namespace cudaLangevin
     } // of namespace bayesian
 } }// of namespace cualtar

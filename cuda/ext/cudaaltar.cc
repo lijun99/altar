@@ -42,6 +42,7 @@ namespace altar { namespace cuda {
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
             { cudaGaussian::logpdf__name__, cudaGaussian::logpdf, METH_VARARGS, cudaGaussian::logpdf__doc__},
             { cudaGaussian::logpdfgradient__name__, cudaGaussian::logpdfgradient, METH_VARARGS, cudaGaussian::logpdfgradient__doc__},
+            { cudaGaussian::logpdfgradient_i__name__, cudaGaussian::logpdfgradient_i, METH_VARARGS, cudaGaussian::logpdfgradient_i__doc__},
             // cudaTGaussian
             { cudaTGaussian::sample__name__, cudaTGaussian::sample, METH_VARARGS, cudaTGaussian::sample__doc__},
             { cudaTGaussian::logpdf__name__, cudaTGaussian::logpdf, METH_VARARGS, cudaTGaussian::logpdf__doc__},
@@ -57,6 +58,7 @@ namespace altar { namespace cuda {
 
             // Langevin sampler
             { cudaLangevin::updateTheta__name__, cudaLangevin::updateTheta, METH_VARARGS, cudaLangevin::updateTheta__doc__},
+            { cudaLangevin::updateThetaBatched__name__, cudaLangevin::updateThetaBatched, METH_VARARGS, cudaLangevin::updateThetaBatched__doc__},
 
             // sentinel
             {0, 0, 0, 0}

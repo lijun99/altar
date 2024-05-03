@@ -113,10 +113,8 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         for t in range(self.tsteps):
             # step size
             self.epsilon_t = self.scheduler.epsilon_t(t)
-
             # walk the chains
             worker.walk(controller=self)
-
             # e.g., print out the statistics, calculate the mean model in Cp
             worker.bottom(controller=self)
 

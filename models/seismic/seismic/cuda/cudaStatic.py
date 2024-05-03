@@ -219,29 +219,40 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # all done
         return
 
-    def gradient(self, controller, step, index, batch):
+    def gradient(self, controller, step, batch):
         """
         compute the Langevin gradient
         """
 
         theta = step.theta
 
-        prior = step.prior.zero()
         # compute prior gradient
-        self.cuEvalPriorGradient(theta, index, prior, batch)
+        prior = step.prior_gradient.zero()
+        self.cuEvalPriorGradient(theta, prior, batch)
 
         # compute likelihood gradient
         # log P = - 1/2({\tilde G}\theta-{\tilde d})^2
         # d(\log P)/d theta = - (G\theta-d)_j G_{ji}
+        # residuals = G\theta - d
         residuals = self.gDataPred
+        green = self.gGF
+        observation = self.dataobs.gdataObsBatch
         # call forward to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=theta, green=self.gGF,
+        self.forwardModelBatched(theta=theta, green=green,
                                  prediction=residuals, batch=batch,
-                                 observation= self.dataobs.gdataObsBatch)
-        # residuals (samples, observations), G(observations, parameters)
-        likelihood = step.data
-        factor = -1
-        libcudaseismic.static_gemm_col(residuals.data, self.gGF.data, likelihood.data, index, factor)
+                                 observation= observation)
+
+        likelihood = step.data_gradient
+        # likelihood (samples, parameters) =  residuals (samples, observations) x G(observations, parameters)
+        # in col-major likelihood (parameters, samples) = G (parameters, observations) x residuals (observations, samples)
+        libcuda.cublas_gemm(self.cublas_handle,
+                            0, 0, # transa, transb
+                            likelihood.shape[1], batch, green.shape[1], # m, n, k
+                            -1.0,   # alpha
+                            green.data, green.shape[1], # A, lda
+                            residuals.data, residuals.shape[1], # B, ldb
+                            0.0,
+                            likelihood.data, likelihood.shape[1])
 
         # all done
         return self

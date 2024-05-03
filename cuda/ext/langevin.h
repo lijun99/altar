@@ -20,6 +20,10 @@ namespace altar{ namespace cuda { namespace extensions {
             extern const char * const updateTheta__name__;
             extern const char * const updateTheta__doc__;
             PyObject * updateTheta(PyObject *, PyObject *);
+
+            extern const char * const updateThetaBatched__name__;
+            extern const char * const updateThetaBatched__doc__;
+            PyObject * updateThetaBatched(PyObject *, PyObject *);
             
         } 
 } } } // of namespace altar.cuda.extensions

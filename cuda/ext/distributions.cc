@@ -324,12 +324,12 @@ altar::cuda::extensions::cudaGaussian::logpdf(PyObject *, PyObject * args) {
     return Py_None;
 }
 
-const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient__name__ = "cudaGaussian_logpdf_gradient";
-const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient__doc__ =
+const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient_i__name__ = "cudaGaussian_logpdf_gradient_i";
+const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient_i__doc__ =
     "cudaGaussian compute log pdf gradient";
 
 PyObject *
-altar::cuda::extensions::cudaGaussian::logpdfgradient(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaGaussian::logpdfgradient_i(PyObject *, PyObject * args) {
     // the arguments
     PyObject * thetaCapsule, * probabilityCapsule;
     size_t idx_begin, idx_end, index; // parameter index
@@ -337,7 +337,7 @@ altar::cuda::extensions::cudaGaussian::logpdfgradient(PyObject *, PyObject * arg
     size_t samples;
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!O!k(kk)k(dd):cudaGaussian_logpdf",
+                                  args, "O!O!k(kk)k(dd):cudaGaussian_logpdfgradient_i",
                                   &PyCapsule_Type, &thetaCapsule,
                                   &PyCapsule_Type, &probabilityCapsule,
                                   &samples, &idx_begin, &idx_end, &index,
@@ -349,7 +349,7 @@ altar::cuda::extensions::cudaGaussian::logpdfgradient(PyObject *, PyObject * arg
     if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
             || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) )
     {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaGaussian_logpdf_gradient");
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaGaussian_logpdf_gradient_i");
         return 0;
     }
 
@@ -372,15 +372,70 @@ altar::cuda::extensions::cudaGaussian::logpdfgradient(PyObject *, PyObject * arg
     */
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaGaussian::logpdfgradient<float>
+        altar::cuda::distributions::cudaGaussian::logpdfgradient_i<float>
             ((const float *)theta->data, (float *)prob->data,
             samples, parameters, idx_begin, idx_end, index, (float)mean, (float)sigma);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaGaussian::logpdfgradient<double>
+        altar::cuda::distributions::cudaGaussian::logpdfgradient_i<double>
             ((const double *)theta->data, (double *)prob->data,
             samples, parameters, idx_begin, idx_end, index, mean, sigma);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient__name__ = "cudaGaussian_logpdf_gradient";
+const char * const altar::cuda::extensions::cudaGaussian::logpdfgradient__doc__ =
+    "cudaGaussian compute log pdf gradient";
+
+PyObject *
+altar::cuda::extensions::cudaGaussian::logpdfgradient(PyObject *, PyObject * args) {
+    // the arguments
+    PyObject * thetaCapsule, * probabilityCapsule;
+    size_t idx_begin, idx_end;
+    double mean, sigma; // support or range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!O!k(kk)(dd):cudaGaussian_logpdfgradient",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &PyCapsule_Type, &probabilityCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &mean, &sigma
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::matrix::capsule_t) )
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaGaussian_logpdf_gradient");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_matrix * prob = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(probabilityCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaGaussian::logpdfgradient<float>
+            ((const float *)theta->data, (float *)prob->data,
+            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaGaussian::logpdfgradient<double>
+            ((const double *)theta->data, (double *)prob->data,
+            samples, parameters, idx_begin, idx_end, mean, sigma);
     }
     // all done
     // return None

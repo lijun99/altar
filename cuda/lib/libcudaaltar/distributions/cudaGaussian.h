@@ -36,11 +36,19 @@ namespace altar {
                     const real_type mean, const real_type sigma,
                     cudaStream_t stream=0);
 
-                // calculate log probability
+                // calculate gradient log probability for one parameter
+                template <typename real_type>
+                void logpdfgradient_i(const real_type * const theta, real_type * const probability,
+                    const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end, const size_t index,
+                    const real_type mean, const real_type sigma,
+                    cudaStream_t stream=0);
+
+                // calculate gradient log probability for all parameters
                 template <typename real_type>
                 void logpdfgradient(const real_type * const theta, real_type * const probability,
                     const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end, const size_t index,
+                    const size_t idx_begin, const size_t idx_end,
                     const real_type mean, const real_type sigma,
                     cudaStream_t stream=0);
 

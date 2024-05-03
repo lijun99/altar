@@ -76,7 +76,7 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
-    def cuPriorGradient(self, theta, index, prior, batch):
+    def cuPriorGradient(self, theta, prior, batch, index=None):
         """
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """

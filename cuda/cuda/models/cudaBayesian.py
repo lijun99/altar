@@ -187,16 +187,13 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return self
 
-    def cuEvalPriorGradient(self, theta, index, prior, batch):
+    def cuEvalPriorGradient(self, theta, prior, batch):
         """
         Fill {prior} with the log pdf gradient to {theta[index]}of the samples
         """
         # ask my subsets
         for pset in self.psets.values():
-            # and ask each one to verify the sample
-            idx_begin, idx_end = pset.prior.idx_range
-            if index >= idx_begin and index < idx_end:
-                pset.prior.cuPriorGradient(theta=theta, index=index, prior=prior, batch=batch)
+            pset.prior.cuPriorGradient(theta=theta, prior=prior, batch=batch)
 
         # all done
         return self
