@@ -132,6 +132,11 @@ class CUDASGLD:
         """
         Procedures when simulation finishes
         """
+        # compute the bayesian posterior
+        controller.model.likelihoods(annealer=controller, step=self.gstep)
+        # save them
+        self.gstep.save_hdf5()
+
         # all done
         return self
 

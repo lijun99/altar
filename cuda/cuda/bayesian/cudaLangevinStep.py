@@ -166,6 +166,55 @@ class cudaLangevinStep:
 
         return self
 
+    def save_hdf5(self, path=None, iteration=None, psets=None):
+        """
+        Save Coolinging Step to HDF5 file
+        Args:
+            step altar.bayesian.CoolingStep
+            path altar.primitives.path
+        Returns:
+            None
+        """
+        import os
+        import h5py
+        import numpy
+
+        # determine the output name as "{path}/step_{iteration}.h5"
+        str_iteration = 'final' if iteration is None else str(iteration).zfill(3)
+        if path is not None:
+            str_path = path.path if isinstance(path, altar.primitives.path) else path
+            if not os.path.exists(str_path):
+                os.makedirs(str_path)
+        else:
+            str_path = '.'
+        suffix = '.h5'
+        filename = os.path.join(str_path, "step_"+str_iteration+suffix)
+
+        # create a hdf5 file
+        f=h5py.File(filename, 'w')
+        # save annealer info
+        annealergrp = f.create_group('Controller')
+        annealergrp.create_dataset('epsilon_t', data=numpy.asarray(self.epsilon_t))
+        # save parameter sets
+        psetsgrp = f.create_group('ParameterSets')
+        if psets is None or len(psets) == 0 :
+            # no parameter sets info provided, save as theta
+            psetsgrp.create_dataset('theta', data=self.theta.copy_to_host(type="numpy"))
+        else:
+            # get a ndarray reference for theta
+            theta = self.theta.copy_to_host(type="numpy")
+            # iterate over all psets
+            for name, pset in psets.items():
+                psetsgrp.create_dataset(name, data=theta[:, pset.offset:pset.offset+pset.count])
+        # save Bayesian likelihoods/probabilities
+        bayesiangrp = f.create_group('Bayesian')
+        bayesiangrp.create_dataset('prior', data=self.prior.copy_to_host(type="numpy"))
+        bayesiangrp.create_dataset('likelihood', data=self.data.copy_to_host(type="numpy"))
+        bayesiangrp.create_dataset('posterior', data=self.posterior.copy_to_host(type="numpy"))
+        f.close()
+
+        # all done
+        return
 
     # meta-methods
     def __init__(self, beta, theta, likelihoods, epsilon_t, eta_t, gradient, **kwds):
