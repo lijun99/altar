@@ -76,6 +76,15 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
+
+    def update(self, **kwargs):
+        """
+        update distribution parameters if needed
+        """
+        # default, do nothing
+        return self
+
+
     # private data
     device = None
     idx_range = None
