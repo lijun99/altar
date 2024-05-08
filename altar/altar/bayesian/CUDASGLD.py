@@ -144,12 +144,7 @@ class CUDASGLD:
 
         if self.wid == 0 and self.iteration % controller.tsteps_report ==0:
             # get the state of the solution
-            self.gstep.copyToCPU(step=self.step)
-            step = self.step
-            # calculate the statistics of samples
-            step.statistics()
-            # print a summary of current state
-            step.print(channel=controller.info)
+            self.gstep.report(controller=controller)
 
         # all done
         return self
@@ -158,11 +153,7 @@ class CUDASGLD:
         """
         Procedures when simulation finishes
         """
-        # compute the bayesian posterior
-        controller.model.likelihoods(annealer=controller, step=self.gstep)
-        # save them
-        self.gstep.save_hdf5()
-
+        self.gstep.report(controller=controller)
         # all done
         return self
 

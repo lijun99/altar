@@ -32,6 +32,7 @@ class cudaLangevinStep:
     prior_gradient = None     # a (samples x parameters) matrix with gradient of log P(theta_i)
     data_gradient = None      # a (samples x parameters) matrix with the gradients log likelihood log P(d|theta_i)
     eta_t = None              # a (samples x parameters) matrix with gaussian noise
+    report_seq = 0
 
     # read-only public data
     @property
@@ -165,6 +166,58 @@ class cudaLangevinStep:
         self.posterior.copy_to_host(target=step.posterior)
 
         return self
+
+    def report(self, controller):
+        """
+        Report and Record
+        """
+        # report
+        self.print(channel=controller.info)
+        # record
+        # need to compute posterior
+        controller.model.likelihoods(annealer=controller, step=self)
+        self.save_hdf5(path="sgld_results", iteration=self.report_seq)
+        self.report_seq += 1
+
+        # alld one
+        return self
+
+
+
+    def print(self, channel, indent=' '*2):
+        """
+        Print info about this step
+        """
+        # unpack my shape
+        samples = self.samples
+        parameters = self.parameters
+
+        # say something
+        channel.line(f"step")
+        # show me the temperature
+        channel.line(f"{indent} epsilon_t: {self.epsilon_t}")
+        # the sample
+        θ = self.theta
+        channel.line(f"{indent}θ: ({θ.rows} samples) x ({θ.cols} parameters)")
+
+        # print statistics (axis=0 average over samples)
+        mean, sd = θ.mean_sd()
+        channel.line(f"{indent}parameters (mean, sd):")
+        if parameters <= 25:
+            for i in range(parameters):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+        else:
+            for i in range(20):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+            channel.line(f"{indent} ... ...")
+            for i in range(parameters-5, parameters):
+                channel.line(f"{indent} ({mean[i]}, {sd[i]})")
+        # flush
+        channel.log()
+
+        # all done
+        return channel
+
 
     def save_hdf5(self, path=None, iteration=None, psets=None):
         """
