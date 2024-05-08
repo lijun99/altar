@@ -27,6 +27,14 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
+                // verify the validity of samples
+                template <typename real_type>
+                void verify_unique(const real_type * const theta, int * const invalid,
+                    const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type * const low, const real_type * const high,
+                    cudaStream_t stream=0);
+
             } // of namespace cudaRanged
         } // of namespace distributions
     } // of namespace cuda

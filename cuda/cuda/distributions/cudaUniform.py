@@ -52,7 +52,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
 
     def cuEvalPrior(self, theta, prior, batch):
         """
-        Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
+        Fill my portion of {prior} with the prior probabilities of the samples in {theta}
         """
         # call cuda c extension
         libcudaaltar.cudaUniform_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
@@ -60,29 +60,5 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # all done
         return self
 
-    def update(self, **kwargs):
-        """
-        Update the support from {std} in {args}
-        """
-
-        # grab the std from kwargs
-        std = kwargs.get('std')
-
-        std_max = 0.0
-        idx_start, idx_end = self.idx_range
-        for i in range(idx_start, idx_end):
-            if std_max < std[i] :
-                std_max = std[i]
-
-        # change the lower range to max(-std, low)
-        low, high = self.support
-        low = max(low, -std_max)
-        self.support = (low, high)
-
-        # all done
-        return self
-
-
-    # local variables
 
 # end of file

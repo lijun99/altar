@@ -91,6 +91,71 @@ altar::cuda::extensions::cudaRanged::verify(PyObject *, PyObject * args) {
     return Py_None;
 }
 
+// cudaUniform_verify
+const char * const altar::cuda::extensions::cudaRanged::verify_unique__name__ = "cudaRanged_verify_unique";
+const char * const altar::cuda::extensions::cudaRanged::verify_unique__doc__ =
+    "cudaUniform verify range with unique parameters";
+
+PyObject *
+altar::cuda::extensions::cudaRanged::verify_unique(PyObject *, PyObject * args) {
+    // the arguments
+    // verify(theta, flag, samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule, * flagCapsule, *lowCapsule, *highCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!O!k(kk)O!O!:cudaRanged_verify_unique",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &PyCapsule_Type, &flagCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &PyCapsule_Type, &lowCapsule,
+                                  &PyCapsule_Type, &highCapsule
+                                  );
+    // if something went wrong
+    if (!status) return 0;
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(flagCapsule, altar::cuda::extensions::vector::capsule_t)
+            || !PyCapsule_IsValid(lowCapsule, altar::cuda::extensions::vector::capsule_t)
+            || !PyCapsule_IsValid(highCapsule, altar::cuda::extensions::vector::capsule_t)
+            )
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsules for cudaRanged_verify_unique");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_vector * flag = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(flagCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * low = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(lowCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * high = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(highCapsule, altar::cuda::extensions::vector::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaRanged::verify_unique<float>
+            ((const float *)theta->data, (int *)flag->data,
+            samples, parameters, idx_begin, idx_end, (const float *)low->data, (const float *)high->data);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaRanged::verify_unique<double>
+            ((const double *)theta->data, (int *)flag->data,
+            samples, parameters, idx_begin, idx_end, (const double *)low->data, (const double *)high->data);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
 // cudaUniform distribution
 // cudaUniform_sample
 const char * const altar::cuda::extensions::cudaUniform::sample__name__ = "cudaUniform_sample";
@@ -202,6 +267,133 @@ altar::cuda::extensions::cudaUniform::logpdf(PyObject *, PyObject * args) {
     Py_INCREF(Py_None);
     return Py_None;
 }
+
+// cudaUniform_sample
+const char * const altar::cuda::extensions::cudaUniform::sample_unique__name__ = "cudaUniform_sample_unique";
+const char * const altar::cuda::extensions::cudaUniform::sample_unique__doc__ = "cudaUniform rng for a matrix";
+
+PyObject *
+altar::cuda::extensions::cudaUniform::sample_unique(PyObject *, PyObject * args) {
+    // the arguments
+    // sample(theta, samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule, * lowCapsule, *highCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    size_t samples;
+
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!k(kk)O!O!:cudaUniform_sample_unique",
+                                  &PyCapsule_Type, &thetaCapsule, &samples,
+                                  &idx_begin, &idx_end,
+                                  &PyCapsule_Type, &lowCapsule,
+                                  &PyCapsule_Type, &highCapsule
+                                  );
+    // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+        || !PyCapsule_IsValid(lowCapsule, altar::cuda::extensions::vector::capsule_t)
+        || !PyCapsule_IsValid(highCapsule, altar::cuda::extensions::vector::capsule_t)
+        )
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_sample_unique");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_vector * low = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(lowCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * high = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(highCapsule, altar::cuda::extensions::vector::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaUniform::sample_unique<float>
+            ((float *)theta->data, samples, parameters, idx_begin, idx_end, (const float *)low->data, (const float *)high->data);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaUniform::sample_unique<double>
+            ((double *)theta->data, samples, parameters, idx_begin, idx_end, (const double *)low->data, (const double *)high->data);
+    }
+
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+
+}
+
+const char * const altar::cuda::extensions::cudaUniform::logpdf_unique__name__ = "cudaUniform_logpdf_unique";
+const char * const altar::cuda::extensions::cudaUniform::logpdf_unique__doc__ =
+    "cudaUniform compute log pdf _unique";
+
+PyObject *
+altar::cuda::extensions::cudaUniform::logpdf_unique(PyObject *, PyObject * args) {
+    // the arguments
+    // sample(theta, probability, samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule, * probabilityCapsule, * lowCapsule, * highCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!O!k(kk)O!O!:cudaUniform_logpdf_unique",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &PyCapsule_Type, &probabilityCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &PyCapsule_Type, &lowCapsule,
+                                  &PyCapsule_Type, &highCapsule
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t)
+            || !PyCapsule_IsValid(lowCapsule, altar::cuda::extensions::vector::capsule_t)
+            || !PyCapsule_IsValid(highCapsule, altar::cuda::extensions::vector::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_logpdf_unique");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_vector * prob = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(probabilityCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * low = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(lowCapsule, altar::cuda::extensions::vector::capsule_t));
+    cuda_vector * high = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(highCapsule, altar::cuda::extensions::vector::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaUniform::logpdf_unique<float>
+            ((const float *)theta->data, (float *)prob->data,
+            samples, parameters, idx_begin, idx_end, (const float *)low->data, (const float *)high->data);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaUniform::logpdf_unique<double>
+            ((const double *)theta->data, (double *)prob->data,
+            samples, parameters, idx_begin, idx_end, (const double *)low->data, (const double *)high->data);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
 
 // cudaGaussian distribution
 // cudaGaussian_sample

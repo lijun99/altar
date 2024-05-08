@@ -24,6 +24,12 @@ namespace altar {
                     const size_t idx_begin, const size_t idx_end,
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
+
+                template <typename real_type>
+                void sample_unique(real_type * const theta, const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type * const low, const real_type * const high,
+                    cudaStream_t stream=0);
                 
                 // calculate log probability
                 template <typename real_type>
@@ -31,6 +37,13 @@ namespace altar {
                     const size_t samples, const size_t parameters, 
                     const size_t idx_begin, const size_t idx_end,
                     const real_type low, const real_type high,
+                    cudaStream_t stream=0);
+
+                template <typename real_type>
+                void logpdf_unique(const real_type * const theta, real_type * const probability,
+                    const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type * const low, const real_type * const high,
                     cudaStream_t stream=0);
 
             } // of namespace cudaUniform

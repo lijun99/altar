@@ -27,6 +27,15 @@ def uniform():
     # and return it
     return uniform
 
+@altar.foundry(implements=distribution, tip="the cuda cudaUniform probability distribution with varied ranges")
+def uniformvariedrange():
+    # grab the factory
+    from .cudaUniformVariedRange import cudaUniformVariedRange as uniformvariedrange
+    # attach its docstring
+    __doc__ = uniformvariedrange.__doc__
+    # and return it
+    return uniformvariedrange
+
 
 @altar.foundry(implements=distribution, tip="the cuda gaussian probability distribution")
 def gaussian():
