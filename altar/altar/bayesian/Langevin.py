@@ -98,6 +98,8 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         worker = self.worker
         # and my dispatcher
         dispatcher = self.dispatcher
+        # and my scheduler
+        scheduler = self.scheduler
 
         # notify all interested parties that the simulation is about to start
         dispatcher.notify(event=dispatcher.start, controller=self)
@@ -109,10 +111,13 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         # bottom process: compute mean,sd and print a summary
         worker.bottom(controller=self)
 
+        # to estimate initial sampling rate, if requested
+        scheduler.start(controller=self)
+
         # iterate t to tsteps
         for t in range(self.tsteps):
             # step size
-            self.epsilon_t = self.scheduler.epsilon_t(t)
+            self.epsilon_t = scheduler.epsilon_t(t)
             # walk the chains
             worker.walk(controller=self)
             # e.g., print out the statistics, calculate the mean model in Cp

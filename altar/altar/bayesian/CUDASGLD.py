@@ -108,6 +108,32 @@ class CUDASGLD:
         # all done
         return self
 
+    def estimate_rate(self, controller, scale=1.0):
+        """
+        Estimate the sampling rate from std and gradient
+        """
+
+        # grab the state
+        step = self.gstep
+
+        # grab the model
+        model = controller.model
+
+        # compute the gradient
+        model.gradient(controller=controller, step=step, batch=step.samples)
+        gradient = step.data_gradient
+        gradient += step.prior_gradient
+
+        max_gradient = max(gradient.amax(), abs(gradient.amin()))
+
+        mean, std = step.theta.mean_sd()
+        max_std = std.amax()
+
+        rate = scale*min(4*max_std/max_gradient, max_std*max_std)
+
+        # all done
+        return rate
+
 
     def bottom(self, controller):
         """

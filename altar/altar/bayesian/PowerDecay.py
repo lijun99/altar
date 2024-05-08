@@ -23,11 +23,13 @@ class PowerDecay(altar.component, family="altar.langevin.schedulers.powerdecay",
     a = altar.properties.float(default=1)
     a.doc = "a in step size formula \epsilon_t = a/(b+t)^\gamma"
 
-    b = altar.properties.float(default=0)
+    b = altar.properties.float(default=1)
     b.doc = "b in step size formula \epsilon_t = a/(b+t)^\gamma"
 
     gamma = altar.properties.float(default=0.9)
     gamma.doc = "gamma in step size formula \epsilon_t = a/(b+t)^\gamma, \gamma \in (0.5, 1]"
+
+    estimate_a = altar.properties.bool(default=False)
 
 
     # required behavior
@@ -46,6 +48,19 @@ class PowerDecay(altar.component, family="altar.langevin.schedulers.powerdecay",
         """
         return self.a*pow(self.b+t, -self.gamma)
 
+    def start(self, controller):
+        """
+        Processes to run before sampling
+        """
+        if self.estimate_a:
+            # call worker method
+            rate = controller.worker.estimate_rate(controller=controller)
+            #
+            self.a = rate
 
+        channel = controller.info
+        channel.log(f"starting sampling rate {self.a}")
+        # all done
+        return self
 
 # end of file
