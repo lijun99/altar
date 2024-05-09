@@ -156,6 +156,64 @@ altar::cuda::extensions::cudaRanged::verify_unique(PyObject *, PyObject * args) 
     return Py_None;
 }
 
+
+// constrain
+// cudaUniform_constrain
+const char * const altar::cuda::extensions::cudaRanged::constrain__name__ = "cudaRanged_constrain";
+const char * const altar::cuda::extensions::cudaRanged::constrain__doc__ =
+    "cudaUniform verify range";
+
+PyObject *
+altar::cuda::extensions::cudaRanged::constrain(PyObject *, PyObject * args) {
+    // the arguments
+    // verify(theta, flag, samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    double low, high; // support or range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!k(kk)(dd):cudaRanged_constrain",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &low, &high
+                                  );
+    // if something went wrong
+    if (!status) return 0;
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsules for cudaRanged_constrain");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaRanged::constrain<float>
+            ((float *)theta->data,
+            samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaRanged::constrain<double>
+            ((double *)theta->data,
+            samples, parameters, idx_begin, idx_end, low, high);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+
+
 // cudaUniform distribution
 // cudaUniform_sample
 const char * const altar::cuda::extensions::cudaUniform::sample__name__ = "cudaUniform_sample";

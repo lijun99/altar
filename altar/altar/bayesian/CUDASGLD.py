@@ -104,6 +104,8 @@ class CUDASGLD:
             model.gradient(controller=controller, step=step,  batch=step.samples)
             # update theta
             step.updateTheta()
+            if controller.constrain_parameter_range:
+                model.constrain(theta=step.theta, batch=step.samples)
 
         # all done
         return self

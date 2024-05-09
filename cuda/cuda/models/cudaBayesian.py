@@ -175,6 +175,18 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done; return the rejection map
         return mask
 
+    def constrain(self, theta, batch):
+        """
+        Check whether the samples in {step.theta} are consistent with the model requirements and
+        update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
+        """
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to constrain the sample
+            pset.prior.cuConstrain(theta=theta, batch=batch)
+        # all done
+        return self
+
     def cuEvalPrior(self, theta, prior, batch):
         """
         Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution

@@ -36,6 +36,7 @@ namespace altar { namespace cuda {
             // distributions
             { cudaRanged::verify__name__, cudaRanged::verify, METH_VARARGS, cudaRanged::verify__doc__},
             { cudaRanged::verify_unique__name__, cudaRanged::verify_unique, METH_VARARGS, cudaRanged::verify_unique__doc__},
+            { cudaRanged::constrain__name__, cudaRanged::constrain, METH_VARARGS, cudaRanged::constrain__doc__},
             // cudaUniform
             { cudaUniform::sample__name__, cudaUniform::sample, METH_VARARGS, cudaUniform::sample__doc__},
             { cudaUniform::logpdf__name__, cudaUniform::logpdf, METH_VARARGS, cudaUniform::logpdf__doc__},

@@ -70,6 +70,13 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return mask
 
+    def cuConstrain(self, theta, batch):
+        """
+        cuda process to constrain samples within a range
+        """
+        # default, do nothing
+        return self
+
     def cuEvalPrior(self, theta, prior, batch):
         """
         cuda process to compute the prior

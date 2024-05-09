@@ -50,6 +50,20 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # all done; return the rejection map
         return mask
 
+    def cuConstrain(self, theta, batch):
+        """
+        Check whether my portion of the samples in {theta} are consistent with my constraints, and
+        update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
+        Arguments:
+            theta cuArray (samples x total_parameters)
+        """
+
+        # call cuda c extension
+        libcudaaltar.cudaRanged_constrain(theta.data, batch, self.idx_range, self.support)
+
+        # all done; return the rejection map
+        return self
+
     def cuEvalPrior(self, theta, prior, batch):
         """
         Fill my portion of {prior} with the prior probabilities of the samples in {theta}
