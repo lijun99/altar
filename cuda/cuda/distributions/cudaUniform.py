@@ -52,7 +52,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
 
     def cuEvalPrior(self, theta, prior, batch):
         """
-        Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
+        Fill my portion of {prior} with the prior probabilities of the samples in {theta}
         """
         # call cuda c extension
         libcudaaltar.cudaUniform_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
@@ -60,6 +60,5 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # all done
         return self
 
-    # local variables
 
 # end of file

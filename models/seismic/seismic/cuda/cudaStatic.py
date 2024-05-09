@@ -252,6 +252,26 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # all done
         return self
 
+    def updateModel(self, annealer):
+        """
+        update model parameters before simulation at each beta step
+        here, we update the lower range for uniform priors with the computed standard deviation
+        """
+
+        # get the std
+        step = annealer.worker.step
+        std = step.sd
+
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            pset.prior.update(std=std)
+
+        # all done
+        # return true to recompute prior and posterior
+        return True
+
+
     # private data
     # inputs
     GF = None # the Green functions

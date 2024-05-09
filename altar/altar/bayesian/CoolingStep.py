@@ -31,7 +31,7 @@ class CoolingStep:
 
     # the statistics of samples (theta)
     mean = None
-    std = None
+    sd = None
 
 
     # read-only public data

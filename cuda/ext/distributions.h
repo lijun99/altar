@@ -22,6 +22,10 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const verify__name__;
             extern const char * const verify__doc__;
             PyObject * verify(PyObject *, PyObject *);
+
+            extern const char * const verify_unique__name__;
+            extern const char * const verify_unique__doc__;
+            PyObject * verify_unique(PyObject *, PyObject *);
         }
 
         // uniform distribution        
@@ -30,10 +34,22 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const sample__name__;
             extern const char * const sample__doc__;
             PyObject * sample(PyObject *, PyObject *);
+
             // compute log probability
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
+
+            // generate random sample
+            extern const char * const sample_unique__name__;
+            extern const char * const sample_unique__doc__;
+            PyObject * sample_unique(PyObject *, PyObject *);
+
+            // compute log probability
+            extern const char * const logpdf_unique__name__;
+            extern const char * const logpdf_unique__doc__;
+            PyObject * logpdf_unique(PyObject *, PyObject *);
+
         } 
         
         // gaussian distribution

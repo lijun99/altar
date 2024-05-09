@@ -16,29 +16,51 @@
 
 // cuda kernel declarations
 namespace cudaUniform_kernels {
+
+    // use template to call curand_uniform
+    template <typename real_type>
+    __inline__ __device__
+    real_type cuRand_Uniform(curandState_t * curand_state);
+
+    template <>
+    __inline__ __device__
+    float cuRand_Uniform<float>(curandState_t * curand_state)
+    {
+        return curand_uniform(curand_state);
+    }
+
+    template <>
+    __inline__ __device__
+    double cuRand_Uniform<double>(curandState_t * curand_state)
+    {
+        return curand_uniform_double(curand_state);
+    }
+
+    // sample
     template<typename real_type>
     __global__ void _sample(curandState_t * curand_states,
         real_type * const theta, const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end,
         const real_type low, const real_type high);
 
-     template <>
-    __global__ void _sample<double>(curandState_t * curand_states,
-        double * const theta, const size_t samples, const size_t parameters,
+    template<typename real_type>
+    __global__ void _sample_unique(curandState_t * curand_states,
+        real_type * const theta, const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end,
-        const double low, const double high);
-
-    template <>
-    __global__ void _sample<float>(curandState_t * curand_states,
-        float * const theta, const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const float low, const float high);
+        const real_type * const low, const real_type * const high);
 
     template<typename real_type>
     __global__ void _logpdf(const real_type * const theta, real_type * const probability,
         const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end,
         const real_type low, const real_type high);
+
+    template<typename real_type>
+    __global__ void _logpdf_unique(const real_type * const theta, real_type * const probability,
+        const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end,
+        const real_type * const low, const real_type * const high);
+
 } // of namespace cudaUniform_kernels
 
 // generate uniform random samples
@@ -72,6 +94,37 @@ template void altar::cuda::distributions::cudaUniform::sample<float>(float * con
 template void altar::cuda::distributions::cudaUniform::sample<double>(double * const, const size_t, const size_t,
                     const size_t, const size_t, const double, const double, cudaStream_t);
 
+// generate uniform random samples
+template<typename real_type>
+void altar::cuda::distributions::cudaUniform::
+sample_unique(real_type * const theta, const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type * const low, const real_type * const high,
+                    cudaStream_t stream)
+{
+    // determine the block/grid size
+    // one thread for one sample
+    int blockSize = NTHREADS;
+    int gridSize = IDIVUP(samples, blockSize);
+
+    // allocate
+    curandState_t *curand_states;
+    cudaSafeCall(cudaMalloc((void**)&curand_states, blockSize*gridSize*sizeof(curandState)));
+
+    // call cuda kernels
+    cudaUniform_kernels::_sample_unique<real_type><<<gridSize, blockSize, 0, stream>>>(curand_states,
+        theta, samples, parameters, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaUniform::random unique generation error");
+
+    cudaSafeCall(cudaFree(curand_states));
+}
+
+// explicit instantiation
+template void altar::cuda::distributions::cudaUniform::sample_unique<float>(float * const, const size_t, const size_t,
+                    const size_t, const size_t, const float * const, const float * const, cudaStream_t);
+template void altar::cuda::distributions::cudaUniform::sample_unique<double>(double * const, const size_t, const size_t,
+                    const size_t, const size_t, const double * const, const double * const, cudaStream_t);
+
 // compute log probability
 template <typename real_type>
 void altar::cuda::distributions::cudaUniform::
@@ -95,17 +148,40 @@ template void altar::cuda::distributions::cudaUniform::logpdf<float>(const float
 template void altar::cuda::distributions::cudaUniform::logpdf<double>(const double * const, double * const, const size_t, const size_t,
                     const size_t, const size_t, const double, const double, cudaStream_t);
 
-//random_generation_kernel
-// double precision version
+
+// compute log probability
+template <typename real_type>
+void altar::cuda::distributions::cudaUniform::
+logpdf_unique(const real_type * const theta, real_type * const probability,
+                    const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type * const low, const real_type * const high,
+                    cudaStream_t stream)
+{
+    int blockSize = NTHREADS;
+    int gridSize = IDIVUP(samples, blockSize);
+    // call cuda kernels
+    cudaUniform_kernels::_logpdf_unique<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, probability, samples, parameters, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaUniform:: log_pdf_unique error");
+}
+
+// explicit instantiation
+template void altar::cuda::distributions::cudaUniform::logpdf_unique<float>(const float * const, float * const, const size_t, const size_t,
+                    const size_t, const size_t, const float * const, const float * const, cudaStream_t);
+template void altar::cuda::distributions::cudaUniform::logpdf_unique<double>(const double * const, double * const, const size_t, const size_t,
+                    const size_t, const size_t, const double * const, const double * const, cudaStream_t);
+
 
 namespace cudaUniform_kernels {
 
-template <>
+//random_generation_kernel
+template <typename real_type>
 __global__ void
-_sample<double>(curandState_t * curand_states,
-    double * const theta, const size_t samples, const size_t parameters,
+_sample(curandState_t * curand_states,
+    real_type * const theta, const size_t samples, const size_t parameters,
     const size_t idx_begin, const size_t idx_end,
-    const double low, const double high)
+    const real_type low, const real_type high)
 {
     int sample = blockIdx.x*blockDim.x + threadIdx.x;
     if (sample >= samples) return;
@@ -114,23 +190,24 @@ _sample<double>(curandState_t * curand_states,
     unsigned long long seed = (unsigned long long) clock64();
     curand_init(seed, sample, 0, &curand_states[sample]);
 
-    double range = high-low;
+    real_type range = high-low;
     // get the theta pointer for each sample
-    double * theta_sample = theta + sample*parameters;
+    real_type * theta_sample = theta + sample*parameters;
 
     // generate samples from idx_begin to idx_end
     for (int i=idx_begin; i<idx_end; ++i)
     {
-        theta_sample[i] = curand_uniform_double(&curand_states[sample])*range + low;
+        theta_sample[i] = cuRand_Uniform<real_type>(&curand_states[sample])*range + low;
     }
 }
-//single precision version
-template <>
+
+//random_generation_kernel
+template <typename real_type>
 __global__ void
-_sample<float>(curandState_t * curand_states,
-    float * const theta, const size_t samples, const size_t parameters,
+_sample_unique(curandState_t * curand_states,
+    real_type * const theta, const size_t samples, const size_t parameters,
     const size_t idx_begin, const size_t idx_end,
-    const float low, const float high)
+    const real_type * const low, const real_type * const high)
 {
     int sample = blockIdx.x*blockDim.x + threadIdx.x;
     if (sample >= samples) return;
@@ -139,23 +216,20 @@ _sample<float>(curandState_t * curand_states,
     unsigned long long seed = (unsigned long long) clock64();
     curand_init(seed, sample, 0, &curand_states[sample]);
 
-    float range = high-low;
     // get the theta pointer for each sample
-    float * theta_sample = theta + sample*parameters;
+    real_type * theta_sample = theta + sample*parameters;
 
     // generate samples from idx_begin to idx_end
-    for (int i=idx_begin; i<idx_end; ++i)
+    for (int i=idx_begin, j=0; i<idx_end; ++i, ++j)
     {
-        theta_sample[i] = curand_uniform(&curand_states[sample])*range + low;
+        real_type range = high[j]-low[j];
+        theta_sample[i] = cuRand_Uniform<real_type>(&curand_states[sample])*range + low[j];
     }
 }
-
-} // of namespace cudaUniform_kernels
 
 //log_pdf kernel
 template <typename real_type>
 __global__ void
-cudaUniform_kernels::
 _logpdf(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end, const real_type low, const real_type high)
 {
@@ -168,5 +242,25 @@ _logpdf(const real_type * const theta, real_type * const probability, const size
     probability[sample] += log_pdf;
 }
 
+//log_pdf kernel
+template <typename real_type>
+__global__ void
+_logpdf_unique(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
+        const size_t idx_begin, const size_t idx_end, const real_type * const low, const real_type * const high)
+{
+    // get the thread/sample id
+    int sample = blockIdx.x*blockDim.x + threadIdx.x;
+    if (sample >= samples) return;
+    //  log(1/(high-low))*number of  parameters
+
+    // note size_t is always non-negative
+    for (int i=idx_begin, j=0; i<idx_end; ++i, ++j)
+    {
+        real_type log_pdf = -log(high[j]-low[j]);
+        probability[sample] += log_pdf;
+    }
+}
+
+} // of namespace cudaUniform_kernels
 
 // end of file
