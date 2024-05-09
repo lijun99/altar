@@ -31,6 +31,8 @@ class PowerDecay(altar.component, family="altar.langevin.schedulers.powerdecay",
 
     estimate_a = altar.properties.bool(default=False)
 
+    estimate_scale = altar.properties.float(default=1)
+
 
     # required behavior
     @altar.provides
@@ -54,7 +56,7 @@ class PowerDecay(altar.component, family="altar.langevin.schedulers.powerdecay",
         """
         if self.estimate_a:
             # call worker method
-            rate = controller.worker.estimate_rate(controller=controller)
+            rate = controller.worker.estimate_rate(controller=controller, scale=self.estimate_scale)
             #
             self.a = rate
 
