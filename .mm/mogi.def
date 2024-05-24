@@ -18,7 +18,7 @@ mogi.revision := $(repo.revision)
 mogi.home := $(project.home)/models/mogi
 
 # use the altar area for build temporaries
-mogi.tmpdir = ${builder.dest.staging}altar/models/mogi/
+mogi.tmpdir = ${builder.staging}altar/models/mogi/
 
 # mogi consists of a python package
 mogi.packages := mogi.pkg
@@ -43,6 +43,7 @@ mogi.ext.root := ext/mogi/
 mogi.ext.pkg := mogi.pkg
 mogi.ext.wraps := mogi.lib
 mogi.ext.extern := mogi.lib gsl pyre python
+mogi.ext.lib.prerequisites += mogi.lib
 # compile options for the sources
 mogi.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
 

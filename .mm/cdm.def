@@ -18,7 +18,7 @@ cdm.revision := $(repo.revision)
 cdm.home := $(project.home)/models/cdm
 
 # use the altar area for build temporaries
-cdm.tmpdir = ${builder.dest.staging}altar/models/cdm/
+cdm.tmpdir = ${builder.staging}altar/models/cdm/
 
 # cdm consists of a python package
 cdm.packages := cdm.pkg
@@ -43,6 +43,7 @@ cdm.ext.root := ext/cdm/
 cdm.ext.pkg := cdm.pkg
 cdm.ext.wraps := cdm.lib
 cdm.ext.extern := cdm.lib gsl pyre python
+cdm.ext.lib.prerequisites += cdm.lib
 # compile options for the sources
 cdm.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
 

@@ -17,7 +17,7 @@ reverso.revision := $(repo.revision)
 reverso.home := $(project.home)/models/reverso
 
 # use the altar area for build temporaries
-reverso.tmpdir = ${builder.dest.staging}altar/models/reverso/
+reverso.tmpdir = ${builder.staging}altar/models/reverso/
 
 # reverso consists of a python package
 reverso.packages := reverso.pkg
@@ -42,6 +42,7 @@ reverso.ext.root := ext/reverso/
 reverso.ext.pkg := reverso.pkg
 reverso.ext.wraps := reverso.lib
 reverso.ext.extern := reverso.lib gsl pyre python
+reverso.ext.lib.prerequisites += reverso.lib
 # compile options for the sources
 reverso.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
 

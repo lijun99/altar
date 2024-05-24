@@ -18,7 +18,7 @@ emhp.revision := $(repo.revision)
 emhp.home := $(project.home)/models/emhp
 
 # use the altar area for build temporaries
-emhp.tmpdir = ${builder.dest.staging}altar/models/emhp/
+emhp.tmpdir = ${builder.staging}altar/models/emhp/
 
 # emhp consists of a python package
 emhp.packages := emhp.pkg

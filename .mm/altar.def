@@ -39,6 +39,7 @@ altar.ext.pkg := altar.pkg
 altar.ext.root := ext/
 altar.ext.wraps := altar.lib
 altar.ext.extern := altar.lib gsl pyre python
+altar.ext.lib.prerequisites += altar.lib
 # compile options for the sources
 altar.ext.lib.c++.flags += $($(compiler.c++).std.c++17)
 
