@@ -35,6 +35,7 @@ struct __ALIGNED__ Controller
     T hrun; // h for the current/previous step
     bool converged;
     bool t1reached;
+    bool failed;
 
     int counter;
 
@@ -51,6 +52,7 @@ struct __ALIGNED__ Controller
         reject = false;
         errold = static_cast<T>(1e-4);
         counter = 0;
+        failed = false;
     }
 
     // use a simple version for now
@@ -248,48 +250,54 @@ __device__ void Controller<T>::check_convergence(
     // continue checking with thread 0
 	if(cta.thread_rank() == 0)
 	{
-        // compute the error
-	    auto err = sqrt(val);
-	    // printf("test err %d %g %g\n", blockIdx.x, val, err);
-	    // scale h for next run
-        T scale;
-        // keep info of current running h step
-        hrun = hnext;
-
-        // check estimated error for convergence
-        if (err <= static_cast<T>(1.0))
-        {
-            // the error estimate is within required accuracy
-            converged = true;
-            reject = false;
-            // prepare h for next step
-            if (err == static_cast<T>(0)) //  < cuda::std::numeric_limits<T>::epsilon())
-                scale = maxscale;
-            else
-            {
-                scale=safety*pow(err,-alpha)*pow(errold,beta);
-                if (scale<minscale) scale=minscale;
-                if (scale>maxscale) scale=maxscale;
-            }
-            // check whether h was rejected in the previous run
-            if (reject)
-                scale = min(scale,static_cast<T>(1.0));
-
-            hnext *= scale;
-            errold=max(err,static_cast<T>(1.0e-4));
-        }
+        // check if the integrator failed
+        if (!isfinite(val))
+            failed = true;
         else
         {
-            // not converged
-            // reduce h for next trial
-            scale=max(safety*pow(err,-alpha),minscale);
-            hnext *= scale;
-            reject = true;
-            converged = false;
+            // compute the error
+	        auto err = sqrt(val);
+	        // printf("test err %d %g %g\n", blockIdx.x, val, err);
+	        // scale h for next run
+            T scale;
+            // keep info of current running h step
+            hrun = hnext;
+
+            // check estimated error for convergence
+            if (err <= static_cast<T>(1.0))
+            {
+                // the error estimate is within required accuracy
+                converged = true;
+                reject = false;
+                // prepare h for next step
+                if (err == static_cast<T>(0)) //  < cuda::std::numeric_limits<T>::epsilon())
+                    scale = maxscale;
+                else
+                {
+                    scale=safety*pow(err,-alpha)*pow(errold,beta);
+                    if (scale<minscale) scale=minscale;
+                    if (scale>maxscale) scale=maxscale;
+                }
+                // check whether h was rejected in the previous run
+                if (reject)
+                    scale = min(scale,static_cast<T>(1.0));
+
+                hnext *= scale;
+                errold=max(err,static_cast<T>(1.0e-4));
+            }
+            else
+            {
+                // not converged
+                // reduce h for next trial
+                scale=max(safety*pow(err,-alpha),minscale);
+                hnext *= scale;
+                reject = true;
+                converged = false;
+            }
+            // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
+            //        blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
+            counter++;
         }
-        // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
-        //        blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
-        counter++;
     }
     // sync and broadcast
     cta.sync();
