@@ -82,6 +82,24 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             channel.log(f"Device {self.device.id}: Simulation object initialization output"
                         f"\n{init_output.getvalue()}")
 
+        # create intiialization dictionary for fast recreation
+        self.sim_dict_fast = self.sim_dict.copy()
+        self.sim_dict_fast.update({
+            "fault": self.fault,
+            "G_surf": self.sim.G_surf,
+            "v_init": self.sim.v_init,
+            "eq_df": self.sim.eq_df,
+            "eq_slip": self.sim.eq_slip,
+            "slip_taper_vec": self.sim.slip_taper_vec,
+            "slip_taper_vec_nonuni": self.sim.slip_taper_vec_nonuni,
+            "delta_tau_unbounded": self.sim.delta_tau_unbounded,
+            "delta_tau_unbounded_nonuni": self.sim.delta_tau_unbounded_nonuni,
+            "delta_tau_taper": self.sim.delta_tau_taper,
+            "delta_tau_taper_nonuni": self.sim.delta_tau_taper_nonuni,
+            "locked_slip": self.sim.locked_slip,
+            "delta_tau_bounded_compressed": self.sim.delta_tau_bounded_compressed,
+            "delta_tau_bounded_indices": self.sim.delta_tau_bounded_indices})
+
         # read number of rows/columns of alpha_h
         self.alpha_h_mat_rows = self.rheo.num_bases_depth
         self.alpha_h_mat_cols = self.rheo.num_bases_horiz
@@ -315,8 +333,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # create new simulation instances, reusing G_surf
         ticks.append(self.sync_and_time())
-        sims = [SubductionSimulation3D(**self.sim_dict, rheo=rheos[i],
-                                       fault=self.fault, G_surf=self.sim.G_surf)
+        sims = [SubductionSimulation3D(**self.sim_dict_fast, rheo=rheos[i])
                 for i in range(batch_size_run)]
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
