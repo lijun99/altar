@@ -105,6 +105,7 @@ void RateDependent<T>::forward_model_batch(
     T* ref_obs, // Array for the calculation of the reference surface displacement timeseries (num_forward_batch, num_t_obs, 3) [m]
     const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
     const int num_forward_batch, // forward model batch(system) size <= cuda_batch_size (in AlTar, not all samples are computed in simulations)
+    const T v_ratio_max, // ratio between maximum allowed velocity and reference velocity [-]
     const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
     bool verbose = false // whether to print info and progress indicators or not
 ) {
@@ -118,7 +119,7 @@ void RateDependent<T>::forward_model_batch(
 
     // create an instance of events (including starting/ending time)
     events = new EventType{num_ix_eq, num_eq, t_events, delta_tau_div_alpha_h, delta_tau_bounded_indices,
-                           delta_tau_bounded_indices_final, num_forward_batch, num_inner_patches, UNITS};
+                           delta_tau_bounded_indices_final, num_forward_batch, num_inner_patches, UNITS, v_ratio_max};
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, num_forward_batch, num_threads};
@@ -249,7 +250,7 @@ RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
          (10 * (size_type)num_inner_patches * (size_type)UNITS * (size_type)num_forward_batch) +
          ((size_type)num_forward_batch * (size_type)num_t_obs * (size_type)num_inner_patches * 2) +
          ((size_type)num_forward_batch * (size_type)num_t_obs * 3) +
-          (size_type)num_forward_batch * 3 * (size_type)num_stations) * sizeof(T));
+         (size_type)num_forward_batch * 3 * (size_type)num_stations + 1) * sizeof(T));
     return size_model + size_forward;
 }
 

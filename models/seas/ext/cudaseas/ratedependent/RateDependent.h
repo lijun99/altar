@@ -75,6 +75,7 @@ class RateDependent {
             T* ref_obs, // Array for the calculation of the reference surface displacement timeseries (num_forward_batch, num_t_obs, 3) [m]
             const T* obs_farfield, // Farfield effects precalculated for all stations to be added before referencing (num_t_obs, 3*num_stations) [m]
             const int num_forward_batch, // batch size <=samples (in AlTar, not all samples are computed in simulations)
+            const T v_ratio_max, // ratio between maximum allowed velocity and reference velocity [-]
             const int num_threads, // number of threads 1 <= num_threads <= 1024, 0 means internally estimated
             bool verbose // whether to print info and progress indicators or not
         );
