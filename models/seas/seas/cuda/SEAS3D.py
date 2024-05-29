@@ -104,6 +104,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         self.alpha_h_mat_rows = self.rheo.num_bases_depth
         self.alpha_h_mat_cols = self.rheo.num_bases_horiz
 
+        # get maximum integration velocity
+        self.v_ratio_max = 0 if self.sim.v_max is None else self.sim.v_max / self.rheo.v_0
+
         # get index subset of values to estimate
         if self.estimate_row_indices is None:
             self.ix_estim_row = list(range(self.alpha_h_mat_rows))
@@ -376,6 +379,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         obs_ref.data,
                                         self.obs_farfield.data,
                                         batch_size_run,
+                                        self.v_ratio_max,
                                         self.cuda_threads,
                                         self.verbose)
 

@@ -128,7 +128,7 @@ public:
             convertPyArray<T, cuda_matrix>(ref_obs), // (num_systems, num_t_obs*3) [m]
             convertPyArray<T, cuda_vector>(obs_farfield), // (num_t_obs*3*num_stations) [m]
             batches, // batch size <=samples (in AlTar, not all samples are computed in simulations)
-            v_ratio_max, // ratio between maximum allowed velocity and reference velocity [-]
+            v_ratio_max, // ratio between maximum allowed velocity and reference velocity [-], zero if no maximum
             num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
             verbose // whether to print info and progress indicators or not
         );
@@ -161,7 +161,7 @@ module(py::module & m)
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
              py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"),
-             py::arg("batches"), py::arg("v_ratio_max"), py::arg("num_threads") = 0, py::arg("verbose") = false)
+             py::arg("batches"), py::arg("v_ratio_max") = 0, py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_object_size", &pyRateDependent_double::estimate_object_size);
     py::class_<pyRateDependent_float>(m, "model_float")
         .def(py::init())
@@ -170,7 +170,7 @@ module(py::module & m)
              py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
              py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
              py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"),
-             py::arg("batches"), py::arg("v_ratio_max"), py::arg("num_threads") = 0, py::arg("verbose") = false)
+             py::arg("batches"), py::arg("v_ratio_max") = 0, py::arg("num_threads") = 0, py::arg("verbose") = false)
         .def("estimate_object_size", &pyRateDependent_float::estimate_object_size);
 }
 
