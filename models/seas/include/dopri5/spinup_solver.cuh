@@ -103,7 +103,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     // repeat cycles until convergence or max_cycles reached
     bool converged = false;
     int icycle = 0;
-    while (!converged && icycle<max_cycles)
+    while (!converged && icycle<max_cycles && !controller.failed)
     {
         if (verbose && (cta.thread_rank() == 0))
            printf("%i %i", system_id, icycle);
@@ -126,18 +126,20 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
         spinup_controller.record(cta, stepper.yn, index_start, index_end);
         cta.sync();
     }
-    //cta.sync();
+    // cta.sync();
 
     // if debugging cycles
     if (cta.thread_rank() == 0) {
-        if (converged && verbose)
+        if (controller.failed)
+            printf("%i[ERROR: integrator failed for system %i]", icycle, system_id);
+        else if (converged && verbose)
             printf("%i %i>", system_id, icycle);
         else if (!converged)
             printf("%i[WARNING: maximum iterations reached for system %i]", icycle, system_id);
     }
 
     //converged, last run for dense_out
-    if (dense_out)
+    if (dense_out && !controller.failed)
     {
         if (cta.thread_rank() == 0)
         {
@@ -182,6 +184,9 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
         max_cycles,
         verbose);
     cudaCheckError("solve_ivp_kernel error");
+    cudaDeviceSynchronize();
+    for (auto i = 0; i < blocks; i++)
+        assert(!(this->controller_holder->controllers[i].failed));
     // all done, return the yevals
 }
 
