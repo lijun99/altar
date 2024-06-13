@@ -300,11 +300,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             n_theta_cols = list(set([self.psets[name].count for name in self.psets_list]))
             assert len(n_theta_cols) == 1, "Different lengths of psets."
             n_theta_cols = n_theta_cols[0]
-            assert (n_theta_rows, n_theta_cols) == (self.n_estim_row, self.n_estim_col), \
-                f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)}, got " \
-                f"shape {(n_theta_rows, n_theta_cols)}."
+            assert ((n_theta_rows, n_theta_cols) == (self.n_estim_row, self.n_estim_col)) \
+                or ((n_theta_rows, n_theta_cols) == (self.n_estim_row, 1)), \
+                f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)} (or " \
+                f"columns broadcastable), got shape {(n_theta_rows, n_theta_cols)}."
             theta_out = np.full((n_theta_rows, n_theta_cols), np.NaN)
-            assert len(self.psets_list) == n_theta_rows
             for irow, name in enumerate(self.ordered_psets_list):
                 itheta = self.psets_list.index(name)
                 theta_out[irow, :] = theta_arr[itheta * n_theta_cols:(itheta + 1) * n_theta_cols]
