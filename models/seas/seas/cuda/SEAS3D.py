@@ -6,7 +6,7 @@
 # general imports
 import io
 from time import perf_counter
-from copy import deepcopy
+from copy import copy, deepcopy
 from contextlib import redirect_stdout
 import numpy as np
 
@@ -82,23 +82,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             channel.log(f"Device {self.device.id}: Simulation object initialization output"
                         f"\n{init_output.getvalue()}")
 
-        # create intiialization dictionary for fast recreation
-        self.sim_dict_fast = self.sim_dict.copy()
-        self.sim_dict_fast.update({
-            "fault": self.fault,
-            "G_surf": self.sim.G_surf,
-            "v_init": self.sim.v_init,
-            "eq_df": self.sim.eq_df,
-            "eq_slip": self.sim.eq_slip,
-            "slip_taper_vec": self.sim.slip_taper_vec,
-            "slip_taper_vec_nonuni": self.sim.slip_taper_vec_nonuni,
-            "delta_tau_unbounded": self.sim.delta_tau_unbounded,
-            "delta_tau_unbounded_nonuni": self.sim.delta_tau_unbounded_nonuni,
-            "delta_tau_taper": self.sim.delta_tau_taper,
-            "delta_tau_taper_nonuni": self.sim.delta_tau_taper_nonuni,
-            "locked_slip": self.sim.locked_slip,
-            "delta_tau_bounded_compressed": self.sim.delta_tau_bounded_compressed,
-            "delta_tau_bounded_indices": self.sim.delta_tau_bounded_indices})
+        # create deep copies of sim tha tcan later be easily modified for the forward runs
+        self.sims_storage = [copy(self.sim) for _ in range(self.cuda_batch_size)]
 
         # read number of rows/columns of alpha_h
         self.alpha_h_mat_rows = self.rheo.num_bases_depth
@@ -334,10 +319,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         rheos = [self.rheo_from_theta(theta.get_row(i).copy_to_host(type="numpy"))
                  for i in range(batch_size_run)]
 
-        # create new simulation instances, reusing G_surf
+        # create new simulation instances, modifying copied objects
         ticks.append(self.sync_and_time())
-        sims = [SubductionSimulation3D(**self.sim_dict_fast, rheo=rheos[i])
-                for i in range(batch_size_run)]
+        sims = self.sims_storage[:batch_size_run]
+        for i, sim in enumerate(sims):
+            sim.update_rheo(rheos[i])
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(self.sync_and_time())
