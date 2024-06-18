@@ -82,7 +82,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             channel.log(f"Device {self.device.id}: Simulation object initialization output"
                         f"\n{init_output.getvalue()}")
 
-        # create deep copies of sim tha tcan later be easily modified for the forward runs
+        # create deep copies of sim that can later be easily modified for the forward runs
         self.sims_storage = [copy(self.sim) for _ in range(self.cuda_batch_size)]
 
         # read number of rows/columns of alpha_h
@@ -119,6 +119,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         if self.sim.delta_tau_bounded_nonuni is not None:
             num_final_eq = self.sim.delta_tau_unbounded_nonuni.shape[0]
             self.num_eq += num_final_eq
+
+        # get euler pole kernel and rescale to match range of thetas
+        self.G_ep = self.sim.get_euler_pole_kernel() / 1e9
+        # get time vector
+        self.dt = self.sim.t_obs - self.sim.t_obs[0]
 
         # allocate memory
         ticks.append(self.sync_and_time())
@@ -271,18 +276,21 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # done
         return self
 
-    def rheo_from_theta(self, theta_arr):
+    def parse_theta(self, theta_arr):
         """
-        Create a new Rheology object from a NumPy theta array.
+        Create a new Rheology object from a NumPy theta array and optionally
+        return the rotation vector if contained in the parameter set.
         """
         # loop over theta entries
+        rotvec = None
         rheo_kw_args = deepcopy(self.rheo_dict)
         if self.psets_list == ["log10_alpha_h_mat"]:  # single pset for entire matrix
             rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = \
                 10**theta_arr.reshape(self.alpha_h_mat_rows, -1)
         else:  # parse individual rows of theta
-            n_theta_rows = len(self.psets_list)
-            n_theta_cols = list(set([self.psets[name].count for name in self.psets_list]))
+            psets_list_alphah = [p for p in self.psets_list if p.startswith("log10_alpha_h_")]
+            n_theta_rows = len(psets_list_alphah)
+            n_theta_cols = list(set([self.psets[name].count for name in psets_list_alphah]))
             assert len(n_theta_cols) == 1, "Different lengths of psets."
             n_theta_cols = n_theta_cols[0]
             assert ((n_theta_rows, n_theta_cols) == (self.n_estim_row, self.n_estim_col)) \
@@ -290,12 +298,17 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)} (or " \
                 f"columns broadcastable), got shape {(n_theta_rows, n_theta_cols)}."
             theta_out = np.full((n_theta_rows, n_theta_cols), np.NaN)
-            for irow, name in enumerate(self.ordered_psets_list):
-                itheta = self.psets_list.index(name)
-                theta_out[irow, :] = theta_arr[itheta * n_theta_cols:(itheta + 1) * n_theta_cols]
+            j = 0
+            for name in self.psets_list:
+                if name.startswith("log10_alpha_h_"):
+                    irow = int(name[14:])
+                    theta_out[irow, :] = theta_arr[j:j + n_theta_cols]
+                elif name == "euler_pole":
+                    rotvec = theta_arr[j:j + 3]
+                j += self.psets[name].count
             rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = 10**theta_out
         # return new object instance
-        return RateStateSteadyLogarithmic2D(**rheo_kw_args)
+        return RateStateSteadyLogarithmic2D(**rheo_kw_args), rotvec
 
     def forwardModelBatched(self, theta, prediction, batch_size_run):
         """
@@ -316,8 +329,9 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # create new rheology instances
         ticks = []
         ticks.append(self.sync_and_time())
-        rheos = [self.rheo_from_theta(theta.get_row(i).copy_to_host(type="numpy"))
-                 for i in range(batch_size_run)]
+        parsed_thetas = [self.parse_theta(theta.get_row(i).copy_to_host(type="numpy"))
+                         for i in range(batch_size_run)]
+        rheos = [pt[0] for pt in parsed_thetas]
 
         # create new simulation instances, modifying copied objects
         ticks.append(self.sync_and_time())
@@ -354,6 +368,19 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         obs_ref = altar.cuda.matrix(shape=(batch_size_run, self.sim.t_obs.size * 3),
                                     dtype=self.gpuprec)
 
+        # calculate euler pole motion
+        if "euler_pole" in self.psets_list:
+            obs_ep_np = np.stack([self.G_ep.reshape(-1, 3) @ (pt[1][:, None] * self.dt[None, :])
+                                  for pt in parsed_thetas], axis=0) \
+                .reshape(batch_size_run, self.sim.n_observers, 2, self.dt.size) \
+                .transpose(0, 3, 2, 1)
+        else:
+            obs_ep_np = np.zeros((batch_size_run, self.dt.size, 2, self.sim.n_observers))
+        obs_ep = altar.cuda.vector(
+            shape=(batch_size_run * self.sim.n_observers * 2 * self.dt.size),
+            dtype=self.gpuprec)
+        obs_ep.copy_from_host(source=np.ascontiguousarray(obs_ep_np, dtype=self.gpuprec))
+
         # call CUDA forward model
         ticks.append(self.sync_and_time())
         self.cmodel.forward_model_batch(alpha_h.data,
@@ -364,6 +391,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                         prediction.data,
                                         obs_ref.data,
                                         self.obs_farfield.data,
+                                        obs_ep.data,
                                         batch_size_run,
                                         self.v_ratio_max,
                                         self.cuda_threads,
@@ -384,6 +412,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         alpha_h.free()
         delta_tau_div_alpha_h.free()
         obs_ref.free()
+        obs_ep.free()
         return prediction
 
     def cuEvalLikelihood(self, theta, likelihood, batch):

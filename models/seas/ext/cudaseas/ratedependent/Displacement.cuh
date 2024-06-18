@@ -459,6 +459,57 @@ void add_farfield_effects(
 }
 
 
+// cuda kernel to add euler pole motion
+template <typename T>
+__global__ void add_euler_pole_motion_kernel(
+    T* obs_disp,
+    const T* obs_farfield,
+    const int num_t_obs,
+    const int num_stations)
+{
+    // get system index
+    int system = blockIdx.x;
+    // iterate over all times
+    for (auto i_t = threadIdx.x; i_t < num_t_obs; i_t += blockDim.x)
+    {
+        // iterate over stations
+        for (auto i_stat = 0; i_stat < num_stations; i_stat++)
+        {
+            // east
+            obs_disp[system * (size_t)(num_t_obs * 3 * num_stations)
+                     + i_t * (size_t)(3 * num_stations)
+                     + i_stat] +=
+                obs_farfield[system * (size_t)(num_t_obs * 2 * num_stations)
+                             + i_t * (size_t)(2 * num_stations)
+                             + i_stat];
+            // north
+            obs_disp[system * (size_t)(num_t_obs * 3 * num_stations)
+                     + i_t * (size_t)(3 * num_stations)
+                     + num_stations + i_stat] +=
+                obs_farfield[system * (size_t)(num_t_obs * 2 * num_stations)
+                             + i_t * (size_t)(2 * num_stations)
+                             + num_stations + i_stat];
+        }
+    }
+    // all done
+}
+
+// cuda funtion to add farfield effects
+template<typename T>
+void add_euler_pole_motion(
+    T* obs_disp,
+    const T* obs_ep,
+    const int num_systems,
+    const int num_t_obs,
+    const int num_stations,
+    const int threads)
+{
+    add_euler_pole_motion_kernel<<<num_systems, threads>>>(
+        obs_disp, obs_ep, num_t_obs, num_stations);
+    cudaCheckError("add_euler_pole_motion_kernel");
+}
+
+
 // cuda kernel to subtract displacements from the values at t_eq
 //
 template <typename T>
