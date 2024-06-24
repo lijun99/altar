@@ -214,8 +214,11 @@ __device__  auto sum_block(
 	__shared__ T sum;
     if(cta.thread_rank()==0) {
         sum = mySum;
-        return sum;
     }
+    cta.sync();
+
+    // all threads need a return value
+    return sum;
 }
 
 
@@ -255,8 +258,8 @@ __device__  auto max_block(
     }
     cta.sync();
 
-    if(cta.thread_rank()==0)
-        return max_val;
+    // all threads need a return value
+    return max_val;
 }
 
 template<class T>
