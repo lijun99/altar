@@ -42,8 +42,9 @@ struct Solver
     int system_size; // number of elements in one system, patches*units
     int threads; // number of threads to use for each system (one thread block)
 
-    ode_system_type ode; // define the ode system
-    event_type events; // define the event
+    //
+    ode_system_type &  ode; // define the ode system
+    event_type &  events; // define the event
 
     // processors
     controller_holder_type * controller_holder;
@@ -53,6 +54,18 @@ struct Solver
     // constructor
     Solver(ode_system_type& o, event_type& e, const real_type atol, const real_type rtol,
            const int systems_batch, const int threads);
+
+    // destructor
+    ~Solver()
+    {
+        // delete (call destructors) of each holder
+        if (controller_holder != nullptr)
+            delete controller_holder;
+        if(stepper_holder != nullptr)
+            delete stepper_holder;
+        if(output_holder != nullptr)
+            delete output_holder;
+    };
 
     // set initial y(t0) values
     // @note if there are many batches, this needs to be called multiple times

@@ -156,7 +156,7 @@ struct DenseOutputHolder {
     // constructor
     DenseOutputHolder (const int systems_batch_, const int system_size_,
         const int neval_, const T* teval_, T* yeval_);
-    ~DenseOutputHolder();
+    ~DenseOutputHolder() noexcept(false);
 };
 
 template <class T>
@@ -200,7 +200,7 @@ DenseOutputHolder<T>::DenseOutputHolder (
 
 // destructor
 template <class T>
-DenseOutputHolder<T>::~DenseOutputHolder()
+DenseOutputHolder<T>::~DenseOutputHolder() noexcept(false)
 {
     if (outputters!=nullptr)
         cudaSafeCall(cudaFree(outputters));

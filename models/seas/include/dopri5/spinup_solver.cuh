@@ -47,6 +47,14 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
         // printf("SpinupSolver initialized with %i threads\n", this->threads);
     };
 
+    // destructor
+    ~SpinupSolver() noexcept(false)
+    {
+        if(spinup_controller_holder != nullptr)
+            delete spinup_controller_holder;
+        // super class destructor will be automatically called
+    };
+
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset, const int max_cycles);
 
     void solve_ivp_cycles(const bool dense_out, const int systems, const int system_offset,

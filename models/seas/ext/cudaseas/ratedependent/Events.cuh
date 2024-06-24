@@ -72,6 +72,12 @@ struct __ALIGNED__ SEASEvents {
         // describe();
     }
 
+    // destructor
+    ~SEASEvents() noexcept(false)
+    {
+        if(spun_up != nullptr)
+            cudaSafeCall(cudaFree(spun_up));
+    }
 
     // keep this function
     __device__ const T* get_events_time(const int system_id)
