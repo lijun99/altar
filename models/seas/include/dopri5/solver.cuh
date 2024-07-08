@@ -215,7 +215,7 @@ __device__ void solve_device( const cg::thread_block & cta,
         // cta.sync();
 
         // adaptive steps from t0 to t1
-        while((!controller.t1reached) && (!controller.failed))
+        while(!controller.t1reached)
         {
             if(cta.thread_rank()==0)
             {
@@ -229,7 +229,7 @@ __device__ void solve_device( const cg::thread_block & cta,
 
             // adjust step length to reach convergence
 
-            while((!controller.converged) && (!controller.failed))
+            while(!controller.converged)
             {
                 // integrate over step h
                 auto t0 = controller.t0;
