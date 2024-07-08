@@ -215,10 +215,23 @@ void RateDependent<T>::forward_model_batch(
     */
 
     // clean up memory usage
-    delete odefunc;
-    delete events;
-    delete solver;
+    if(solver != nullptr)
+    {
+        delete solver;
+        solver = nullptr;
+    }
+    if(events != nullptr)
+    {
+        delete events;
+        events = nullptr;
+    }
+    if(odefunc != nullptr)
+    {
+        delete odefunc;
+        odefunc = nullptr;
+    }
 
+    // all done
 }
 
 // size estimation methods

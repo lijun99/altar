@@ -197,6 +197,12 @@ struct __ALIGNED__ RateDependentODE {
         {
             // describe();
         }
+
+    // destructor
+    ~RateDependentODE()
+    {
+        // nothing to do
+    }
 };
 
 #endif //__rd_ode_cuh__
