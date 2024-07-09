@@ -90,45 +90,55 @@ struct __ALIGNED__ SEASEvents {
     __device__ void set_events_block(const cg::thread_block & cta,
         const int system_id, const int event_id, T* yn)
     {
-        if (event_id == 0) return;
-        assert (event_id < nevents - 1); // just to be sure
-
-        // convert event_id (non-unique) to eq_id (unique)
-        auto eq_id = (spun_up[system_id]) ? delta_tau_ix_final[event_id - 1] : delta_tau_ix[event_id - 1];
-
-        auto yevent = ychange + system_id * num_eq * patches * 2 + eq_id * patches * 2;
-        // note one thread per patch, the iteration is for system_size > #total threads
-        for (int id = cta.thread_rank(); id < patches; id += cta.size())
+        if (event_id == 0) // reset slip at beginning of supercycle
         {
-            // yn[id + patches * 2] += yevent[id]; // simply add changes, only for velocity
-            // get new logarithmic velocity
-            auto zeta1 = yn[id + patches * 2] + yevent[id];
-            auto zeta2 = yn[id + patches * 3] + yevent[id + patches];
-            // check for maximum velocity if set
-            if (v_ratio_max > 0)
+            for (int id = cta.thread_rank(); id < patches; id += cta.size())
             {
-                // convert to linear relative velocity
-                auto vr1 = exp(zeta1);
-                auto vr2 = exp(zeta2);
-                // get magnitude
-                auto vrmag = sqrt(vr1 * vr1 + vr2 * vr2);
-                // if maximum velocity exceeded, scale 
-                if (vrmag > v_ratio_max)
-                {
-                    auto ratio = min(vrmag, v_ratio_max) / vrmag;
-                    vr1 *= ratio;
-                    vr2 *= ratio;
-                    // convert back to logarithmic velocity
-                    zeta1 = log(vr1);
-                    zeta2 = log(vr2);
-                }
+                yn[id] = 0;
+                yn[id + patches] = 0;
             }
-            // save to array
-            yn[id + patches * 2] = zeta1;
-            yn[id + patches * 3] = zeta2;
         }
-        // cta.sync();
-        // return;
+        else // apply an earthquake
+        {
+            assert (event_id < nevents - 1); // just to be sure
+
+            // convert event_id (non-unique) to eq_id (unique)
+            auto eq_id = (spun_up[system_id]) ? delta_tau_ix_final[event_id - 1] : delta_tau_ix[event_id - 1];
+
+            auto yevent = ychange + system_id * num_eq * patches * 2 + eq_id * patches * 2;
+            // note one thread per patch, the iteration is for system_size > #total threads
+            for (int id = cta.thread_rank(); id < patches; id += cta.size())
+            {
+                // yn[id + patches * 2] += yevent[id]; // simply add changes, only for velocity
+                // get new logarithmic velocity
+                auto zeta1 = yn[id + patches * 2] + yevent[id];
+                auto zeta2 = yn[id + patches * 3] + yevent[id + patches];
+                // check for maximum velocity if set
+                if (v_ratio_max > 0)
+                {
+                    // convert to linear relative velocity
+                    auto vr1 = exp(zeta1);
+                    auto vr2 = exp(zeta2);
+                    // get magnitude
+                    auto vrmag = sqrt(vr1 * vr1 + vr2 * vr2);
+                    // if maximum velocity exceeded, scale 
+                    if (vrmag > v_ratio_max)
+                    {
+                        auto ratio = min(vrmag, v_ratio_max) / vrmag;
+                        vr1 *= ratio;
+                        vr2 *= ratio;
+                        // convert back to logarithmic velocity
+                        zeta1 = log(vr1);
+                        zeta2 = log(vr2);
+                    }
+                }
+                // save to array
+                yn[id + patches * 2] = zeta1;
+                yn[id + patches * 3] = zeta2;
+            }
+            // cta.sync();
+            // return;
+        }
     };
 };
 
