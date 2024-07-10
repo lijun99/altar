@@ -53,7 +53,7 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
-        cudaSafeCall(cudaMallocManaged(&spun_up, systems * sizeof(bool)));
+        cudaSafeCall(cudaMalloc(&spun_up, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
     }
@@ -67,16 +67,21 @@ struct __ALIGNED__ SEASEvents {
     {
         system_size = patches * units;
         nevents = num_slips + 2;
-        cudaSafeCall(cudaMallocManaged(&spun_up, systems * sizeof(bool)));
+        cudaSafeCall(cudaMalloc(&spun_up, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
+    }
+
+    void deallocate()
+    {
+        if(spun_up != nullptr)
+            cudaSafeCall(cudaFree(spun_up));
     }
 
     // destructor
     ~SEASEvents() noexcept(false)
     {
-        if(spun_up != nullptr)
-            cudaSafeCall(cudaFree(spun_up));
+
     }
 
     // keep this function

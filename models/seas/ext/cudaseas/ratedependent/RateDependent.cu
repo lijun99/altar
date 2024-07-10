@@ -220,6 +220,7 @@ void RateDependent<T>::forward_model_batch(
         delete solver;
         solver = nullptr;
     }
+    events->deallocate();
     if(events != nullptr)
     {
         delete events;
