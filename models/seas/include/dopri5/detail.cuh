@@ -129,7 +129,7 @@ namespace cuda::detail {
 
 // sum reduction within a thread block for values returned by func(args...)
 template<class T, class FuncType, class... Args>
-__device__  auto sum_block2(
+__device__  auto sum_block(
     const cg::thread_block & cta,
     const int N,
     FuncType func,
@@ -165,12 +165,14 @@ __device__  auto sum_block2(
 
     if(cta.thread_rank()==0)
         return sum;
+    else
+        return 0;
 }
 
 
 // sum reduction within a thread block for values returned by func(args...)
 template<class T, class FuncType, class... Args>
-__device__  auto sum_block(
+__device__  auto sum_block2(
     const cg::thread_block & cta,
     const int N,
     FuncType func,

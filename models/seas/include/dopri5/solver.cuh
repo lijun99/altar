@@ -159,11 +159,11 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
 
     int blocks = systems;
 
-    int sMemSize = threads*sizeof(real_type);
+    // int sMemSize = threads*sizeof(real_type);
 
     // printf("      blocks=%i\n", blocks);
     // printf("      system_offset=%i\n", system_offset);
-    set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads, sMemSize>>>(
+    set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
         system_offset,
         ode,
         events,
@@ -288,13 +288,16 @@ __global__ void solve_ivp_kernel(
         events,
         stepper,
         controller,
-        outputter);
+        outputter,
+        1); //verbose
 }
 
 template <class real_type, class ode_system_type, class event_type>
 void Solver<real_type, ode_system_type, event_type>::solve_ivp(const bool dense_out, const int systems, const int system_offset)
 {
     int blocks = systems;
+
+    // int sMemSize = threads*sizeof(real_type);
 
     solve_ivp_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
         system_offset, dense_out,

@@ -27,8 +27,9 @@ int main()
     // define ode system
     const int patches = 1024;
     const int units = 2;
-    const int systems = 1024*128;
+    const int systems = 1024;
     const int systems_batch = 1024;
+    const int threads = 1024;
     const int system_size = patches*units;
     OdeType odefunc {patches, units, systems};
 
@@ -39,7 +40,7 @@ int main()
     T *y0;
     cudaMallocManaged(&y0, system_size*sizeof(T));
     for(auto i=0; i<patches*units; i++)
-        y0[i] = (T)i;
+        y0[i] = static_cast<T>(1.0);
 
     // set dense output
     const int neval = 5;
@@ -61,7 +62,7 @@ int main()
     const T rtol = 1e-8;
 
     // construct the ode solver
-    SolverType solver(odefunc, events, atol, rtol, systems_batch);
+    SolverType solver(odefunc, events, atol, rtol, systems_batch, threads);
     // set dense output
     solver.set_dense_output(neval, teval, yeval);
     // iteratively solve systems in batch
@@ -73,8 +74,10 @@ int main()
         std::cout << "running systems " << system_offset << " to " << system_offset+systems_to_process << "\n";
         // set initial values
         solver.set_init_values(y0, use_y0_for_all, systems_to_process, system_offset);
+        std::cout << "setting initial values done " << "\n";
         // call the solver
         solver.solve_ivp(dense_out, systems_to_process, system_offset);
+        std::cout << "solving ivp done " << "\n";
         cudaDeviceSynchronize();
         for(auto is = max(0, systems_to_process-4); is<systems_to_process; is++)
         {
