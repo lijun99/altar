@@ -77,7 +77,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         with redirect_stdout(io.StringIO()) as init_output:
             self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
             self.fault = Fault3D(**self.fault_dict)
-            self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault)
+            self.sim = SubductionSimulation3D(**self.sim_dict, rheo=self.rheo, fault=self.fault,
+                                              calculate_tapered_slip=False)
         if self.verbose:
             channel.log(f"Device {self.device.id}: Simulation object initialization output"
                         f"\n{init_output.getvalue()}")
@@ -297,7 +298,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 or ((n_theta_rows, n_theta_cols) == (self.n_estim_row, 1)), \
                 f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)} (or " \
                 f"columns broadcastable), got shape {(n_theta_rows, n_theta_cols)}."
-            theta_out = np.full((n_theta_rows, n_theta_cols), np.NaN)
+            theta_out = np.full((n_theta_rows, n_theta_cols), np.nan)
             j = 0
             for name in self.psets_list:
                 if name.startswith("log10_alpha_h_"):
