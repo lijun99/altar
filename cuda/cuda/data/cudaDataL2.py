@@ -39,8 +39,8 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
     cd_std = altar.properties.float(default=1.0)
     cd_std.doc = "the constant covariance for data, sigma^2"
 
-    dtype_cd = altar.properties.str(default=None)
-    dtype_cd.doc = "the data type (float32/64) for Cd computations if different from others"
+    cd_dtype = altar.properties.str(default=None)
+    cd_dtype.doc = "the data type (float32/64) for Cd computations if different from others"
 
 
     # the norm to use for computing the data log likelihood
@@ -61,12 +61,13 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # initCovariance depends on precision
         self.device = application.controller.worker.device
         self.precision = application.job.gpuprecision
-
-        self.dtype_cd = self.dtype_cd or self.precision
+        # cd may use a different dtype to improve accuracy
+        self.cd_dtype = self.cd_dtype or self.precision
 
         # get the input path from model
         self.ifs = application.pfs["inputs"]
         self.error = application.error
+        self.info = application.info
         # get the number of samples
         self.samples = application.job.chains
 
@@ -78,10 +79,10 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         # load the data covariance
         if self.cd_file is not None:
-            self.cd = self.loadFile(filename=self.cd_file, shape=(observations, observations))
+            self.cd = self.loadFile(filename=self.cd_file, shape=(observations, observations), dtype=self.cd_dtype)
         else:
             # use a constant covariance
-            self.cd = numpy.zeros(shape=(observations, observations), dtype=self.dtype_cd)
+            self.cd = numpy.zeros(shape=(observations, observations), dtype=self.cd_dtype)
             numpy.fill_diagonal(self.cd, self.cd_std**2)
 
         # compute inverse of covariance, normalization
@@ -224,31 +225,35 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
 
         # obtain Cd from cpu
-        gCchi = altar.cuda.matrix(source=self.cd, dtype=self.dtype_cd)
+        gCchi = altar.cuda.matrix(source=self.cd, dtype=self.cd_dtype)
 
         # add Cp if provided
         if cp is not None:
             # check cp data type
-            gCp = cp if cp.dtype == self.dtype_cd else cp.copy_to_device(dtype=self.dtype_cd)
+            gCp = cp if cp.dtype == self.cd_dtype else cp.copy_to_device(dtype=self.cd_dtype)
             # add cp to cd
             gCchi += gCp
 
-        #self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi')
+        self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi')
 
         # Inverse
         gCchi.inverse()
-
-        #self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi inverse')
+        # self.info.log(f"L2 Data: C_chi inverse")
+        # gCchi.print()
 
         # Choleseky decomposition
         gCchi.Cholesky(uplo=cublas.FillModeUpper)
+        # self.info.log(f"L2 Data: C_chi inverse Cholesky")
+        # gCchi.print()
+
+
 
         # normalization
         logdet = libcuda.matrix_logdet_triangular(gCchi.data)
         self.normalization = -0.5*log(2*π)*observations + logdet
 
         # keep a copy of inverse Cchi to gcd_inv for other operations
-        self.gcd_inv = gCchi if gCchi.dtype == self.precision else gCchi.copy_to_host(dtype=self.precision)
+        self.gcd_inv = gCchi if gCchi.dtype == self.precision else gCchi.copy_to_device(dtype=self.precision)
 
         # load data to gpu
         gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
@@ -272,13 +277,17 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         name = name or 'Matrix'
         cm = matrix.copy_to_host(type='numpy')
         eval= numpy.linalg.eigvalsh(cm)
-        n = eval.shape[0]
-        if eval[n-1] < 0:
-            print(name, " is not positive definite!")
-            print(eval)
-            return False
-        print(name, eval.min(), eval.max())
-        return True
+        minval = eval.min()
+        maxval = eval.max()
+
+        if minval <= 0:
+            self.error.log(f"{name} is not positive definite, with eigenvalues from {minval} to {maxval}. Aborting ...")
+            raise SystemExit(1)
+
+        if minval/maxval < 1.e-6:
+            self.info.log(f"Warning: for {name}, the ratio between min and max eigenvalues are too small, which may cause convergence issues")
+
+        return self
 
     def mergeCdtoData(self, cd_inv, data):
         """

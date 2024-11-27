@@ -46,6 +46,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         # get the input path from model
 
         self.error = application.error
+        self.info = application.info
         # get the number of samples
         self.samples = application.job.chains
         # load the data and covariance

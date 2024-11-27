@@ -45,13 +45,13 @@ class Distribution(altar.protocol, family="altar.distributions"):
 
     @altar.provides
     def priorLikelihood(self, theta, prior):
-        """
+        r"""
         Fill my portion of {prior} with the likelihoods of the samples in {theta}
         """
 
     @altar.provides
     def priorGradient(self, theta, index, prior):
-        """
+        r"""
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """
 
