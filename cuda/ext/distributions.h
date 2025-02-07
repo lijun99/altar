@@ -34,14 +34,22 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
-            // logit
-            extern const char * const logit__name__;
-            extern const char * const logit__doc__;
-            PyObject * logit(PyObject *, PyObject *);
-            // logit inverse
-            extern const char * const logit_inverse__name__;
-            extern const char * const logit_inverse__doc__;
-            PyObject * logit_inverse(PyObject *, PyObject *);
+        }
+
+        // uniform distribution via a logit variable
+        namespace cudaUniformLogit {
+            // generate random sample
+            extern const char * const sample__name__;
+            extern const char * const sample__doc__;
+            PyObject * sample(PyObject *, PyObject *);
+            // compute log probability
+            extern const char * const logpdf__name__;
+            extern const char * const logpdf__doc__;
+            PyObject * logpdf(PyObject *, PyObject *);
+            // logit transform
+            extern const char * const inverse__name__;
+            extern const char * const inverse__doc__;
+            PyObject * inverse(PyObject *, PyObject *);
         }
 
         // gaussian distribution

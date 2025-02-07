@@ -32,9 +32,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         # number of samples to be processed
         batch = theta.shape[0]
         # call cuda c extension to initialize uniform distributed samples
-        libcudaaltar.cudaUniform_sample(theta.data, batch, self.idx_range, self.support)
-        theta.print()
-        libcudaaltar.cudaUniform_logit(theta.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaUniformLogit_sample(theta.data, batch, self.idx_range, self.support)
         theta.print()
 
         # and return
@@ -56,7 +54,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
         # call cuda c extension
-        libcudaaltar.cudaUniform_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaUniformLogit_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
 
         # all done
         return self
@@ -66,7 +64,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         Transform {theta} from (-Infty, Infty) to ranged with inverse logit function
         """
 
-        libcudaaltar.cudaUniform_logit_inverse(theta.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaUniformLogit_inverse(theta.data, batch, self.idx_range, self.support)
 
         return self
 

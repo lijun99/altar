@@ -20,6 +20,7 @@
 // c++ class includes
 #include <altar/cuda/distributions/cudaRanged.h>
 #include <altar/cuda/distributions/cudaUniform.h>
+#include <altar/cuda/distributions/cudaUniformLogit.h>
 #include <altar/cuda/distributions/cudaGaussian.h>
 #include <altar/cuda/distributions/cudaTGaussian.h>
 
@@ -203,33 +204,32 @@ altar::cuda::extensions::cudaUniform::logpdf(PyObject *, PyObject * args) {
     return Py_None;
 }
 
-// transform to unbounded with logit
-const char * const altar::cuda::extensions::cudaUniform::logit__name__ = "cudaUniform_logit";
-const char * const altar::cuda::extensions::cudaUniform::logit__doc__ =
-    "cudaUniform transform to unbounded with logit function";
+// cudaUniform distribution with logit variables
+// cudaUniformLogit_sample
+const char * const altar::cuda::extensions::cudaUniformLogit::sample__name__ = "cudaUniformLogit_sample";
+const char * const altar::cuda::extensions::cudaUniformLogit::sample__doc__ = "cudaUniformLogit rng for a matrix";
 
 PyObject *
-altar::cuda::extensions::cudaUniform::logit(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaUniformLogit::sample(PyObject *, PyObject * args) {
     // the arguments
-    // logit(theta,samples, (idx_begin, idx_end), (low, high))
+    // sample(theta, samples, (idx_begin, idx_end), (low, high))
 
     PyObject * thetaCapsule;
     size_t idx_begin, idx_end; // parameter index
     double low, high; // support or range
     size_t samples;
+
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!k(kk)(dd):cudaUniform_logit",
-                                  &PyCapsule_Type, &thetaCapsule,
-                                  &samples, &idx_begin, &idx_end,
-                                  &low, &high
+                                  args, "O!k(kk)(dd):cudaUniformLogit_sample",
+                                  &PyCapsule_Type, &thetaCapsule, &samples,
+                                  &idx_begin, &idx_end, &low, &high
                                   );
-        // if something went wrong
+    // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
-    {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_logit");
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)) {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_sample");
         return 0;
     }
 
@@ -242,14 +242,72 @@ altar::cuda::extensions::cudaUniform::logit(PyObject *, PyObject * args) {
     // call c method
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaUniform::logit<float>
-            ((float *)theta->data,
+        altar::cuda::distributions::cudaUniformLogit::sample<float>
+            ((float *)theta->data, samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaUniformLogit::sample<double>
+            ((double *)theta->data, samples, parameters, idx_begin, idx_end, low, high);
+    }
+
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+
+}
+
+const char * const altar::cuda::extensions::cudaUniformLogit::logpdf__name__ = "cudaUniformLogit_logpdf";
+const char * const altar::cuda::extensions::cudaUniformLogit::logpdf__doc__ =
+    "cudaUniformLogit compute log pdf";
+
+PyObject *
+altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
+    // the arguments
+    // sample(theta, probability, samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule, * probabilityCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    double low, high; // support or range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!O!k(kk)(dd):cudaUniformLogit_logpdf",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &PyCapsule_Type, &probabilityCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &low, &high
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
+            || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) )
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_logpdf");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+    cuda_vector * prob = static_cast<cuda_vector *>
+        (PyCapsule_GetPointer(probabilityCapsule, altar::cuda::extensions::vector::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaUniformLogit::logpdf<float>
+            ((const float *)theta->data, (float *)prob->data,
             samples, parameters, idx_begin, idx_end, (float)low, (float)high);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaUniform::logit<double>
-            ((double *)theta->data,
+        altar::cuda::distributions::cudaUniformLogit::logpdf<double>
+            ((const double *)theta->data, (double *)prob->data,
             samples, parameters, idx_begin, idx_end, low, high);
     }
     // all done
@@ -259,14 +317,14 @@ altar::cuda::extensions::cudaUniform::logit(PyObject *, PyObject * args) {
 }
 
 // transform to unbounded with logit
-const char * const altar::cuda::extensions::cudaUniform::logit_inverse__name__ = "cudaUniform_logit_inverse";
-const char * const altar::cuda::extensions::cudaUniform::logit_inverse__doc__ =
+const char * const altar::cuda::extensions::cudaUniformLogit::inverse__name__ = "cudaUniformLogit_inverse";
+const char * const altar::cuda::extensions::cudaUniformLogit::inverse__doc__ =
     "cudaUniform transform back to bounded with inverse logit function";
 
 PyObject *
-altar::cuda::extensions::cudaUniform::logit_inverse(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaUniformLogit::inverse(PyObject *, PyObject * args) {
     // the arguments
-    // logit_inverse(theta,samples, (idx_begin, idx_end), (low, high))
+    // inverse(theta,samples, (idx_begin, idx_end), (low, high))
 
     PyObject * thetaCapsule;
     size_t idx_begin, idx_end; // parameter index
@@ -274,7 +332,7 @@ altar::cuda::extensions::cudaUniform::logit_inverse(PyObject *, PyObject * args)
     size_t samples;
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!k(kk)(dd):cudaUniform_logit_inverse",
+                                  args, "O!k(kk)(dd):cudaUniformLogit_inverse",
                                   &PyCapsule_Type, &thetaCapsule,
                                   &samples, &idx_begin, &idx_end,
                                   &low, &high
@@ -284,7 +342,7 @@ altar::cuda::extensions::cudaUniform::logit_inverse(PyObject *, PyObject * args)
     // bail out if the capsule is not valid
     if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
     {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniform_logit_inverse");
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_inverse");
         return 0;
     }
 
@@ -297,13 +355,13 @@ altar::cuda::extensions::cudaUniform::logit_inverse(PyObject *, PyObject * args)
     // call c method
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaUniform::logit_inverse<float>
+        altar::cuda::distributions::cudaUniformLogit::inverse<float>
             ((float *)theta->data,
             samples, parameters, idx_begin, idx_end, (float)low, (float)high);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaUniform::logit_inverse<double>
+        altar::cuda::distributions::cudaUniformLogit::inverse<double>
             ((double *)theta->data,
             samples, parameters, idx_begin, idx_end, low, high);
     }

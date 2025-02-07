@@ -48,6 +48,7 @@ function(altar_cuda_buildLibrary)
     lib/libcudaaltar/distributions/cudaGaussian.cu
     lib/libcudaaltar/distributions/cudaRanged.cu
     lib/libcudaaltar/distributions/cudaUniform.cu
+    lib/libcudaaltar/distributions/cudaUniformLogit.cu
     )
 
   # copy the altar headers; note the trickery with the terminating slash in the source

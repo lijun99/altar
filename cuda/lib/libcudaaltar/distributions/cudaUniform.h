@@ -33,20 +33,6 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // logit to unbounded variables
-                template <typename real_type>
-                void logit(real_type * const theta, const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type low, const real_type high,
-                    cudaStream_t stream=0);
-
-                // logit inverse unbounded variables to bounded variables
-                template <typename real_type>
-                void logit_inverse(real_type * const theta, const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type low, const real_type high,
-                    cudaStream_t stream=0);
-
             } // of namespace cudaUniform
         } // of namespace distributions
     } // of namespace cuda
