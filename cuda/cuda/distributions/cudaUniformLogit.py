@@ -59,13 +59,22 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         # all done
         return self
 
-    def cuTransform(self, theta, batch):
+    def cuToPhysical(self, theta, batch):
         """
-        Transform {theta} from (-Infty, Infty) to ranged with inverse logit function
+        Transform {theta} from (-Infty, Infty) to physical ranged parameters with inverse logit function
         """
 
-        libcudaaltar.cudaUniformLogit_inverse(theta.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaUniformLogit_tophysical(theta.data, batch, self.idx_range, self.support)
+        # all done
+        return self
 
+    def cuToSampling(self, theta, batch):
+        """
+        Transform {theta} from physical ranged parameters to sampling unbounded parameters with logit function
+        """
+
+        libcudaaltar.cudaUniformLogit_tosampling(theta.data, batch, self.idx_range, self.support)
+        # all done
         return self
 
     # local variables

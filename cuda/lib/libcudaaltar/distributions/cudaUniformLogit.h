@@ -33,9 +33,18 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // logit inverse unbounded variables to bounded variables
+                // transform physical variables to sampling variables
+                // logit bounded to unbounded
                 template <typename real_type>
-                void inverse(real_type * const theta, const size_t samples, const size_t parameters,
+                void tosampling(real_type * const theta, const size_t samples, const size_t parameters,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type low, const real_type high,
+                    cudaStream_t stream=0);
+
+                // transform sampling variables back to physical variables
+                // expit unbounded to bounded
+                template <typename real_type>
+                void tophysical(real_type * const theta, const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);

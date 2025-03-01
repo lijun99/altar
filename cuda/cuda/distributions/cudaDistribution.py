@@ -76,10 +76,16 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
-    def cuTransform(self, theta, batch):
+    def cuToPhysical(self, theta, batch):
         """
-        transform theta if needed
-        This is used to transform, e.g., uniform_logit to uniform
+        transform theta to physical parameters
+        """
+        # default, do nothing
+        return self
+
+    def cuToSampling(self, theta, batch):
+        """
+        transform theta to sampling parameters
         """
         # default, do nothing
         return self

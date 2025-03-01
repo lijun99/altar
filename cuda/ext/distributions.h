@@ -46,10 +46,14 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
-            // logit transform
-            extern const char * const inverse__name__;
-            extern const char * const inverse__doc__;
-            PyObject * inverse(PyObject *, PyObject *);
+            // transform to sampling
+            extern const char * const tosampling__name__;
+            extern const char * const tosampling__doc__;
+            PyObject * tosampling(PyObject *, PyObject *);
+            // tranform to physical
+            extern const char * const tophysical__name__;
+            extern const char * const tophysical__doc__;
+            PyObject * tophysical(PyObject *, PyObject *);
         }
 
         // gaussian distribution

@@ -317,14 +317,14 @@ altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
 }
 
 // transform to unbounded with logit
-const char * const altar::cuda::extensions::cudaUniformLogit::inverse__name__ = "cudaUniformLogit_inverse";
-const char * const altar::cuda::extensions::cudaUniformLogit::inverse__doc__ =
-    "cudaUniform transform back to bounded with inverse logit function";
+const char * const altar::cuda::extensions::cudaUniformLogit::tophysical__name__ = "cudaUniformLogit_tophysical";
+const char * const altar::cuda::extensions::cudaUniformLogit::tophysical__doc__ =
+    "cudaUniformLogit transform to physical bounded parameters";
 
 PyObject *
-altar::cuda::extensions::cudaUniformLogit::inverse(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaUniformLogit::tophysical(PyObject *, PyObject * args) {
     // the arguments
-    // inverse(theta,samples, (idx_begin, idx_end), (low, high))
+    // tophysical(theta,samples, (idx_begin, idx_end), (low, high))
 
     PyObject * thetaCapsule;
     size_t idx_begin, idx_end; // parameter index
@@ -332,7 +332,7 @@ altar::cuda::extensions::cudaUniformLogit::inverse(PyObject *, PyObject * args) 
     size_t samples;
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!k(kk)(dd):cudaUniformLogit_inverse",
+                                  args, "O!k(kk)(dd):cudaUniformLogit_tophysical",
                                   &PyCapsule_Type, &thetaCapsule,
                                   &samples, &idx_begin, &idx_end,
                                   &low, &high
@@ -342,7 +342,7 @@ altar::cuda::extensions::cudaUniformLogit::inverse(PyObject *, PyObject * args) 
     // bail out if the capsule is not valid
     if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
     {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_inverse");
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_tophysical");
         return 0;
     }
 
@@ -355,13 +355,68 @@ altar::cuda::extensions::cudaUniformLogit::inverse(PyObject *, PyObject * args) 
     // call c method
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaUniformLogit::inverse<float>
+        altar::cuda::distributions::cudaUniformLogit::tophysical<float>
             ((float *)theta->data,
             samples, parameters, idx_begin, idx_end, (float)low, (float)high);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaUniformLogit::inverse<double>
+        altar::cuda::distributions::cudaUniformLogit::tophysical<double>
+            ((double *)theta->data,
+            samples, parameters, idx_begin, idx_end, low, high);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// transform to unbounded with logit
+const char * const altar::cuda::extensions::cudaUniformLogit::tosampling__name__ = "cudaUniformLogit_tosampling";
+const char * const altar::cuda::extensions::cudaUniformLogit::tosampling__doc__ =
+    "cudaUniformLogit transform to physical bounded parameters";
+
+PyObject *
+altar::cuda::extensions::cudaUniformLogit::tosampling(PyObject *, PyObject * args) {
+    // the arguments
+    // tosampling(theta,samples, (idx_begin, idx_end), (low, high))
+
+    PyObject * thetaCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    double low, high; // support or range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!k(kk)(dd):cudaUniformLogit_tosampling",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &low, &high
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_tosampling");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaUniformLogit::tosampling<float>
+            ((float *)theta->data,
+            samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaUniformLogit::tosampling<double>
             ((double *)theta->data,
             samples, parameters, idx_begin, idx_end, low, high);
     }

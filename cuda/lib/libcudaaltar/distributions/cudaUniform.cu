@@ -10,6 +10,8 @@
 
 // declarations
 #include "cudaUniform.h"
+// dependencies
+#include "cudaRandom.h"
 // cuda utilities
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
@@ -38,24 +40,6 @@ namespace cudaUniform_kernels {
 
     template<typename real_type>
     __global__ void _logpdf(const real_type * const theta, real_type * const probability,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high);
-
-    template<typename real_type>
-    __global__ void _logit_sample(real_type * const theta,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high);
-
-    template<typename real_type>
-    __global__ void _logit_logpdf(const real_type * const theta, real_type * const probability,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high);
-
-    template<typename real_type>
-    __global__ void _logit_inverse(real_type * const theta,
         const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end,
         const real_type low, const real_type high);
@@ -122,12 +106,12 @@ template void altar::cuda::distributions::cudaUniform::logpdf<double>(const doub
 
 namespace cudaUniform_kernels {
 
-template <>
+template <typename real_type>
 __global__ void
-_sample<double>(curandState_t * curand_states,
-    double * const theta, const size_t samples, const size_t parameters,
+_sample(curandState_t * curand_states,
+    real_type * const theta, const size_t samples, const size_t parameters,
     const size_t idx_begin, const size_t idx_end,
-    const double low, const double high)
+    const real_type low, const real_type high)
 {
     int sample = blockIdx.x*blockDim.x + threadIdx.x;
     if (sample >= samples) return;
@@ -136,39 +120,14 @@ _sample<double>(curandState_t * curand_states,
     unsigned long long seed = (unsigned long long) clock64();
     curand_init(seed, sample, 0, &curand_states[sample]);
 
-    double range = high-low;
+    real_type range = high-low;
     // get the theta pointer for each sample
-    double * theta_sample = theta + sample*parameters;
+    real_type * theta_sample = theta + sample*parameters;
 
     // generate samples from idx_begin to idx_end
     for (int i=idx_begin; i<idx_end; ++i)
     {
-        theta_sample[i] = curand_uniform_double(&curand_states[sample])*range + low;
-    }
-}
-//single precision version
-template <>
-__global__ void
-_sample<float>(curandState_t * curand_states,
-    float * const theta, const size_t samples, const size_t parameters,
-    const size_t idx_begin, const size_t idx_end,
-    const float low, const float high)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // initialize seeds for each thread
-    unsigned long long seed = (unsigned long long) clock64();
-    curand_init(seed, sample, 0, &curand_states[sample]);
-
-    float range = high-low;
-    // get the theta pointer for each sample
-    float * theta_sample = theta + sample*parameters;
-
-    // generate samples from idx_begin to idx_end
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        theta_sample[i] = curand_uniform(&curand_states[sample])*range + low;
+        theta_sample[i] = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample])*range + low;
     }
 }
 

@@ -132,7 +132,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
 
         # make a theta copy for transformation
-        self.thetaTrans = altar.cuda.matrix(shape=(self.samples, self.parameters), dtype=self.precision)
+        self.thetaPhysical = altar.cuda.matrix(shape=(self.samples, self.parameters), dtype=self.precision)
 
         # all done
         return self
@@ -178,18 +178,30 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done; return the rejection map
         return mask
 
-    def cuTransform(self, theta, batch):
+    def cuToPhysical(self, theta, batch):
         """
-        Transform {step.theta} to {thetaTrans} as appropriate for the forward model
+        Transform {step.theta} to {thetaPhysical} as physical properties for the forward model
         """
         # make a copy
-        thetaTrans = self.thetaTrans
-        thetaTrans.copy(other=theta)
+        thetaPhysical = self.thetaPhysical
+        thetaPhysical.copy(other=theta)
         # ask my subsets
         for pset in self.psets.values():
-            pset.prior.cuTransform(theta=thetaTrans, batch=batch)
+            pset.prior.cuToPhysical(theta=thetaPhysical, batch=batch)
         # all done
-        return thetaTrans
+        return thetaPhysical
+
+    def cuToSampling(self, theta, batch):
+        """
+        Transform {thetaPhysical} to {theta} as sampling parameters
+        """
+        # make a copy
+        theta.copy(other=self.thetaPhysical)
+        # ask my subsets
+        for pset in self.psets.values():
+            pset.prior.cuToPhysical(theta=theta, batch=batch)
+        # all done
+        return thetaPhysical
 
     def cuEvalPrior(self, theta, prior, batch):
         """
@@ -247,9 +259,9 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # notify we are about to compute the likelihood of the prior given the data
         dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
         # make theta transformation
-        self.thetaTrans = self.cuTransform(theta=step.theta, batch=batch)
+        self.thetaPhysical = self.cuToPhysical(theta=step.theta, batch=batch)
         # compute it
-        self.cuEvalLikelihood(theta=self.thetaTrans, likelihood=step.data, batch=batch)
+        self.cuEvalLikelihood(theta=self.thetaPhysical, likelihood=step.data, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
 
@@ -436,7 +448,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
     ifs = None # the filesystem with the input files
     gidx_map = None # idx_map on gpu
     gtheta = None # theta with own parameters
-    thetaTrans = None # theta transformed for forward modeling
+    thetaPhysical = None # theta transformed for forward modeling
 
 
 # end of file
