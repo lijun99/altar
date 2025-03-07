@@ -49,6 +49,12 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     beta_resampling_start = altar.properties.float(default=0)
     beta_resampling_start.doc = 'the beta threshold to start the resampling procedure'
 
+    beta_min = altar.properties.float(default=0)
+    beta_min.doc = 'the minimum beta value to be used'
+
+    use_low_variance_resampler = altar.properties.bool(default=False)
+    use_low_variance_resampler.doc = "whether to equal spaced random numbers for resampling"
+
     # public data
     w = None # the vector of re-sampling weights
     cov = 0.0 # the actual value for COV we were able to attain
@@ -116,6 +122,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         self.w = altar.vector(shape=step.samples).zero()
         # compute {δβ} and the normalized {w}
         β, self.cov = self.solver.solve(dataLikelihood, self.w)
+        # adjust β if it is too small
+        β = max(β, self.beta_min)
         # and return the new temperature
         return β
 
@@ -307,7 +315,14 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         samples = step.samples
 
         # build a vector of random numbers uniformly distributed in [0,1]
-        r = altar.vector(shape=samples).random(pdf=self.uniform)
+        r = altar.vector(shape=samples)
+        if self.use_low_variance_resampler:
+            # use equal spaced random number s+i/samples in [0, 1]
+            altar.libaltar.low_variance_random(self.rng.rng, r.data)
+        else:
+            # use uniform pdf generator in [0, 1]
+            r.random(pdf=self.uniform)
+
         # compute the bin edges in the range [0, 1]
         ticks = tuple(self.buildHistogramRanges(w))
         # build a histogram

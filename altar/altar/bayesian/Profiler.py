@@ -25,7 +25,7 @@ class Profiler(altar.component,
     # user configurable state
     seed = altar.properties.str()
     seed.doc = "a template for the filename with the timing results"
-    seed.default = "prof-{{wid:05}}-{{beta:03}}x{{parameters:03}}x{{chains:06}}x{{steps:03}}.csv"
+    seed.default = None
 
 
     # protocol obligations
@@ -335,7 +335,7 @@ class Profiler(altar.component,
         steps = controller.model.job.steps
 
         # build the filename
-        filename = self.seed.format(
+        filename = self.seed or "prof-{wid:05}-{beta:03}x{parameters:03}x{chains:06}x{steps:03}.csv".format(
             wid=wid, beta=beta, parameters=parameters, chains=chains, steps=steps)
         # open a file for storing the timings
         with open(filename, "w", newline='') as stream:

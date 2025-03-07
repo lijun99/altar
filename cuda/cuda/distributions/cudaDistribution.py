@@ -58,19 +58,19 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         self.precision = application.job.gpuprecision
         return self
 
-    def cuInitSample(self, theta):
+    def cuInitSample(self, theta, batch):
         """
         cuda process to initialize random samples
         """
         return self
 
-    def cuVerify(self, theta, mask):
+    def cuVerify(self, theta, mask, batch):
         """
         cuda process to verify the validity of samples
         """
         return mask
 
-    def cuEvalPrior(self, theta, prior):
+    def cuEvalPrior(self, theta, prior, batch):
         """
         cuda process to compute the prior
         """

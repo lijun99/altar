@@ -32,9 +32,9 @@ cudaKinematicG_kernels::
 initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE hypo_dip, TYPE hypo_strike, TYPE it0)
 {
     // index of dip meshgrid
-    int id_dip = threadIdx.x + blockIdx.x * blockDim.x;
+    int id_dip = threadIdx.y + blockIdx.y * blockDim.y;
     // index of strike meshgrid
-    int id_strike = threadIdx.y + blockIdx.y * blockDim.y;
+    int id_strike = threadIdx.z + blockIdx.z * blockDim.z;
     // check the meshgrid is within range
     if(id_dip >= Nddf || id_strike >= Nasf) return;
     // meshgrid index in 2d strike(Nasf)xdip (Nddf) grids
@@ -63,7 +63,7 @@ initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
 {
     // sample index
-    int sample = blockIdx.z;
+    int sample = blockIdx.x;
     // get the pointer for this sample, gM[samples, parameters]
     const TYPE * gM_sample = gM + sample*Nparam;
     // get the hypocenter from M/theta
@@ -487,8 +487,8 @@ cudaKinematicG_kernels::
 castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0, TYPE *const gMb, const TYPE *const gt0s,
     const TYPE dt, const size_t Nparam, const size_t Nt, const size_t Nas, const size_t Ndd, const size_t Npt_gi)
 {
-    int sample = blockIdx.z;
-    int patch = threadIdx.x + blockIdx.x * blockDim.x;
+    int sample = blockIdx.x;
+    int patch = threadIdx.y + blockIdx.y * blockDim.y;
 
     int Npatch = Nas*Ndd;
     if (patch >= Npatch) return;

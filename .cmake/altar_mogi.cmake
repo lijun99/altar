@@ -81,7 +81,7 @@ endfunction(altar_mogi_buildLibrary)
 # build the mogi extension module
 function(altar_mogi_buildModule)
   # mogi
-  Python3_add_library(mogimodule MODULE)
+  Python_add_library(mogimodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     mogimodule PROPERTIES

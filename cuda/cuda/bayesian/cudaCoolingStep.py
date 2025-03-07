@@ -60,14 +60,6 @@ class cudaCoolingStep:
         # build an uninitialized step
         step = cls.alloc(samples=samples, parameters=model.parameters, dtype=precision)
 
-
-        # run model here is a bad idea, moved to cudaannealing
-        # initialize it
-        # model.cuInitSample(theta=step.theta)
-        # compute the likelihoods
-        #model.updateModel(annealer=annealer)
-        #model.likelihoods(annealer=annealer, step=step, batch=samples)
-
         # return the initialized state
         return step
 

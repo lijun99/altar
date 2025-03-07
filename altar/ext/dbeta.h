@@ -29,6 +29,11 @@ namespace altar {
         extern const char * const dbeta_grid__doc__;
         PyObject * dbeta_grid(PyObject *, PyObject *);
 
+        // low variance random for importance resampling
+        extern const char * const low_variance_random__name__;
+        extern const char * const low_variance_random__doc__;
+        PyObject * low_variance_random(PyObject *, PyObject *);
+
     } // of namespace extensions
 } // of namespace altar
 

@@ -70,7 +70,7 @@ endfunction(altar_cuda_buildLibrary)
 # build the altar cuda extension module
 function(altar_cuda_buildModule)
   # altar
-  Python3_add_library(cudaaltarmodule MODULE)
+  Python_add_library(cudaaltarmodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     cudaaltarmodule PROPERTIES
