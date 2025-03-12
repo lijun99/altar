@@ -32,7 +32,7 @@ def sample():
     # and  return the panel
     return Sample
 
-# sample the posterior distribution of a model
+# perform the forward modeling with a given parameter set
 @altar.foundry(implements=altar.action, tip="perform the forward modeling with a given parameter set")
 def forward():
     # get the command panel
@@ -41,5 +41,15 @@ def forward():
     __doc__ = Forward.__doc__
     # and  return the panel
     return Forward
+
+# convert parameters from sampling to physical
+@altar.foundry(implements=altar.action, tip="convert results to physical")
+def tophysical():
+    # get the command panel
+    from .ToPhysical import ToPhysical
+    # attach the docstring
+    __doc__ = ToPhysical.__doc__
+    # and  return the panel
+    return ToPhysical
 
 # end of file

@@ -76,6 +76,13 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return prior
 
+    def cuEvalPriorPhysical(self, theta, prior, batch):
+        """
+        cuda process to compute the prior of the physical parameters
+        """
+        # default, assuming physical=sampling
+        return self.cuEvalPrior(theta, prior, batch)
+
     def cuToPhysical(self, theta, batch):
         """
         transform theta to physical parameters

@@ -215,6 +215,18 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return self
 
+    def cuEvalPriorPhysical(self, theta, prior, batch):
+        """
+        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        """
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            pset.prior.cuEvalPriorPhysical(theta=theta, prior=prior, batch=batch)
+
+        # all done
+        return self
+
 
     def cuEvalLikelihood(self, theta, likelihood, batch):
         """

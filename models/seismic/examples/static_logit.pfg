@@ -9,9 +9,11 @@
 ;
 ; for Bayesian simulations, run
 ;        slipmodel --config=static.pfg
-;   or   slipmodel.plexus sample --config=static.pfg
+;   or   slipmodel.plexus sample --config=static_logit.pfg
 ; for forward problem only (with an input set of parameters), run
-;        slipmodel.plexus forward --config=static.pfg
+;        slipmodel.plexus forward --config=static_logit.pfg
+; for converting the output to physical parameters (make a copy if you want to save the sampling parameters)
+;        slipmodel.plexus tophysical --config=static_logit.pfg --h5file=step_final.h5
 
 
 ; my shell application
@@ -69,7 +71,7 @@ slipmodel:
     controller:
         sampler = altar.cuda.bayesian.metropolis
         archiver:
-            output_dir = results/static ; output directory
+            output_dir = results/static_logit ; output directory
             output_freq = 3 ; output frequency in beta steps
 
     ; run configuration
