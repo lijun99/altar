@@ -26,6 +26,15 @@ def moment():
     # and return it
     return moment
 
+@altar.foundry(implements=distribution, tip="the Moment Magnitude distribution with Logit substitution")
+def momentlogit():
+    # grab the factory
+    from .cudaMomentLogit import cudaMomentLogit as momentlogit
+    # attach its docstring
+    __doc__ = momentlogit.__doc__
+    # and return it
+    return momentlogit
+
 # implementations
 @altar.foundry(implements=model, tip="static inversion model")
 def static():
