@@ -49,15 +49,55 @@ function(altar_cuda_buildLibrary)
     lib/libcudaaltar/distributions/cudaRanged.cu
     lib/libcudaaltar/distributions/cudaUniform.cu
     lib/libcudaaltar/distributions/cudaUniformLogit.cu
+    lib/libcudaaltar/distributions/cudaLogistic.cu
+    lib/libcudaaltar/distributions/cudaTGaussianLogit.cu
     )
 
   # copy the altar headers; note the trickery with the terminating slash in the source
   # directory that let's us place the files in the correct destination
-  file(
-    COPY lib/libcudaaltar/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
+  # Find all .h and .icc files recursively
+  file(GLOB_RECURSE CUDA_ALTAR_HEADERS
+    "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/*.h"
+    "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/*.icc"
+  )
+
+  # If no files are found, trigger a fatal error
+  if(NOT CUDA_ALTAR_HEADERS)
+    message(FATAL_ERROR "No CUDA altar header files found in ${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/")
+  endif()
+
+  # Ensure the destination directory exists
+  file(MAKE_DIRECTORY ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda)
+
+  # Custom target to copy each file while preserving directory structure
+  add_custom_target(copy_cuda_headers ALL)
+
+  foreach(FILE ${CUDA_ALTAR_HEADERS})
+    # Get the relative path of the file inside libcudaaltar
+    file(RELATIVE_PATH REL_PATH "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar" "${FILE}")
+
+    # Compute the full destination path (preserving structure)
+    set(DEST_PATH "${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda/${REL_PATH}")
+
+    # Ensure the destination directory exists
+    get_filename_component(DEST_DIR "${DEST_PATH}" DIRECTORY)
+    file(MAKE_DIRECTORY "${DEST_DIR}")
+
+    # Add a command to copy the file
+    add_custom_command(
+        TARGET copy_cuda_headers
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${FILE}" "${DEST_PATH}"
+        DEPENDS "${FILE}"
     )
+  endforeach()
+
+  # Install headers while preserving directory structure
+  install(DIRECTORY "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/"
+    DESTINATION "${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda"
+    FILES_MATCHING PATTERN "*.h" PATTERN "*.icc"
+  )
+
   # install the library
   install(
     TARGETS libcudaaltar

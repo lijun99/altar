@@ -37,11 +37,6 @@ namespace altar { namespace cuda {
             // cudaUniform
             { cudaUniform::sample__name__, cudaUniform::sample, METH_VARARGS, cudaUniform::sample__doc__},
             { cudaUniform::logpdf__name__, cudaUniform::logpdf, METH_VARARGS, cudaUniform::logpdf__doc__},
-            { cudaUniformLogit::sample__name__, cudaUniformLogit::sample, METH_VARARGS, cudaUniformLogit::sample__doc__},
-            { cudaUniformLogit::logpdf__name__, cudaUniformLogit::logpdf, METH_VARARGS, cudaUniformLogit::logpdf__doc__},
-            { cudaUniformLogit::tophysical__name__, cudaUniformLogit::tophysical, METH_VARARGS, cudaUniformLogit::tophysical__doc__},
-            { cudaUniformLogit::tosampling__name__, cudaUniformLogit::tosampling, METH_VARARGS, cudaUniformLogit::tosampling__doc__},
-
 
             // cudaGaussian
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
@@ -49,6 +44,15 @@ namespace altar { namespace cuda {
             // cudaTGaussian
             { cudaTGaussian::sample__name__, cudaTGaussian::sample, METH_VARARGS, cudaTGaussian::sample__doc__},
             { cudaTGaussian::logpdf__name__, cudaTGaussian::logpdf, METH_VARARGS, cudaTGaussian::logpdf__doc__},
+
+            // cudaLogistic and related distributions
+            { cudaLogistic::sample__name__, cudaLogistic::sample, METH_VARARGS, cudaLogistic::sample__doc__},
+            { cudaLogistic::logpdf__name__, cudaLogistic::logpdf, METH_VARARGS, cudaLogistic::logpdf__doc__},
+            { cudaUniformLogit::tophysical__name__, cudaUniformLogit::tophysical, METH_VARARGS, cudaUniformLogit::tophysical__doc__},
+            { cudaUniformLogit::tosampling__name__, cudaUniformLogit::tosampling, METH_VARARGS, cudaUniformLogit::tosampling__doc__},
+            { cudaTGaussianLogit::tophysical__name__, cudaTGaussianLogit::tophysical, METH_VARARGS, cudaTGaussianLogit::tophysical__doc__},
+            { cudaTGaussianLogit::tosampling__name__, cudaTGaussianLogit::tosampling, METH_VARARGS, cudaTGaussianLogit::tosampling__doc__},
+
 
             // norms
             { cudaL2::norm__name__, cudaL2::norm, METH_VARARGS, cudaL2::norm__doc__},

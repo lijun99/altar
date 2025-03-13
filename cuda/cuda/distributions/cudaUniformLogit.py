@@ -30,7 +30,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         Fill my portion of {theta} with initial random values from my distribution.
         """
         # call cuda c extension to initialize uniform distributed samples
-        libcudaaltar.cudaUniformLogit_sample(theta.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaLogistic_sample(theta.data, batch, self.idx_range)
 
         # and return
         return self
@@ -51,7 +51,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
         # call cuda c extension
-        libcudaaltar.cudaUniformLogit_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaLogistic_logpdf(theta.data, prior.data, batch, self.idx_range)
 
         # all done
         return self

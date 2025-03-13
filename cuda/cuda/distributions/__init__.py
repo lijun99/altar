@@ -56,6 +56,15 @@ def tgaussian():
     # and return it
     return tgaussian
 
+@altar.foundry(implements=distribution, tip="the cuda truncated gaussian logit probability distribution")
+def tgaussianlogit():
+    # grab the factory
+    from .cudaTGaussianLogit import cudaTGaussianLogit as tgaussianlogit
+    # attach its docstring
+    __doc__ = tgaussianlogit.__doc__
+    # and return it
+    return tgaussianlogit
+
 @altar.foundry(implements=distribution, tip="the preset distribution")
 def preset():
     # grab the factory

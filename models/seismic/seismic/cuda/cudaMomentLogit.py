@@ -59,7 +59,7 @@ class cudaMomentLogit(cudaMoment, family="altar.cuda.distributions.momentlogit")
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
         # call cuda c extension
-        libcudaaltar.cudaUniformLogit_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
+        libcudaaltar.cudaLogistic_logpdf(theta.data, prior.data, batch, self.idx_range)
 
         # all done
         return self

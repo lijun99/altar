@@ -36,8 +36,8 @@ namespace altar { namespace cuda { namespace extensions {
             PyObject * logpdf(PyObject *, PyObject *);
         }
 
-        // uniform distribution via a logit variable
-        namespace cudaUniformLogit {
+         // logistic distribution, for other logit substitutions
+        namespace cudaLogistic {
             // generate random sample
             extern const char * const sample__name__;
             extern const char * const sample__doc__;
@@ -46,6 +46,10 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
+        }
+
+        // uniform distribution via a logit variable
+        namespace cudaUniformLogit {
             // transform to sampling
             extern const char * const tosampling__name__;
             extern const char * const tosampling__doc__;
@@ -78,6 +82,18 @@ namespace altar { namespace cuda { namespace extensions {
             extern const char * const logpdf__name__;
             extern const char * const logpdf__doc__;
             PyObject * logpdf(PyObject *, PyObject *);
+        }
+
+        // truncated gaussian distribution via a logit variable
+        namespace cudaTGaussianLogit {
+            // transform to sampling
+            extern const char * const tosampling__name__;
+            extern const char * const tosampling__doc__;
+            PyObject * tosampling(PyObject *, PyObject *);
+            // tranform to physical
+            extern const char * const tophysical__name__;
+            extern const char * const tophysical__doc__;
+            PyObject * tophysical(PyObject *, PyObject *);
         }
 
 } } } // of namespace altar.cuda.extensions

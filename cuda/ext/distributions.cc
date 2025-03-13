@@ -20,9 +20,11 @@
 // c++ class includes
 #include <altar/cuda/distributions/cudaRanged.h>
 #include <altar/cuda/distributions/cudaUniform.h>
+#include <altar/cuda/distributions/cudaLogistic.h>
 #include <altar/cuda/distributions/cudaUniformLogit.h>
 #include <altar/cuda/distributions/cudaGaussian.h>
 #include <altar/cuda/distributions/cudaTGaussian.h>
+#include <altar/cuda/distributions/cudaTGaussianLogit.h>
 
 // local includes
 #include "capsules.h"
@@ -204,32 +206,31 @@ altar::cuda::extensions::cudaUniform::logpdf(PyObject *, PyObject * args) {
     return Py_None;
 }
 
-// cudaUniform distribution with logit variables
-// cudaUniformLogit_sample
-const char * const altar::cuda::extensions::cudaUniformLogit::sample__name__ = "cudaUniformLogit_sample";
-const char * const altar::cuda::extensions::cudaUniformLogit::sample__doc__ = "cudaUniformLogit rng for a matrix";
+// cudaLogistic distribution
+// cudaLogistic_sample
+const char * const altar::cuda::extensions::cudaLogistic::sample__name__ = "cudaLogistic_sample";
+const char * const altar::cuda::extensions::cudaLogistic::sample__doc__ = "cudaLogistic rng for a matrix";
 
 PyObject *
-altar::cuda::extensions::cudaUniformLogit::sample(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaLogistic::sample(PyObject *, PyObject * args) {
     // the arguments
-    // sample(theta, samples, (idx_begin, idx_end), (low, high))
+    // sample(theta, samples, (idx_begin, idx_end))
 
     PyObject * thetaCapsule;
     size_t idx_begin, idx_end; // parameter index
-    double low, high; // support or range
     size_t samples;
 
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!k(kk)(dd):cudaUniformLogit_sample",
+                                  args, "O!k(kk):cudaLogistic_sample",
                                   &PyCapsule_Type, &thetaCapsule, &samples,
-                                  &idx_begin, &idx_end, &low, &high
+                                  &idx_begin, &idx_end
                                   );
     // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
     if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)) {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_sample");
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaLogistic_sample");
         return 0;
     }
 
@@ -242,13 +243,13 @@ altar::cuda::extensions::cudaUniformLogit::sample(PyObject *, PyObject * args) {
     // call c method
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaUniformLogit::sample<float>
-            ((float *)theta->data, samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+        altar::cuda::distributions::cudaLogistic::sample<float>
+            ((float *)theta->data, samples, parameters, idx_begin, idx_end);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaUniformLogit::sample<double>
-            ((double *)theta->data, samples, parameters, idx_begin, idx_end, low, high);
+        altar::cuda::distributions::cudaLogistic::sample<double>
+            ((double *)theta->data, samples, parameters, idx_begin, idx_end);
     }
 
     // all done
@@ -258,26 +259,24 @@ altar::cuda::extensions::cudaUniformLogit::sample(PyObject *, PyObject * args) {
 
 }
 
-const char * const altar::cuda::extensions::cudaUniformLogit::logpdf__name__ = "cudaUniformLogit_logpdf";
-const char * const altar::cuda::extensions::cudaUniformLogit::logpdf__doc__ =
-    "cudaUniformLogit compute log pdf";
+const char * const altar::cuda::extensions::cudaLogistic::logpdf__name__ = "cudaLogistic_logpdf";
+const char * const altar::cuda::extensions::cudaLogistic::logpdf__doc__ =
+    "cudaLogistic compute log pdf";
 
 PyObject *
-altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
+altar::cuda::extensions::cudaLogistic::logpdf(PyObject *, PyObject * args) {
     // the arguments
-    // sample(theta, probability, samples, (idx_begin, idx_end), (low, high))
+    // sample(theta, probability, samples, (idx_begin, idx_end))
 
     PyObject * thetaCapsule, * probabilityCapsule;
     size_t idx_begin, idx_end; // parameter index
-    double low, high; // support or range
     size_t samples;
     // unpack the argument tuple
     int status = PyArg_ParseTuple(
-                                  args, "O!O!k(kk)(dd):cudaUniformLogit_logpdf",
+                                  args, "O!O!k(kk):cudaLogistic_logpdf",
                                   &PyCapsule_Type, &thetaCapsule,
                                   &PyCapsule_Type, &probabilityCapsule,
-                                  &samples, &idx_begin, &idx_end,
-                                  &low, &high
+                                  &samples, &idx_begin, &idx_end
                                   );
         // if something went wrong
     if (!status) return 0;
@@ -285,7 +284,7 @@ altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
     if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t)
             || !PyCapsule_IsValid(probabilityCapsule, altar::cuda::extensions::vector::capsule_t) )
     {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_logpdf");
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaLogistic_logpdf");
         return 0;
     }
 
@@ -300,15 +299,15 @@ altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
     // call c method
     if(theta->dtype == PYCUDA_FLOAT) //single precision
     {
-        altar::cuda::distributions::cudaUniformLogit::logpdf<float>
+        altar::cuda::distributions::cudaLogistic::logpdf<float>
             ((const float *)theta->data, (float *)prob->data,
-            samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+            samples, parameters, idx_begin, idx_end);
     }
     else //double precision
     {
-        altar::cuda::distributions::cudaUniformLogit::logpdf<double>
+        altar::cuda::distributions::cudaLogistic::logpdf<double>
             ((const double *)theta->data, (double *)prob->data,
-            samples, parameters, idx_begin, idx_end, low, high);
+            samples, parameters, idx_begin, idx_end);
     }
     // all done
     // return None
@@ -316,6 +315,7 @@ altar::cuda::extensions::cudaUniformLogit::logpdf(PyObject *, PyObject * args) {
     return Py_None;
 }
 
+// cudaUniformLogit
 // transform to unbounded with logit
 const char * const altar::cuda::extensions::cudaUniformLogit::tophysical__name__ = "cudaUniformLogit_tophysical";
 const char * const altar::cuda::extensions::cudaUniformLogit::tophysical__doc__ =
@@ -655,6 +655,119 @@ altar::cuda::extensions::cudaTGaussian::logpdf(PyObject *, PyObject * args) {
     {
         altar::cuda::distributions::cudaTGaussian::logpdf<double>
             ((const double *)theta->data, (double *)prob->data,
+            samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// cudaTGaussianLogit
+// transform to unbounded with logit
+const char * const altar::cuda::extensions::cudaTGaussianLogit::tophysical__name__ = "cudaTGaussianLogit_tophysical";
+const char * const altar::cuda::extensions::cudaTGaussianLogit::tophysical__doc__ =
+    "cudaTGaussianLogit transform to physical bounded parameters";
+
+PyObject *
+altar::cuda::extensions::cudaTGaussianLogit::tophysical(PyObject *, PyObject * args) {
+    // the arguments
+    // tophysical(theta,samples, (idx_begin, idx_end), (mean, sigma))
+
+    PyObject * thetaCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    double mean, sigma; // N(mean, sigma)
+    double low, high; // support of range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!k(kk)(dd)(dd):cudaTGaussianLogit_tophysical",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &mean, &sigma, &low, &high
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaTGaussianLogit_tophysical");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaTGaussianLogit::tophysical<float>
+            ((float *)theta->data,
+            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaTGaussianLogit::tophysical<double>
+            ((double *)theta->data,
+            samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
+    }
+    // all done
+    // return None
+    Py_INCREF(Py_None);
+    return Py_None;
+}
+
+// transform to unbounded with logit
+const char * const altar::cuda::extensions::cudaTGaussianLogit::tosampling__name__ = "cudaTGaussianLogit_tosampling";
+const char * const altar::cuda::extensions::cudaTGaussianLogit::tosampling__doc__ =
+    "cudaTGaussianLogit transform to physical bounded parameters";
+
+PyObject *
+altar::cuda::extensions::cudaTGaussianLogit::tosampling(PyObject *, PyObject * args) {
+    // the arguments
+    // tosampling(theta,samples, (idx_begin, idx_end), (mean, sigma))
+
+    PyObject * thetaCapsule;
+    size_t idx_begin, idx_end; // parameter index
+    double mean, sigma; // N(mean, sigma)
+    double low, high; // support of range
+    size_t samples;
+    // unpack the argument tuple
+    int status = PyArg_ParseTuple(
+                                  args, "O!k(kk)(dd)(dd):cudaTGaussianLogit_tosampling",
+                                  &PyCapsule_Type, &thetaCapsule,
+                                  &samples, &idx_begin, &idx_end,
+                                  &mean, &sigma, &low, &high
+                                  );
+        // if something went wrong
+    if (!status) return 0;
+    // bail out if the capsule is not valid
+    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaTGaussianLogit_tosampling");
+        return 0;
+    }
+
+    // convert PyObjects to C Objects
+    cuda_matrix * theta = static_cast<cuda_matrix *>
+        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+    size_t parameters = theta->size2;
+
+    // call c method
+    if(theta->dtype == PYCUDA_FLOAT) //single precision
+    {
+        altar::cuda::distributions::cudaTGaussianLogit::tosampling<float>
+            ((float *)theta->data,
+            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+    }
+    else //double precision
+    {
+        altar::cuda::distributions::cudaTGaussianLogit::tosampling<double>
+            ((double *)theta->data,
             samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
     }
     // all done
