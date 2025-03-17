@@ -42,6 +42,7 @@ namespace altar { namespace cuda {
             { cudaUniform::logpdf__name__, cudaUniform::logpdf, METH_VARARGS, cudaUniform::logpdf__doc__},
             { cudaUniform::sample_unique__name__, cudaUniform::sample_unique, METH_VARARGS, cudaUniform::sample_unique__doc__},
             { cudaUniform::logpdf_unique__name__, cudaUniform::logpdf_unique, METH_VARARGS, cudaUniform::logpdf_unique__doc__},
+
             // cudaGaussian
             { cudaGaussian::sample__name__, cudaGaussian::sample, METH_VARARGS, cudaGaussian::sample__doc__},
             { cudaGaussian::logpdf__name__, cudaGaussian::logpdf, METH_VARARGS, cudaGaussian::logpdf__doc__},
@@ -50,6 +51,16 @@ namespace altar { namespace cuda {
             // cudaTGaussian
             { cudaTGaussian::sample__name__, cudaTGaussian::sample, METH_VARARGS, cudaTGaussian::sample__doc__},
             { cudaTGaussian::logpdf__name__, cudaTGaussian::logpdf, METH_VARARGS, cudaTGaussian::logpdf__doc__},
+
+            // cudaLogistic and related distributions
+            { cudaLogistic::sample__name__, cudaLogistic::sample, METH_VARARGS, cudaLogistic::sample__doc__},
+            { cudaLogistic::logpdf__name__, cudaLogistic::logpdf, METH_VARARGS, cudaLogistic::logpdf__doc__},
+            { cudaLogistic::logpdfgradient__name__, cudaLogistic::logpdfgradient, METH_VARARGS, cudaLogistic::logpdfgradient__doc__},
+            { cudaUniformLogit::tophysical__name__, cudaUniformLogit::tophysical, METH_VARARGS, cudaUniformLogit::tophysical__doc__},
+            { cudaUniformLogit::tosampling__name__, cudaUniformLogit::tosampling, METH_VARARGS, cudaUniformLogit::tosampling__doc__},
+            { cudaTGaussianLogit::tophysical__name__, cudaTGaussianLogit::tophysical, METH_VARARGS, cudaTGaussianLogit::tophysical__doc__},
+            { cudaTGaussianLogit::tosampling__name__, cudaTGaussianLogit::tosampling, METH_VARARGS, cudaTGaussianLogit::tosampling__doc__},
+
 
             // norms
             { cudaL2::norm__name__, cudaL2::norm, METH_VARARGS, cudaL2::norm__doc__},

@@ -42,9 +42,6 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
     sweeps = altar.properties.int(default=1)
     sweeps.doc = "number of sweeps at a fixed t"
 
-    constrain_parameter_range = altar.properties.bool(default=True)
-    constrain_parameter_range.doc = "whether to constrain parameters within a physical range"
-
     # public data
     epsilon_t = None
 

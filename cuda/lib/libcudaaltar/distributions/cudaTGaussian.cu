@@ -10,17 +10,14 @@
 
 // declarations
 #include "cudaTGaussian.h"
+// dependencies
+#include "cudaRandom.h"
 // cuda utilities
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 
 // cuda kernel declarations
 namespace cudaTGaussian_kernels {
-
-    // wrap float and double rng routines into one template
-    template<typename real_type>
-    __device__ real_type
-    _curandGenerateUniform(curandState_t *state);
 
     // sample
     template<typename real_type>
@@ -97,24 +94,6 @@ template void altar::cuda::distributions::cudaTGaussian::logpdf<float>(const flo
 template void altar::cuda::distributions::cudaTGaussian::logpdf<double>(const double * const, double * const, const size_t, const size_t,
                     const size_t, const size_t, const double, const double, const double, const double, cudaStream_t);
 
-// put explicit specialization in a namespace for compatibility with gcc6
-namespace cudaTGaussian_kernels {
-
-    template<>
-    __device__ float
-    _curandGenerateUniform<float>(curandState_t *state)
-    {
-        return curand_uniform(state);
-    }
-
-    template<>
-    __device__ double
-    _curandGenerateUniform<double>(curandState_t *state)
-    {
-        return curand_uniform_double(state);
-    }
-} // of namespace cudaTGaussian_kernels
-
 // random sample generation
 // note the support(low, high) are normalized Phi(x)
 template <typename real_type>
@@ -144,7 +123,7 @@ _sample(curandState_t * curand_states,
     // generate samples from idx_begin to idx_end
     for (int i=idx_begin; i<idx_end; ++i)
     {
-        real_type temp = _curandGenerateUniform<real_type>(&curand_states[sample])*range + low;
+        real_type temp = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample])*range + low;
         theta_sample[i] = erfinv(2.0*temp-1.0)*sqrt_two_sigma + mean;
     }
 }

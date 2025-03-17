@@ -36,6 +36,16 @@ def uniformvariedrange():
     # and return it
     return uniformvariedrange
 
+@altar.foundry(implements=distribution, tip="the cuda Uniform Logit probability distribution")
+def uniformlogit():
+    # grab the factory
+    from .cudaUniformLogit import cudaUniformLogit as uniformlogit
+    # attach its docstring
+    __doc__ = uniformlogit.__doc__
+    # and return it
+    return uniformlogit
+
+
 
 @altar.foundry(implements=distribution, tip="the cuda gaussian probability distribution")
 def gaussian():
@@ -54,6 +64,15 @@ def tgaussian():
     __doc__ = tgaussian.__doc__
     # and return it
     return tgaussian
+
+@altar.foundry(implements=distribution, tip="the cuda truncated gaussian logit probability distribution")
+def tgaussianlogit():
+    # grab the factory
+    from .cudaTGaussianLogit import cudaTGaussianLogit as tgaussianlogit
+    # attach its docstring
+    __doc__ = tgaussianlogit.__doc__
+    # and return it
+    return tgaussianlogit
 
 @altar.foundry(implements=distribution, tip="the preset distribution")
 def preset():

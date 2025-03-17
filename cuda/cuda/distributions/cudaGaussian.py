@@ -61,7 +61,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         """
         # call extension
         #if index is None:
-        libcudaaltar.cudaGaussian_logpdf_gradient(theta.data, prior.data, batch, self.idx_range, (self.mean, self.sigma))
+        libcudaaltar.cudaGaussian_logpdfgradient(theta.data, prior.data, batch, self.idx_range, (self.mean, self.sigma))
         #else:
         #    libcudaaltar.cudaGaussian_logpdf_gradient_i(theta.data, prior.data, batch, self.idx_range, index
         #                                              (self.mean, self.sigma))

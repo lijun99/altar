@@ -10,33 +10,14 @@
 
 // declarations
 #include "cudaUniform.h"
+// dependencies
+#include "cudaRandom.h"
 // cuda utilities
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 
 // cuda kernel declarations
 namespace cudaUniform_kernels {
-
-    // use template to call curand_uniform
-    template <typename real_type>
-    __inline__ __device__
-    real_type cuRand_Uniform(curandState_t * curand_state);
-
-    template <>
-    __inline__ __device__
-    float cuRand_Uniform<float>(curandState_t * curand_state)
-    {
-        return curand_uniform(curand_state);
-    }
-
-    template <>
-    __inline__ __device__
-    double cuRand_Uniform<double>(curandState_t * curand_state)
-    {
-        return curand_uniform_double(curand_state);
-    }
-
-    // sample
     template<typename real_type>
     __global__ void _sample(curandState_t * curand_states,
         real_type * const theta, const size_t samples, const size_t parameters,
@@ -54,6 +35,7 @@ namespace cudaUniform_kernels {
         const size_t samples, const size_t parameters,
         const size_t idx_begin, const size_t idx_end,
         const real_type low, const real_type high);
+
 
     template<typename real_type>
     __global__ void _logpdf_unique(const real_type * const theta, real_type * const probability,
@@ -149,6 +131,9 @@ template void altar::cuda::distributions::cudaUniform::logpdf<double>(const doub
                     const size_t, const size_t, const double, const double, cudaStream_t);
 
 
+//random_generation_kernel
+// double precision version
+
 // compute log probability
 template <typename real_type>
 void altar::cuda::distributions::cudaUniform::
@@ -175,7 +160,6 @@ template void altar::cuda::distributions::cudaUniform::logpdf_unique<double>(con
 
 namespace cudaUniform_kernels {
 
-//random_generation_kernel
 template <typename real_type>
 __global__ void
 _sample(curandState_t * curand_states,
@@ -197,11 +181,10 @@ _sample(curandState_t * curand_states,
     // generate samples from idx_begin to idx_end
     for (int i=idx_begin; i<idx_end; ++i)
     {
-        theta_sample[i] = cuRand_Uniform<real_type>(&curand_states[sample])*range + low;
+        theta_sample[i] = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample])*range + low;
     }
 }
 
-//random_generation_kernel
 template <typename real_type>
 __global__ void
 _sample_unique(curandState_t * curand_states,
@@ -223,7 +206,7 @@ _sample_unique(curandState_t * curand_states,
     for (int i=idx_begin, j=0; i<idx_end; ++i, ++j)
     {
         real_type range = high[j]-low[j];
-        theta_sample[i] = cuRand_Uniform<real_type>(&curand_states[sample])*range + low[j];
+        theta_sample[i] = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample])*range + low[j];
     }
 }
 

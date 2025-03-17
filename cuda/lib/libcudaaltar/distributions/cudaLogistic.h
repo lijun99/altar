@@ -1,15 +1,15 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
 //
-// Author(s): Hailiang Zhang, Lijun Zhu
+// Author(s): Lijun Zhu
 
 // code guard
-#ifndef altar_cuda_distributions_cudaUniform_h
-#define altar_cuda_distributions_cudaUniform_h
+#ifndef altar_cuda_distributions_cudaLogistic_h
+#define altar_cuda_distributions_cudaLogistic_h
 
 #include <cuda_runtime.h>
 
@@ -17,18 +17,12 @@
 namespace altar {
     namespace cuda {
         namespace distributions {
-            namespace cudaUniform {
+            namespace cudaLogistic {
                 // initialize random samples
                 template <typename real_type>
-                void sample(real_type * const theta, const size_t samples, const size_t parameters,
+                void sample(real_type * const theta,
+                    const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
-                    const real_type low, const real_type high,
-                    cudaStream_t stream=0);
-
-                template <typename real_type>
-                void sample_unique(real_type * const theta, const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type * const low, const real_type * const high,
                     cudaStream_t stream=0);
 
                 // calculate log probability
@@ -36,20 +30,20 @@ namespace altar {
                 void logpdf(const real_type * const theta, real_type * const probability,
                     const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
-                    const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
+                // calculate gradient log probability for all parameters
                 template <typename real_type>
-                void logpdf_unique(const real_type * const theta, real_type * const probability,
+                void logpdfgradient(const real_type * const theta, real_type * const probability,
                     const size_t samples, const size_t parameters,
                     const size_t idx_begin, const size_t idx_end,
-                    const real_type * const low, const real_type * const high,
                     cudaStream_t stream=0);
 
-            } // of namespace cudaUniform
+
+            } // of namespace cudaLogistic
         } // of namespace distributions
     } // of namespace cuda
 } // of namespace altar
 
-#endif //altar_cuda_distributions_cudaUniform_h
+#endif //altar_cuda_distributions_cudaLogistic_h
 // end of file

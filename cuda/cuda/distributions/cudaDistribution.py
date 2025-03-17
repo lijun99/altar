@@ -70,18 +70,33 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         return mask
 
-    def cuConstrain(self, theta, batch):
-        """
-        cuda process to constrain samples within a range
-        """
-        # default, do nothing
-        return self
-
     def cuEvalPrior(self, theta, prior, batch):
         """
         cuda process to compute the prior
         """
         return prior
+
+    def cuEvalPriorPhysical(self, theta, prior, batch):
+        """
+        cuda process to compute the prior of the physical parameters
+        """
+        # default, assuming physical=sampling
+        return self.cuEvalPrior(theta, prior, batch)
+
+    def cuToPhysical(self, theta, batch):
+        """
+        transform theta to physical parameters
+        """
+        # default, do nothing
+        return self
+
+    def cuToSampling(self, theta, batch):
+        """
+        transform theta to sampling parameters
+        """
+        # default, do nothing
+        return self
+
 
     def cuPriorGradient(self, theta, prior, batch, index=None):
         """
