@@ -38,6 +38,10 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
     green = altar.properties.path(default="static.gf.h5")
     green.doc = "the name of the file with the Green functions"
 
+    use_tensor_core_gemm = altar.properties.bool(default=False)
+    use_tensor_core_gemm.doc = "whether to use tensor core gemm for forward modeling"
+
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -59,6 +63,11 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # merge covariance to green's function
         if not self.forwardonly:
             self.mergeCovarianceToGF()
+
+        if self.use_tensor_core_gemm:
+            self.gemm = altar.cuda.cublas.gemmex
+        else:
+            self.gemm = altar.cuda.cublas.gemm
 
         # all done
         return self
@@ -85,14 +94,16 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # in column major: translated to pred (obs, samples) green(param obs) theta (params x samples)
         # we therefore use pred = G^T x theta
 
-        libcuda.cublas_gemm(self.cublas_handle,
-                            1, 0, # transa, transb
-                            prediction.shape[1], batch, green.shape[1], # m, n, k
-                            1.0,   # alpha
-                            green.data, green.shape[1], # A, lda
-                            theta.data, theta.shape[1], # B, ldb
-                            beta,
-                            prediction.data, prediction.shape[1])
+        #libcuda.cublas_gemm(self.cublas_handle,
+        #                    1, 0, # transa, transb
+        #                    prediction.shape[1], batch, green.shape[1], # m, n, k
+        #                    1.0,   # alpha
+        #                    green.data, green.shape[1], # A, lda
+        #                    theta.data, theta.shape[1], # B, ldb
+        #                    beta,
+        #                    prediction.data, prediction.shape[1])
+
+        self.gemm(A=theta, B=green, out=prediction, handle=self.cublas_handle, alpha=1.0, beta=beta, transa=0, transb=1)
 
         # all done
         return self
@@ -244,14 +255,16 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # print(likelihood.shape, residuals.shape, green.shape)
         # likelihood (samples, parameters) =  residuals (samples, observations) x G(observations, parameters)
         # in col-major likelihood (parameters, samples) = G (parameters, observations) x residuals (observations, samples)
-        libcuda.cublas_gemm(self.cublas_handle,
-                            0, 0, # transa, transb
-                            likelihood.shape[1], batch, green.shape[0], # m, n, k
-                            -1.0,   # alpha
-                            green.data, green.shape[1], # A, lda
-                            residuals.data, residuals.shape[1], # B, ldb
-                            0.0,
-                            likelihood.data, likelihood.shape[1])
+        # libcuda.cublas_gemm(self.cublas_handle,
+        #                    0, 0, # transa, transb
+        #                    likelihood.shape[1], batch, green.shape[0], # m, n, k
+        #                    -1.0,   # alpha
+        #                    green.data, green.shape[1], # A, lda
+        #                    residuals.data, residuals.shape[1], # B, ldb
+        #                    0.0,
+        #                    likelihood.data, likelihood.shape[1])
+
+        self.gemm(residuals, green, out=likelihood, handle=self.cublas_handle, alpha=-1.0, beta=0.0)
 
         # all done
         return self

@@ -30,6 +30,9 @@ slipmodel:
         ; forward output file
         forward_output = forward_prediction.h5
 
+        ; whether to use tensor core gemm
+        use_tensor_core_gemm = True
+
         ; the name of the test case, also as directory for input files
         case = 9patch
 
