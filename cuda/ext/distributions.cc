@@ -643,30 +643,53 @@ altar::cuda::extensions::cudaUniformLogit::tophysical(PyObject *, PyObject * arg
         // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
     {
+        // convert PyObjects to C Objects
+        cuda_matrix * theta = static_cast<cuda_matrix *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+        size_t parameters = theta->size2;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tophysical<float>
+                ((float *)theta->data,
+                samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tophysical<double>
+                ((double *)theta->data,
+                samples, parameters, idx_begin, idx_end, low, high);
+        }
+    }
+    else if  (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::vector::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_vector * theta = static_cast<cuda_vector *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::vector::capsule_t));
+
+        size_t parameters = theta->size;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tophysical<float>
+                ((float *)theta->data,
+                1, parameters, idx_begin, idx_end, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tophysical<double>
+                ((double *)theta->data,
+                1, parameters, idx_begin, idx_end, low, high);
+        }
+    }
+    else {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_tophysical");
         return 0;
-    }
-
-    // convert PyObjects to C Objects
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-
-    size_t parameters = theta->size2;
-
-    // call c method
-    if(theta->dtype == PYCUDA_FLOAT) //single precision
-    {
-        altar::cuda::distributions::cudaUniformLogit::tophysical<float>
-            ((float *)theta->data,
-            samples, parameters, idx_begin, idx_end, (float)low, (float)high);
-    }
-    else //double precision
-    {
-        altar::cuda::distributions::cudaUniformLogit::tophysical<double>
-            ((double *)theta->data,
-            samples, parameters, idx_begin, idx_end, low, high);
     }
     // all done
     // return None
@@ -697,31 +720,54 @@ altar::cuda::extensions::cudaUniformLogit::tosampling(PyObject *, PyObject * arg
                                   );
         // if something went wrong
     if (!status) return 0;
-    // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    // if theta is matrix
+    if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
     {
+        // convert PyObjects to C Objects
+        cuda_matrix * theta = static_cast<cuda_matrix *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+        size_t parameters = theta->size2;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tosampling<float>
+                ((float *)theta->data,
+                samples, parameters, idx_begin, idx_end, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tosampling<double>
+                ((double *)theta->data,
+                samples, parameters, idx_begin, idx_end, low, high);
+        }
+    }
+    else if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::vector::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_vector * theta = static_cast<cuda_vector *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::vector::capsule_t));
+
+        size_t parameters = theta->size;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tosampling<float>
+                ((float *)theta->data,
+                1, parameters, idx_begin, idx_end, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaUniformLogit::tosampling<double>
+                ((double *)theta->data,
+                1, parameters, idx_begin, idx_end, low, high);
+        }
+    }
+    else {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaUniformLogit_tosampling");
         return 0;
-    }
-
-    // convert PyObjects to C Objects
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-
-    size_t parameters = theta->size2;
-
-    // call c method
-    if(theta->dtype == PYCUDA_FLOAT) //single precision
-    {
-        altar::cuda::distributions::cudaUniformLogit::tosampling<float>
-            ((float *)theta->data,
-            samples, parameters, idx_begin, idx_end, (float)low, (float)high);
-    }
-    else //double precision
-    {
-        altar::cuda::distributions::cudaUniformLogit::tosampling<double>
-            ((double *)theta->data,
-            samples, parameters, idx_begin, idx_end, low, high);
     }
     // all done
     // return None
@@ -1112,30 +1158,54 @@ altar::cuda::extensions::cudaTGaussianLogit::tophysical(PyObject *, PyObject * a
         // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_matrix * theta = static_cast<cuda_matrix *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+        size_t parameters = theta->size2;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tophysical<float>
+                ((float *)theta->data,
+                samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tophysical<double>
+                ((double *)theta->data,
+                samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
+        }
+    }
+    else if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::vector::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_vector * theta = static_cast<cuda_vector *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::vector::capsule_t));
+
+        size_t parameters = theta->size;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tophysical<float>
+                ((float *)theta->data,
+                1, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tophysical<double>
+                ((double *)theta->data,
+                1, parameters, idx_begin, idx_end, mean, sigma, low, high);
+        }
+    }
+    else
     {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaTGaussianLogit_tophysical");
         return 0;
-    }
-
-    // convert PyObjects to C Objects
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-
-    size_t parameters = theta->size2;
-
-    // call c method
-    if(theta->dtype == PYCUDA_FLOAT) //single precision
-    {
-        altar::cuda::distributions::cudaTGaussianLogit::tophysical<float>
-            ((float *)theta->data,
-            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
-    }
-    else //double precision
-    {
-        altar::cuda::distributions::cudaTGaussianLogit::tophysical<double>
-            ((double *)theta->data,
-            samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
     }
     // all done
     // return None
@@ -1168,30 +1238,54 @@ altar::cuda::extensions::cudaTGaussianLogit::tosampling(PyObject *, PyObject * a
         // if something went wrong
     if (!status) return 0;
     // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_matrix * theta = static_cast<cuda_matrix *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
+
+        size_t parameters = theta->size2;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tosampling<float>
+                ((float *)theta->data,
+                samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tosampling<double>
+                ((double *)theta->data,
+                samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
+        }
+    }
+    else if (PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::vector::capsule_t))
+    {
+        // convert PyObjects to C Objects
+        cuda_vector * theta = static_cast<cuda_vector *>
+            (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::vector::capsule_t));
+
+        size_t parameters = theta->size;
+
+        // call c method
+        if(theta->dtype == PYCUDA_FLOAT) //single precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tosampling<float>
+                ((float *)theta->data,
+                1, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
+        }
+        else //double precision
+        {
+            altar::cuda::distributions::cudaTGaussianLogit::tosampling<double>
+                ((double *)theta->data,
+                1, parameters, idx_begin, idx_end, mean, sigma, low, high);
+        }
+    }
+    else
     {
         PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaTGaussianLogit_tosampling");
         return 0;
-    }
-
-    // convert PyObjects to C Objects
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-
-    size_t parameters = theta->size2;
-
-    // call c method
-    if(theta->dtype == PYCUDA_FLOAT) //single precision
-    {
-        altar::cuda::distributions::cudaTGaussianLogit::tosampling<float>
-            ((float *)theta->data,
-            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (float)low, (float)high);
-    }
-    else //double precision
-    {
-        altar::cuda::distributions::cudaTGaussianLogit::tosampling<double>
-            ((double *)theta->data,
-            samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
     }
     // all done
     // return None

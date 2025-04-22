@@ -190,30 +190,34 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return self
 
-    def cuToPhysical(self, theta, batch):
+    def cuToPhysical(self, theta, batch, inplace=False):
         """
         Transform {step.theta} to {thetaPhysical} as physical properties for the forward model
         """
-        # make a copy
-        thetaPhysical = self.thetaPhysical
-        thetaPhysical.copy(other=theta)
+        if inplace:
+            thetaPhysical = theta
+        else:
+            # make a copy
+            thetaPhysical = self.thetaPhysical
+            thetaPhysical.copy(other=theta)
         # ask my subsets
         for pset in self.psets.values():
             pset.prior.cuToPhysical(theta=thetaPhysical, batch=batch)
         # all done
         return thetaPhysical
 
-    def cuToSampling(self, theta, batch):
+    def cuToSampling(self, theta, batch, inplace=False):
         """
         Transform {thetaPhysical} to {theta} as sampling parameters
         """
-        # make a copy
-        theta.copy(other=self.thetaPhysical)
+        if not inplace:
+            # make a copy
+            theta.copy(other=self.thetaPhysical)
         # ask my subsets
         for pset in self.psets.values():
-            pset.prior.cuToPhysical(theta=theta, batch=batch)
+            pset.prior.cuToSampling(theta=theta, batch=batch)
         # all done
-        return thetaPhysical
+        return theta
 
     def cuEvalPrior(self, theta, prior, batch):
         """

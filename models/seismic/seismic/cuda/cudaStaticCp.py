@@ -39,14 +39,17 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
     initial_model_file = altar.properties.path(default=None)
     initial_model_file.doc = "the initial mean model"
 
+    initial_model_is_physical = altar.properties.bool(default=True)
+    initial_model_is_physical.doc = "whether the initial mean model is physical (True, default) or sampling (False)"
+
     beta_cp_start = altar.properties.float(default=0)
     beta_cp_start.doc = "for beta >= beta_cp_start, incorporate Cp into Cd"
 
     beta_use_initial_model = altar.properties.float(default=0)
     beta_use_initial_model.doc = "for beta <= beta_use_initial_model, use initial_model instead of mean model"
 
-    dtype_cp = altar.properties.str(default=None)
-    dtype_cp.doc = "single/double precision to compute Cp"
+    cp_dtype = altar.properties.str(default=None)
+    cp_dtype.doc = "single/double precision to compute Cp"
 
     # protocol obligations
     @altar.export
@@ -60,7 +63,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         super().initialize(application=application)
 
         # initialize cp-specific parameters
-        self.dtype_cp = self.dtype_cp or self.dataobs.dtype_cd
+        self.cp_dtype = self.cp_dtype or self.dataobs.cd_dtype
         self.initializeCp()
 
         # all done
@@ -72,14 +75,19 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         :return:
         """
         # load Cmu
-        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu), dtype=self.dtype_cp)
+        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu), dtype=self.cp_dtype)
         # load initial model if provided
         if self.initial_model_file is not None:
-            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters, dtype=self.dtype_cp)
+            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters, dtype=self.cp_dtype)
+            if self.initial_model_is_physical:
+                # convert to sampling
+                self.cuToSampling(theta=self.gInitModel, batch=1, inplace=True)
+                self.gInitModel.print()
+
         # allocate a gpu vector to record mean model
-        self.gMeanModel = altar.cuda.vector(shape=self.parameters, dtype=self.dtype_cp)
+        self.gMeanModel = altar.cuda.vector(shape=self.parameters, dtype=self.cp_dtype)
         # allocate a gpu matrix to record Cp
-        self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.dtype_cp)
+        self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.cp_dtype)
         return self
 
 
@@ -112,6 +120,9 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
                 self.gMeanModel.copy_from_host(source=step.mean)
                 # use the mean model
                 mean_model = self.gMeanModel
+
+            # convert parameters to physical
+            self.cuToPhysical(theta=mean_model, batch=1, inplace=True)
 
             # compute Cp with mean model
             self.computeCp(model=mean_model, cp=self.Cp)
@@ -146,14 +157,14 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         nCmu = self.nCmu
 
         # allocate Cp if not pre-allocated
-        Cp = cp or altar.cuda.matrix(shape=(observations, observations), dtype=self.dtype_cp)
+        Cp = cp or altar.cuda.matrix(shape=(observations, observations), dtype=self.cp_dtype)
 
         # get cmu, shape=(nCmu, nCmu); kmu are loaded on the fly
         Cmu = self.gCmu
 
         # allocate work arrays
-        kmu = altar.cuda.matrix(shape=self.gGF.shape, dtype=self.dtype_cp)
-        Kp = altar.cuda.matrix(shape=(nCmu, observations), dtype = self.dtype_cp)
+        kmu = altar.cuda.matrix(shape=self.gGF.shape, dtype=self.cp_dtype)
+        Kp = altar.cuda.matrix(shape=(nCmu, observations), dtype = self.cp_dtype)
         kpv = altar.cuda.vector(shape=observations, dtype=Kp.dtype)
 
         # check the existence of kernel h5 file
@@ -165,7 +176,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
         for i in range(nCmu):
             # load kmu_np(cpu) from h5, shape=(observations, parameters)
-            kmu_np = numpy.asarray(h5kernel.get(h5keys[i]), dtype=self.dtype_cp).reshape(kmu.shape)
+            kmu_np = numpy.asarray(h5kernel.get(h5keys[i]), dtype=self.cp_dtype).reshape(kmu.shape)
             # copy it gpu
             kmu.copy_from_host(source=kmu_np)
             # call the forward model
