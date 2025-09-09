@@ -14,6 +14,7 @@ import altar.cuda
 from altar.cuda import cublas
 from altar.cuda import libcuda
 from .cudaKinematicG import cudaKinematicG
+from altar.models.seismic.ext import cudaseismic as libcudaseismic
 import numpy
 
 # declaration

@@ -12,6 +12,7 @@
 import altar
 import altar.cuda
 import altar.cuda.ext.cudaaltar as libcudaaltar
+from altar.models.seismic.ext import cudaseismic as libcudaseismic
 
 # get the protocol
 
@@ -61,8 +62,18 @@ class cudaMomentLogit(cudaMoment, family="altar.cuda.distributions.momentlogit")
         # call cuda c extension
         libcudaaltar.cudaLogistic_logpdf(theta.data, prior.data, batch, self.idx_range)
 
+        return self
+
+    def cuEvalPriorwithPhysical(self, theta, prior, batch):   
+        """
+        cuda process to computes the extra contributions to prior in terms of physical parameters
+        """
+        # apply moment magnitude constraint (defined in cudaMoment.py)
+        super().cuEvalPriorwithPhysical(theta=theta, prior=prior, batch=batch)
+
         # all done
         return self
+
 
     def cuEvalPriorPhysical(self, theta, prior, batch):
         """
@@ -91,6 +102,8 @@ class cudaMomentLogit(cudaMoment, family="altar.cuda.distributions.momentlogit")
         libcudaaltar.cudaUniformLogit_tosampling(theta.data, batch, self.idx_range, self.support)
         # all done
         return self
+
+    
 
 
 # end of file
