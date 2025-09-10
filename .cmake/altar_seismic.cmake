@@ -81,6 +81,7 @@ function(altar_seismic_cuda_buildLibrary)
     libcudaseismic PRIVATE
     lib/libcudaseismic/cudaKinematicG_kernels.cu
     lib/libcudaseismic/cudaKinematicG.cu
+    lib/libcudaseismic/cudaMoment.cu
     lib/libcudaseismic/cudaStatic.cu
     lib/libcudaseismic/version.cc
     )
@@ -142,6 +143,7 @@ function(altar_seismic_cuda_buildModule)
     ext/cudaseismic/cudaseismic.cc
     ext/cudaseismic/metadata.cc
     ext/cudaseismic/kinematicg.cc
+    ext/cudaseismic/moment.cc
     ext/cudaseismic/static.cc
     )
 

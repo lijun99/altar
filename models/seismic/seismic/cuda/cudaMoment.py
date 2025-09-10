@@ -11,8 +11,7 @@
 # get the package
 import altar
 import altar.cuda
-
-# get the protocol
+from altar.models.seismic.ext import cudaseismic as libcudaseismic
 
 # and my base class
 from altar.cuda.distributions.cudaUniform import cudaUniform
@@ -51,6 +50,12 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
     slip_sign.validators = altar.constraints.isMember("positive", "negative")
     slip_sign.doc = "the sign of slips, all positive or all negative"
 
+    moment_constraint = altar.properties.bool(default=False)
+    moment_constraint.doc = "whether to apply moment constraint"
+
+    moment_constraint_factor = altar.properties.float(default=1.0)
+    moment_constraint_factor.doc = "a factor to tune the strength of moment constraint in the logpdf calculation"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -78,14 +83,14 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         # initialize the area for each patch
         if len(self.area) == 1:
             # by default, assign the constant patch_area to each patch
-            self.area_patches = altar.vector(shape=self.patches).fill(self.area[0])
+            area_patches = altar.vector(shape=self.patches).fill(self.area[0])
         elif len(self.area) != self.patches:
             # if the size doesn't match
             channel = self.error
             raise channel.log("the size of area doesn't match the number of patches")
         else:
             #
-            self.area_patches = self.area
+            area_patches = self.area
 
         # if a file is provided, load it
         if self.area_patch_file is not None:
@@ -103,21 +108,26 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
             # if all goes well
             else:
                 # allocate the vector
-                self.area_patches = altar.vector(shape=self.patches)
+                area_patches = altar.vector(shape=self.patches)
                 # and load the file contents into memory
-                self.area_patches.load(self.areafile.uri)
+                area_patches.load(self.areafile.uri)
 
         # initialize the shear modulus for each patch
         if len(self.Mu) == 1:
             # by default, assign the constant to each patch
-            self.mu_patches = altar.vector(shape=self.patches).fill(self.Mu[0])
+            mu_patches = altar.vector(shape=self.patches).fill(self.Mu[0])
         elif len(self.Mu) != self.patches:
             # if the size doesn't match
             channel = self.error
             raise channel.log("the size of Mu doesn't match the number of patches")
         else:
             #
-            self.mu_patches = self.Mu
+            mu_patches = self.Mu
+
+        # use mu x area for computations
+        self.mu_area_patches = mu_patches.clone()
+        self.mu_area_patches *= area_patches
+        self.g_mu_area_patches = altar.cuda.vector(source=self.mu_area_patches, dtype=self.precision)
 
         # all done
         return self
@@ -133,8 +143,7 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         θ = altar.matrix(shape=(samples, parameters))
 
         # grab the references for area/shear modulus
-        area_patches = self.area_patches
-        mu_patches = self.mu_patches
+        mu_area_patches = self.mu_area_patches
 
         # create a gaussian distribution to generate Mw for each sample
         gaussian_Mw = altar.pdf.gaussian(mean=self.Mw_mean, sigma=self.Mw_sigma, rng=self.rng)
@@ -158,17 +167,17 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
                 within_range = True
                 # generate a Mw sample
                 Mw = gaussian_Mw.sample()
-                # Pentiar = M0 =  \sum (A_i D_i Mu_i)
+                # Potency = M0 =  \sum (A_i D_i Mu_i)
                 # 15 here is for GPa * Km^2, instead of Pa * m^2
-                Pentier = pow(10, 1.5*Mw + 9.1 - 15)
+                Potency = pow(10, 1.5*Mw + 9.1 - 15)
                 # if a negative sign is desired
                 if self.slip_sign == 'negative':
-                    Pentier = - Pentier
+                    Potency = - Potency
                 # generate a dirichlet sample \sum x_i = 1
                 dirichlet_D.vector(vector=theta_sample)
                 # D_i = P * x_i /A_i
                 for patch in range(parameters):
-                    theta_sample[patch]*=Pentier/(area_patches[patch]*mu_patches[patch])
+                    theta_sample[patch]*=Potency/mu_area_patches[patch]
                     # check the range
                     if(theta_sample[patch]>=high or theta_sample[patch]<=low):
                         within_range = False
@@ -184,10 +193,37 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         # and return
         return self
 
+    def cuEvalPrior(self, theta, prior, batch):
+        """
+        Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
+        """
+        # call super class (cudaUniform) method
+        super().cuEvalPrior(theta=theta, prior=prior, batch=batch)
+        # all done
+        return self
+
+    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+        """
+        cuda process to computes the extra contributions to prior in terms of physical parameters
+        """
+        # apply moment magnitude constraint
+        if self.moment_constraint:
+            # apply moment magnitude constraint
+            libcudaseismic.cudaMoment_logpdf(theta.data, prior.data,
+                batch, self.idx_range,
+                (self.Mw_mean, self.Mw_sigma),
+                self.g_mu_area_patches.data,
+                self.moment_constraint_factor)
+        # all done
+        return self
+
     # private member variables
-    area_patches = None
-    mu_patches = None
+    # mu x area of patches
+    mu_area_patches = None
+    g_mu_area_patches = None # gpu copy
+    # number of patches
     patches = None
+    # random number generator
     rng = None
 
 # end of file

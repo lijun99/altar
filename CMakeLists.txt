@@ -3,6 +3,12 @@
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 # (c) 2003-2021 all rights reserved
 
+#
+# Example build steps:
+#     mkdir build && cd build
+#     cmake .. -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_PREFIX_PATH=$CONDA_PREFIX -DCMAKE_CUDA_ARCHITECTURES=native
+#     make -j && make install
+
 # cmake setup
 # v3.18 is needed to pass Development.Module to FIndPython
 cmake_minimum_required(VERSION 3.19...3.25)

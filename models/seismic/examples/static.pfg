@@ -73,6 +73,8 @@ slipmodel:
                     Mw_sigma = 0.2
                     Mu = [30] ; in GPa
                     area = [400] ; patch area in km^2
+                    moment_constraint = True
+                    moment_constraint_factor = 1
 
     controller:
         sampler = altar.cuda.bayesian.metropolis

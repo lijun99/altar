@@ -23,26 +23,6 @@
 // local includes
 #include "capsules.h"
 
-// cuda utilities
-#include <pyre/cuda.h>
-#include <pyre/cuda/capsules.h>
-
-
-// types
-namespace altar {
-    namespace extensions {
-        namespace models {
-            namespace cudaseismic {
-                namespace vector = pyre::extensions::cuda::vector;
-                namespace matrix = pyre::extensions::cuda::matrix;
-                namespace stream = pyre::extensions::cuda::stream;
-            }
-        }
-    }
-}
-
-
-
 // allocate a cuda/c kinematic model
 const char * const altar::extensions::models::cudaseismic::kinematicg_alloc__name__ = "kinematicg_alloc";
 const char * const altar::extensions::models::cudaseismic::kinematicg_alloc__doc__ = "allocate kinematicg model";

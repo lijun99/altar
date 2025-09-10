@@ -221,7 +221,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
     def cuEvalPrior(self, theta, prior, batch):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        compute the prior from the (sampling) parameter sets
         """
         # ask my subsets
         for pset in self.psets.values():
@@ -230,6 +230,19 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
         # all done
         return self
+
+    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+        """
+        Compute additional prior contributions in terms of physical parameters
+        """
+        # ask my subsets
+        for pset in self.psets.values():
+            # and ask each one to verify the sample
+            pset.prior.cuEvalPriorwithPhysical(theta=theta, prior=prior, batch=batch)
+
+        # all done
+        return self
+
 
     def cuEvalPriorGradient(self, theta, prior, batch):
         """
@@ -300,6 +313,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # make theta transformation
         self.thetaPhysical = self.cuToPhysical(theta=step.theta, batch=batch)
         # compute it
+        self.cuEvalPriorwithPhysical(theta=self.thetaPhysical, prior=step.prior, batch=batch)
         self.cuEvalLikelihood(theta=self.thetaPhysical, likelihood=step.data, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
