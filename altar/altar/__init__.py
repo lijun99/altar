@@ -66,6 +66,8 @@ modelPrefix = os.path.join(home, "models")
 from . import (
     # package meta-data
     meta,
+    # backend selection
+    backends,
     # simulation support
     simulations,
     # norms

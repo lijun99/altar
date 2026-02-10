@@ -18,7 +18,13 @@ from altar.distributions import Distribution as distribution
 @altar.foundry(implements=distribution, tip="the Moment Magnitude distribution")
 def moment():
     # grab the factory
-    from .Moment import Moment as moment
+    if altar.backends.active() == "cuda":
+        try:
+            from .cuda.cudaMoment import cudaMoment as moment
+        except ImportError:
+            from .Moment import Moment as moment
+    else:
+        from .Moment import Moment as moment
     # attach its docstring
     __doc__ = moment.__doc__
     # and return it
@@ -28,7 +34,13 @@ def moment():
 @altar.foundry(implements=altar.models.model, tip="static inversion model")
 def static():
     # grab the factory
-    from .Static import Static as static
+    if altar.backends.active() == "cuda":
+        try:
+            from .cuda.cudaStatic import cudaStatic as static
+        except ImportError:
+            from .Static import Static as static
+    else:
+        from .Static import Static as static
     # attach its docstring
     __doc__ = static.__doc__
     # and return it
@@ -38,7 +50,13 @@ def static():
 @altar.foundry(implements=altar.models.model, tip="static inversion model with Cp")
 def staticCp():
     # grab the factory
-    from .StaticCp import StaticCp as staticCp
+    if altar.backends.active() == "cuda":
+        try:
+            from .cuda.cudaStaticCp import cudaStaticCp as staticCp
+        except ImportError:
+            from .StaticCp import StaticCp as staticCp
+    else:
+        from .StaticCp import StaticCp as staticCp
     # attach its docstring
     __doc__ = staticCp.__doc__
     # and return it

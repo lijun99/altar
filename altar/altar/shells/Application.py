@@ -47,6 +47,8 @@ class Application(altar.application, family="altar.shells.application"):
 
         # initialize the job parameters
         self.job.initialize(application=self)
+        # activate the appropriate backend (cpu/cuda)
+        altar.backends.select_backend(application=self)
         # the random number generator
         self.rng.initialize()
         # the controller

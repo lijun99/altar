@@ -46,6 +46,8 @@ class AlTar(altar.plexus, family="altar.shells.altar", namespace="altar"):
         """
         # initialize the job parameters
         self.job.initialize(application=self)
+        # activate the appropriate backend (cpu/cuda)
+        altar.backends.select_backend(application=self)
         # the random number generator
         self.rng.initialize()
         # the controller
@@ -62,6 +64,8 @@ class AlTar(altar.plexus, family="altar.shells.altar", namespace="altar"):
         """
         # initialize the job parameters
         self.job.initialize(application=self)
+        # activate the appropriate backend (cpu/cuda)
+        altar.backends.select_backend(application=self)
         # the random number generator
         self.rng.initialize()
         # the controller

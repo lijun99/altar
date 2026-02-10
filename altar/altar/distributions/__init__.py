@@ -21,7 +21,13 @@ from .Distribution import Distribution as distribution
 @altar.foundry(implements=distribution, tip="the uniform probability distribution")
 def uniform():
     # grab the factory
-    from .Uniform import Uniform as uniform
+    if altar.backends.active() == "cuda":
+        try:
+            from altar.cuda.distributions.cudaUniform import cudaUniform as uniform
+        except ImportError:
+            from .Uniform import Uniform as uniform
+    else:
+        from .Uniform import Uniform as uniform
     # attach its docstring
     __doc__ = uniform.__doc__
     # and return it
@@ -31,7 +37,13 @@ def uniform():
 @altar.foundry(implements=distribution, tip="the gaussian probability distribution")
 def gaussian():
     # grab the factory
-    from .Gaussian import Gaussian as gaussian
+    if altar.backends.active() == "cuda":
+        try:
+            from altar.cuda.distributions.cudaGaussian import cudaGaussian as gaussian
+        except ImportError:
+            from .Gaussian import Gaussian as gaussian
+    else:
+        from .Gaussian import Gaussian as gaussian
     # attach its docstring
     __doc__ = gaussian.__doc__
     # and return it

@@ -21,7 +21,13 @@ from .Norm import Norm as norm
 @altar.foundry(implements=norm, tip="the L2 norm")
 def l2():
     # grab the factory
-    from .L2 import L2 as l2
+    if altar.backends.active() == "cuda":
+        try:
+            from altar.cuda.norms.cudaL2 import cudaL2 as l2
+        except ImportError:
+            from .L2 import L2 as l2
+    else:
+        from .L2 import L2 as l2
     # attach its docstring
     __doc__ = l2.__doc__
     # and return it

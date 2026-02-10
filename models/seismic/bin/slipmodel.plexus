@@ -14,7 +14,7 @@ if __name__ == "__main__":
     import altar
     import altar.models.seismic as seismic
     # build an instance of the default app
-    app = altar.shells.cudaaltar(name="slipmodel")
+    app = altar.shells.altar(name="slipmodel")
     # invoke the main entry point
     status = app.run()
     # share

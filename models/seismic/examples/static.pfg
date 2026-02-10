@@ -49,32 +49,41 @@ slipmodel:
             ; or constant variance
             ; cd_std = 1e-2
 
-        ; list of parametersets
-        ; the order should be consistent with the green's function
-        psets_list = [strikeslip, dipslip]
+        ; parameter sets
+        parametersets = altar.cuda.model.parameterset
+        parametersets:
+            count = 2*{slipmodel.model.patches}
+            prior = altar.cuda.distributions.gaussian
+            prior.mean = 0
+            prior.sigma = 0.5
 
-        ; define parametersets
-        psets:
-            strikeslip = altar.cuda.models.parameterset
-            dipslip = altar.cuda.models.parameterset
 
-            strikeslip:
-                count = {slipmodel.model.patches}
-                prior = altar.cuda.distributions.gaussian
-                prior.mean = 0
-                prior.sigma = 0.5
+            ; list of parametersets
+            ; the order should be consistent with the green's function
+            psets_list = [strikeslip, dipslip]
 
-            dipslip:
-                count = {slipmodel.model.patches}
-                prior = altar.models.seismic.cuda.moment
-                prior:
-                    support = (-0.5, 20) ; slip range
-                    Mw_mean = 7.3
-                    Mw_sigma = 0.2
-                    Mu = [30] ; in GPa
-                    area = [400] ; patch area in km^2
-                    moment_constraint = True
-                    moment_constraint_factor = 1
+            ; define parametersets
+            psets:
+                strikeslip = altar.cuda.models.parameterset
+                dipslip = altar.cuda.models.parameterset
+
+                strikeslip:
+                    count = {slipmodel.model.patches}
+                    prior = altar.cuda.distributions.gaussian
+                    prior.mean = 0
+                    prior.sigma = 0.5
+
+                dipslip:
+                    count = {slipmodel.model.patches}
+                    prior = altar.cuda.models.seismic.moment
+                    prior:
+                        support = (-0.5, 20) ; slip range
+                        Mw_mean = 7.3
+                        Mw_sigma = 0.2
+                        Mu = [30] ; in GPa
+                        area = [400] ; patch area in km^2
+                        moment_constraint = True
+                        moment_constraint_factor = 1
 
     controller:
         sampler = altar.cuda.bayesian.metropolis

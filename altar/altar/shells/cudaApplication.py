@@ -9,54 +9,15 @@
 
 # support
 import altar
-import altar.cuda
-
 
 # the simple application shell
-class cudaApplication(altar.application, family="altar.shells.cudaapplication"):
+from .Application import Application
+
+
+class cudaApplication(Application, family="altar.shells.cudaapplication"):
     """
-    The base class for simple AlTar applications
+    Backward-compatible alias for the unified application shell.
     """
-
-
-    # user configurable state
-    job = altar.simulations.run()
-    job.doc = "the job input parameters"
-
-    model = altar.cuda.models.model()
-    model.default = altar.cuda.models.bayesian()
-    model.doc = "the AlTar model to sample"
-
-    rng = altar.simulations.rng()
-    rng.doc = "the random number generator"
-
-    controller = altar.bayesian.controller()
-    controller.doc = "my simulation controller"
-
-    monitors = altar.properties.dict(schema=altar.simulations.monitor())
-    monitors.doc = "a collection of event handlers"
-
-
-    # protocol obligations
-    @altar.export
-    def main(self, *args, **kwds):
-        """
-        The main entry point
-        """
-        # N.B.: the initialization phase must be respectful of the interdependencies of these
-        # components; e.g., both {controller} and {model} expect an initialized {rng}
-
-        # initialize the job parameters
-        self.job.initialize(application=self)
-        # the random number generator
-        self.rng.initialize()
-        # the controller
-        self.controller.initialize(application=self)
-        # and the model; attach whatever the model initialization returns, just in case the
-        # model selects an implementation strategy based on my context
-        self.model = self.model.initialize(application=self)
-        # sample the posterior distribution
-        return self.model.posterior(application=self)
 
 
     # pyre framework hooks

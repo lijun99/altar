@@ -10,6 +10,8 @@
 
 # the package
 import altar
+# stdlib
+from importlib.util import find_spec
 # my protocol
 from .Run import Run as run
 
@@ -65,6 +67,16 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         # all done
         return self
 
+    def pyre_configured(self):
+        """
+        Select backend early so component factories pick cpu/cuda implementations.
+        """
+        if self.gpus > 0 and altar.backends.cuda_available():
+            altar.backends.activate_cuda()
+        else:
+            altar.backends.activate_cpu()
+        return []
+
 
     # implementation details
     def validateMachineLayout(self, application):
@@ -97,6 +109,13 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         # if the user doesn't want GPU support
         if gpus == 0:
             # we are done
+            return self
+        # if altar was built without cuda, disable gpu usage early
+        if find_spec("altar.cuda") is None:
+            channel = application.warning
+            channel.line("CUDA support is unavailable in this build")
+            channel.log(" -- setting the number of GPUs per task to 0")
+            self.gpus = 0
             return self
         # otherwise, attempt to
         try:

@@ -36,7 +36,13 @@ def null():
 @altar.foundry(implements=model, tip="a collection of models that comprise an AlTar model")
 def ensemble():
     # grab the factory
-    from .Ensemble import Ensemble as ensemble
+    if altar.backends.active() == "cuda":
+        try:
+            from altar.cuda.models.cudaBayesianEnsemble import cudaBayesianEnsemble as ensemble
+        except ImportError:
+            from .Ensemble import Ensemble as ensemble
+    else:
+        from .Ensemble import Ensemble as ensemble
     # attach its docstring
     __doc__ = ensemble.__doc__
     # and publish it
@@ -55,11 +61,27 @@ def bayesianl2():
 @altar.foundry(implements=parameters, tip="a contiguous parameter set")
 def contiguous():
     # grab the factory
-    from .Contiguous import Contiguous as contiguous
+    if altar.backends.active() == "cuda":
+        try:
+            from altar.cuda.models.cudaParameterSet import cudaParameterSet as contiguous
+        except ImportError:
+            from .Contiguous import Contiguous as contiguous
+    else:
+        from .Contiguous import Contiguous as contiguous
     # attach its docstring
     __doc__ = contiguous.__doc__
     # and publish it
     return contiguous
+
+
+@altar.foundry(implements=parameters, tip="an ensemble of parameter sets")
+def parameterensemble():
+    # grab the factory
+    from .ParameterEnsemble import ParameterEnsemble as parameterensemble
+    # attach its docstring
+    __doc__ = parameterensemble.__doc__
+    # and publish it
+    return parameterensemble
 
 
 # end of file

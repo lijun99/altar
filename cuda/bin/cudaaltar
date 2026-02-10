@@ -10,16 +10,15 @@
 
 # get the package
 import altar
-import altar.cuda
 
 # make a specialized app that uses this model by default
-class cudaAlTar(altar.shells.cudaapplication, family='altar.applications.cudaaltar'):
+class cudaAlTar(altar.shells.application, family='altar.applications.cudaaltar'):
     """
     An AlTar application running on GPU
     """
 
     # user configurable state
-    model = altar.models.model(default=altar.cuda.models.bayesian())
+    model = altar.models.model(default=altar.models.bayesian())
     model.doc = "the AlTar model to sample"
 
 

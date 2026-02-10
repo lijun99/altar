@@ -9,6 +9,7 @@
 
 # the package
 import altar
+import numpy
 # my protocol
 from .DataObs import DataObs as data
 
@@ -56,6 +57,75 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         self.initializeCovariance(cd=self.cd)
         # all done
         return self
+
+    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+        """
+        Load an input file to a gsl vector or matrix.
+        Supported format:
+        1. text file in '.txt' suffix, stored in prescribed shape
+        2. binary file with '.bin' or '.dat' suffix
+        3. hdf5 file in '.h5' suffix
+        """
+        dtype = dtype or numpy.float64
+
+        ifs = self.ifs
+        channel = self.error
+        try:
+            # get the path to the file
+            file = ifs[filename]
+        # if the file doesn't exist
+        except ifs.NotFoundError:
+            # complain
+            channel.log(f"missing input: no '{filename}' in '{ifs.path()}'")
+            # and raise the exception again
+            raise
+        else:
+            # get the suffix to determine type
+            suffix = file.uri.suffix
+            # use .txt for non-binary input
+            if suffix == '.txt':
+                # load to a cpu array
+                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype)
+            # binary data
+            elif suffix in ('.bin', '.dat'):
+                # require the shape to be specified
+                if shape is None:
+                    raise channel.log(f"must specify shape for binary input '{filename}'")
+                # read and reshape, users need to check the precision
+                cpuData = numpy.fromfile(file.uri.path, dtype=dtype)
+            # hdf5 file
+            elif suffix == '.h5':
+                # get support
+                import h5py
+                # open
+                h5file = h5py.File(file.uri.path, 'r')
+                # get the desired dataset
+                if dataset is None:
+                    # if not provided, assume the only or first dataset as default
+                    dataset = list(h5file.keys())[0]
+                cpuData = numpy.asarray(h5file.get(dataset), dtype=dtype)
+                h5file.close()
+            else:
+                raise channel.log(f"unsupported input suffix '{suffix}' for '{filename}'")
+
+        if shape is not None:
+            cpuData = cpuData.reshape(shape)
+
+        return self._cpuToGsl(cpuData)
+
+    def _cpuToGsl(self, cpuData):
+        """
+        Convert a numpy array into a gsl vector or matrix.
+        """
+        if cpuData.ndim == 1:
+            vec = altar.vector(shape=cpuData.shape[0])
+            vec.ndarray()[:] = cpuData
+            return vec
+        if cpuData.ndim == 2:
+            mat = altar.matrix(shape=cpuData.shape)
+            mat.ndarray()[:] = cpuData
+            return mat
+        raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
     def evalLikelihood(self, prediction, likelihood, residual=True, batch=None):
         """
@@ -105,43 +175,14 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         # grab the input dataspace
         ifs = self.ifs
         # next, the observations
-        try:
-            # get the path to the file
-            df = ifs[self.data_file]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing observations: no '{self.data_file}' {ifs.path()}")
-            # and raise the exception again
-            raise
-        # if all goes well
-        else:
-            # allocate the vector
-            self.dataobs= altar.vector(shape=self.observations)
-            # and load the file contents into memory
-            self.dataobs.load(df.uri)
+        self.dataobs = self.loadFile(filename=self.data_file, shape=self.observations)
 
         if self.cd_file is not None:
             # finally, the data covariance
-            try:
-                # get the path to the file
-                cf = ifs[self.cd_file]
-            # if the file doesn't exist
-            except ifs.NotFoundError:
-                # grab my error channel
-                channel = self.error
-                # complain
-                channel.log(f"missing data covariance matrix: no '{self.cd_file}'")
-                # and raise the exception again
-                raise
-            # if all goes well
-            else:
-                # allocate the matrix
-                self.cd = altar.matrix(shape=(self.observations, self.observations))
-                # and load the file contents into memory
-                self.cd.load(cf.uri)
+            self.cd = self.loadFile(
+                filename=self.cd_file,
+                shape=(self.observations, self.observations),
+            )
         else:
             # use a constant covariance
             self.cd = self.cd_std

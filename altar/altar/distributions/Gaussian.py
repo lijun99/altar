@@ -60,7 +60,7 @@ class Gaussian(base, family="altar.distributions.gaussian"):
 
     @altar.provides
     def priorGradient(self, theta, index, prior):
-        """
+        r"""
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """
         # unpack my support

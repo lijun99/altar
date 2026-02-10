@@ -18,14 +18,14 @@ import numpy
 import h5py
 
 # make a specialized app that uses this model by default
-class kinematicForwardModel(altar.shells.cudaapplication, family='altar.applications.cudakinematicForward'):
+class kinematicForwardModel(altar.shells.application, family='altar.applications.cudakinematicForward'):
     """
     A specialized AlTar application to perform kinematic forward model only;
     compute slips as functions of patches and time, as well as data predictions from a given set of theta
     """
 
     # user configurable state
-    model = altar.cuda.models.model()
+    model = altar.models.model()
     model.default = altar.models.seismic.cuda.kinematicg()
     model.doc = "the AlTar model to sample"
 

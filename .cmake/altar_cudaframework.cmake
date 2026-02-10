@@ -7,7 +7,7 @@
 function(altar_cuda_buildPackage)
   # install the sources straight from the source directory
   install(
-    DIRECTORY cuda
+    DIRECTORY ${CMAKE_SOURCE_DIR}/altar/cuda
     DESTINATION ${ALTAR_DEST_PACKAGES}/altar
     FILES_MATCHING PATTERN *.py
     )
@@ -42,59 +42,62 @@ function(altar_cuda_buildLibrary)
   # add the sources
   target_sources(
     libcudaaltar PRIVATE
-    lib/libcudaaltar/bayesian/cudaMetropolis.cu
-    lib/libcudaaltar/bayesian/cudaLangevin.cu
-    lib/libcudaaltar/norm/cudaL2.cu
-    lib/libcudaaltar/distributions/cudaTGaussian.cu
-    lib/libcudaaltar/distributions/cudaGaussian.cu
-    lib/libcudaaltar/distributions/cudaRanged.cu
-    lib/libcudaaltar/distributions/cudaUniform.cu
-    lib/libcudaaltar/distributions/cudaUniformLogit.cu
-    lib/libcudaaltar/distributions/cudaLogistic.cu
-    lib/libcudaaltar/distributions/cudaTGaussianLogit.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/bayesian/cudaMetropolis.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/bayesian/cudaLeapfrog.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/bayesian/cudaLangevin.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/norm/cudaL2.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaTGaussian.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaGaussian.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaRanged.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniform.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniformLogit.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogistic.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaTGaussianLogit.cu
     )
 
   # copy the altar headers; note the trickery with the terminating slash in the source
   # directory that let's us place the files in the correct destination
   # Find all .h and .icc files recursively
   file(GLOB_RECURSE CUDA_ALTAR_HEADERS
-    "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/*.h"
-    "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/*.icc"
+    "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/*.h"
+    "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/*.icc"
   )
 
   # If no files are found, trigger a fatal error
   if(NOT CUDA_ALTAR_HEADERS)
-    message(FATAL_ERROR "No CUDA altar header files found in ${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/")
+    message(FATAL_ERROR "No CUDA altar header files found in ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/")
   endif()
 
   # Ensure the destination directory exists
   file(MAKE_DIRECTORY ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda)
 
   # Custom target to copy each file while preserving directory structure
-  add_custom_target(copy_cuda_headers ALL)
+  set(CUDA_ALTAR_HEADER_OUTPUTS)
 
   foreach(FILE ${CUDA_ALTAR_HEADERS})
     # Get the relative path of the file inside libcudaaltar
-    file(RELATIVE_PATH REL_PATH "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar" "${FILE}")
+    file(RELATIVE_PATH REL_PATH "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar" "${FILE}")
 
     # Compute the full destination path (preserving structure)
     set(DEST_PATH "${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda/${REL_PATH}")
 
     # Ensure the destination directory exists
     get_filename_component(DEST_DIR "${DEST_PATH}" DIRECTORY)
-    file(MAKE_DIRECTORY "${DEST_DIR}")
 
     # Add a command to copy the file
     add_custom_command(
-        TARGET copy_cuda_headers
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${FILE}" "${DEST_PATH}"
+        OUTPUT "${DEST_PATH}"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${DEST_DIR}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FILE}" "${DEST_PATH}"
         DEPENDS "${FILE}"
     )
+    list(APPEND CUDA_ALTAR_HEADER_OUTPUTS "${DEST_PATH}")
   endforeach()
 
+  add_custom_target(copy_cuda_headers ALL DEPENDS ${CUDA_ALTAR_HEADER_OUTPUTS})
+
   # Install headers while preserving directory structure
-  install(DIRECTORY "${CMAKE_SOURCE_DIR}/cuda/lib/libcudaaltar/"
+  install(DIRECTORY "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/"
     DESTINATION "${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda"
     FILES_MATCHING PATTERN "*.h" PATTERN "*.icc"
   )
@@ -143,12 +146,13 @@ function(altar_cuda_buildModule)
     )
   # add the sources
   target_sources(cudaaltarmodule PRIVATE
-    ext/cudaaltar.cc
-    ext/metadata.cc
-    ext/distributions.cc
-    ext/metropolis.cc
-    ext/langevin.cc
-    ext/norm.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/cudaaltar.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metadata.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/distributions.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/langevin.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/norm.cc
     )
 
   # install the altar extension

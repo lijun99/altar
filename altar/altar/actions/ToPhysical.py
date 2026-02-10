@@ -88,7 +88,8 @@ class ToPhysical(altar.panel(), family='altar.actions.tophysical'):
                 # convert from sampling to physical
                 print("converting from sampling to physical ...")
                 for pset in psets.values():
-                    pset.prior.cuToPhysical(theta=gtheta, batch=samples)
+                    if pset.prior.has_reparametrization:
+                        pset.prior.cuToPhysical(theta=gtheta, batch=samples)
                 print("recomputing prior and posterior for physical parameters ...")
                 for pset in psets.values():
                     pset.prior.cuEvalPriorPhysical(theta=gtheta, prior=gprior, batch=samples)

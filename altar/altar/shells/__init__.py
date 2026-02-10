@@ -14,6 +14,4 @@ from .Application import Application as application
 from .AlTar import AlTar as altar
 
 
-from .Application import Application as cudaapplication
-from .cudaAlTar import cudaAlTar as cudaaltar
 # end of file
