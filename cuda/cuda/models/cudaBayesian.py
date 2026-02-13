@@ -132,7 +132,12 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         self.gidx_map = altar.cuda.vector(source=numpy.asarray(self.idx_map, dtype='int64'))
 
         # make a theta copy for transformation
-        self.thetaPhysical = altar.cuda.matrix(shape=(self.samples, self.parameters), dtype=self.precision)
+        # embedded models receive physical parameters from the ensemble
+        if self.embedded:
+            self.thetaPhysical = None
+        else:
+            self.thetaPhysical = altar.cuda.matrix(shape=(self.samples, self.parameters),
+                                                   dtype=self.precision)
 
         # all done
         return self
@@ -205,7 +210,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
     def cuEvalPrior(self, theta, prior, batch):
         """
-        compute the prior from the (sampling) parameter sets 
+        compute the prior from the (sampling) parameter sets
         """
         # ask my subsets
         for pset in self.psets.values():
@@ -267,6 +272,8 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         """
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
+        Note: this function is not called if the model is embedded, since the ensemble will compute
+        the likelihoods for all models together
         """
 
         batch = batch or step.samples
@@ -286,7 +293,6 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # make theta transformation
         self.thetaPhysical = self.cuToPhysical(theta=step.theta, batch=batch)
         # compute it
-        self.cuEvalPriorwithPhysical(theta=self.thetaPhysical, prior=step.prior, batch=batch)
         self.cuEvalLikelihood(theta=self.thetaPhysical, likelihood=step.data, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)

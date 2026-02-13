@@ -8,6 +8,7 @@ __pycache__
 # the default build locations
 /builds
 /products
+/build
 
 # the developer
 .idea

@@ -99,6 +99,8 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         self.cuInitialize(application=application)
 
         self.datallk = altar.cuda.vector(shape=self.samples, dtype=self.precision)
+        self.thetaPhysical = altar.cuda.matrix(shape=(self.samples, self.parameters),
+                                               dtype=self.precision)
         # all done
         return self
 
@@ -152,11 +154,25 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return self
 
+    def cuToPhysical(self, theta, batch):
+        """
+        Transform sampling parameters {theta} into physical parameters for forward evaluations
+        """
+        # make a copy
+        thetaPhysical = self.thetaPhysical
+        thetaPhysical.copy(other=theta)
+        # ask my parameter sets
+        for pset in self.psets.values():
+            pset.prior.cuToPhysical(theta=thetaPhysical, batch=batch)
+        # all done
+        return thetaPhysical
+
     def cuEvalLikelihood(self, step, batch):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
         """
+        thetaPhysical = self.cuToPhysical(theta=step.theta, batch=batch)
         datallk = self.datallk
         # ask each of my models
         for name, model in self.models.items():
@@ -167,7 +183,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # model_theta = model.restricted(theta=step.theta, batch=batch)
             # another is to use idx_map
 
-            model.cuEvalLikelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
+            model.cuEvalLikelihood(theta=thetaPhysical, likelihood=datallk.zero(), batch=batch)
             if model.cascaded:
                 step.prior += datallk
             else:
@@ -392,6 +408,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
 
     # local
     datallk = None
+    thetaPhysical = None
 
 
 # end of file
