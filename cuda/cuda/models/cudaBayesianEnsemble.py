@@ -86,6 +86,8 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # initialize the pset
             parameters += pset.cuInitialize(application=application)
         self.parameters = parameters
+        # deduce fixed parameters from priors and explicit model configuration
+        self.deduceFixedParameters(psets=self.psets, parameters=self.parameters)
 
         # go through my models
         for name, model in self.models.items():

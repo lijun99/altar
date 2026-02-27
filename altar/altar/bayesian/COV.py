@@ -77,6 +77,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
         # grab the info channel
         self.info = application.info
+        # cache the model so we can query fixed-parameter constraints
+        self.model = application.model
 
         # all done
         return self
@@ -147,6 +149,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # extract the number of samples and number of parameters
         samples = step.samples
         parameters = step.parameters
+        # constrained model dimensions
+        fixed = set(self.fixedParameterIndices(parameters=parameters))
 
         # initialize the covariance matrix
         Σ = altar.matrix(shape=(parameters, parameters)).zero()
@@ -175,9 +179,19 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
             for j in range(i):
                 Σ[j,i] = Σ[i,j]
 
+        # enforce exact zeros on constrained rows/columns
+        if len(fixed) > 0:
+            for i in fixed:
+                for j in range(parameters):
+                    Σ[i,j] = 0
+                    Σ[j,i] = 0
+
         # condition the covariance matrix
         if self.check_positive_definiteness:
-            self.conditionCovariance(Σ=Σ)
+            if len(fixed) > 0:
+                self.conditionCovarianceOnFreeBlock(Σ=Σ, fixed=fixed)
+            else:
+                self.conditionCovariance(Σ=Σ)
 
         # all done
         return Σ
@@ -304,6 +318,54 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         return Σ
 
 
+    def conditionCovarianceOnFreeBlock(self, Σ, fixed):
+        """
+        Condition only the unconstrained covariance block.
+        """
+        parameters = Σ.rows
+        free = tuple(index for index in range(parameters) if index not in fixed)
+
+        # if everything is fixed, the zero matrix is expected
+        if len(free) == 0:
+            return Σ
+        # if nothing is fixed, condition the full matrix
+        if len(free) == parameters:
+            return self.conditionCovariance(Σ=Σ)
+
+        # gather Σ_ff
+        Σff = altar.matrix(shape=(len(free), len(free)))
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                Σff[i, j] = Σ[gi, gj]
+
+        # condition Σ_ff only
+        self.conditionCovariance(Σ=Σff)
+
+        # scatter back into Σ
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                Σ[gi, gj] = Σff[i, j]
+
+        # keep constrained rows/columns exactly zero
+        for i in fixed:
+            for j in range(parameters):
+                Σ[i,j] = 0
+                Σ[j,i] = 0
+
+        # all done
+        return Σ
+
+
+    def fixedParameterIndices(self, parameters):
+        """
+        Ask my model for constrained parameter indices, if any.
+        """
+        model = self.model
+        if model is not None and hasattr(model, "fixedParameterIndices"):
+            return tuple(model.fixedParameterIndices(parameters=parameters))
+        return tuple()
+
+
     def computeSampleMultiplicities(self, step):
         """
         Prepare a frequency vector for the new samples given the scaled data log-likelihood in
@@ -346,6 +408,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     # private data
     uniform = None
     rng = None
+    model = None
 
 
 # end of file

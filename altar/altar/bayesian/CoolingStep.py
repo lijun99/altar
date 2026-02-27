@@ -67,6 +67,11 @@ class CoolingStep:
 
         # initialize it
         model.initializeSample(step=step)
+        # enforce fixed-parameter constraints before evaluating likelihoods
+        if hasattr(model, "fixedParameterIndices"):
+            fixed = tuple(model.fixedParameterIndices(parameters=step.parameters))
+            if len(fixed) > 0:
+                model.applyFixedParameters(theta=step.theta)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=step)
 

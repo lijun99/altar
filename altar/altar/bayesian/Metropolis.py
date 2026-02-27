@@ -102,14 +102,59 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         dispatcher.notify(event=dispatcher.prepareSamplingPDFStart, controller=annealer)
         # unpack what i need
         Σ = step.sigma.clone()
-        # scale it
-        Σ *= self.scaling**2
-        # compute its Cholesky decomposition
-        self.sigma_chol = altar.lapack.cholesky_decomposition(Σ)
+        # scale it and compute a Cholesky factor in the unconstrained subspace
+        self.sigma_chol = self.buildSamplingCholesky(annealer=annealer, sigma=Σ)
         # notify we are done preparing the sampling PDF
         dispatcher.notify(event=dispatcher.prepareSamplingPDFFinish, controller=annealer)
         # all done
         return
+
+
+    def buildSamplingCholesky(self, annealer, sigma):
+        """
+        Build a proposal Cholesky factor that preserves model-constrained dimensions.
+        """
+        # apply scaling to the covariance
+        sigma *= self.scaling**2
+
+        # geometry
+        parameters = sigma.rows
+        fixed = set(self.fixedParameterIndices(annealer=annealer, parameters=parameters))
+        # unconstrained dimensions
+        free = tuple(index for index in range(parameters) if index not in fixed)
+
+        # no constraints: standard path
+        if len(free) == parameters:
+            return altar.lapack.cholesky_decomposition(sigma)
+
+        # allocate the full Cholesky factor; constrained rows/columns stay zero
+        sigma_chol = altar.matrix(shape=sigma.shape).zero()
+        # everything constrained: return the zero factor
+        if len(free) == 0:
+            return sigma_chol
+
+        # gather Σ_ff, factorize, and scatter back
+        sigma_ff = altar.matrix(shape=(len(free), len(free)))
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_ff[i, j] = sigma[gi, gj]
+        sigma_ff_chol = altar.lapack.cholesky_decomposition(sigma_ff)
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_chol[gi, gj] = sigma_ff_chol[i, j]
+
+        # all done
+        return sigma_chol
+
+
+    def fixedParameterIndices(self, annealer, parameters):
+        """
+        Ask the model for constrained parameter indices, if any.
+        """
+        model = annealer.model
+        if hasattr(model, "fixedParameterIndices"):
+            return tuple(model.fixedParameterIndices(parameters=parameters))
+        return tuple()
 
 
     def walkChains(self, annealer, step):

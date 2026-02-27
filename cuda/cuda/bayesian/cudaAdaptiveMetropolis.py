@@ -23,6 +23,7 @@ from altar.bayesian.Sampler import Sampler
 # other packages
 import math
 import journal
+import numpy
 
 # declaration
 class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemetropolis", implements=Sampler):
@@ -84,8 +85,10 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         Initialize me and my parts given an {application} context
         """
 
-        # TBD initialize scaling
-        # parameters = application.model.parameters
+        # active dimensions are unconstrained model parameters
+        total_parameters = application.model.parameters
+        fixed = self.fixedParameterIndices(model=application.model, parameters=total_parameters)
+        self.parameters = max(total_parameters - len(fixed), 1)
 
         # optimal scaling factor
         self.scaling = self.scaling/math.sqrt(self.parameters)
@@ -190,14 +193,9 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # copy cpu step state
         self.gstep.copyFromCPU(step=step)
 
-        # unpack what i need
-        self.gsigma_chol.copy_from_host(source=step.sigma)
-
-        # compute its Cholesky decomposition
-        self.gsigma_chol.Cholesky(uplo=cublas.FillModeUpper)
-
-        # scale it
-        self.gsigma_chol *= self.scaling
+        # build the proposal Cholesky on host and upload it
+        sigma_chol = self.buildSamplingCholesky(annealer=annealer, sigma=step.sigma.clone())
+        self.gsigma_chol.copy_from_host(source=sigma_chol)
 
         # notify we are done preparing the sampling PDF
         dispatcher.notify(event=dispatcher.prepareSamplingPDFFinish, controller=annealer)
@@ -356,7 +354,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
 
             # compute the correlation when min steps are reached
             if mcsteps >= min_mc_steps:
-                correlation = altar.cuda.stats.correlation(θstart, θ, axis=0).amax()
+                correlation = self.maxCorrelation(annealer=annealer, start=θstart, current=θ)
                 if annealer.worker.workers > 1:
                     import mpi
                     comm = mpi.world
@@ -386,6 +384,53 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             transa = cublas.OpNoTrans, diag=cublas.DiagNonUnit)
         # and return
         return displacement
+
+    def buildSamplingCholesky(self, annealer, sigma):
+        """
+        Build a proposal Cholesky factor that preserves constrained dimensions.
+        """
+        parameters = sigma.rows
+        fixed = set(self.fixedParameterIndices(model=annealer.model, parameters=parameters))
+        free = tuple(index for index in range(parameters) if index not in fixed)
+
+        if len(free) == parameters:
+            sigma_chol = altar.lapack.cholesky_decomposition(sigma)
+            sigma_chol *= self.scaling
+            return sigma_chol
+
+        sigma_chol = altar.matrix(shape=sigma.shape).zero()
+        if len(free) == 0:
+            return sigma_chol
+
+        sigma_ff = altar.matrix(shape=(len(free), len(free)))
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_ff[i, j] = sigma[gi, gj]
+        sigma_ff_chol = altar.lapack.cholesky_decomposition(sigma_ff)
+        sigma_ff_chol *= self.scaling
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_chol[gi, gj] = sigma_ff_chol[i, j]
+        return sigma_chol
+
+    def fixedParameterIndices(self, model, parameters):
+        """
+        Ask a model for constrained parameter indices, if any.
+        """
+        if hasattr(model, "fixedParameterIndices"):
+            return tuple(model.fixedParameterIndices(parameters=parameters))
+        return tuple()
+
+    def maxCorrelation(self, annealer, start, current):
+        """
+        Compute max per-parameter correlation over unconstrained dimensions.
+        """
+        corr = altar.cuda.stats.correlation(start, current, axis=0).copy_to_host(type='numpy')
+        fixed = set(self.fixedParameterIndices(model=annealer.model, parameters=corr.shape[0]))
+        free = [index for index in range(corr.shape[0]) if index not in fixed]
+        if len(free) == 0:
+            return 0.0
+        return float(numpy.nanmax(corr[free]))
 
 
     def adjustCovarianceScaling(self, accepted, invalid, rejected):

@@ -48,4 +48,24 @@ def ugaussian():
     return ugaussian
 
 
+@altar.foundry(implements=distribution, tip="the constant probability distribution")
+def constant():
+    # grab the factory
+    from .Constant import Constant as constant
+    # attach its docstring
+    __doc__ = constant.__doc__
+    # and return it
+    return constant
+
+
+@altar.foundry(implements=distribution, tip="alias for the constant probability distribution")
+def fixed():
+    # grab the factory
+    from .Constant import Constant as fixed
+    # attach its docstring
+    __doc__ = fixed.__doc__
+    # and return it
+    return fixed
+
+
 # end of file

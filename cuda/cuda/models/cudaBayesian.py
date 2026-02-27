@@ -120,6 +120,8 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
         # the total number of parameters is now known, so record it
         self.parameters = parameters
+        # deduce fixed parameters from priors and explicit model configuration
+        self.deduceFixedParameters(psets=self.psets, parameters=self.parameters)
 
         # set up an idx_map
         if self.idx_map is None:

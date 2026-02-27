@@ -66,6 +66,16 @@ class CUDAAnnealing(AnnealingMethod):
         # return to cpu
         gstep.copyToCPU(step=self.step)
 
+        # enforce fixed constraints (if any) and keep likelihoods consistent
+        if hasattr(model, "fixedParameterIndices"):
+            fixed = tuple(model.fixedParameterIndices(parameters=self.step.parameters))
+            if len(fixed) > 0:
+                model.applyFixedParameters(theta=self.step.theta)
+                gstep.theta.copy_from_host(source=self.step.theta)
+                gstep.prior.zero(), gstep.data.zero(), gstep.posterior.zero()
+                model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
+                gstep.copyToCPU(step=self.step)
+
         # all done
         return self
 

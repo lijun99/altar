@@ -86,6 +86,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             offset += pset.initialize(model=self, offset=offset)
         # the total number of parameters is now known, so record it
         self.parameters = offset
+        # deduce fixed parameters from priors and explicit model configuration
+        self.deduceFixedParameters(psets=self.psets, parameters=self.parameters)
 
         # all done
         return self
@@ -109,6 +111,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         for pset in self.psets.values():
             # and ask each one to {prep} the sample
             pset.initializeSample(theta=θ)
+        # project constrained entries
+        self.applyFixedParameters(theta=θ)
         # and return
         return self
 
@@ -120,6 +124,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
+        # enforce fixed constraints before checks
+        self.applyFixedParameters(theta=θ)
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample

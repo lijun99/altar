@@ -34,6 +34,15 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     psets.default = dict() # empty
     psets.doc = "an ensemble of parameter sets in the model"
 
+    fixed_indices = altar.properties.list(schema=altar.properties.int(), default=None)
+    fixed_indices.doc = "the global indices of parameters constrained to fixed values"
+
+    fixed_values = altar.properties.list(schema=altar.properties.float(), default=None)
+    fixed_values.doc = "optional per-index fixed values; defaults to {fixed_value}"
+
+    fixed_value = altar.properties.float(default=0.0)
+    fixed_value.doc = "default value for constrained parameters when {fixed_values} is not given"
+
     # public data
     rng = None
     controller = None
@@ -185,6 +194,139 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # do nothing
         return
 
+    @altar.export
+    def configureFixedParameters(self, parameters=None):
+        """
+        Validate and cache the specification of fixed parameters.
+        """
+        # resolve the parameter count
+        parameters = self.parameters if parameters is None else parameters
+        # normalize the index list
+        indices = self.fixed_indices
+        indices = [] if indices is None else list(indices)
+        # no fixed parameters
+        if len(indices) == 0:
+            self._fixedParameterMap = tuple()
+            self._fixedParameterCount = parameters
+            return self
+
+        # choose a value for each index
+        values = self.fixed_values
+        if values is None:
+            values = [self.fixed_value] * len(indices)
+        else:
+            values = list(values)
+            if len(values) == 1 and len(indices) > 1:
+                values = values * len(indices)
+            elif len(values) != len(indices):
+                raise ValueError(
+                    f"model '{type(self).__name__}': expected either one fixed value or "
+                    f"{len(indices)} values for {len(indices)} fixed indices; got {len(values)}")
+
+        # validate and deduplicate
+        mapping = {}
+        for index, value in zip(indices, values):
+            i = int(index)
+            if i < 0 or i >= parameters:
+                raise ValueError(
+                    f"model '{type(self).__name__}': fixed index {i} is out of range "
+                    f"for {parameters} parameters")
+            v = float(value)
+            if i in mapping and mapping[i] != v:
+                raise ValueError(
+                    f"model '{type(self).__name__}': conflicting fixed values for index {i}")
+            mapping[i] = v
+
+        # store a deterministic ordered representation
+        self._fixedParameterMap = tuple(sorted(mapping.items()))
+        self._fixedParameterCount = parameters
+        return self
+
+    @altar.export
+    def deduceFixedParameters(self, psets=None, parameters=None):
+        """
+        Merge explicit fixed-parameter settings with fixed parameters implied by priors.
+        """
+        # resolve my geometry
+        parameters = self.parameters if parameters is None else parameters
+        psets = self.psets if psets is None else psets
+
+        # start from the explicitly configured constraints
+        self.configureFixedParameters(parameters=parameters)
+        mapping = dict(self._fixedParameterMap)
+
+        # collect fixed parameters from each prior that can provide them
+        for pset in psets.values():
+            prior = getattr(pset, "prior", None)
+            if prior is None or not hasattr(prior, "fixedParameterMap"):
+                continue
+
+            local = prior.fixedParameterMap(offset=pset.offset, parameters=pset.count)
+            for index, value in local:
+                i = int(index)
+                v = float(value)
+                if i < 0 or i >= parameters:
+                    raise ValueError(
+                        f"model '{type(self).__name__}': prior fixed index {i} is out of range "
+                        f"for {parameters} parameters")
+                if i in mapping and mapping[i] != v:
+                    raise ValueError(
+                        f"model '{type(self).__name__}': conflicting fixed values for index {i}")
+                mapping[i] = v
+
+        # store merged constraints
+        self._fixedParameterMap = tuple(sorted(mapping.items()))
+        self._fixedParameterCount = parameters
+        if len(self._fixedParameterMap) > 0:
+            self.fixed_indices = [index for index, _ in self._fixedParameterMap]
+            self.fixed_values = [value for _, value in self._fixedParameterMap]
+
+        # all done
+        return self
+
+    @altar.export
+    def fixedParameterMap(self, parameters=None):
+        """
+        Return the fixed parameter map as a tuple of ``(index, value)`` pairs.
+        """
+        parameters = self.parameters if parameters is None else parameters
+        if self._fixedParameterMap is None or self._fixedParameterCount != parameters:
+            self.configureFixedParameters(parameters=parameters)
+        return self._fixedParameterMap
+
+    @altar.export
+    def fixedParameterIndices(self, parameters=None):
+        """
+        Return the tuple of constrained parameter indices.
+        """
+        return tuple(index for index, _ in self.fixedParameterMap(parameters=parameters))
+
+    @altar.export
+    def applyFixedParameters(self, theta):
+        """
+        Project fixed parameters in {theta} onto their prescribed values.
+        """
+        # this projection is implemented for host matrices
+        if not hasattr(theta, "rows") or not hasattr(theta, "columns"):
+            return theta
+
+        # resolve geometry
+        samples = theta.rows
+        parameters = theta.columns
+        fixed = self.fixedParameterMap(parameters=parameters)
+
+        # quick exit
+        if len(fixed) == 0:
+            return theta
+
+        # overwrite constrained entries in all samples
+        for sample in range(samples):
+            for index, value in fixed:
+                theta[sample, index] = value
+
+        # all done
+        return theta
+
     # implementation details
     def mountInputDataspace(self, pfs):
         """
@@ -240,6 +382,9 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     error = None
     default = None
     firewall = None
+
+    _fixedParameterMap = None
+    _fixedParameterCount = None
 
 
 # end of file

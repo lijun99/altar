@@ -74,4 +74,22 @@ def preset():
     # and return it
     return preset
 
+@altar.foundry(implements=distribution, tip="the constant distribution")
+def constant():
+    # grab the factory
+    from .cudaConstant import cudaConstant as constant
+    # attach its docstring
+    __doc__ = constant.__doc__
+    # and return it
+    return constant
+
+@altar.foundry(implements=distribution, tip="alias for the constant distribution")
+def fixed():
+    # grab the factory
+    from .cudaConstant import cudaConstant as fixed
+    # attach its docstring
+    __doc__ = fixed.__doc__
+    # and return it
+    return fixed
+
 # end of file

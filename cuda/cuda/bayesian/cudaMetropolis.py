@@ -144,19 +144,54 @@ class cudaMetropolis(altar.component, family="altar.samplers.metropolis", implem
         # copy cpu step state
         self.gstep.copyFromCPU(step=step)
 
-        # unpack what i need
-        self.gsigma_chol.copy_from_host(source=step.sigma)
-
-        # compute its Cholesky decomposition
-        self.gsigma_chol.Cholesky(uplo=cublas.FillModeUpper)
-
-        # scale it
-        self.gsigma_chol *= self.scaling
+        # build the proposal Cholesky on host and upload it
+        sigma_chol = self.buildSamplingCholesky(annealer=annealer, sigma=step.sigma.clone())
+        self.gsigma_chol.copy_from_host(source=sigma_chol)
 
         # notify we are done preparing the sampling PDF
         dispatcher.notify(event=dispatcher.prepareSamplingPDFFinish, controller=annealer)
         # all done
         return
+
+    def buildSamplingCholesky(self, annealer, sigma):
+        """
+        Build a proposal Cholesky factor that preserves constrained dimensions.
+        """
+        parameters = sigma.rows
+        fixed = set(self.fixedParameterIndices(annealer=annealer, parameters=parameters))
+        free = tuple(index for index in range(parameters) if index not in fixed)
+
+        # no constraints
+        if len(free) == parameters:
+            sigma_chol = altar.lapack.cholesky_decomposition(sigma)
+            sigma_chol *= self.scaling
+            return sigma_chol
+
+        # full factor (constrained rows/columns remain zero)
+        sigma_chol = altar.matrix(shape=sigma.shape).zero()
+        if len(free) == 0:
+            return sigma_chol
+
+        # gather/factorize/scatter the free block
+        sigma_ff = altar.matrix(shape=(len(free), len(free)))
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_ff[i, j] = sigma[gi, gj]
+        sigma_ff_chol = altar.lapack.cholesky_decomposition(sigma_ff)
+        sigma_ff_chol *= self.scaling
+        for i, gi in enumerate(free):
+            for j, gj in enumerate(free):
+                sigma_chol[gi, gj] = sigma_ff_chol[i, j]
+        return sigma_chol
+
+    def fixedParameterIndices(self, annealer, parameters):
+        """
+        Ask the model for constrained parameter indices, if any.
+        """
+        model = annealer.model
+        if hasattr(model, "fixedParameterIndices"):
+            return tuple(model.fixedParameterIndices(parameters=parameters))
+        return tuple()
 
     def finishSamplingPDF(self, step):
         """
