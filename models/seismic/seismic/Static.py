@@ -62,7 +62,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         super().initialize(application=application)
 
         # load Green's function
-        self.GF = self.loadFile(
+        self.GF = self.load_file(
             filename=self.green,
             shape=(self.observations, self.parameters),
         )
@@ -84,13 +84,13 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
 
         # merge covariance to Green's function when the data is already scaled
         if not self.forwardonly and getattr(self.dataobs, "merge_cd_with_data", False):
-            self.mergeCovarianceToGF()
+            self.merge_covariance_to_gf()
 
         # all done
         return self
 
 
-    def forwardModelBatched(self, theta, prediction, green=None, batch=None, observation=None):
+    def forward_model_batched(self, theta, prediction, green=None, batch=None, observation=None):
         """
         Linear forward model prediction = G * theta for a batch of samples.
         prediction has shape (samples, observations).
@@ -139,7 +139,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         return self
 
 
-    def forwardModel(self, theta, green=None, prediction=None, observation=None):
+    def forward_model(self, theta, green=None, prediction=None, observation=None):
         """
         Linear forward model prediction = G * theta for a single sample.
         """
@@ -162,7 +162,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
 
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """
@@ -170,7 +170,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
 
         # load theta if not provided
         if theta is None:
-            gtheta = self.loadFile(
+            gtheta = self.load_file(
                 filename=self.theta_input,
                 shape=self.parameters,
                 dataset=self.theta_dataset,
@@ -183,7 +183,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         # allocate predicted data
         data = altar.vector(shape=self.observations)
         # forward model (prediction only)
-        self.forwardModel(theta=gtheta, green=self.GF, prediction=data, observation=None)
+        self.forward_model(theta=gtheta, green=self.GF, prediction=data, observation=None)
 
         # save data prediction
         h5file = h5py.File(name=self.forward_output.path, mode='a')
@@ -197,7 +197,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         return
 
 
-    def mergeCovarianceToGF(self):
+    def merge_covariance_to_gf(self):
         """
         Merge data covariance with Green's function when data is pre-scaled.
         """
@@ -227,7 +227,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         return self
 
 
-    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+    def load_file(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a gsl vector or matrix.
         Supported format:
@@ -285,7 +285,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
 
-    def computeCovarianceInverse(self, cd):
+    def compute_covariance_inverse(self, cd):
         """
         Compute the inverse of the data covariance matrix (compatibility helper).
         """
@@ -302,7 +302,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         return inv
 
 
-    def computeNormalization(self, observations, cd):
+    def compute_normalization(self, observations, cd):
         """
         Compute the normalization of the L2 norm (compatibility helper).
         """
@@ -319,7 +319,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         return -(log(2 * pi) * observations + logdet) / 2
 
 
-    def initializeResiduals(self, samples, data):
+    def initialize_residuals(self, samples, data):
         """
         Initialize the residual matrix for compatibility with older workflows.
         """

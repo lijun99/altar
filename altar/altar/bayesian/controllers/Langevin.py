@@ -65,7 +65,7 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         self.scheduler.initialize(application=application)
 
         # deduce my annealing method
-        self.worker = self.deduceAnnealingMethod(job=application.job)
+        self.worker = self.deduce_annealing_method(job=application.job)
         # and initialize it
         self.worker.initialize(application=application)
 
@@ -134,7 +134,7 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
 
 
     # implementation details
-    def deduceAnnealingMethod(self, job):
+    def deduce_annealing_method(self, job):
         """
         Instantiate an annealing method compatible the user choices
         """

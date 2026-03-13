@@ -39,7 +39,7 @@ class HMCState:
     def start(cls, annealer):
         model = annealer.model
         step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
-        model.initializeSample(step=step)
+        model.initialize_sample(step=step)
         model.likelihoods(annealer=annealer, step=step)
         model.gradients(annealer=annealer, step=step)  # <-- assumes model provides gradients
         step.prior.print()
@@ -71,7 +71,7 @@ class HMCState:
         gradients = self.grad_prior.clone(), self.grad_data.clone(), self.grad_posterior.clone()
         return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma, gradients=gradients)
 
-    def computePosterior(self):
+    def compute_posterior(self):
         self.posterior.copy(self.prior)
         altar.blas.daxpy(self.beta, self.data, self.posterior)
         # Compute posterior gradient: grad_posterior = grad_prior + beta * grad_data

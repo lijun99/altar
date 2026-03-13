@@ -45,7 +45,7 @@ class Base(altar.component, implements=distribution):
 
 
     @altar.export
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
@@ -58,7 +58,7 @@ class Base(altar.component, implements=distribution):
 
 
     @altar.export
-    def priorLikelihood(self, theta, likelihood):
+    def eval_prior(self, theta, likelihood):
         """
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
@@ -79,7 +79,7 @@ class Base(altar.component, implements=distribution):
         return self
 
     @altar.provides
-    def priorGradient(self, theta, index, prior):
+    def prior_gradient(self, theta, index, prior):
         r"""
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """

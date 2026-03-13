@@ -11,10 +11,14 @@
 
 # externals
 import math
+from collections import namedtuple
 # the package
 import altar
 # my protocol
 from .Sampler import Sampler as sampler
+
+# acceptance statistics container
+Statistics = namedtuple('Statistics', ['accepted', 'rejected', 'unlikely'])
 
 
 # declaration
@@ -30,16 +34,9 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
     # types
     from ..states.CoolingStep import CoolingStep
 
-
-    # user configurable state
-    scaling = altar.properties.float(default=.1)
-    scaling.doc = 'the parameter covariance Σ is scaled by the square of this'
-
-    acceptanceWeight = altar.properties.float(default=8.0/9.0)
-    acceptanceWeight.doc = 'the weight of accepted samples during covariance rescaling'
-
-    rejectionWeight = altar.properties.float(default=1.0/9.0)
-    rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
+    # step size regulator
+    stepsizer = altar.bayesian.stepsizer()
+    stepsizer.doc = "the step size regulator that adjusts the proposal scaling based on acceptance statistics"
 
 
     # protocol obligations
@@ -53,6 +50,9 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # get the capsule of the random number generator
         rng = application.rng.rng
 
+        # initialize the step size regulator and record the initial scaling
+        self.scaling = self.stepsizer.initialize()
+
         # initialize the proposal mechanism
         self.proposal.initialize(application=application)
 
@@ -64,34 +64,38 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
 
 
     @altar.export
-    def samplePosterior(self, annealer, step):
+    def sample_posterior(self, annealer, step):
         """
         Sample the posterior distribution
         """
         # grab the dispatcher
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
-        dispatcher.notify(event=dispatcher.samplePosteriorStart, controller=annealer)
-        # walk the chains
-        statistics = self.walkChains(annealer=annealer, step=step)
+        dispatcher.notify(event=dispatcher.sample_posterior_start, controller=annealer)
+        # walk the chains; statistics stored on self
+        self.walk_chains(annealer=annealer, step=step)
         # notify we are done sampling the posterior
-        dispatcher.notify(event=dispatcher.samplePosteriorFinish, controller=annealer)
-        # all done
-        return statistics
-
-
-    @altar.provides
-    def resample(self, annealer, statistics):
-        """
-        Update my statistics based on the results of walking my Markov chains
-        """
-        # update the scaling of the parameter covariance matrix
-        self.adjustCovarianceScaling(*statistics)
+        dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
         # all done
         return
 
 
-    def walkChains(self, annealer, step):
+    @altar.provides
+    def update(self, annealer):
+        """
+        Update my parameters based on the results of walking my Markov chains
+        """
+        # unpack the stored statistics
+        accepted, rejected, unlikely = self.statistics
+        # delegate step size adjustment to the stepsizer
+        self.scaling = self.stepsizer.adjust(
+            attempts=accepted + rejected + unlikely,
+            accepted=accepted)
+        # all done
+        return
+
+
+    def walk_chains(self, annealer, step):
         """
         Run the Metropolis algorithm on the Markov chains
         """
@@ -132,7 +136,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # step all chains together
         for _ in range(self.steps):
             # notify we are advancing the chains
-            dispatcher.notify(event=dispatcher.chainAdvanceStart, controller=annealer)
+            dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
 
             # initialize the candidate sample by randomly displacing the current one
             cθ = self.proposal.propose(sampler=self, step=step, annealer=annealer)
@@ -147,7 +151,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
             # the random displacement may have generated candidates that are outside the
             # support of the model, so we must give it an opportunity to reject them;
             # notify we are starting the verification process
-            dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
+            dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
             # reset the mask and ask the model to verify the sample validity
             model.verify(step=candidate, mask=rejects.zero())
             # make the candidate a consistent set by replacing the rejected samples with copies
@@ -158,7 +162,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
                     # copy the corresponding row from {θ} into {candidate}
                     cθ.setRow(index, θ.getRow(index))
             # notify that the verification process is finished
-            dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
             # compute the likelihoods
             model.likelihoods(annealer=annealer, step=candidate)
@@ -171,7 +175,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
             dice.random(self.uniform)
 
             # notify we are starting accepting samples
-            dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
+            dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
             # accept/reject: go through all the samples
             for sample in range(samples):
@@ -201,40 +205,22 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
                 posterior[sample] = cpost[sample]
 
             # notify we are done accepting samples
-            dispatcher.notify(event=dispatcher.acceptFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
 
             # notify we are done advancing the chains
-            dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
 
+        # store statistics on self for access by update() and the controller
+        self.statistics = Statistics(accepted, rejected, unlikely)
         # all done
-        return accepted, rejected, unlikely
-
-
-    def adjustCovarianceScaling(self, accepted, rejected, unlikely):
-        """
-        Compute a new value for the covariance sacling factor based on the acceptance/rejection
-        ratio
-        """
-        # unpack my weights
-        aw = self.acceptanceWeight
-        rw = self.rejectionWeight
-        # compute the acceptance ratio
-        acceptance = accepted / (accepted + rejected + unlikely)
-        # the fudge factor
-        kc = aw*acceptance + rw
-        # don't let it get too small
-        if kc < .01: kc = .01
-        # or too big
-        if kc > 1.: kc = 1.
-        # store it
-        self.scaling = kc
-        # and return
-        return self
+        return
 
 
     # private data
     steps = 1          # the length of each Markov chain
+    scaling = 0.1      # current proposal scaling; updated by stepsizer after each update
+    statistics = None  # (accepted, rejected, unlikely) from the last walk_chains call
 
     uniform = None     # the distribution of the sample multiplicities
     dispatcher = None  # a reference to the event dispatcher

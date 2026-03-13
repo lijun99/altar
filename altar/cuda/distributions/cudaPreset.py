@@ -37,14 +37,14 @@ class cudaPreset(cudaDistribution, family="altar.cuda.distributions.preset"):
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda initialize distribution
         :param application:
         :return:
         """
         # super class process
-        super().cuInitialize(application=application)
+        super().cu_initialize(application=application)
 
         # get information from application
 
@@ -61,7 +61,7 @@ class cudaPreset(cudaDistribution, family="altar.cuda.distributions.preset"):
         return self
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
 

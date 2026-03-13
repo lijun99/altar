@@ -32,7 +32,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
     has_reparametrization = True
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
@@ -42,7 +42,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         # and return
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -53,7 +53,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         # all done; return the rejection map
         return mask
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         Fill my portion of {prior} with the prior probabilities of the samples in {theta}
         theta should be in physical space [support[0], support[1]]
@@ -62,7 +62,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         libcudaaltar.cudaUniform_logpdf(theta.data, prior.data, batch, self.idx_range, self.support)
         return self
 
-    def cuEvalJacobian(self, theta, jacobian, batch):
+    def cu_eval_jacobian(self, theta, jacobian, batch):
         """
         Evaluate the log of the Jacobian determinant for the logit transformation.
         theta should be in sampling space (-∞, ∞)
@@ -71,13 +71,13 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         libcudaaltar.cudaLogistic_logpdf(theta.data, jacobian.data, batch, self.idx_range)
         return self
 
-    def cuToPhysical(self, phi=None, theta=None, batch=None):
+    def cu_to_physical(self, phi=None, theta=None, batch=None):
         """
         Transform parameters from sampling space {phi} (-inf, inf) to physical space {theta}
         [support[0], support[1]] using the inverse logit (sigmoid) function.
         """
         if theta is None or batch is None:
-            raise TypeError("cuToPhysical requires theta and batch")
+            raise TypeError("cu_to_physical requires theta and batch")
         if phi is None:
             phi = theta
         libcudaaltar.cudaUniformLogit_tophysical(
@@ -85,13 +85,13 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         )
         return self
 
-    def cuToSampling(self, theta=None, phi=None, batch=None):
+    def cu_to_sampling(self, theta=None, phi=None, batch=None):
         """
         Transform parameters from physical space [support[0], support[1]] to sampling space (-inf, inf)
         using the logit function.
         """
         if theta is None or batch is None:
-            raise TypeError("cuToSampling requires theta and batch")
+            raise TypeError("cu_to_sampling requires theta and batch")
         if phi is None:
             phi = theta
         libcudaaltar.cudaUniformLogit_tosampling(
@@ -99,7 +99,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         )
         return self
 
-    def cuPriorGradient(self, theta, gradient, batch, index=None):
+    def cu_prior_gradient(self, theta, gradient, batch, index=None):
         """
         Compute the gradient of log prior with respect to physical parameters.
         For uniform distribution, this is zero everywhere except at boundaries.
@@ -113,7 +113,7 @@ class cudaUniformLogit(cudaDistribution, family="altar.cuda.distributions.unifor
         # for uniform distribution, gradient is 0 except at boundaries
         return self
 
-    def cuJacobianGradient(self, theta, gradient, batch, index=None):
+    def cu_jacobian_gradient(self, theta, gradient, batch, index=None):
         """
         Compute the gradient of the log Jacobian determinant.
 

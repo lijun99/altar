@@ -95,7 +95,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
 
         # compute an optimal gain if not provided
         if self.gain is None:
-            self.gain = self.gainFunction(self.target_acceptance_rate)
+            self.gain = self.gain_function(self.target_acceptance_rate)
 
         # assign the stage 2 steps
         if self.max_mc_steps_stage2 is None:
@@ -116,12 +116,12 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         self.initialize(application=application)
         return self
 
     @altar.export
-    def samplePosterior(self, annealer, step):
+    def sample_posterior(self, annealer, step):
         """
         Sample the posterior distribution
         Arguments:
@@ -133,15 +133,15 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # grab the dispatcher
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
-        dispatcher.notify(event=dispatcher.samplePosteriorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.sample_posterior_start, controller=annealer)
 
         # prepare the sampling pdf, copy step to gpu step
-        self.prepareSamplingPDF(annealer=annealer, step=step)
+        self.prepare_sampling_pdf(annealer=annealer, step=step)
 
         # check whether model parameters needed to be updated, e.g., Cp
         model = annealer.model
 
-        if model.updateModel(annealer=annealer):
+        if model.update_model(annealer=annealer):
             # if updated, recompute datalikelihood and posterior
             gstep = self.gstep
             batch = gstep.samples
@@ -149,13 +149,13 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             model.likelihoods(annealer=annealer, step=gstep, batch=batch)
 
         # walk the chains
-        statistics = self.walkChains(annealer=annealer, step=self.gstep)
+        statistics = self.walk_chains(annealer=annealer, step=self.gstep)
 
         # finish the sampling pdf, copy gpu step back
-        self.finishSamplingPDF(step=step)
+        self.finish_sampling_pdf(step=step)
 
         # notify we are done sampling the posterior
-        dispatcher.notify(event=dispatcher.samplePosteriorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
         # all done
         return statistics
 
@@ -166,13 +166,13 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         Update my statistics based on the results of walking my Markov chains
         """
         # update the scaling of the parameter covariance matrix
-        self.adjustCovarianceScaling(*statistics)
+        self.adjust_covariance_scaling(*statistics)
         # all done
         return
 
 
     # implementation details
-    def prepareSamplingPDF(self, annealer, step):
+    def prepare_sampling_pdf(self, annealer, step):
         """
         Re-scale and decompose the parameter covariance matrix, in preparation for the
         Metropolis update
@@ -180,15 +180,15 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # get the dispatcher
         dispatcher = annealer.dispatcher
         # notify we have started preparing the sampling PDF
-        dispatcher.notify(event=dispatcher.prepareSamplingPDFStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.prepare_sampling_pdf_start, controller=annealer)
 
         # allocate local gpu data if not allocated
         self.gstep = annealer.worker.gstep
         if self.ginit is not True:
-            self.allocateGPUData(step.samples, step.parameters)
+            self.allocate_gpu_data(step.samples, step.parameters)
 
         # copy cpu step state
-        self.gstep.copyFromCPU(step=step)
+        self.gstep.copy_from_cpu(step=step)
 
         # unpack what i need
         self.gsigma_chol.copy_from_host(source=step.sigma)
@@ -200,19 +200,19 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         self.gsigma_chol *= self.scaling
 
         # notify we are done preparing the sampling PDF
-        dispatcher.notify(event=dispatcher.prepareSamplingPDFFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.prepare_sampling_pdf_finish, controller=annealer)
         # all done
         return
 
-    def finishSamplingPDF(self, step):
+    def finish_sampling_pdf(self, step):
         """
         procedures after sampling, e.g, copy data back to cpu
         """
         # copy gpu step back to cpu
-        self.gstep.copyToCPU(step=step)
+        self.gstep.copy_to_cpu(step=step)
         return
 
-    def walkChains(self, annealer, step):
+    def walk_chains(self, annealer, step):
         """
         Run the Metropolis algorithm on the Markov chains
         Arguments:
@@ -284,10 +284,10 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
 
             for ihop in range(self.corr_check_steps):
                 # notify we are advancing the chains
-                dispatcher.notify(event=dispatcher.chainAdvanceStart, controller=annealer)
+                dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
 
                 # notify we are starting the verification process
-                dispatcher.notify(event=dispatcher.verifyStart, controller=annealer)
+                dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
 
 
                 # the random displacement may have generated candidates that are outside the
@@ -299,7 +299,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                 # reset the mask and ask the model to verify the sample validity
                 # note that I have redefined model.verify to use theta as input
 
-                model.cuVerify(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
+                model.cu_verify(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
 
                 invalid_step = int(invalid_flags.sum())
                 valid = samples - invalid_step
@@ -321,7 +321,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                 libcudaaltar.cudaMetropolis_queueValidSamples(cθ.data, θproposal.data, valid_indices.data, valid)
 
                 # notify that the verification process is finished
-                dispatcher.notify(event=dispatcher.verifyFinish, controller=annealer)
+                dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
                 # initialize the likelihoods
                 likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
@@ -333,7 +333,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                 dice = curand.uniform(self.curng, out=dice)
 
                 # notify we are starting accepting samples
-                dispatcher.notify(event=dispatcher.acceptStart, controller=annealer)
+                dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
                 # accept/reject: go through all the samples
                 libcudaaltar.cudaMetropolis_metropolisUpdate(
@@ -347,10 +347,10 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
                 rejected += valid - accepted_step
 
             # notify we are done accepting samples
-            dispatcher.notify(event=dispatcher.acceptFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
 
             # notify we are done advancing the chains
-            dispatcher.notify(event=dispatcher.chainAdvanceFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
             mcsteps += self.corr_check_steps
 
@@ -388,7 +388,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         return displacement
 
 
-    def adjustCovarianceScaling(self, accepted, invalid, rejected):
+    def adjust_covariance_scaling(self, accepted, invalid, rejected):
         """
         Compute a new value for the covariance sacling factor based on the acceptance/rejection
         ratio
@@ -417,7 +417,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         # and return
         return self
 
-    def allocateGPUData(self, samples, parameters):
+    def allocate_gpu_data(self, samples, parameters):
         """
         initialize gpu work data
         """
@@ -442,7 +442,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
         return
 
     @staticmethod
-    def gainFunction(x):
+    def gain_function(x):
         """
         Compute the optimal gain constant from a target acceptranceRate {x}
         """

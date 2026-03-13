@@ -63,27 +63,27 @@ class Contiguous(altar.component,
 
 
     @altar.export
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         # grab the portion of the sample that belongs to me
         θ = self.restrict(theta=theta)
         # fill it with random numbers from my {prep} distribution
-        self.prep.initializeSample(theta=θ)
+        self.prep.initialize_sample(theta=θ)
         # all done
         return self
 
 
     @altar.export
-    def priorLikelihood(self, theta, priorLLK):
+    def eval_prior(self, theta, prior):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=theta)
         # delegate
-        self.prior.priorLikelihood(theta=θ, likelihood=priorLLK)
+        self.prior.eval_prior(theta=θ, likelihood=prior)
         # all done
         return self
 

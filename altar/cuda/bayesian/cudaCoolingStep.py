@@ -116,20 +116,20 @@ class cudaCoolingStep:
                          jacobian=jacobian, likelihoods=likelihoods,
                          has_reparametrization=self.has_reparametrization)
 
-    def computePosterior(self, batch=None):
+    def compute_posterior(self, batch=None):
         """
         (Re-)Compute the posterior from prior, data, and (updated) beta
         """
         batch = batch if batch is not None else self.samples
         # copy prior to posterior
         self.posterior.copy(self.prior)
-        # add beta*dataLikelihood
+        # add beta*data_likelihood
         altar.cuda.cublas.axpy(alpha=self.beta, x=self.data, y=self.posterior, batch=batch)
 
         # all done
         return self
 
-    def copyFromCPU(self, step):
+    def copy_from_cpu(self, step):
         """
         Copy cpu step to gpu step
         """
@@ -143,7 +143,7 @@ class cudaCoolingStep:
         self.posterior.copy_from_host(source=step.posterior)
         return self
 
-    def copyToCPU(self, step):
+    def copy_to_cpu(self, step):
         """
         copy gpu step to cpu step
         """

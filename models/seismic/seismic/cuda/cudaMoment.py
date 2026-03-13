@@ -65,12 +65,12 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda interface of initialization
         """
         # initialize the parent uniform distribution
-        super().cuInitialize(application=application)
+        super().cu_initialize(application=application)
 
         # get the input path
         ifs = application.pfs["inputs"]
@@ -133,7 +133,7 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         return self
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
@@ -193,16 +193,16 @@ class cudaMoment(cudaUniform, family="altar.cuda.distributions.moment"):
         # and return
         return self
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
         # call super class (cudaUniform) method
-        super().cuEvalPrior(theta=theta, prior=prior, batch=batch)
+        super().cu_eval_prior(theta=theta, prior=prior, batch=batch)
         # all done
         return self
 
-    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+    def cu_eval_prior_with_physical(self, theta, prior, batch):
         """
         cuda process to computes the extra contributions to prior in terms of physical parameters
         """

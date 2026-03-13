@@ -65,7 +65,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         super().initialize(application=application)
 
         # mount my input data space
-        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
 
         # find out how many samples to work with; equal to the number of chains
         self.samples = application.job.chains
@@ -84,7 +84,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # set the offset
             pset.offset = parameters
             # initialize the pset
-            parameters += pset.cuInitialize(application=application)
+            parameters += pset.cu_initialize(application=application)
         self.parameters = parameters
 
         # go through my models
@@ -96,13 +96,13 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             model.forwardonly = self.forwardonly
             model.initialize(application=application)
 
-        self.cuInitialize(application=application)
+        self.cu_initialize(application=application)
 
         self.datallk = altar.cuda.vector(shape=self.samples, dtype=self.precision)
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda initialization
         """
@@ -116,19 +116,19 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my controller to help me sample my posterior distribution
         return self.controller.posterior(model=self)
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         # ask my subsets
         for name, pset in self.psets.items():
             # and ask each one to verify the sample
-            pset.prep.cuInitSample(theta=theta, batch=batch)
+            pset.prep.cu_init_sample(theta=theta, batch=batch)
 
         # all done
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -136,23 +136,23 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.prior.cuVerify(theta=theta, mask=mask, batch=batch)
+            pset.prior.cu_verify(theta=theta, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.prior.cuEvalPrior(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
 
         # all done
         return self
 
-    def cuEvalLikelihood(self, step, batch):
+    def cu_eval_likelihood(self, step, batch):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -167,7 +167,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # model_theta = model.restricted(theta=step.theta, batch=batch)
             # another is to use idx_map
 
-            model.cuEvalLikelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
+            model.cu_eval_likelihood(theta=step.theta, likelihood=datallk.zero(), batch=batch)
             if model.cascaded:
                 step.prior += datallk
             else:
@@ -176,7 +176,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return self
 
-    def cuEvalPosterior(self, step, batch):
+    def cu_eval_posterior(self, step, batch):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -188,7 +188,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return self
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         Update model parameters if needed
         :param annealer:
@@ -198,7 +198,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         out = False
         # iterate over embedded models
         for name, model in self.models.items():
-            updated = model.updateModel(annealer=annealer)
+            updated = model.update_model(annealer=annealer)
             out = out or updated
         # all done
         return out
@@ -215,25 +215,25 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         dispatcher = annealer.dispatcher
 
         # notify we are about to compute the prior likelihood
-        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.cuEvalPrior(theta=step.theta, prior=step.prior, batch=batch)
+        self.cu_eval_prior(theta=step.theta, prior=step.prior, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
         # notify we are about to compute the likelihood of the prior given the data
-        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_start, controller=annealer)
         # compute it
-        self.cuEvalLikelihood(step=step, batch=batch)
+        self.cu_eval_likelihood(step=step, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
-        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
         # compute it
-        self.cuEvalPosterior(step=step, batch=batch)
+        self.cu_eval_posterior(step=step, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
         # enable chaining
         return self
@@ -245,11 +245,11 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
-        self.cuVerify(step, mask, batch=step.shape[0])
+        self.cu_verify(step, mask, batch=step.shape[0])
         return self
 
     # implementation details
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """
@@ -272,7 +272,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return ifs
 
-    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+    def load_file(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a numpy array (for both float32/64 support)
         Supported format:
@@ -335,7 +335,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # all done
         return cpuData
 
-    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None, dtype=None):
+    def load_file_to_gpu(self, filename, shape=None, dataset=None, out=None, dtype=None):
         """
         Load an input file to a gpu (for both float32/64 support)
         Supported format:
@@ -354,7 +354,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         dtype = dtype or self.precision
 
         # load to cpu as a numpy array at fist
-        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
+        cpuData = self.load_file(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
 
         # if output gpu matrix/vector is not pre-allocated
         if out is None:
@@ -373,12 +373,12 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         return out
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """
         # only for one set of parameters
-        theta = theta or self.loadFileToGPU(filename=self.theta_input,
+        theta = theta or self.load_file_to_gpu(filename=self.theta_input,
                                             dataset=self.theta_dataset)
         for name, model in self.models.items():
             # to contribute to the computation of the data likelihood
@@ -387,7 +387,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
             # model needs to decide how to treat the whole parameter set
 
             model.forward_output = self.forward_output
-            model.forwardProblem(application=application, theta=theta)
+            model.forward_problem(application=application, theta=theta)
         return
 
     # local

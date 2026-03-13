@@ -75,15 +75,15 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         self.prior.initialize(rng=rng)
 
         # mount my input data space
-        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
         # convert the input filenames into data
-        self.G, self.d, self.Cd = self.loadInputs()
+        self.G, self.d, self.Cd = self.load_inputs()
         # compute the normalization
-        self.normalization = self.computeNormalization(observations=self.d.shape, cd=self.Cd)
+        self.normalization = self.compute_normalization(observations=self.d.shape, cd=self.Cd)
         # compute the inverse of {Cd}
-        self.Cd_inv = self.computeCovarianceInverse(self.Cd)
+        self.Cd_inv = self.compute_covariance_inverse(self.Cd)
         # prepare the residuals matrix
-        self.residuals = self.initializeResiduals(samples=samples, data=self.d)
+        self.residuals = self.initialize_residuals(samples=samples, data=self.d)
 
         # grab a channel
         channel = self.debug
@@ -116,20 +116,20 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
 
 
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # fill it with random numbers from my initializer
-        self.prep.initializeSample(theta=θ)
+        self.prep.initialize_sample(theta=θ)
         # and return
         return self
 
 
     @altar.export
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -142,14 +142,14 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         likelihood = step.prior
 
         # fill my portion of the prior likelihood vector
-        pdf.priorLikelihood(theta=θ, likelihood=likelihood)
+        pdf.eval_prior(theta=θ, likelihood=likelihood)
 
         # all done
         return self
 
 
     @altar.export
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -205,7 +205,7 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
 
 
     # implementation details
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """
@@ -229,7 +229,7 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         return ifs
 
 
-    def loadInputs(self):
+    def load_inputs(self):
         """
         Load the data in the input files into memory
         """
@@ -297,7 +297,7 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         return green, data, cd
 
 
-    def computeCovarianceInverse(self, cd):
+    def compute_covariance_inverse(self, cd):
         """
         Compute the inverse of the data covariance matrix
         """
@@ -313,7 +313,7 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         return inv
 
 
-    def computeNormalization(self, observations, cd):
+    def compute_normalization(self, observations, cd):
         """
         Compute the normalization of the L2 norm
         """
@@ -329,7 +329,7 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         return - (log(2*π)*observations + logdet) / 2;
 
 
-    def initializeResiduals(self, samples, data):
+    def initialize_residuals(self, samples, data):
         """
         Prime the matrix that will hold the residuals (G θ - d) for each sample by duplicating the
         observation vector as many times as there are samples

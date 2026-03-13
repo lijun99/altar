@@ -112,12 +112,12 @@ class cudaHMCState:
                           likelihoods=likelihoods, gradients=gradients, potential=potential,
                           reparameterization=self.reparameterization, phi=phi, jacobian=jacobian)
 
-    def computePosterior(self):
+    def compute_posterior(self):
         self.posterior.copy(self.prior)
         altar.cuda.cublas.axpy(alpha=self.beta, x=self.data, y=self.posterior, batch=self.samples)
         return self
 
-    def copyFromCPU(self, state):
+    def copy_from_cpu(self, state):
         self.beta = state.beta
         self.theta.copy_from_host(source=state.theta)
         if self.reparameterization and hasattr(state, "theta_sampling"):
@@ -129,7 +129,7 @@ class cudaHMCState:
         self.posterior.copy_from_host(source=state.posterior)
         return self
 
-    def copyToCPU(self, state):
+    def copy_to_cpu(self, state):
         state.beta = self.beta
         self.theta.copy_to_host(target=state.theta)
         if self.reparameterization and getattr(state, "theta_sampling", None) is not None:

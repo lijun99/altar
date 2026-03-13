@@ -66,7 +66,7 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.computeSampleMultiplicities(w=w, step=step).values()
+        multi = self.compute_sample_multiplicities(w=w, step=step).values()
 
         # unique samples count
         unique_samples = 0
@@ -110,7 +110,7 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
         # indicate resampling was performed
         return True
 
-    def computeSampleMultiplicities(self, w, step):
+    def compute_sample_multiplicities(self, w, step):
         """
         Prepare a frequency vector for the new samples given the importance weights {w}
         """
@@ -127,13 +127,13 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
             r.random(pdf=self.uniform)
 
         # compute the bin edges in the range [0, 1]
-        ticks = tuple(self.buildHistogramRanges(w))
+        ticks = tuple(self.build_histogram_ranges(w))
         # build a histogram
         h = altar.histogram(bins=samples).ranges(points=ticks).fill(r)
         # and return it
         return h
 
-    def buildHistogramRanges(self, w):
+    def build_histogram_ranges(self, w):
         """
         Build histogram bins based on the importance weights
         """

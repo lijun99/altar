@@ -68,7 +68,7 @@ class Moment(uniform, family="altar.distributions.moment"):
         
         
     @altar.export
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """

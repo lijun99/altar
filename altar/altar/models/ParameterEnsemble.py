@@ -64,23 +64,23 @@ class ParameterEnsemble(altar.component,
 
 
     @altar.export
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         for pset in self._iter_psets():
-            pset.initializeSample(theta=theta)
+            pset.initialize_sample(theta=theta)
         # all done
         return self
 
 
     @altar.export
-    def priorLikelihood(self, theta, priorLLK):
+    def eval_prior(self, theta, prior):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         for pset in self._iter_psets():
-            pset.priorLikelihood(theta=theta, priorLLK=priorLLK)
+            pset.eval_prior(theta=theta, prior=prior)
         # all done
         return self
 

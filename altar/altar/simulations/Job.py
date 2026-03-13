@@ -63,7 +63,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         Initialize the job parameters with information from the application context
         """
         # validate the machine layout
-        self.validateMachineLayout(application=application)
+        self.validate_machine_layout(application=application)
         # all done
         return self
 
@@ -79,7 +79,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
 
 
     # implementation details
-    def validateMachineLayout(self, application):
+    def validate_machine_layout(self, application):
         """
         Adjust the machine parameters based on the {application} context and the runtime
         environment

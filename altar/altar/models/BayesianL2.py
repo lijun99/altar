@@ -65,7 +65,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         super().initialize(application=application)
 
         # mount my input data space
-        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
         # find out how many samples I will be working with; this equal to the number of chains
         self.samples = application.job.chains
 
@@ -99,7 +99,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self.controller.posterior(model=self)
 
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -108,7 +108,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # go through each parameter set
         for pset in self.psets.values():
             # and ask each one to {prep} the sample
-            pset.initializeSample(theta=θ)
+            pset.initialize_sample(theta=θ)
         # and return
         return self
 
@@ -127,29 +127,29 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # all done; return the rejection map
         return mask
 
-    def evalPrior(self, theta, prior):
+    def eval_prior(self, theta, prior):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.priorLikelihood(theta, prior)
+            pset.eval_prior(theta, prior)
 
         # all done
         return self
 
 
-    def forwardModel(self, theta, prediction):
+    def forward_model(self, theta, prediction):
         """
         The forward model for a single set of parameters
         """
         # i don't know what to do, so...
         raise NotImplementedError(
-            f"model '{type(self).__name__}' must implement 'forwardModel'")
+            f"model '{type(self).__name__}' must implement 'forward_model'")
 
 
-    def forwardModelBatched(self, theta, prediction):
+    def forward_model_batched(self, theta, prediction):
         """
         The forward model for a batch of theta: compute prediction from theta
         also return {residual}=True, False if the difference between data and prediction is computed
@@ -164,7 +164,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             # obtain the sample (one set of parameters)
             theta_sample = theta.getRow(sample)
             # call the forward model
-            self.forwardModel(theta=theta_sample, prediction=prediction_sample)
+            self.forward_model(theta=theta_sample, prediction=prediction_sample)
             # copy to the prediction matrix
             prediction.setRow(sample, prediction_sample)
 
@@ -172,27 +172,27 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def evalDataLikelihood(self, theta, likelihood):
+    def eval_data_likelihood(self, theta, likelihood):
         """
         calculate data likelihood and add it to step.prior or step.data
         """
-        # This method assumes that there is a forwardModelBatched defined
+        # This method assumes that there is a forward_model_batched defined
         # Otherwise, please define your own version of this method
 
         # create a matrix for the prediction (samples, observations)
         prediction = altar.matrix(shape=(self.samples, self.observations))
         # survey forward model whether it computes residual or not
         returnResidual = self.return_residual
-        # call forwardModel to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=theta, prediction=prediction)
+        # call forward_model to calculate the data prediction or its difference between dataobs
+        self.forward_model_batched(theta=theta, prediction=prediction)
         # call data to calculate the l2 norm
-        self.dataobs.evalLikelihood(prediction=prediction, likelihood=likelihood, residual=returnResidual)
+        self.dataobs.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=returnResidual)
 
         # all done
         return self
 
 
-    def evalPosterior(self, step):
+    def eval_posterior(self, step):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -218,34 +218,34 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         dispatcher = annealer.dispatcher
 
         # notify we are about to compute the prior likelihood
-        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.evalPrior(theta=step.theta, prior=step.prior)
+        self.eval_prior(theta=step.theta, prior=step.prior)
         # done
-        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
         # notify we are about to compute the likelihood of the prior given the data
-        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_start, controller=annealer)
 
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # compute it
-        self.evalDataLikelihood(theta=θ, likelihood=step.data)
+        self.eval_data_likelihood(theta=θ, likelihood=step.data)
         # done
-        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
-        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
         # compute it
-        self.evalPosterior(step=step)
+        self.eval_posterior(step=step)
         # done
-        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
         # enable chaining
         return self
 
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         Update Model parameters if needed
         :param annealer:
@@ -255,7 +255,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
 
     # implementation details
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """
@@ -278,7 +278,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # all done
         return ifs
 
-    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+    def load_file(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a gsl vector or matrix (for both float32/64 support)
         Supported format:

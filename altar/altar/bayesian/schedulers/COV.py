@@ -89,7 +89,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
 
         # get the new temperature and store it
-        β = self.updateTemperature(step=step)
+        β = self.update_temperature(step=step)
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
             θ, (prior, data, posterior) = self.resampling(step=step)
@@ -102,23 +102,23 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.beta = β
 
         # recompute posterior with updated beta
-        step.computePosterior()
+        step.compute_posterior()
 
         # and return it
         return step
 
 
     @altar.export
-    def updateTemperature(self, step):
+    def update_temperature(self, step):
         """
         Generate the next temperature increment
         """
         # grab the data log-likelihood
-        dataLikelihood  = step.data
+        data_likelihood  = step.data
         # initialize the vector of weights
         self.w = altar.vector(shape=step.samples).zero()
         # compute {δβ} and the normalized {w}
-        β, self.cov = self.solver.solve(dataLikelihood, self.w)
+        β, self.cov = self.solver.solve(data_likelihood, self.w)
         # adjust β if it is too small
         β = max(β, self.beta_min)
         # and return the new temperature
@@ -126,7 +126,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
 
     @altar.export
-    def computeCovariance(self, step):
+    def compute_covariance(self, step):
         r"""
         Compute the parameter covariance Σ of the sample in {step}
 
@@ -174,7 +174,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
         # condition the covariance matrix
         if self.check_positive_definiteness:
-            self.conditionCovariance(Σ=Σ)
+            self.condition_covariance(Σ=Σ)
 
         # all done
         return Σ
@@ -196,7 +196,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.computeSampleMultiplicities(step=step).values()
+        multi = self.compute_sample_multiplicities(step=step).values()
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
@@ -247,7 +247,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.computeSampleMultiplicities(step=step).values()
+        multi = self.compute_sample_multiplicities(step=step).values()
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
@@ -291,7 +291,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
 
     # implementation details
-    def conditionCovariance(self, Σ):
+    def condition_covariance(self, Σ):
         """
         Make sure the covariance matrix Σ is symmetric and positive definite
         """
@@ -301,7 +301,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         return Σ
 
 
-    def computeSampleMultiplicities(self, step):
+    def compute_sample_multiplicities(self, step):
         """
         Prepare a frequency vector for the new samples given the scaled data log-likelihood in
         {w} for this cooling step
@@ -321,14 +321,14 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
             r.random(pdf=self.uniform)
 
         # compute the bin edges in the range [0, 1]
-        ticks = tuple(self.buildHistogramRanges(w))
+        ticks = tuple(self.build_histogram_ranges(w))
         # build a histogram
         h = altar.histogram(bins=samples).ranges(points=ticks).fill(r)
         # and return it
         return h
 
 
-    def buildHistogramRanges(self, w):
+    def build_histogram_ranges(self, w):
         """
         Build histogram bins based on the scaled data log-likelihood
         """

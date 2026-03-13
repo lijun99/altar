@@ -28,7 +28,7 @@ class Native:
         return self
 
 
-    def dataLikelihood(self, model, step):
+    def data_likelihood(self, model, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data.

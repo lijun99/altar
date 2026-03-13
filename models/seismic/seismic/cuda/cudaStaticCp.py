@@ -64,24 +64,24 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
         # initialize cp-specific parameters
         self.cp_dtype = self.cp_dtype or self.dataobs.cd_dtype
-        self.initializeCp()
+        self.initialize_cp()
 
         # all done
         return self
 
-    def initializeCp(self):
+    def initialize_cp(self):
         """
         Initialize Cp related
         :return:
         """
         # load Cmu
-        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu), dtype=self.cp_dtype)
+        self.gCmu = self.load_file_to_gpu(filename=self.cmu_file, shape=(self.nCmu, self.nCmu), dtype=self.cp_dtype)
         # load initial model if provided
         if self.initial_model_file is not None:
-            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters, dtype=self.cp_dtype)
+            self.gInitModel = self.load_file_to_gpu(filename=self.initial_model_file, shape=self.parameters, dtype=self.cp_dtype)
             if self.initial_model_is_physical:
                 # convert to sampling
-                self.cuToSampling(theta=self.gInitModel, batch=1, inplace=True)
+                self.cu_to_sampling(theta=self.gInitModel, batch=1, inplace=True)
                 self.gInitModel.print()
 
         # allocate a gpu vector to record mean model
@@ -91,7 +91,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
         return self
 
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         Model method called by Sampler before Metropolis sampling for each beta step starts,
         employed to compute Cp and merge Cp with data covariance
@@ -122,10 +122,10 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
                 mean_model = self.gMeanModel
 
             # convert parameters to physical
-            self.cuToPhysical(theta=mean_model, batch=1, inplace=True)
+            self.cu_to_physical(theta=mean_model, batch=1, inplace=True)
 
             # compute Cp with mean model
-            self.computeCp(model=mean_model, cp=self.Cp)
+            self.compute_cp(model=mean_model, cp=self.Cp)
 
         # if more than one workers, bcast Cp
         if workers > 1:
@@ -133,14 +133,14 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
 
         # recompute covariance = cp + cd,
         # and merge covariance with observed data
-        self.dataobs.updateCovariance(cp=self.Cp)
+        self.dataobs.update_covariance(cp=self.Cp)
         # merge covariance with green's function
-        self.mergeCovarianceToGF()
+        self.merge_covariance_to_gf()
 
         # all done
         return True
 
-    def computeCp(self, model, cp=None):
+    def compute_cp(self, model, cp=None):
         """
         Compute Cp with a mean model
         :param model:
@@ -180,7 +180,7 @@ class cudaStaticCp(cudaStatic, family="altar.models.seismic.cuda.staticcp"):
             # copy it gpu
             kmu.copy_from_host(source=kmu_np)
             # call the forward model
-            self.forwardModel(theta=model, green=kmu, prediction=kpv)
+            self.forward_model(theta=model, green=kmu, prediction=kpv)
             # copy the vector result to matrix
             Kp.set_row(kpv, row=i)
 

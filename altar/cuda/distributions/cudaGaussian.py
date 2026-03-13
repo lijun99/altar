@@ -26,7 +26,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
     sigma = altar.properties.float(default=1.0)
     sigma.doc = " the standard deviation"
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
@@ -35,7 +35,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         # and return
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -46,7 +46,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         # all done; return the rejection map
         return mask
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         Fill my portion of {likelihood} with the likelihoods of the samples in {theta}
         """
@@ -55,7 +55,7 @@ class cudaGaussian(cudaDistribution, family="altar.cuda.distributions.gaussian")
         # all done
         return self
 
-    def cuPriorGradient(self, theta, prior, batch, index=None):
+    def cu_prior_gradient(self, theta, prior, batch, index=None):
         """
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """

@@ -24,32 +24,32 @@ class Notifier(altar.component,
 
 
     # constants: the event loop identifiers
-    start = "simulationStart"
+    start = "simulation_start"
 
-    samplePosteriorStart = "samplePosteriorStart"
-    prepareSamplingPDFStart = "prepareSamplingPDFStart"
-    prepareSamplingPDFFinish = "prepareSamplingPDFFinish"
-    betaStart = "betaStart"
-    walkChainsStart = "walkChainsStart"
-    chainAdvanceStart = "chainAdvanceStart"
-    verifyStart = "verifyStart"
-    verifyFinish = "verifyFinish"
-    priorStart = "priorStart"
-    priorFinish = "priorFinish"
-    dataStart = "dataStart"
-    dataFinish = "dataFinish"
-    posteriorStart = "posteriorStart"
-    posteriorFinish = "posteriorFinish"
-    acceptStart = "acceptStart"
-    acceptFinish = "acceptFinish"
-    chainAdvanceFinish = "chainAdvanceFinish"
-    walkChainsFinish = "walkChainsFinish"
-    resampleStart = "resampleStart"
-    resampleFinish = "resampleFinish"
-    betaFinish = "betaFinish"
-    samplePosteriorFinish = "samplePosteriorFinish"
+    sample_posterior_start = "sample_posterior_start"
+    prepare_sampling_pdf_start = "prepare_sampling_pdf_start"
+    prepare_sampling_pdf_finish = "prepare_sampling_pdf_finish"
+    beta_start = "beta_start"
+    walk_chains_start = "walk_chains_start"
+    chain_advance_start = "chain_advance_start"
+    verify_start = "verify_start"
+    verify_finish = "verify_finish"
+    prior_start = "prior_start"
+    prior_finish = "prior_finish"
+    data_start = "data_start"
+    data_finish = "data_finish"
+    posterior_start = "posterior_start"
+    posterior_finish = "posterior_finish"
+    accept_start = "accept_start"
+    accept_finish = "accept_finish"
+    chain_advance_finish = "chain_advance_finish"
+    walk_chains_finish = "walk_chains_finish"
+    resample_start = "resample_start"
+    resample_finish = "resample_finish"
+    beta_finish = "beta_finish"
+    sample_posterior_finish = "sample_posterior_finish"
 
-    finish = "simulationFinish"
+    finish = "simulation_finish"
 
 
     # protocol obligations
@@ -103,28 +103,28 @@ class Notifier(altar.component,
         # establish the table of handled events
         self.events = {
             self.start: altar.patterns.observable(),
-            self.samplePosteriorStart: altar.patterns.observable(),
-            self.prepareSamplingPDFStart: altar.patterns.observable(),
-            self.prepareSamplingPDFFinish: altar.patterns.observable(),
-            self.betaStart: altar.patterns.observable(),
-            self.walkChainsStart: altar.patterns.observable(),
-            self.chainAdvanceStart: altar.patterns.observable(),
-            self.verifyStart: altar.patterns.observable(),
-            self.verifyFinish: altar.patterns.observable(),
-            self.priorStart: altar.patterns.observable(),
-            self.priorFinish: altar.patterns.observable(),
-            self.dataStart: altar.patterns.observable(),
-            self.dataFinish: altar.patterns.observable(),
-            self.posteriorStart: altar.patterns.observable(),
-            self.posteriorFinish: altar.patterns.observable(),
-            self.acceptStart: altar.patterns.observable(),
-            self.acceptFinish: altar.patterns.observable(),
-            self.chainAdvanceFinish: altar.patterns.observable(),
-            self.walkChainsFinish: altar.patterns.observable(),
-            self.resampleStart: altar.patterns.observable(),
-            self.resampleFinish: altar.patterns.observable(),
-            self.samplePosteriorFinish: altar.patterns.observable(),
-            self.betaFinish: altar.patterns.observable(),
+            self.sample_posterior_start: altar.patterns.observable(),
+            self.prepare_sampling_pdf_start: altar.patterns.observable(),
+            self.prepare_sampling_pdf_finish: altar.patterns.observable(),
+            self.beta_start: altar.patterns.observable(),
+            self.walk_chains_start: altar.patterns.observable(),
+            self.chain_advance_start: altar.patterns.observable(),
+            self.verify_start: altar.patterns.observable(),
+            self.verify_finish: altar.patterns.observable(),
+            self.prior_start: altar.patterns.observable(),
+            self.prior_finish: altar.patterns.observable(),
+            self.data_start: altar.patterns.observable(),
+            self.data_finish: altar.patterns.observable(),
+            self.posterior_start: altar.patterns.observable(),
+            self.posterior_finish: altar.patterns.observable(),
+            self.accept_start: altar.patterns.observable(),
+            self.accept_finish: altar.patterns.observable(),
+            self.chain_advance_finish: altar.patterns.observable(),
+            self.walk_chains_finish: altar.patterns.observable(),
+            self.resample_start: altar.patterns.observable(),
+            self.resample_finish: altar.patterns.observable(),
+            self.sample_posterior_finish: altar.patterns.observable(),
+            self.beta_finish: altar.patterns.observable(),
             self.finish: altar.patterns.observable(),
         }
 

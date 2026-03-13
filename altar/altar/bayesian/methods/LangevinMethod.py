@@ -95,7 +95,7 @@ class LangevinMethod:
         # get the sampler
         sampler = controller.sampler
         # ask it to sample the posterior pdf
-        stats = sampler.samplePosterior(controller=controller, step=self.step)
+        stats = sampler.sample_posterior(controller=controller, step=self.step)
         # return the acceptance statistics
         return stats
 

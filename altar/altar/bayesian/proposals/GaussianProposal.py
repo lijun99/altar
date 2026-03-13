@@ -63,7 +63,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         """
         dispatcher = annealer.dispatcher if annealer is not None else None
         if dispatcher is not None:
-            dispatcher.notify(event=dispatcher.prepareSamplingPDFStart, controller=annealer)
+            dispatcher.notify(event=dispatcher.prepare_sampling_pdf_start, controller=annealer)
 
         # propagate legacy scheduler knobs, if any
         if annealer is not None:
@@ -85,7 +85,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
                 weights[i] = value
 
         # compute and store the covariance
-        Σ = self.computeCovariance(step=step, w=weights)
+        Σ = self.compute_covariance(step=step, w=weights)
         step.sigma.copy(Σ)
 
         # scale and decompose it
@@ -98,7 +98,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         self._prepared_scaling = sampler.scaling
 
         if dispatcher is not None:
-            dispatcher.notify(event=dispatcher.prepareSamplingPDFFinish, controller=annealer)
+            dispatcher.notify(event=dispatcher.prepare_sampling_pdf_finish, controller=annealer)
 
         # all done
         return self
@@ -142,7 +142,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return δ
 
     @altar.export
-    def computeCovariance(self, step, w):
+    def compute_covariance(self, step, w):
         r"""
         Compute the parameter covariance Σ of the sample in {step}
 
@@ -189,12 +189,12 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
 
         # condition the covariance matrix
         if self.check_positive_definiteness:
-            self.conditionCovariance(Σ=Σ)
+            self.condition_covariance(Σ=Σ)
 
         # all done
         return Σ
 
-    def conditionCovariance(self, Σ):
+    def condition_covariance(self, Σ):
         """
         Make sure the covariance matrix Σ is symmetric and positive definite
         """

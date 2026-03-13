@@ -37,7 +37,7 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
         # model specific initialization after superclass
         # grab data
-        self.x = self.loadFile(self.x_file)
+        self.x = self.load_file(self.x_file)
         self.y = self.dataobs.dataobs
         # set the return_residual flag
         # forward model calculates the residual between prediction and data
@@ -46,7 +46,7 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
         return self
 
 
-    def forwardModel(self, theta, prediction):
+    def forward_model(self, theta, prediction):
         """
         Forward Model
         :param theta: sampling parameters for one sample

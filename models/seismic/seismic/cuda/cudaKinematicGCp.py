@@ -58,24 +58,24 @@ class cudaKinematicGCp(cudaKinematicG, family="altar.models.seismic.cuda.kinemat
         super().initialize(application=application)
 
         # initialize cp-specific parameters
-        self.initializeCp()
+        self.initialize_cp()
 
         # all done
         return self
 
-    def initializeCp(self):
+    def initialize_cp(self):
         """
         :return:
         """
-        self.gCmu = self.loadFileToGPU(filename=self.cmu_file, shape=(self.nCmu, self.nCmu))
+        self.gCmu = self.load_file_to_gpu(filename=self.cmu_file, shape=(self.nCmu, self.nCmu))
         if self.initial_model_file is not None:
-            self.gInitModel = self.loadFileToGPU(filename=self.initial_model_file, shape=self.parameters)
+            self.gInitModel = self.load_file_to_gpu(filename=self.initial_model_file, shape=self.parameters)
 
         self.gMeanModel = altar.cuda.vector(shape=self.parameters, dtype=self.precision)
         self.Cp = altar.cuda.matrix(shape=(self.observations, self.observations), dtype=self.precision)
         return self
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         Model method called by Sampler before Metropolis sampling for each beta step starts,
         employed to compute Cp and merge Cp with data covariance
@@ -108,7 +108,7 @@ class cudaKinematicGCp(cudaKinematicG, family="altar.models.seismic.cuda.kinemat
                 mean_model = self.gMeanModel
 
             # compute Cp with mean model
-            self.computeCp(model=mean_model, cp=self.Cp)
+            self.compute_cp(model=mean_model, cp=self.Cp)
 
         # if more than one workers, bcast Cp
         if workers > 1:
@@ -116,14 +116,14 @@ class cudaKinematicGCp(cudaKinematicG, family="altar.models.seismic.cuda.kinemat
 
         # recompute covariance = cp + cd,
         # and merge covariance with observed data
-        self.dataobs.updateCovariance(cp=self.Cp)
+        self.dataobs.update_covariance(cp=self.Cp)
         # merge covariance with green's function
-        self.mergeCovarianceToGF()
+        self.merge_covariance_to_gf()
 
         # all done
         return True
 
-    def computeCp(self, model, cp=None):
+    def compute_cp(self, model, cp=None):
         """
         Compute Cp with a mean model
         :param model:
@@ -162,7 +162,7 @@ class cudaKinematicGCp(cudaKinematicG, family="altar.models.seismic.cuda.kinemat
             # copy it gpu
             kmu.copy_from_host(source=kmu_np)
             # call the forward model
-            self.forwardModel(theta=model, green=kmu, prediction=kpv)
+            self.forward_model(theta=model, green=kmu, prediction=kpv)
             # copy the vector result to matrix
             Kp.set_row(kpv, row=i)
 

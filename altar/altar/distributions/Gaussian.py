@@ -59,7 +59,7 @@ class Gaussian(base, family="altar.distributions.gaussian"):
         return mask
 
     @altar.provides
-    def priorGradient(self, theta, index, prior):
+    def prior_gradient(self, theta, index, prior):
         r"""
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """

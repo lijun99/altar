@@ -38,19 +38,19 @@ class Distribution(altar.protocol, family="altar.distributions"):
 
     # model support
     @altar.provides
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
 
     @altar.provides
-    def priorLikelihood(self, theta, prior):
+    def eval_prior(self, theta, prior):
         r"""
         Fill my portion of {prior} with the likelihoods of the samples in {theta}
         """
 
     @altar.provides
-    def priorGradient(self, theta, index, prior):
+    def prior_gradient(self, theta, index, prior):
         r"""
         Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
         """

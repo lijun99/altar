@@ -44,20 +44,20 @@ class Ensemble(Bayesian, family="altar.models.ensemble"):
 
     # services
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
         # ask each of my models
         for model in self.models:
             # to initialize their portion of the samples in {step}
-            model.initializeSample(step=step)
+            model.initialize_sample(step=step)
         # all done
         return self
 
 
     @altar.export
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -65,13 +65,13 @@ class Ensemble(Bayesian, family="altar.models.ensemble"):
         # ask each of my models
         for model in self.models:
             # to contribute to the computation of the prior likelihood
-            model.priorLikelihood(step=step)
+            model.eval_prior(step=step)
         # all done
         return self
 
 
     @altar.export
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -79,7 +79,7 @@ class Ensemble(Bayesian, family="altar.models.ensemble"):
         # ask each of my models
         for model in self.models:
             # to contribute to the computation of the data likelihood
-            model.priorLikelihood(step=step)
+            model.data_likelihood(step=step)
         # all done
         return self
 

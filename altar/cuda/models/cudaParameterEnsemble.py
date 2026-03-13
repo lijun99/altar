@@ -30,11 +30,11 @@ class cudaParameterEnsemble(ParameterEnsemble,
         """
         Initialize my distributions
         """
-        count = self.cuInitialize(application=application)
+        count = self.cu_initialize(application=application)
         return count
 
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda initialize
         """
@@ -46,7 +46,7 @@ class cudaParameterEnsemble(ParameterEnsemble,
         for pset in self._iter_psets():
             # initialize the parameter set
             pset.offset = parameters
-            parameters += pset.cuInitialize(application=application)
+            parameters += pset.cu_initialize(application=application)
         # the total number of parameters is now known, so record it
         self.count = parameters
 
@@ -54,34 +54,34 @@ class cudaParameterEnsemble(ParameterEnsemble,
         return parameters
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         # ask my subsets
         for pset in self._iter_psets():
             # and ask each one to verify the sample
-            pset.prep.cuInitSample(theta=theta, batch=batch)
+            pset.prep.cu_init_sample(theta=theta, batch=batch)
 
         # all done
         return self
 
 
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         # ask my subsets
         for pset in self._iter_psets():
             # and ask each one to verify the sample
-            pset.prior.cuEvalPrior(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
 
         # all done
         return self
 
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -89,40 +89,40 @@ class cudaParameterEnsemble(ParameterEnsemble,
         # ask my subsets
         for pset in self._iter_psets():
             # and ask each one to verify the sample
-            pset.prior.cuVerify(theta=theta, mask=mask, batch=batch)
+            pset.prior.cu_verify(theta=theta, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
-    def cuConstrain(self, theta, batch):
+    def cu_constrain(self, theta, batch):
         """
         Constrain samples to valid parameter space.
         """
         for pset in self._iter_psets():
-            pset.prior.cuConstrain(theta=theta, batch=batch)
+            pset.prior.cu_constrain(theta=theta, batch=batch)
         return self
 
-    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+    def cu_eval_prior_with_physical(self, theta, prior, batch):
         """
         Compute additional prior contributions in terms of physical parameters.
         """
         for pset in self._iter_psets():
-            pset.prior.cuEvalPriorwithPhysical(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior_with_physical(theta=theta, prior=prior, batch=batch)
         return self
 
-    def cuEvalPriorPhysical(self, theta, prior, batch):
+    def cu_eval_prior_physical(self, theta, prior, batch):
         """
         Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution.
         """
         for pset in self._iter_psets():
-            pset.prior.cuEvalPriorPhysical(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior_physical(theta=theta, prior=prior, batch=batch)
         return self
 
-    def cuPriorGradient(self, theta, prior, batch):
+    def cu_prior_gradient(self, theta, prior, batch):
         """
         Fill {prior} with the log pdf gradient contributions.
         """
         for pset in self._iter_psets():
-            pset.prior.cuPriorGradient(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_prior_gradient(theta=theta, prior=prior, batch=batch)
         return self
 
 # end of file

@@ -62,7 +62,7 @@ class Mogi(altar.application, family="altar.applications.mogi"):
         # chain up
         super().__init__(**kwds)
         # create my stations
-        self.stations = self.makeStations()
+        self.stations = self.make_stations()
         # all done
         return
 
@@ -142,7 +142,7 @@ class Mogi(altar.application, family="altar.applications.mogi"):
         return data, correlation
 
 
-    def makeStations(self):
+    def make_stations(self):
         """
         Create a set of station coordinate
         """

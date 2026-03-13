@@ -25,7 +25,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
     support.doc = "the support interval of the prior distribution"
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
@@ -36,7 +36,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # and return
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -50,7 +50,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # all done; return the rejection map
         return mask
 
-    def cuConstrain(self, theta, batch):
+    def cu_constrain(self, theta, batch):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -64,7 +64,7 @@ class cudaUniform(cudaDistribution, family="altar.cuda.distributions.uniform"):
         # all done; return the rejection map
         return self
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         Fill my portion of {prior} with the prior probabilities of the samples in {theta}
         """

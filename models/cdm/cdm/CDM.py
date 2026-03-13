@@ -77,17 +77,17 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         super().initialize(application=application)
 
         # initialize my parameter sets
-        self.initializeParameterSets()
+        self.initialize_parameter_sets()
         # mount the directory with my input data
-        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
 
         # load the data from the inputs into memory
-        displacements, self.cd = self.loadInputs()
+        displacements, self.cd = self.load_inputs()
 
         # compute the normalization
-        self.normalization = self.computeNormalization()
+        self.normalization = self.compute_normalization()
         # compute the inverse of the covariance matrix
-        self.cd_inv = self.computeCovarianceInverse()
+        self.cd_inv = self.compute_covariance_inverse()
 
         # build the local representations
         self.points = []
@@ -153,7 +153,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
 
 
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -162,13 +162,13 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         # go through each parameter set
         for pset in self.psets.values():
             # and ask each one to {prep} the sample
-            pset.initializeSample(theta=θ)
+            pset.initialize_sample(theta=θ)
         # and return
         return self
 
 
     @altar.export
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -180,13 +180,13 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         # go through each parameter set
         for pset in self.psets.values():
             # and ask each one to {prep} the sample
-            pset.priorLikelihood(theta=θ, priorLLK=likelihood)
+            pset.eval_prior(theta=θ, prior=likelihood)
         # all done
         return self
 
 
     @altar.export
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -194,7 +194,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         # get my strategy
         strategy = self.strategy
         # deploy
-        strategy.dataLikelihood(model=self, step=step)
+        strategy.data_likelihood(model=self, step=step)
         # all done
         return self
 
@@ -216,7 +216,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
 
 
     # implementation details
-    def initializeParameterSets(self):
+    def initialize_parameter_sets(self):
         """
         Initialize my parameter sets
         """
@@ -249,7 +249,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         return
 
 
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """
@@ -273,7 +273,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         return ifs
 
 
-    def loadInputs(self):
+    def load_inputs(self):
         """
         Load the data in the input files into memory
         """
@@ -324,7 +324,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         return data, covariance
 
 
-    def computeNormalization(self):
+    def compute_normalization(self):
         """
         Compute the normalization of the L2 norm
         """
@@ -340,7 +340,7 @@ class CDM(altar.models.bayesian, family="altar.models.cdm"):
         return - 0.5 * (log(2*π)*self.observations + lndet);
 
 
-    def computeCovarianceInverse(self):
+    def compute_covariance_inverse(self):
         """
         Compute the inverse of my data covariance
         """

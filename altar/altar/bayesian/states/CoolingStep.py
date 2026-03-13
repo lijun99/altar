@@ -72,7 +72,7 @@ class CoolingStep:
         step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
 
         # initialize it
-        model.initializeSample(step=step)
+        model.initialize_sample(step=step)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=step)
 
@@ -131,7 +131,7 @@ class CoolingStep:
                          jacobian=jacobian, likelihoods=likelihoods, sigma=sigma,
                          has_reparametrization=self.has_reparametrization)
 
-    def computePosterior(self):
+    def compute_posterior(self):
         """
         Compute the posterior from prior, data, and beta
         """

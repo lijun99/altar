@@ -42,17 +42,17 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         # will recommend a framework change to use application instead of rng
         # some distribution might need info from application
         # e.g, cascaded need worker id
-        # so, use cuInitialize instead
+        # so, use cu_initialize instead
         return self
 
     @altar.export
     def verify(self, theta, mask):
         # to satisfy component requirement
-        # use cuVerify instead
+        # use cu_verify instead
         return self
 
     # cuda methods
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda specific initialization
         """
@@ -63,19 +63,19 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
 
         return self
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         cuda process to initialize random samples
         """
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         cuda process to verify the validity of samples
         """
         return mask
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         Evaluate the prior P(θ) in physical parameter space.
         For distributions without reparameterization, θ is in the original space.
@@ -84,22 +84,22 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         # Default implementation: flat prior
         return prior
 
-    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+    def cu_eval_prior_with_physical(self, theta, prior, batch):
         """
         Add any prior contributions that depend on physical parameters.
         """
         # Default implementation: no extra contributions
         return self
 
-    def cuEvalPriorPhysical(self, theta, prior, batch):
+    def cu_eval_prior_physical(self, theta, prior, batch):
         """
         Evaluate the prior using parameters already in physical space.
         """
         if not self.has_reparametrization:
-            return self.cuEvalPrior(theta=theta, prior=prior, batch=batch)
-        raise NotImplementedError(f"Distribution {self.pyre_name}: cuEvalPriorPhysical not implemented")
+            return self.cu_eval_prior(theta=theta, prior=prior, batch=batch)
+        raise NotImplementedError(f"Distribution {self.pyre_name}: cu_eval_prior_physical not implemented")
 
-    def cuEvalJacobian(self, theta, jacobian, batch):
+    def cu_eval_jacobian(self, theta, jacobian, batch):
         """
         Evaluate the log of the Jacobian determinant for the transformation from sampling to physical space.
         Only relevant when has_reparametrization is True.
@@ -109,9 +109,9 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         if not self.has_reparametrization:
             return jacobian
-        raise NotImplementedError(f"Distribution {self.pyre_name}: cuEvalJacobian not implemented")
+        raise NotImplementedError(f"Distribution {self.pyre_name}: cu_eval_jacobian not implemented")
 
-    def cuJacobianGradient(self, theta, gradient, batch, index=None):
+    def cu_jacobian_gradient(self, theta, gradient, batch, index=None):
         """
         Compute the gradient of the log Jacobian determinant with respect to parameters.
         Only relevant when has_reparametrization is True.
@@ -128,9 +128,9 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         if not self.has_reparametrization:
             return gradient
-        raise NotImplementedError(f"Distribution {self.pyre_name}: cuJacobianGradient not implemented")
+        raise NotImplementedError(f"Distribution {self.pyre_name}: cu_jacobian_gradient not implemented")
 
-    def cuToPhysical(self, theta_sampling=None, theta_physical=None, batch=None, theta=None):
+    def cu_to_physical(self, theta_sampling=None, theta_physical=None, batch=None, theta=None):
         """
         Transform parameters from sampling space to physical space.
         theta_physical = T(theta_sampling) where T is the transformation function.
@@ -149,18 +149,18 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         if theta is not None:
             if theta_sampling is not None or theta_physical is not None:
-                raise TypeError("cuToPhysical: use theta or theta_sampling/theta_physical, not both")
+                raise TypeError("cu_to_physical: use theta or theta_sampling/theta_physical, not both")
             theta_sampling = theta
             theta_physical = theta
         if theta_sampling is None or theta_physical is None or batch is None:
-            raise TypeError("cuToPhysical requires theta (in-place) or theta_sampling/theta_physical and batch")
+            raise TypeError("cu_to_physical requires theta (in-place) or theta_sampling/theta_physical and batch")
         if not self.has_reparametrization:
             if theta_physical is not theta_sampling:
                 theta_physical.copy(theta_sampling)
             return self
-        raise NotImplementedError(f"Distribution {self.pyre_name}: cuToPhysical not implemented")
+        raise NotImplementedError(f"Distribution {self.pyre_name}: cu_to_physical not implemented")
 
-    def cuToSampling(self, theta_physical=None, theta_sampling=None, batch=None, theta=None):
+    def cu_to_sampling(self, theta_physical=None, theta_sampling=None, batch=None, theta=None):
         """
         Transform parameters from physical space to sampling space.
         theta_sampling = T^(-1)(theta_physical) where T^(-1) is the inverse transformation.
@@ -179,18 +179,18 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         """
         if theta is not None:
             if theta_physical is not None or theta_sampling is not None:
-                raise TypeError("cuToSampling: use theta or theta_physical/theta_sampling, not both")
+                raise TypeError("cu_to_sampling: use theta or theta_physical/theta_sampling, not both")
             theta_physical = theta
             theta_sampling = theta
         if theta_physical is None or theta_sampling is None or batch is None:
-            raise TypeError("cuToSampling requires theta (in-place) or theta_physical/theta_sampling and batch")
+            raise TypeError("cu_to_sampling requires theta (in-place) or theta_physical/theta_sampling and batch")
         if not self.has_reparametrization:
             if theta_sampling is not theta_physical:
                 theta_sampling.copy(theta_physical)
             return self
-        raise NotImplementedError(f"Distribution {self.pyre_name}: cuToSampling not implemented")
+        raise NotImplementedError(f"Distribution {self.pyre_name}: cu_to_sampling not implemented")
 
-    def cuPriorGradient(self, theta, grad_prior, batch, index=None):
+    def cu_prior_gradient(self, theta, grad_prior, batch, index=None):
         """
         Compute the gradient of log prior with respect to parameters
         For transformed parameters, this should include the transformation contribution
@@ -198,7 +198,7 @@ class cudaDistribution(Base, family="altar.distributions.cudadistribution"):
         # Default implementation: flat prior (gradient = 0)
         return self
 
-    def cuJacobianGradient(self, theta, gradient, batch, index=None):
+    def cu_jacobian_gradient(self, theta, gradient, batch, index=None):
         """
         Compute the gradient of the log Jacobian determinant with respect to parameters.
         Only relevant when has_reparametrization is True.

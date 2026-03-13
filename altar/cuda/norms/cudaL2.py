@@ -24,7 +24,7 @@ class cudaL2(L2, family="altar.norms.cudal2"):
 
     # interface
     @altar.export
-    def cuEval(self, data, out=None, batch=None, cdinv=None):
+    def cu_eval(self, data, out=None, batch=None, cdinv=None):
         """
         Compute the L2 norm of the given data  ||x||
         Arguments:
@@ -57,7 +57,7 @@ class cudaL2(L2, family="altar.norms.cudal2"):
         return out
 
 
-    def cuEvalLikelihood(self, data, constant=0.0, out=None, batch=None, cdinv=None):
+    def cu_eval_likelihood(self, data, constant=0.0, out=None, batch=None, cdinv=None):
         """
         Compute the L2 norm data likelihood of the given data  const - ||x||^2/2
         Arguments:

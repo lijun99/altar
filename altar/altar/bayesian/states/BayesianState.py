@@ -56,7 +56,7 @@ class BayesianState:
         step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
 
         # initialize it
-        model.initializeSample(step=step)
+        model.initialize_sample(step=step)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=step)
 
@@ -102,7 +102,7 @@ class BayesianState:
         # make one and return it
         return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma)
 
-    def computePosterior(self):
+    def compute_posterior(self):
         """
         Compute the posterior from prior, data, and beta
         """

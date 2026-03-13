@@ -13,7 +13,7 @@ import h5py
 import numpy
 import sys
 
-def checkDataDiff():
+def check_data_diff():
     """
     Check the difference between data predictions and observations
     """
@@ -77,5 +77,5 @@ def checkDataDiff():
 
 
 if __name__ == "__main__":
-    checkDataDiff()
+    check_data_diff()
 

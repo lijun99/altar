@@ -79,7 +79,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         super().initialize(application=application)
 
         # mount my input data space
-        self.ifs = self.mountInputDataspace(pfs=application.pfs)
+        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
         # find out how many samples I will be working with; this equal to the number of chains
         self.samples = application.job.chains
 
@@ -105,7 +105,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             print(self.parametersets)
 
 
-            parameters = parametersets.cuInitialize(application=application)
+            parameters = parametersets.cu_initialize(application=application)
 
             # keep a dict for compatibility with downstream consumers
             if hasattr(parametersets, "psets"):
@@ -160,7 +160,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda interface
         """
@@ -177,7 +177,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return self.controller.posterior(model=self)
 
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
@@ -185,12 +185,12 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prep.cuInitSample(theta=theta, batch=batch)
+            pset.prep.cu_init_sample(theta=theta, batch=batch)
 
         # all done
         return self
 
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -199,7 +199,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return mask
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuVerify(theta=theta, mask=mask, batch=batch)
+            pset.prior.cu_verify(theta=theta, mask=mask, batch=batch)
         return mask
 
     def constrain(self, theta, batch):
@@ -211,10 +211,10 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuConstrain(theta=theta, batch=batch)
+            pset.prior.cu_constrain(theta=theta, batch=batch)
         return self
 
-    def cuToPhysical(self, theta, batch, inplace=False):
+    def cu_to_physical(self, theta, batch, inplace=False):
         """
         Transform {step.theta} to {thetaPhysical} as physical properties for the forward model.
         Copy the full parameter set once, then apply in-place reparameterizations.
@@ -230,11 +230,11 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # ask my subsets
         for pset in self._iter_psets():
             if pset.prior.has_reparametrization:
-                pset.prior.cuToPhysical(theta=thetaPhysical, batch=batch)
+                pset.prior.cu_to_physical(theta=thetaPhysical, batch=batch)
         # all done
         return thetaPhysical
 
-    def cuToSampling(self, theta, batch, inplace=False):
+    def cu_to_sampling(self, theta, batch, inplace=False):
         """
         Transform {thetaPhysical} to {theta} as sampling parameters.
         Copy the full parameter set once, then apply in-place reparameterizations.
@@ -247,11 +247,11 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # ask my subsets
         for pset in self._iter_psets():
             if pset.prior.has_reparametrization:
-                pset.prior.cuToSampling(theta=theta, batch=batch)
+                pset.prior.cu_to_sampling(theta=theta, batch=batch)
         # all done
         return theta
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
         compute the prior from the (sampling) parameter sets
         """
@@ -259,10 +259,10 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuEvalPrior(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
         return self
 
-    def cuEvalPriorwithPhysical(self, theta, prior, batch):
+    def cu_eval_prior_with_physical(self, theta, prior, batch):
         """
         Compute additional prior contributions in terms of physical parameters
         """
@@ -270,11 +270,11 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuEvalPriorwithPhysical(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior_with_physical(theta=theta, prior=prior, batch=batch)
         return self
 
 
-    def cuEvalPriorGradient(self, theta, prior, batch):
+    def cu_eval_prior_gradient(self, theta, prior, batch):
         """
         Fill {prior} with the log pdf gradient to {theta[index]}of the samples
         """
@@ -282,22 +282,22 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuPriorGradient(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_prior_gradient(theta=theta, prior=prior, batch=batch)
         return self
 
-    def cuEvalPriorPhysical(self, theta, prior, batch):
+    def cu_eval_prior_physical(self, theta, prior, batch):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         if self.embedded:
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cuEvalPriorPhysical(theta=theta, prior=prior, batch=batch)
+            pset.prior.cu_eval_prior_physical(theta=theta, prior=prior, batch=batch)
         return self
 
 
-    def cuEvalLikelihood(self, theta, likelihood, batch):
+    def cu_eval_likelihood(self, theta, likelihood, batch):
         """
         calculate data likelihood and add it to step.prior or step.data
         """
@@ -305,7 +305,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return self
 
 
-    def cuEvalPosterior(self, step, batch):
+    def cu_eval_posterior(self, step, batch):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -331,27 +331,27 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         dispatcher = annealer.dispatcher
 
         # notify we are about to compute the prior likelihood
-        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.cuEvalPrior(theta=step.theta, prior=step.prior, batch=batch)
+        self.cu_eval_prior(theta=step.theta, prior=step.prior, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
         # notify we are about to compute the likelihood of the prior given the data
-        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_start, controller=annealer)
         # make theta transformation
-        self.thetaPhysical = self.cuToPhysical(theta=step.theta, batch=batch)
+        self.thetaPhysical = self.cu_to_physical(theta=step.theta, batch=batch)
         # compute it
-        self.cuEvalLikelihood(theta=self.thetaPhysical, likelihood=step.data, batch=batch)
+        self.cu_eval_likelihood(theta=self.thetaPhysical, likelihood=step.data, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
-        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
         # compute it
-        self.cuEvalPosterior(step=step, batch=batch)
+        self.cu_eval_posterior(step=step, batch=batch)
         # done
-        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
         # enable chaining
         return self
@@ -386,11 +386,11 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
-        self.cuVerify(step, mask, batch=step.samples)
+        self.cu_verify(step, mask, batch=step.samples)
         return self
 
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         Update Model parameters if needed
         :param annealer:
@@ -400,7 +400,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
 
 
     # implementation details
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """
@@ -423,7 +423,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # all done
         return ifs
 
-    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+    def load_file(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a numpy array (for both float32/64 support)
         Supported format:
@@ -487,7 +487,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return cpuData
 
 
-    def loadFileToGPU(self, filename, shape=None, dataset=None, out=None, dtype=None):
+    def load_file_to_gpu(self, filename, shape=None, dataset=None, out=None, dtype=None):
         """
         Load an input file to a gpu (for both float32/64 support)
         Supported format:
@@ -506,7 +506,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         dtype = dtype or self.precision
 
         # load to cpu as a numpy array at fist
-        cpuData = self.loadFile(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
+        cpuData = self.load_file(filename=filename, shape=shape, dataset=dataset, dtype=dtype)
 
         # if output gpu matrix/vector is not pre-allocated
         if out is None:
@@ -538,7 +538,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         return self.gtheta
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """

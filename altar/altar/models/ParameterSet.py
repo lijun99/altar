@@ -39,15 +39,15 @@ class ParameterSet(altar.protocol, family="altar.models.parameterset"):
         """
 
     @altar.provides
-    def initializeSample(self, theta):
+    def initialize_sample(self, theta):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
 
     @altar.provides
-    def priorLikelihood(self, theta, priorLLK):
+    def eval_prior(self, theta, prior):
         """
-        Fill {priorLLK} with the likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the likelihoods of the samples in {theta} in my prior distribution
         """
 
     @altar.provides

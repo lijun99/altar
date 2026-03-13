@@ -77,14 +77,14 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
         # load the green's function
         self.NGbparameters = 2*self.Nas*self.Ndd*self.Nt
-        self.GF=self.loadFile(filename=self.green, shape=(self.NGbparameters, self.observations))
+        self.GF=self.load_file(filename=self.green, shape=(self.NGbparameters, self.observations))
 
         # prepare the GF in gpu
         self.gGF = altar.cuda.matrix(shape=self.GF.shape, dtype=self.precision)
 
         # merge covariance to gf
         if not self.forwardonly:
-            self.mergeCovarianceToGF()
+            self.merge_covariance_to_gf()
 
         # prepare the residuals matrix
         self.gDprediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
@@ -104,7 +104,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         # all done
         return self
 
-    def forwardModelBatched(self, theta, gf, prediction, batch, observation=None):
+    def forward_model_batched(self, theta, gf, prediction, batch, observation=None):
         """
         KinematicG forward model in batch: cast Mb(x,y,t)
         :param theta: matrix (samples, parameters), sampling parameters
@@ -127,7 +127,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         # all done
         return prediction
 
-    def forwardModel(self, theta, gf, prediction, observation=None):
+    def forward_model(self, theta, gf, prediction, observation=None):
         """
         KinematicG forward model for single sample: cast Mb(x,y,t)
         :param theta: vector (parameters), sampling parameters
@@ -150,7 +150,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         # all done
         return prediction
 
-    def castSlipsOfTime(self, theta, Mb=None):
+    def cast_slips_of_time(self, theta, Mb=None):
         """
         Compute Mb (slips of patches over time) from a given set of parameters
         :param theta: a vector arranged in [slip (strike and dip), risetime, ...]
@@ -165,7 +165,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         # all done
         return Mb
 
-    def linearGM(self, gf, Mb, prediction=None, observation=None):
+    def linear_gm(self, gf, Mb, prediction=None, observation=None):
         """
         Perform prediction = Gb * Mb
         :param Gb:
@@ -188,7 +188,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         return prediction
 
 
-    def cuEvalLikelihood(self, theta, likelihood, batch):
+    def cu_eval_likelihood(self, theta, likelihood, batch):
         """
         Compute the likelihood from my forward problem
 
@@ -198,16 +198,16 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         residuals = self.gDprediction
 
         # call forward model to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=theta, gf=self.gGF, prediction=residuals, batch=batch,
+        self.forward_model_batched(theta=theta, gf=self.gGF, prediction=residuals, batch=batch,
                 observation= self.dataobs.gdataObsBatch)
 
         # call data method to calculate the l2 norm
-        self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
+        self.dataobs.cu_eval_likelihood(prediction=residuals, likelihood=likelihood,
             residual=True, batch=batch)
         # return the likelihood
         return likelihood
 
-    def mergeCovarianceToGF(self):
+    def merge_covariance_to_gf(self):
         """
         merge data covariance (cd) with green function
         """
@@ -237,26 +237,26 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         return
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """
         import h5py
 
         # get theta
-        gtheta = theta or self.loadFileToGPU(filename=self.theta_input,
+        gtheta = theta or self.load_file_to_gpu(filename=self.theta_input,
                                              dataset=self.theta_dataset)
 
 
         # castBigM from fast sweeping
-        gMb = self.castSlipsOfTime(theta=gtheta)
+        gMb = self.cast_slips_of_time(theta=gtheta)
 
         # get a reference of green's function
         gGF = self.gGF
         # copy from CPU
         gGF.copy_from_host(source=self.GF)
         # get data prediction
-        gDataPred = self.linearGM(gf=gGF, Mb=gMb)
+        gDataPred = self.linear_gm(gf=gGF, Mb=gMb)
 
         # save BigM to an h5 file
         h5file = h5py.File(name=self.forward_output.path, mode='a')

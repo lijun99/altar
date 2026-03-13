@@ -75,24 +75,24 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         observations = self.observations
 
         # load the observed data to numpy array
-        self.dataobs = self.loadFile(filename=self.data_file, shape=observations)
+        self.dataobs = self.load_file(filename=self.data_file, shape=observations)
 
         # load the data covariance
         if self.cd_file is not None:
-            self.cd = self.loadFile(filename=self.cd_file, shape=(observations, observations), dtype=self.cd_dtype)
+            self.cd = self.load_file(filename=self.cd_file, shape=(observations, observations), dtype=self.cd_dtype)
         else:
             # use a constant covariance
             self.cd = numpy.zeros(shape=(observations, observations), dtype=self.cd_dtype)
             numpy.fill_diagonal(self.cd, self.cd_std**2)
 
         # compute inverse of covariance, normalization
-        self.initializeCovariance()
+        self.initialize_covariance()
 
         # all done
         return self
 
 
-    def cuEvalLikelihood(self, prediction, likelihood, residual=True, batch=None):
+    def cu_eval_likelihood(self, prediction, likelihood, residual=True, batch=None):
         """
         compute the datalikelihood for prediction
         :param prediction: (samples x observations) input of predicted data
@@ -116,7 +116,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # call L2 norm to calculate the likelihood
         normalization = self.normalization # norm constant
 
-        likelihood = self.norm.cuEvalLikelihood(data=prediction, constant=normalization,
+        likelihood = self.norm.cu_eval_likelihood(data=prediction, constant=normalization,
                 out=likelihood, batch=batch)
 
         # all done
@@ -137,13 +137,13 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         return
 
     @property
-    def dataobsBatch(self):
+    def dataobs_batch(self):
         """
         A batch of duplicated observations
         """
         return self.gdataObsBatch
 
-    def loadFile(self, filename, shape, dataset=None, dtype=None):
+    def load_file(self, filename, shape, dataset=None, dtype=None):
         """
         Load an input file to a numpy array (for both float32/64 support)
         Supported format:
@@ -197,7 +197,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         return cpuData
 
 
-    def initializeCovariance(self):
+    def initialize_covariance(self):
         """
         initialize gpu data and data covariance
         """
@@ -208,12 +208,12 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         self.gdataObsBatch = altar.cuda.matrix(shape=(samples, observations), dtype=self.precision)
 
         # initialize Cd
-        self.updateCovariance()
+        self.update_covariance()
 
         # all done
         return self
 
-    def updateCovariance(self, cp=None):
+    def update_covariance(self, cp=None):
         """
         Update the data covariance C_chi = Cd + Cp
         :param cp: cuda matrix with shape(obs, obs), data covariance due to model uncertainty
@@ -234,7 +234,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
             # add cp to cd
             gCchi += gCp
 
-        self.checkPositiveDefiniteness(matrix=gCchi, name='Cchi')
+        self.check_positive_definiteness(matrix=gCchi, name='Cchi')
 
         # Inverse
         gCchi.inverse()
@@ -259,7 +259,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         gDataVec = altar.cuda.vector(source=self.dataobs, dtype=self.precision)
 
         # merge Cchi to data
-        gDataVec = self.mergeCdtoData(cd_inv=self.gcd_inv, data=gDataVec)
+        gDataVec = self.merge_cdto_data(cd_inv=self.gcd_inv, data=gDataVec)
 
         # make duplicates of data vector to a matrix
         self.gdataObsBatch.duplicateVector(src=gDataVec)
@@ -267,7 +267,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
         # all done
         return self
 
-    def checkPositiveDefiniteness(self, matrix, name=None):
+    def check_positive_definiteness(self, matrix, name=None):
         """
         Check positive definiteness of a GPU matrix
         :param matrix: a real symmetric (GPU) matrix
@@ -289,7 +289,7 @@ class cudaDataL2(DataL2, family="altar.data.cudadatal2"):
 
         return self
 
-    def mergeCdtoData(self, cd_inv, data):
+    def merge_cdto_data(self, cd_inv, data):
         """
         Merge the data covariance matrix to observed data
         :param cd_inv: the inverse of covariance matrix in Cholesky-decomposed form, with Lower matrix filled

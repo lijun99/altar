@@ -50,7 +50,7 @@ class Profiler(altar.component,
 
 
     # implementation details
-    def simulationStart(self, controller, **kwds):
+    def simulation_start(self, controller, **kwds):
         """
         Handler invoked when the simulation is about to start
         """
@@ -60,37 +60,37 @@ class Profiler(altar.component,
         return
 
 
-    def samplePosteriorStart(self, controller, **kwds):
+    def sample_posterior_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of sampling the posterior
         """
         # start the timer
-        self.pyre_executive.newTimer(name="altar.profiler.samplePosterior").start()
+        self.pyre_executive.newTimer(name="altar.profiler.sample_posterior").start()
         # all done
         return
 
 
-    def prepareSamplingPDFStart(self, controller, **kwds):
+    def prepare_sampling_pdf_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the preparation of the sampling PDF
         """
         # start the timer
-        self.pyre_executive.newTimer(name="altar.profiler.prepareSamplingPDF").start()
+        self.pyre_executive.newTimer(name="altar.profiler.prepare_sampling_pdf").start()
         # all done
         return
 
 
-    def prepareSamplingPDFFinish(self, controller, **kwds):
+    def prepare_sampling_pdf_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the preparation of the sampling PDF
         """
         # grab the timer and stop it
-        self.pyre_executive.newTimer(name="altar.profiler.prepareSamplingPDF").stop()
+        self.pyre_executive.newTimer(name="altar.profiler.prepare_sampling_pdf").stop()
         # all done
         return
 
 
-    def betaStart(self, controller, **kwds):
+    def beta_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the beta step
         """
@@ -100,7 +100,7 @@ class Profiler(altar.component,
         return
 
 
-    def walkChainsStart(self, controller, **kwds):
+    def walk_chains_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the chain walk
         """
@@ -110,7 +110,7 @@ class Profiler(altar.component,
         return
 
 
-    def chainAdvanceStart(self, controller, **kwds):
+    def chain_advance_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of a single step of chain walking
         """
@@ -120,7 +120,7 @@ class Profiler(altar.component,
         return
 
 
-    def chainAdvanceFinish(self, controller, **kwds):
+    def chain_advance_finish(self, controller, **kwds):
         """
         Handler invoked at the end of a single step of chain walking
         """
@@ -130,7 +130,7 @@ class Profiler(altar.component,
         return
 
 
-    def verifyStart(self, controller, **kwds):
+    def verify_start(self, controller, **kwds):
         """
         Handler invoked before we start verifying the generated sample
         """
@@ -140,7 +140,7 @@ class Profiler(altar.component,
         return
 
 
-    def verifyFinish(self, controller, **kwds):
+    def verify_finish(self, controller, **kwds):
         """
         Handler invoked after we are done verifying the generated sample
         """
@@ -150,7 +150,7 @@ class Profiler(altar.component,
         return
 
 
-    def priorStart(self, controller, **kwds):
+    def prior_start(self, controller, **kwds):
         """
         Handler invoked before we compute the prior
         """
@@ -160,7 +160,7 @@ class Profiler(altar.component,
         return
 
 
-    def priorFinish(self, controller, **kwds):
+    def prior_finish(self, controller, **kwds):
         """
         Handler invoked after we compute the prior
         """
@@ -170,7 +170,7 @@ class Profiler(altar.component,
         return
 
 
-    def dataStart(self, controller, **kwds):
+    def data_start(self, controller, **kwds):
         """
         Handler invoked before we compute the data likelihood
         """
@@ -180,7 +180,7 @@ class Profiler(altar.component,
         return
 
 
-    def dataFinish(self, controller, **kwds):
+    def data_finish(self, controller, **kwds):
         """
         Handler invoked after we compute the data likelihood
         """
@@ -190,7 +190,7 @@ class Profiler(altar.component,
         return
 
 
-    def posteriorStart(self, controller, **kwds):
+    def posterior_start(self, controller, **kwds):
         """
         Handler invoked before we assemble the posterior
         """
@@ -200,7 +200,7 @@ class Profiler(altar.component,
         return
 
 
-    def posteriorFinish(self, controller, **kwds):
+    def posterior_finish(self, controller, **kwds):
         """
         Handler invoked after we assemble the posterior
         """
@@ -210,7 +210,7 @@ class Profiler(altar.component,
         return
 
 
-    def acceptStart(self, controller, **kwds):
+    def accept_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of sample accept/reject
         """
@@ -220,7 +220,7 @@ class Profiler(altar.component,
         return
 
 
-    def acceptFinish(self, controller, **kwds):
+    def accept_finish(self, controller, **kwds):
         """
         Handler invoked at the end of sample accept/reject
         """
@@ -230,7 +230,7 @@ class Profiler(altar.component,
         return
 
 
-    def resampleStart(self, controller, **kwds):
+    def resample_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of resampling
         """
@@ -240,7 +240,7 @@ class Profiler(altar.component,
         return
 
 
-    def resampleFinish(self, controller, **kwds):
+    def resample_finish(self, controller, **kwds):
         """
         Handler invoked at the end of resampling
         """
@@ -250,7 +250,7 @@ class Profiler(altar.component,
         return
 
 
-    def walkChainsFinish(self, controller, **kwds):
+    def walk_chains_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the chain walk
         """
@@ -260,7 +260,7 @@ class Profiler(altar.component,
         return
 
 
-    def betaFinish(self, controller, **kwds):
+    def beta_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the beta step
         """
@@ -272,17 +272,17 @@ class Profiler(altar.component,
         return
 
 
-    def samplePosteriorFinish(self, controller, **kwds):
+    def sample_posterior_finish(self, controller, **kwds):
         """
         Handler invoked at the end of sampling the posterior
         """
         # grab the timer and stop it
-        self.pyre_executive.newTimer(name="altar.profiler.samplePosterior").stop()
+        self.pyre_executive.newTimer(name="altar.profiler.sample_posterior").stop()
         # all done
         return
 
 
-    def simulationFinish(self, controller, **kwds):
+    def simulation_finish(self, controller, **kwds):
         """
         Handler invoked when the simulation is about to finish
         """
@@ -309,8 +309,8 @@ class Profiler(altar.component,
         # make a list of the phases i care about
         phases = [
             "simulation",
-            "samplePosterior",
-            "prepareSamplingPDF",
+            "sample_posterior",
+            "prepare_sampling_pdf",
             "beta",
             "walk",
             "chainAdvance",

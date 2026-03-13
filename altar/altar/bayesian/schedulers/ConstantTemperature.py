@@ -26,7 +26,7 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant"):
         return step
 
     @altar.provides
-    def updateTemperature(self, step):
+    def update_temperature(self, step):
         """
         Set beta to 1 (temperature=1)
         """
@@ -34,7 +34,7 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant"):
         return step
 
     @altar.provides
-    def computeCovariance(self, step):
+    def compute_covariance(self, step):
         """
         Optionally compute covariance (no-op for constant temperature)
         """

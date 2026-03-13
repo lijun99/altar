@@ -54,7 +54,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         self.cublas_handle = self.device.get_cublas_handle()
 
         # load green's function to CPU
-        self.GF = self.loadFile(filename=self.green, shape=(self.observations, self.parameters))
+        self.GF = self.load_file(filename=self.green, shape=(self.observations, self.parameters))
         # make a gpu copy of Green's function
         self.gGF = altar.cuda.matrix(shape=self.GF.shape, dtype=self.precision)
         # prepare the residuals matrix
@@ -62,7 +62,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
                                            dtype=self.precision)
         # merge covariance to green's function
         if not self.forwardonly:
-            self.mergeCovarianceToGF()
+            self.merge_covariance_to_gf()
 
         if self.use_tensor_core_gemm:
             self.gemm = altar.cuda.cublas.gemmex
@@ -72,7 +72,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # all done
         return self
 
-    def forwardModelBatched(self, theta, green, prediction, batch, observation=None):
+    def forward_model_batched(self, theta, green, prediction, batch, observation=None):
         """
         Linear Forward Model prediction= G theta
         """
@@ -109,7 +109,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         return self
 
 
-    def forwardModel(self, theta, green, prediction, observation=None):
+    def forward_model(self, theta, green, prediction, observation=None):
         """
         Static/Linear forward model prediction = green * theta
         :param theta: a parameter set, vector with size parameters
@@ -147,7 +147,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         return self
 
 
-    def cuEvalLikelihood(self, theta, likelihood, batch):
+    def cu_eval_likelihood(self, theta, likelihood, batch):
         """
         Compute data likelihood from the forward model,
         :param theta: parameters, matrix [samples, parameters]
@@ -161,18 +161,18 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # call forward to calculate the data prediction or its difference between dataobs
         #print("eval likelihood")
         #theta.print()
-        self.forwardModelBatched(theta=theta, green=self.gGF,
+        self.forward_model_batched(theta=theta, green=self.gGF,
                                  prediction=residuals, batch=batch,
                                  observation= self.dataobs.gdataObsBatch)
         # compute the data likelihood with l2 norm
-        self.dataobs.cuEvalLikelihood(prediction=residuals,
+        self.dataobs.cu_eval_likelihood(prediction=residuals,
                                       likelihood=likelihood,
                                       residual=True, batch=batch)
 
         # return the likelihood
         return likelihood
 
-    def mergeCovarianceToGF(self):
+    def merge_covariance_to_gf(self):
         """
         merge data covariance (cd) with green function
         """
@@ -197,14 +197,14 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         return
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """
         import h5py
 
         # get theta
-        gtheta = theta or self.loadFileToGPU(filename=self.theta_input,
+        gtheta = theta or self.load_file_to_gpu(filename=self.theta_input,
                                              dataset=self.theta_dataset)
         # allocate predicted data
         gData = altar.cuda.vector(shape=self.observations, dtype = self.precision)
@@ -213,7 +213,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # copy from CPU
         gGF.copy_from_host(source=self.GF)
         # forward model
-        self.forwardModel(theta=gtheta, green=gGF, prediction=gData)
+        self.forward_model(theta=gtheta, green=gGF, prediction=gData)
 
         # save data prediction
         h5file = h5py.File(name=self.forward_output.path, mode='a')
@@ -235,7 +235,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
 
         # compute prior gradient
         prior = step.prior_gradient.zero()
-        self.cuEvalPriorGradient(theta, prior, batch)
+        self.cu_eval_prior_gradient(theta, prior, batch)
 
         # compute likelihood gradient
         # log P = - 1/2({\tilde G}\theta-{\tilde d})^2
@@ -245,9 +245,9 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         green = self.gGF
         observation = self.dataobs.gdataObsBatch
         # make theta transformation
-        self.thetaPhysical = self.cuToPhysical(theta=theta, batch=batch)
+        self.thetaPhysical = self.cu_to_physical(theta=theta, batch=batch)
         # call forward to calculate the data prediction or its difference between dataobs
-        self.forwardModelBatched(theta=self.thetaPhysical, green=green,
+        self.forward_model_batched(theta=self.thetaPhysical, green=green,
                                  prediction=residuals, batch=batch,
                                  observation= observation)
 
@@ -269,7 +269,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # all done
         return self
 
-    def updateModel(self, annealer):
+    def update_model(self, annealer):
         """
         update model parameters before simulation at each beta step
         here, we update the lower range for uniform priors with the computed standard deviation

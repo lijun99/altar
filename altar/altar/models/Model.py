@@ -35,27 +35,27 @@ class Model(altar.protocol, family="altar.models"):
         """
 
     @altar.provides
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
 
     @altar.provides
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
         """
 
     @altar.provides
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
         """
 
     @altar.provides
-    def posteriorLikelihood(self, step):
+    def eval_posterior(self, step):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -89,7 +89,7 @@ class Model(altar.protocol, family="altar.models"):
         """
 
     @altar.provides
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """

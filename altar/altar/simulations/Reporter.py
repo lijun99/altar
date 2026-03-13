@@ -33,7 +33,7 @@ class Reporter(altar.component, family="altar.simulations.monitors.reporter", im
 
 
     # implementation details
-    def simulationStart(self, controller, **kwds):
+    def simulation_start(self, controller, **kwds):
         """
         Handler invoked when the simulation is about to start
         """
@@ -45,271 +45,271 @@ class Reporter(altar.component, family="altar.simulations.monitors.reporter", im
         return
 
 
-    def samplePosteriorStart(self, controller, **kwds):
+    def sample_posterior_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of sampling the posterior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: samplePosteriorStart")
+        channel.log(f"{self.pyre_name}: sample_posterior_start")
         # all done
         return
 
 
-    def prepareSamplingPDFStart(self, controller, **kwds):
+    def prepare_sampling_pdf_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the preparation of the sampling PDF
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: prepareSamplingPDFStart")
+        channel.log(f"{self.pyre_name}: prepare_sampling_pdf_start")
         # all done
         return
 
 
-    def prepareSamplingPDFFinish(self, controller, **kwds):
+    def prepare_sampling_pdf_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the preparation of the sampling PDF
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: prepareSamplingPDFFinish")
+        channel.log(f"{self.pyre_name}: prepare_sampling_pdf_finish")
         # all done
         return
 
 
-    def betaStart(self, controller, **kwds):
+    def beta_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the beta step
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: betaStart")
+        channel.log(f"{self.pyre_name}: beta_start")
         # all done
         return
 
 
-    def walkChainsStart(self, controller, **kwds):
+    def walk_chains_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of the chain walk
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: walkChainsStart")
+        channel.log(f"{self.pyre_name}: walk_chains_start")
         # all done
         return
 
 
-    def chainAdvanceStart(self, controller, **kwds):
+    def chain_advance_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of a single step of chain walking
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: chainAdvanceStart")
+        channel.log(f"{self.pyre_name}: chain_advance_start")
         # all done
         return
 
 
-    def chainAdvanceFinish(self, controller, **kwds):
+    def chain_advance_finish(self, controller, **kwds):
         """
         Handler invoked at the end of a single step of chain walking
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: chainAdvanceFinish")
+        channel.log(f"{self.pyre_name}: chain_advance_finish")
         # all done
         return
 
 
-    def verifyStart(self, controller, **kwds):
+    def verify_start(self, controller, **kwds):
         """
         Handler invoked before we start verifying the generated sample
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: verifyStart")
+        channel.log(f"{self.pyre_name}: verify_start")
         # all done
         return
 
 
-    def verifyFinish(self, controller, **kwds):
+    def verify_finish(self, controller, **kwds):
         """
         Handler invoked after we are done verifying the generated sample
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: verifyFinish")
+        channel.log(f"{self.pyre_name}: verify_finish")
         # all done
         return
 
 
-    def priorStart(self, controller, **kwds):
+    def prior_start(self, controller, **kwds):
         """
         Handler invoked before we compute the prior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: priorStart")
+        channel.log(f"{self.pyre_name}: prior_start")
         # all done
         return
 
 
-    def priorFinish(self, controller, **kwds):
+    def prior_finish(self, controller, **kwds):
         """
         Handler invoked after we compute the prior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: priorFinish")
+        channel.log(f"{self.pyre_name}: prior_finish")
         # all done
         return
 
 
-    def dataStart(self, controller, **kwds):
+    def data_start(self, controller, **kwds):
         """
         Handler invoked before we compute the data likelihood
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: dataStart")
+        channel.log(f"{self.pyre_name}: data_start")
         # all done
         return
 
 
-    def dataFinish(self, controller, **kwds):
+    def data_finish(self, controller, **kwds):
         """
         Handler invoked after we compute the data likelihood
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: dataFinish")
+        channel.log(f"{self.pyre_name}: data_finish")
         # all done
         return
 
 
-    def posteriorStart(self, controller, **kwds):
+    def posterior_start(self, controller, **kwds):
         """
         Handler invoked before we assemble the posterior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: posteriorStart")
+        channel.log(f"{self.pyre_name}: posterior_start")
         # all done
         return
 
 
-    def posteriorFinish(self, controller, **kwds):
+    def posterior_finish(self, controller, **kwds):
         """
         Handler invoked after we assemble the posterior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: posteriorFinish")
+        channel.log(f"{self.pyre_name}: posterior_finish")
         # all done
         return
 
 
-    def acceptStart(self, controller, **kwds):
+    def accept_start(self, controller, **kwds):
         """
         Handler invoked at the beginning of sample accept/reject
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: acceptStart")
+        channel.log(f"{self.pyre_name}: accept_start")
         # all done
         return
 
 
-    def acceptFinish(self, controller, **kwds):
+    def accept_finish(self, controller, **kwds):
         """
         Handler invoked at the end of sample accept/reject
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: acceptFinish")
+        channel.log(f"{self.pyre_name}: accept_finish")
         # all done
         return
 
 
-    def walkChainsFinish(self, controller, **kwds):
+    def walk_chains_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the chain walk
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: walkChainsFinish")
+        channel.log(f"{self.pyre_name}: walk_chains_finish")
         # all done
         return
 
 
-    def resampleStart(self, controller, **kwds):
+    def resample_start(self, controller, **kwds):
         """
         Handler invoked before we start resampling
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: resampleStart")
+        channel.log(f"{self.pyre_name}: resample_start")
         # all done
         return
 
 
-    def resampleFinish(self, controller, **kwds):
+    def resample_finish(self, controller, **kwds):
         """
         Handler invoked after we are done resampling
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: resampleFinish")
+        channel.log(f"{self.pyre_name}: resample_finish")
         # all done
         return
 
 
-    def betaFinish(self, controller, **kwds):
+    def beta_finish(self, controller, **kwds):
         """
         Handler invoked at the end of the beta step
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: betaFinish")
+        channel.log(f"{self.pyre_name}: beta_finish")
         # all done
         return
 
 
-    def samplePosteriorFinish(self, controller, **kwds):
+    def sample_posterior_finish(self, controller, **kwds):
         """
         Handler invoked at the end of sampling the posterior
         """
         # grab a channel
         channel = controller.info
         # say something
-        channel.log(f"{self.pyre_name}: samplePosteriorFinish")
+        channel.log(f"{self.pyre_name}: sample_posterior_finish")
         # all done
         return
 
 
-    def simulationFinish(self, controller, **kwds):
+    def simulation_finish(self, controller, **kwds):
         """
         Handler invoked when the simulation is about to finish
         """

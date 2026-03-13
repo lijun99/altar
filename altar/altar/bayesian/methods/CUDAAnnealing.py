@@ -32,11 +32,11 @@ class CUDAAnnealing(AnnealingMethod):
         super().initialize(application=application)
         # ensure cuda backend is active
         altar.backends.activate_cuda()
-        self.cuInitialize(application=application)
+        self.cu_initialize(application=application)
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         Initialize the cuda worker
         """
@@ -62,11 +62,11 @@ class CUDAAnnealing(AnnealingMethod):
         # initialize it
         model = annealer.model
         gstep = self.gstep
-        model.cuInitSample(theta=gstep.theta, batch=gstep.samples)
+        model.cu_init_sample(theta=gstep.theta, batch=gstep.samples)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
         # return to cpu
-        gstep.copyToCPU(step=self.step)
+        gstep.copy_to_cpu(step=self.step)
 
         # notify the archiver
         annealer.archiver.start(step=self.step, iteration=self.iteration, psets=annealer.model.psets)

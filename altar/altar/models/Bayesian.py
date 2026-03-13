@@ -74,7 +74,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # services
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
@@ -82,7 +82,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -91,7 +91,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -100,7 +100,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def posteriorLikelihood(self, step):
+    def eval_posterior(self, step):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -123,26 +123,26 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         dispatcher = annealer.dispatcher
 
         # notify we are about to compute the prior likelihood
-        dispatcher.notify(event=dispatcher.priorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.priorLikelihood(step=step)
+        self.eval_prior(step=step)
         # done
-        dispatcher.notify(event=dispatcher.priorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
 
         # notify we are about to compute the likelihood of the prior given the data
-        dispatcher.notify(event=dispatcher.dataStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_start, controller=annealer)
         # compute it
-        self.dataLikelihood(step=step)
+        self.data_likelihood(step=step)
         # done
-        dispatcher.notify(event=dispatcher.dataFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
-        dispatcher.notify(event=dispatcher.posteriorStart, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
         # compute it
-        self.posteriorLikelihood(step=step)
+        self.eval_posterior(step=step)
         # done
-        dispatcher.notify(event=dispatcher.posteriorFinish, controller=annealer)
+        dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
         # enable chaining
         return self
@@ -178,7 +178,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         return self
 
     @altar.export
-    def forwardProblem(self, application, theta=None):
+    def forward_problem(self, application, theta=None):
         """
         Perform the forward modeling with given {theta}
         """
@@ -186,7 +186,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         return
 
     # implementation details
-    def mountInputDataspace(self, pfs):
+    def mount_input_dataspace(self, pfs):
         """
         Mount the directory with my input files
         """

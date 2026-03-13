@@ -63,7 +63,7 @@ class Recorder(
         self.statistics.append(statcopy)
         return self
 
-    def saveStats(self):
+    def save_stats(self):
         """
         Save the statistics information to file
         """
@@ -120,7 +120,7 @@ class Recorder(
         """
         Hook for the end of annealing.
         """
-        self.saveStats()
+        self.save_stats()
         self._set_context(iteration=None, psets=psets)
         step.record(archiver=self)
         self._record_statistics()

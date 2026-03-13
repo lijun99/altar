@@ -57,7 +57,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         self.dispatcher.initialize(application=application)
 
         # deduce my annealing method
-        self.worker = self.deduceAnnealingMethod(job=application.job)
+        self.worker = self.deduce_annealing_method(job=application.job)
         # and initialize it
         self.worker.initialize(application=application)
 
@@ -104,7 +104,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         # iterate until β is sufficiently close to one
         while worker.beta + tolerance < 1:
             # notify that we are at the top of the current step
-            dispatcher.notify(event=dispatcher.betaStart, controller=self)
+            dispatcher.notify(event=dispatcher.beta_start, controller=self)
 
             # compute a new temperature
             # resampling and distribute the samples
@@ -115,19 +115,19 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
             worker.top(annealer=self)
 
             # notify we are about to walk the chains
-            dispatcher.notify(event=dispatcher.walkChainsStart, controller=self)
+            dispatcher.notify(event=dispatcher.walk_chains_start, controller=self)
             # walk the chains
             statistics = worker.walk(annealer=self)
             # notify we are done walking the chains
-            dispatcher.notify(event=dispatcher.walkChainsFinish, controller=self)
+            dispatcher.notify(event=dispatcher.walk_chains_finish, controller=self)
 
             # notify we are about to resample
-            dispatcher.notify(event=dispatcher.resampleStart, controller=self)
+            dispatcher.notify(event=dispatcher.resample_start, controller=self)
             # resample: this only adjusts the scaling factor of proposal matrix
             # better use another name
             statistics = worker.resample(annealer=self, statistics=statistics)
             # notify we are done resampling
-            dispatcher.notify(event=dispatcher.resampleFinish, controller=self)
+            dispatcher.notify(event=dispatcher.resample_finish, controller=self)
 
             # ask archiver to record statistics information
             worker.archive(annealer=self, scaling=self.sampler.scaling, stats=statistics)
@@ -137,7 +137,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
             # e.g., print out the statistics, calculate the mean model in Cp
             worker.bottom(annealer=self)
             # and dispatch the matching event
-            dispatcher.notify(event=dispatcher.betaFinish, controller=self)
+            dispatcher.notify(event=dispatcher.beta_finish, controller=self)
 
         # and finish up
         worker.finish(annealer=self)
@@ -152,7 +152,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
 
     # implementation details
-    def deduceAnnealingMethod(self, job):
+    def deduce_annealing_method(self, job):
         """
         Instantiate an annealing method compatible the user choices
         """

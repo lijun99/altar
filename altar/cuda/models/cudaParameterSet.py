@@ -34,7 +34,7 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
     # determined by cudaBayesian.psets
     offset = 0
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         cuda initialization
         """
@@ -48,50 +48,50 @@ class cudaParameterSet(Contiguous, family="altar.cuda.models.parameters.paramete
         self.prior.offset = offset
 
         # initialize my distributions
-        self.prior.cuInitialize(application=application)
+        self.prior.cu_initialize(application=application)
         if self.prep is not None:
             self.prep.parameters = count
             self.prep.offset = offset
-            self.prep.cuInitialize(application=application)
+            self.prep.cu_initialize(application=application)
         else:
             self.prep = self.prior
 
         # return my parameter count so the next set can be initialized properly
         return count
 
-    def cuInitSample(self, theta, batch):
+    def cu_init_sample(self, theta, batch):
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
         # fill it with random numbers from my {prep} distribution
-        self.prep.cuInitSample(theta=theta, batch=batch)
+        self.prep.cu_init_sample(theta=theta, batch=batch)
         # all done
         return self
 
-    def cuEvalPrior(self, theta, prior, batch):
+    def cu_eval_prior(self, theta, prior, batch):
         """
-        Fill {priorLLK} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
         # delegate
-        self.prior.cuEvalPrior(theta=theta, prior=prior, batch=batch)
+        self.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
         # all done
         return self
 
 
     @altar.export
-    def cuVerify(self, theta, mask, batch):
+    def cu_verify(self, theta, mask, batch):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
         # ask it to verify my samples
-        self.prior.cuVerify(theta=theta, mask=mask, batch=batch)
+        self.prior.cu_verify(theta=theta, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
 
     # implementation details
-    def cuRestrict(self, theta):
+    def cu_restrict(self, theta):
         """
         Return my portion of the sample matrix {theta}
         """

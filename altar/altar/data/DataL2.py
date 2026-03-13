@@ -52,13 +52,13 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         self.samples = application.job.chains
         # load the data and covariance
         self.ifs = application.pfs["inputs"]
-        self.loadData()
+        self.load_data()
         # compute inverse of covariance, normalization
-        self.initializeCovariance(cd=self.cd)
+        self.initialize_covariance(cd=self.cd)
         # all done
         return self
 
-    def loadFile(self, filename, shape=None, dataset=None, dtype=None):
+    def load_file(self, filename, shape=None, dataset=None, dtype=None):
         """
         Load an input file to a gsl vector or matrix.
         Supported format:
@@ -127,7 +127,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
             return mat
         raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
-    def evalLikelihood(self, prediction, likelihood, residual=True, batch=None):
+    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None):
         """
         compute the datalikelihood for prediction (samples x observations)
         """
@@ -154,7 +154,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         return self
 
 
-    def dataobsBatch(self):
+    def dataobs_batch(self):
         """
         Get a batch of duplicated dataobs
         """
@@ -167,7 +167,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         return self.dataobs_batch
 
 
-    def loadData(self):
+    def load_data(self):
         """
         load data and covariance
         """
@@ -175,11 +175,11 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         # grab the input dataspace
         ifs = self.ifs
         # next, the observations
-        self.dataobs = self.loadFile(filename=self.data_file, shape=self.observations)
+        self.dataobs = self.load_file(filename=self.data_file, shape=self.observations)
 
         if self.cd_file is not None:
             # finally, the data covariance
-            self.cd = self.loadFile(
+            self.cd = self.load_file(
                 filename=self.cd_file,
                 shape=(self.observations, self.observations),
             )
@@ -189,7 +189,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         return
 
 
-    def initializeCovariance(self, cd):
+    def initialize_covariance(self, cd):
         """
         For a given data covariance cd, compute L2 likelihood normalization, inverse of cd in Cholesky decomposed form,
         and merge cd with data observation, d-> L*d with cd^{-1} = L L*
@@ -201,9 +201,9 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
 
         if isinstance(cd, altar.matrix):
             # normalization
-            self.normalization = self.computeNormalization(observations=observations, cd=cd)
+            self.normalization = self.compute_normalization(observations=observations, cd=cd)
             # inverse matrix
-            self.cd_inv = self.computeCovarianceInverse(cd=cd)
+            self.cd_inv = self.compute_covariance_inverse(cd=cd)
             # merge cd to data
             if self.merge_cd_with_data:
                 Cd_inv = self.cd_inv
@@ -221,7 +221,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         # all done
         return self
 
-    def updateCovariance(self, cp):
+    def update_covariance(self, cp):
         """
         Update data covariance with cp, cd -> cd + cp
         :param cp: a matrix with shape (obs, obs)
@@ -231,10 +231,10 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         cchi = cp.clone()
         # add cd (scalar or matrix)
         cchi += self.cd
-        self.initializeCovariance(cd=cchi)
+        self.initialize_covariance(cd=cchi)
         return self
 
-    def computeNormalization(self, observations, cd):
+    def compute_normalization(self, observations, cd):
         """
         Compute the normalization of the L2 norm
         """
@@ -251,7 +251,7 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
         return - (log(2*π)*observations + logdet) / 2;
 
 
-    def computeCovarianceInverse(self, cd):
+    def compute_covariance_inverse(self, cd):
         """
         Compute the inverse of the data covariance matrix
         """

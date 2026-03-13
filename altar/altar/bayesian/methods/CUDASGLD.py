@@ -39,11 +39,11 @@ class CUDASGLD:
         """
         # ensure cuda backend is active
         altar.backends.activate_cuda()
-        self.cuInitialize(application=application)
+        self.cu_initialize(application=application)
         # all done
         return self
 
-    def cuInitialize(self, application):
+    def cu_initialize(self, application):
         """
         Initialize the cuda worker
         """
@@ -75,11 +75,11 @@ class CUDASGLD:
         # initialize it
         model = controller.model
         gstep = self.gstep
-        model.cuInitSample(theta=gstep.theta, batch=gstep.samples)
+        model.cu_init_sample(theta=gstep.theta, batch=gstep.samples)
         # compute the likelihoods
         # model.likelihoods(controller=controller, step=gstep, batch=gstep.samples)
         # return to cpu
-        gstep.copyToCPU(step=self.step)
+        gstep.copy_to_cpu(step=self.step)
 
         # all done
         return self

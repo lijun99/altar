@@ -68,20 +68,20 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def initializeSample(self, step):
+    def initialize_sample(self, step):
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # fill it with random numbers from my initializer
-        self.prep.initializeSample(theta=θ)
+        self.prep.initialize_sample(theta=θ)
         # and return
         return self
 
 
     @altar.export
-    def priorLikelihood(self, step):
+    def eval_prior(self, step):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -94,14 +94,14 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
         likelihood = step.prior
 
         # delegate
-        pdf.priorLikelihood(theta=θ, likelihood=likelihood)
+        pdf.eval_prior(theta=θ, likelihood=likelihood)
 
         # all done
         return self
 
 
     @altar.export
-    def dataLikelihood(self, step):
+    def data_likelihood(self, step):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"

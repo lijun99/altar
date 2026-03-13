@@ -58,16 +58,16 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
         super().initialize(application=application)
 
         # convert the input filenames into data
-        self.Kmu, self.Cmu, self.meanModel = self.loadInputsCp()
+        self.Kmu, self.Cmu, self.meanModel = self.load_inputs_cp()
         # set Cp
-        self.Cp = self.computeCp(theta_mean=self.meanModel)
+        self.Cp = self.compute_cp(theta_mean=self.meanModel)
 
         # all done
         return self
 
 
 
-    def loadInputsCp(self):
+    def load_inputs_cp(self):
         """
         Load the additional data (for Cp problem) in the input files into memory
         """
@@ -130,7 +130,7 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
 
     #Cp - related functions
 
-    def initializeCovariance(self, samples):
+    def initialize_covariance(self, samples):
         """
         initialize data covariance related variables
         """
@@ -140,10 +140,10 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
         self.G0 = self.G.clone()
 
         # compute the normalization
-        self.normalization = self.computeNormalization(observations=self.observations, cd=self.Cd)
+        self.normalization = self.compute_normalization(observations=self.observations, cd=self.Cd)
 
         # compute the inverse of {Cd}
-        self.Cd_inv = self.computeCovarianceInverse(self.Cd)
+        self.Cd_inv = self.compute_covariance_inverse(self.Cd)
         # merge Cd to green and d
         # G = Cd_inv x G; d = Cd_inv x d
         Cd_inv = self.Cd_inv
@@ -152,12 +152,12 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
         self.d = altar.blas.dtrmv( Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
             Cd_inv, self.d)
         # prepare the residuals matrix
-        self.residuals = self.initializeResiduals(samples=samples, data=self.d)
+        self.residuals = self.initialize_residuals(samples=samples, data=self.d)
         # all done
         return self
 
 
-    def computeCp(self, theta_mean):
+    def compute_cp(self, theta_mean):
         """
         Calculate Cp
         """
@@ -213,17 +213,17 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
             theta_mean[i] = param_mean
 
         # compute Cp from the mean model
-        self.Cp = self.computeCp(theta_mean = theta_mean)
+        self.Cp = self.compute_cp(theta_mean = theta_mean)
 
         # update Cd
         self.Cd.copy(self.Cd0)
         self.Cd += self.Cp
 
         # compute the normalization
-        self.normalization = self.computeNormalization(observations=self.observations, cd=self.Cd)
+        self.normalization = self.compute_normalization(observations=self.observations, cd=self.Cd)
 
         # compute the inverse of {Cd}
-        self.Cd_inv = self.computeCovarianceInverse(self.Cd)
+        self.Cd_inv = self.compute_covariance_inverse(self.Cd)
 
         # merge Cd to green and d
         # G = Cd_inv x G; d = Cd_inv x d
@@ -237,7 +237,7 @@ class StaticCp(Static, family="altar.models.seismic.staticCp"):
 
         # prepare the residuals matrix
         samples = step.samples
-        self.residuals = self.initializeResiduals(samples=samples, data=self.d)
+        self.residuals = self.initialize_residuals(samples=samples, data=self.d)
 
         # recalculate densities
         # self.densities(annealer=annealer, step=step)

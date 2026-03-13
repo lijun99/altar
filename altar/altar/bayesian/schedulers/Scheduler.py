@@ -31,13 +31,13 @@ class Scheduler(altar.protocol, family="altar.schedulers"):
         """
 
     @altar.provides
-    def updateTemperature(self, step):
+    def update_temperature(self, step):
         """
         Generate the next temperature increment
         """
 
     @altar.provides
-    def computeCovariance(self, step):
+    def compute_covariance(self, step):
         """
         Compute the parameter covariance of the sample in the {step}
         """

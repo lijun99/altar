@@ -30,13 +30,13 @@ class L2(altar.component, family="altar.norms.l2", implements=Norm):
         # if we have a covariance matrix
         if sigma_inv is not None:
             # use the specialized implementation
-            return self.withCovariance(v=v, sigma_inv=sigma_inv)
+            return self.with_covariance(v=v, sigma_inv=sigma_inv)
         # otherwise, compute the norm and return it
         return altar.blas.dnrm2(v)
 
 
     # implementation details
-    def withCovariance(self, v, sigma_inv):
+    def with_covariance(self, v, sigma_inv):
         """
         Compute the L2 norm of the given vector using the given Cholesky decomposed inverse
         covariance matrix

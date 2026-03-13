@@ -32,8 +32,8 @@ class Forward(altar.panel(), family='altar.actions.forward'):
         model = plexus.model
         # set the model forwardonly flag
         model.forwardonly = True
-        # call the forwardProblem method
-        return model.forwardProblem(application=plexus)
+        # call the forward_problem method
+        return model.forward_problem(application=plexus)
 
 
 # end of file

@@ -43,7 +43,7 @@ class SIR(BayesianL2, family="altar.models.sir"):
         In = I + new - recovered
         return Sn, In
 
-    def forwardModel(self, theta, prediction):
+    def forward_model(self, theta, prediction):
         """
         Forward SIR model
         """

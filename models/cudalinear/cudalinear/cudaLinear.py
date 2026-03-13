@@ -41,8 +41,8 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
         # chain up
         self.cublas_handle = self.device.get_cublas_handle()
         # convert the input filenames into data
-        self.GF = self.loadGF()
-        self.prepareGF()
+        self.GF = self.load_gf()
+        self.prepare_gf()
 
         # prepare the residuals matrix
         self.gDataPred = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
@@ -82,22 +82,22 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
         return self
         
     
-    def cuEvalLikelihood(self, theta, likelihood, batch):
+    def cu_eval_likelihood(self, theta, likelihood, batch):
         """
-        to be loaded by super class cuEvalLikelihood which already decides where the local likelihood is added to
+        to be loaded by super class cu_eval_likelihood which already decides where the local likelihood is added to
         """
         residuals = self.gDataPred
         # call forward to caculate the data prediction or its difference between dataobs
         self._forwardModel(theta=theta, prediction=residuals, batch=batch,
                 observation= self.dataobs.gdataObsBatch)  
         # call data to calculate the l2 norm
-        self.dataobs.cuEvalLikelihood(prediction=residuals, likelihood=likelihood,
+        self.dataobs.cu_eval_likelihood(prediction=residuals, likelihood=likelihood,
             residual=True, batch=batch)
         # return the likelihood        
         return likelihood
 
 
-    def loadGF(self):
+    def load_gf(self):
         """
         Load the data in the input files into memory
         """
@@ -125,7 +125,7 @@ class cudaLinear(cudaBayesian, family="altar.models.cudalinear"):
         # all done
         return green
 
-    def prepareGF(self):
+    def prepare_gf(self):
         """
         copy green function to gpu and merge cd with green function
         """
