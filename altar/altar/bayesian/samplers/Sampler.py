@@ -32,7 +32,7 @@ class Sampler(altar.protocol, family="altar.samplers"):
         """
 
     @altar.provides
-    def resample(self, controller, statistics):
+    def update(self, controller, statistics):
         """
         Update my statistics based on the results of walking my Markov chains
         """

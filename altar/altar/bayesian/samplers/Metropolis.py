@@ -77,16 +77,16 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # notify we are done sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
         # all done
-        return
+        return self.statistics
 
 
     @altar.provides
-    def update(self, annealer):
+    def update(self, annealer, statistics):
         """
         Update my parameters based on the results of walking my Markov chains
         """
-        # unpack the stored statistics
-        accepted, rejected, unlikely = self.statistics
+        # unpack the statistics
+        accepted, rejected, unlikely = statistics
         # delegate step size adjustment to the stepsizer
         self.scaling = self.stepsizer.adjust(
             attempts=accepted + rejected + unlikely,

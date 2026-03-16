@@ -17,6 +17,9 @@ class Scheduler(altar.protocol, family="altar.schedulers"):
     The protocol that all AlTar schedulers must implement
     """
 
+    # the initial value of beta; schedulers may override this
+    beta_start = 0
+
     # required behavior
     @altar.provides
     def initialize(self, application):

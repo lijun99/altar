@@ -88,7 +88,7 @@ class CoolingStep:
         return step
 
     @classmethod
-    def alloc(cls, samples, parameters, has_reparametrization=False):
+    def alloc(cls, samples, parameters, has_reparametrization=False, beta=0):
         """
         Allocate storage for the parts of a cooling step
         """
@@ -108,7 +108,7 @@ class CoolingStep:
         posterior = altar.vector(shape=samples).zero()
 
         # build one of my instances and return it
-        return cls(beta=0, theta=theta, theta_sampling=theta_sampling,
+        return cls(beta=beta, theta=theta, theta_sampling=theta_sampling,
                   jacobian=jacobian, likelihoods=(prior, data, posterior),
                   has_reparametrization=has_reparametrization)
     # interface

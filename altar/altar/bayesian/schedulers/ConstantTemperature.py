@@ -5,8 +5,9 @@
 #
 
 import altar
+from .Scheduler import Scheduler as scheduler
 
-class ConstantTemperature(altar.component, family="altar.schedulers.constant"):
+class ConstantTemperature(altar.component, family="altar.schedulers.constant", implements=scheduler):
     """
     A scheduler that keeps the temperature fixed at 1 (beta=1)
     """
@@ -21,8 +22,9 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant"):
     @altar.provides
     def update(self, step):
         """
-        No update needed; just return the step
+        Set beta to 1 (no-op after the first call since temperature is constant)
         """
+        self.update_temperature(step=step)
         return step
 
     @altar.provides

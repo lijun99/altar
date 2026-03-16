@@ -118,7 +118,7 @@ class AnnealingMethod:
         # get the sampler
         sampler = annealer.sampler
         # ask it to adjust the sample statistics
-        sampler.resample(annealer=annealer, statistics=statistics)
+        sampler.update(annealer=annealer, statistics=statistics)
         # all done
         return statistics
 
