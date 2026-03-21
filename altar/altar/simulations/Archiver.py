@@ -32,6 +32,28 @@ class Archiver(altar.protocol, family="altar.simulations.archivers"):
         Record the final state of the simulation
         """
 
+    @altar.provides
+    def write(self, path, data, info=None):
+        """
+        Persist one dataset.
+
+        {path} is a slash-separated string "Group/Subgroup/Name"; a bare name with no
+        slash is stored at the top level.  {data} may be any of:
+          - an object with a .ndarray() method  (altar.matrix, altar.vector, gsl objects)
+          - a numpy ndarray
+          - a Python scalar
+
+        {info} is an optional dict of metadata (written as HDF5 attributes or stored
+        alongside the data in other backends).
+        """
+
+    @altar.provides
+    def register(self, component):
+        """
+        Register {component} so that its record(archiver) method is called at each
+        save point.  Components call this during their own initialize().
+        """
+
     # framework hooks
     @classmethod
     def pyre_default(cls, **kwds):

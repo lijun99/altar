@@ -33,7 +33,7 @@ class CoolingStep:
     # reparameterization flag
     has_reparametrization = False  # whether reparameterization is implemented
 
-    sigma = None # the parameter covariance matrix
+    weights = None  # a (samples) vector of importance weights w_i ∝ exp(Δβ · data_i); set by scheduler
 
     # the statistics of samples (theta)
     mean = None
@@ -119,7 +119,6 @@ class CoolingStep:
         # make copies of my state
         beta = self.beta
         theta_sampling = self.theta_sampling.clone()
-        sigma = self.sigma.clone()
         likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
 
         # handle physical parameters and jacobian based on reparameterization flag
@@ -128,7 +127,7 @@ class CoolingStep:
 
         # make one and return it
         return type(self)(beta=beta, theta_sampling=theta_sampling, theta=theta,
-                         jacobian=jacobian, likelihoods=likelihoods, sigma=sigma,
+                         jacobian=jacobian, likelihoods=likelihoods,
                          has_reparametrization=self.has_reparametrization)
 
     def compute_posterior(self):
@@ -157,7 +156,7 @@ class CoolingStep:
         return self
 
     # meta-methods
-    def __init__(self, beta, theta_sampling=None, theta=None, jacobian=None, likelihoods=None, sigma=None, has_reparametrization=False, **kwds):
+    def __init__(self, beta, theta_sampling=None, theta=None, jacobian=None, likelihoods=None, has_reparametrization=False, **kwds):
         # chain up
         super().__init__(**kwds)
 
@@ -184,11 +183,6 @@ class CoolingStep:
 
         # store the likelihoods
         self.prior, self.data, self.posterior = likelihoods
-
-        # get the number of parameters
-        dof = self.parameters
-        # initialize the covariance matrix
-        self.sigma = altar.matrix(shape=(dof,dof)).zero() if sigma is None else sigma
 
         # all done
         return
@@ -226,13 +220,6 @@ class CoolingStep:
             posterior = self.posterior
             channel.line(f"{indent}posterior:")
             channel.line(posterior.print(interactive=False, indent=indent*2))
-
-        if parameters < 10:
-            # the data covariance
-            Σ = self.sigma
-            channel.line(f"{indent}Σ: {Σ.rows} x {Σ.columns}")
-            channel.line("\n".join(Σ.print(interactive=False, indent=indent*2)))
-
 
         # print statistics (axis=0 average over samples)
         mean, sd = self.mean, self.sd
@@ -281,7 +268,6 @@ class CoolingStep:
         # save annealer info
         annealergrp = f.create_group('Annealer')
         annealergrp.create_dataset('beta', data=numpy.asarray(self.beta))
-        annealergrp.create_dataset('covariance', data=self.sigma.ndarray())
         # save parameter sets
         psetsgrp = f.create_group('ParameterSets')
         # save reparameterization flag
@@ -328,45 +314,36 @@ class CoolingStep:
         psets = getattr(archiver, "psets", None) or {}
 
         # annealer metadata
-        records = [
-            ("Annealer", "beta", numpy.asarray(self.beta)),
-            ("Annealer", "covariance", self.sigma.ndarray()),
-            ("ParameterSets", "has_reparametrization", numpy.array([self.has_reparametrization])),
-        ]
+        archiver.write("Annealer/beta", self.beta)
+        archiver.write("ParameterSets/has_reparametrization",
+                       numpy.array([self.has_reparametrization]))
+
+        # importance weights (set by scheduler; may be None at beta=0)
+        if self.weights is not None:
+            archiver.write("Annealer/weights", self.weights)
 
         # parameter sets
         if len(psets) == 0:
-            records.append(("ParameterSets", "theta_sampling", self.theta_sampling.ndarray()))
+            archiver.write("ParameterSets/theta_sampling", self.theta_sampling)
             if self.has_reparametrization:
-                records.append(("ParameterSets", "theta", self.theta.ndarray()))
-                records.append(("ParameterSets", "jacobian", self.jacobian.ndarray()))
+                archiver.write("ParameterSets/theta",    self.theta)
+                archiver.write("ParameterSets/jacobian", self.jacobian)
         else:
             theta_sampling = self.theta_sampling.ndarray()
             for name, pset in psets.items():
-                records.append((
-                    "ParameterSets",
-                    f"{name}_sampling",
-                    theta_sampling[:, pset.offset:pset.offset+pset.count]
-                ))
+                archiver.write(f"ParameterSets/{name}_sampling",
+                               theta_sampling[:, pset.offset:pset.offset+pset.count])
             if self.has_reparametrization:
                 theta = self.theta.ndarray()
                 for name, pset in psets.items():
-                    records.append((
-                        "ParameterSets",
-                        f"{name}_physical",
-                        theta[:, pset.offset:pset.offset+pset.count]
-                    ))
-                records.append(("ParameterSets", "jacobian", self.jacobian.ndarray()))
+                    archiver.write(f"ParameterSets/{name}_physical",
+                                   theta[:, pset.offset:pset.offset+pset.count])
+                archiver.write("ParameterSets/jacobian", self.jacobian)
 
         # bayesian quantities
-        records.extend([
-            ("Bayesian", "prior", self.prior.ndarray()),
-            ("Bayesian", "likelihood", self.data.ndarray()),
-            ("Bayesian", "posterior", self.posterior.ndarray()),
-        ])
-
-        for record in records:
-            archiver.save(record)
+        archiver.write("Bayesian/prior",      self.prior)
+        archiver.write("Bayesian/likelihood", self.data)
+        archiver.write("Bayesian/posterior",  self.posterior)
 
         # all done
         return self

@@ -25,6 +25,7 @@ class BayesianState:
     prior = None     # a (samples) vector with logs of the prior
     data = None      # a (samples) vector with the logs of the data likelihoods given the samples
     posterior = None # a (samples) vector with the logs of the posterior
+    weights = None   # a (samples) vector of importance weights w_i ∝ exp(Δβ · data_i); set by scheduler
 
     # read-only public data
     @property
@@ -96,11 +97,10 @@ class BayesianState:
         # make copies of my state
         beta = self.beta
         theta = self.theta.clone()
-        sigma = self.sigma.clone()
         likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
 
         # make one and return it
-        return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma)
+        return type(self)(beta=beta, theta=theta, likelihoods=likelihoods)
 
     def compute_posterior(self):
         """
@@ -128,7 +128,7 @@ class BayesianState:
         return self
 
     # meta-methods
-    def __init__(self, beta, theta, likelihoods, sigma=None, **kwds):
+    def __init__(self, beta, theta, likelihoods, **kwds):
         # chain up
         super().__init__(**kwds)
 
@@ -138,11 +138,6 @@ class BayesianState:
         self.theta = theta
         # store the likelihoods
         self.prior, self.data, self.posterior = likelihoods
-
-        # get the number of parameters
-        dof = self.parameters
-        # initialize the covariance matrix
-        self.sigma = altar.matrix(shape=(dof,dof)).zero() if sigma is None else sigma
 
         # all done
         return
@@ -181,11 +176,6 @@ class BayesianState:
             channel.line(f"{indent}posterior:")
             channel.line(posterior.print(interactive=False, indent=indent*2))
 
-        if parameters < 10:
-            # the data covariance
-            Σ = self.sigma
-            channel.line(f"{indent}Σ: {Σ.rows} x {Σ.columns}")
-            channel.line("\n".join(Σ.print(interactive=False, indent=indent*2)))
 
 
         # print statistics (axis=0 average over samples)
@@ -235,7 +225,6 @@ class BayesianState:
         # save annealer info
         annealergrp = f.create_group('Annealer')
         annealergrp.create_dataset('beta', data=numpy.asarray(self.beta))
-        annealergrp.create_dataset('covariance', data=self.sigma.ndarray())
         # save parameter sets
         psetsgrp = f.create_group('ParameterSets')
         if len(psets) == 0 :
@@ -265,32 +254,25 @@ class BayesianState:
 
         psets = getattr(archiver, "psets", None) or {}
 
-        records = [
-            ("Annealer", "beta", numpy.asarray(self.beta)),
-            ("Annealer", "covariance", self.sigma.ndarray()),
-        ]
+        archiver.write("Annealer/beta", self.beta)
 
         # parameter sets
         if len(psets) == 0:
-            records.append(("ParameterSets", "theta", self.theta.ndarray()))
+            archiver.write("ParameterSets/theta", self.theta)
         else:
             theta = self.theta.ndarray()
             for name, pset in psets.items():
-                records.append((
-                    "ParameterSets",
-                    name,
-                    theta[:, pset.offset:pset.offset+pset.count]
-                ))
+                archiver.write(f"ParameterSets/{name}",
+                               theta[:, pset.offset:pset.offset+pset.count])
 
         # bayesian quantities
-        records.extend([
-            ("Bayesian", "prior", self.prior.ndarray()),
-            ("Bayesian", "likelihood", self.data.ndarray()),
-            ("Bayesian", "posterior", self.posterior.ndarray()),
-        ])
+        archiver.write("Bayesian/prior",      self.prior)
+        archiver.write("Bayesian/likelihood", self.data)
+        archiver.write("Bayesian/posterior",  self.posterior)
 
-        for record in records:
-            archiver.save(record)
+        # importance weights (set by scheduler; may be None at beta=0)
+        if self.weights is not None:
+            archiver.write("Annealer/weights", self.weights)
 
         # all done
         return self

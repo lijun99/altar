@@ -114,11 +114,13 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         Generate the next temperature increment
         """
         # grab the data log-likelihood
-        data_likelihood  = step.data
+        data_likelihood = step.data
         # initialize the vector of weights
-        self.w = altar.vector(shape=step.samples).zero()
+        w = altar.vector(shape=step.samples).zero()
         # compute {δβ} and the normalized {w}
-        β, self.cov = self.solver.solve(data_likelihood, self.w)
+        β, self.cov = self.solver.solve(data_likelihood, w)
+        # publish weights on the step so all components (proposal, etc.) can consume them
+        step.weights = w
         # adjust β if it is too small
         β = max(β, self.beta_min)
         # and return the new temperature

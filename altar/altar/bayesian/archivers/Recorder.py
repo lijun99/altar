@@ -36,9 +36,11 @@ class Recorder(
         """
 
         # create a statistics list
-        self.statistics= []
+        self.statistics = []
         # in-memory storage for recorded datasets
         self.records = {}
+        # registered components to query at each save point
+        self._components = []
 
         # all done
         return self
@@ -114,6 +116,8 @@ class Recorder(
         if iteration % self.output_freq == 0:
             self._set_context(iteration=iteration, psets=psets)
             step.record(archiver=self)
+            for component in self._components:
+                component.record(archiver=self)
         return self
 
     def final(self, step, iteration, psets, **kwds):
@@ -123,18 +127,40 @@ class Recorder(
         self.save_stats()
         self._set_context(iteration=None, psets=psets)
         step.record(archiver=self)
+        for component in self._components:
+            component.record(archiver=self)
         self._record_statistics()
+        return self
+
+    def write(self, path, data, info=None):
+        """
+        Store one dataset in memory.
+
+        {path} is "Group/Name" or "Group/Sub/Name".  {data} may have a .ndarray() method,
+        be a numpy array, or be a scalar.  {info} is optional metadata stored alongside.
+        """
+        import numpy
+        arr = data.ndarray() if hasattr(data, 'ndarray') else numpy.asarray(data)
+        key = self._current_label
+        if key not in self.records:
+            self.records[key] = []
+        self.records[key].append((path, arr, info))
+        return self
+
+    def register(self, component):
+        """
+        Register a component whose record(archiver) will be called at each save point.
+        """
+        self._components.append(component)
         return self
 
     def save(self, record):
         """
-        Store a dataset tuple in memory.
+        Compatibility shim: accept the old (group, name, data) tuple form.
         """
-        key = self._current_label
-        if key not in self.records:
-            self.records[key] = []
-        self.records[key].append(record)
-        return self
+        group_name, dataset_name, data = record
+        path = '/'.join(p for p in [group_name, dataset_name] if p)
+        return self.write(path, data)
 
     def _record_statistics(self):
         """
@@ -183,5 +209,6 @@ class Recorder(
     records = None
     psets = None
     _current_label = None
+    _components = []
 
 # end of file

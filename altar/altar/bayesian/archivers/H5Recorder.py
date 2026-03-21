@@ -36,7 +36,9 @@ class H5Recorder(
         """
 
         # create a statistics list
-        self.statistics= []
+        self.statistics = []
+        # registered components to query at each save point
+        self._components = []
         # clear any open file handles
         self._file = None
         self._groups = None
@@ -118,6 +120,8 @@ class H5Recorder(
             self._set_context(iteration=iteration, psets=psets)
             self._open_file(iteration=iteration)
             step.record(archiver=self)
+            for component in self._components:
+                component.record(archiver=self)
             self._close_file()
         return self
 
@@ -129,28 +133,49 @@ class H5Recorder(
         self._set_context(iteration=None, psets=psets)
         self._open_file(iteration=None)
         step.record(archiver=self)
+        for component in self._components:
+            component.record(archiver=self)
         self._record_statistics()
         self._close_file()
         return self
 
-    def save(self, record):
+    def write(self, path, data, info=None):
         """
-        Persist a dataset tuple into the current HDF5 file.
+        Persist one dataset into the current HDF5 file.
+
+        {path} is "Group/Name" or "Group/Sub/Name"; a bare name is stored at the root.
+        {data} may have a .ndarray() method (altar.matrix/vector), be a numpy array, or
+        be a scalar.  {info} is an optional dict written as HDF5 dataset attributes.
         """
+        import numpy
         if self._file is None:
-            raise RuntimeError("H5Recorder.save called without an open file")
-        group_name, dataset_name, data = record
-        if group_name in ("", None, "/"):
-            group = self._file
-        else:
-            group = self._file.require_group(group_name)
-        parts = [part for part in dataset_name.split("/") if part]
+            raise RuntimeError("H5Recorder.write called without an open file")
+        arr = data.ndarray() if hasattr(data, 'ndarray') else numpy.asarray(data)
+        parts = [p for p in path.split('/') if p]
         if not parts:
-            raise ValueError("empty dataset name")
+            raise ValueError("empty path")
+        group = self._file
         for part in parts[:-1]:
             group = group.require_group(part)
-        group.create_dataset(parts[-1], data=data)
+        ds = group.create_dataset(parts[-1], data=arr)
+        if info:
+            ds.attrs.update(info)
         return self
+
+    def register(self, component):
+        """
+        Register a component whose record(archiver) will be called at each save point.
+        """
+        self._components.append(component)
+        return self
+
+    def save(self, record):
+        """
+        Compatibility shim: accept the old (group, name, data) tuple form.
+        """
+        group_name, dataset_name, data = record
+        path = '/'.join(p for p in [group_name, dataset_name] if p)
+        return self.write(path, data)
 
     def _record_statistics(self):
         """
@@ -226,5 +251,6 @@ class H5Recorder(
     _current_label = None
     _file = None
     _groups = None
+    _components = []
 
 # end of file

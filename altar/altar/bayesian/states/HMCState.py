@@ -66,10 +66,9 @@ class HMCState:
     def clone(self):
         beta = self.beta
         theta = self.theta.clone()
-        sigma = self.sigma.clone()
         likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
         gradients = self.grad_prior.clone(), self.grad_data.clone(), self.grad_posterior.clone()
-        return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, sigma=sigma, gradients=gradients)
+        return type(self)(beta=beta, theta=theta, likelihoods=likelihoods, gradients=gradients)
 
     def compute_posterior(self):
         self.posterior.copy(self.prior)
@@ -84,13 +83,14 @@ class HMCState:
         self.mean, self.sd = θ.mean_sd(axis=0)
         return self
 
-    def __init__(self, beta, theta, likelihoods, sigma=None, gradients=None, **kwds):
+    weights = None  # a (samples) vector of importance weights w_i ∝ exp(Δβ · data_i); set by scheduler
+
+    def __init__(self, beta, theta, likelihoods, gradients=None, **kwds):
         super().__init__(**kwds)
         self.beta = beta
         self.theta = theta
         self.prior, self.data, self.posterior = likelihoods
         dof = self.parameters
-        self.sigma = altar.matrix(shape=(dof,dof)).zero() if sigma is None else sigma
         if gradients is not None:
             self.grad_prior, self.grad_data, self.grad_posterior = gradients
         else:
@@ -103,39 +103,32 @@ class HMCState:
         """
         Record me using the provided {archiver}.
         """
-        import numpy
-
         psets = getattr(archiver, "psets", None) or {}
 
-        records = [
-            ("Annealer", "beta", numpy.asarray(self.beta)),
-            ("Annealer", "covariance", self.sigma.ndarray()),
-        ]
+        archiver.write("Annealer/beta", self.beta)
+
+        # importance weights (set by scheduler; may be None at beta=0)
+        if self.weights is not None:
+            archiver.write("Annealer/weights", self.weights)
 
         # parameter sets
         if len(psets) == 0:
-            records.append(("ParameterSets", "theta", self.theta.ndarray()))
+            archiver.write("ParameterSets/theta", self.theta)
         else:
             theta = self.theta.ndarray()
             for name, pset in psets.items():
-                records.append((
-                    "ParameterSets",
-                    name,
-                    theta[:, pset.offset:pset.offset+pset.count]
-                ))
+                archiver.write(f"ParameterSets/{name}",
+                               theta[:, pset.offset:pset.offset+pset.count])
 
         # bayesian quantities
-        records.extend([
-            ("Bayesian", "prior", self.prior.ndarray()),
-            ("Bayesian", "likelihood", self.data.ndarray()),
-            ("Bayesian", "posterior", self.posterior.ndarray()),
-            ("Gradients", "prior", self.grad_prior.ndarray()),
-            ("Gradients", "likelihood", self.grad_data.ndarray()),
-            ("Gradients", "posterior", self.grad_posterior.ndarray()),
-        ])
+        archiver.write("Bayesian/prior",      self.prior)
+        archiver.write("Bayesian/likelihood", self.data)
+        archiver.write("Bayesian/posterior",  self.posterior)
 
-        for record in records:
-            archiver.save(record)
+        # gradients
+        archiver.write("Gradients/prior",      self.grad_prior)
+        archiver.write("Gradients/likelihood", self.grad_data)
+        archiver.write("Gradients/posterior",  self.grad_posterior)
 
         # all done
         return self
