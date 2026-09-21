@@ -49,8 +49,8 @@ class GSLRNG(altar.component, family="altar.simulations.rng.gsl", implements=rng
         super().__init__(**kwds)
         # build the random number generator
         self.rng = altar.rng(algorithm=self.algorithm)
-        # and seed
-        self.rng.seed(seed=self.seed)
+        # and seed; {seed} is a float trait but the gsl binding requires an int
+        self.rng.seed(seed=int(self.seed))
         # all done
         return
 

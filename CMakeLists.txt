@@ -44,6 +44,10 @@ find_package(Python 3.7 REQUIRED COMPONENTS ${PYTHON_COMPONENTS} OPTIONAL_COMPON
 # pyre and pyre cuda
 find_package(PYRE)
 
+# pybind11, for the python extension modules
+set(PYBIND11_FINDPYTHON ON)
+find_package(pybind11)
+
 # set up cmake
 altar_cmakeInit()
 # set up c++

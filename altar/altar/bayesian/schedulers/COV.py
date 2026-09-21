@@ -197,7 +197,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(step=step).values()
+        multi = self.compute_sample_multiplicities(step=step).counts()
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
@@ -248,7 +248,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(step=step).values()
+        multi = self.compute_sample_multiplicities(step=step).counts()
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
@@ -297,7 +297,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         Make sure the covariance matrix Σ is symmetric and positive definite
         """
         # replaces negative or small eigenvalues with min_eigenvalue_ratio*max_eigenvalue
-        altar.libaltar.matrix_condition(Σ.data, self.min_eigenvalue_ratio)
+        altar.libaltar.matrix_condition(Σ, self.min_eigenvalue_ratio)
         # all done
         return Σ
 
@@ -316,7 +316,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         r = altar.vector(shape=samples)
         if self.use_low_variance_resampler:
             # use equal spaced random number s+i/samples in [0, 1]
-            altar.libaltar.low_variance_random(self.rng.rng, r.data)
+            altar.libaltar.low_variance_random(self.rng, r)
         else:
             # use uniform pdf generator in [0, 1]
             r.random(pdf=self.uniform)
@@ -324,7 +324,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # compute the bin edges in the range [0, 1]
         ticks = tuple(self.build_histogram_ranges(w))
         # build a histogram
-        h = altar.histogram(bins=samples).ranges(points=ticks).fill(r)
+        h = altar.histogram(bins=samples).ranges(edges=ticks).fill(r)
         # and return it
         return h
 

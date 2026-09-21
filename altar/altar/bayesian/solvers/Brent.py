@@ -39,7 +39,7 @@ class Brent(altar.component, family="altar.bayesian.solvers.brent", implements=s
         # get the simulation RNG
         rng = application.rng.rng
         # instantiate my COV calculator
-        self.cov = altar.libaltar.cov(rng.rng, self.maxiter, self.tolerance, scheduler.target)
+        self.cov = altar.libaltar.COV(rng, self.maxiter, self.tolerance, scheduler.target)
         # all done
         return self
 
@@ -56,7 +56,7 @@ class Brent(altar.component, family="altar.bayesian.solvers.brent", implements=s
         # sorting happens in place
         median = llk.clone().sort().median()
         # call gsl dbeta_solver, return β, cov
-        return altar.libaltar.dbeta_brent(self.cov, llk.data, median, weight.data)
+        return self.cov.dbeta_brent(llk, median, weight)
 
 
     # private data

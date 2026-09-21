@@ -1,128 +1,88 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2026 parasim inc
+// (c) 2010-2026 california institute of technology
 // all rights reserved
 //
 // Author(s): AlTar-1 team, rearranged by Lijun Zhu
 
-#include <portinfo>
-#include <Python.h>
-#include <cmath>
-#include <iostream>
-#include <iomanip>
+// external dependencies
+#include "external.h"
+// namespace setup
+#include "forward.h"
 
-#include <gsl/gsl_sys.h>
-#include <gsl/gsl_min.h>
-#include <gsl/gsl_rng.h>
-#include <gsl/gsl_roots.h>
-#include <gsl/gsl_vector.h>
-#include <gsl/gsl_matrix.h>
-#include <gsl/gsl_randist.h>
-#include <gsl/gsl_statistics.h>
 #include <gsl/gsl_blas.h>
-#include <gsl/gsl_sort_vector.h>
 #include <gsl/gsl_eigen.h>
 
-#include <pyre/journal.h>
-#include <pyre/gsl/capsules.h>
 
-// local includes
-#include "condition.h"
-#include "capsules.h"
-
-
-// condition a matrix to be positive definite
-// replace negative or small eigen-values with ratio*max_eigenvalue
-const char * const altar::extensions::matrix_condition__name__ = "matrix_condition";
-const char * const altar::extensions::matrix_condition__doc__ =
-    "condition a matrix to be positive definite";
-
-PyObject *
-altar::extensions::matrix_condition(PyObject *, PyObject * args)
+void
+altar::py::condition(py::module & m)
 {
-    // the arguments
-    PyObject * matrixCapsule;
+    m.def(
+        "matrix_condition",
+        [](gsl_matrix & sigma, double eval_ratio_min) -> void {
+            // build my debugging channel
+            pyre::journal::debug_t debug("altar.matrix_condition");
 
-     // set minimum eigenvalue ratio
-    double eval_ratio_min;
+            // get matrix size
+            size_t n = sigma.size1;
 
-    // build my debugging channel
-    pyre::journal::debug_t debug("altar.matrix_condition");
+            // solve the eigen value problem
+            gsl_vector * eval = gsl_vector_alloc(n);
+            gsl_matrix * evec = gsl_matrix_alloc(n, n);
+            gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc(n);
 
-    // unpack the argument tuple
-    int status = PyArg_ParseTuple(
-                                  args, "O!d:matrix_condition",
-                                  &PyCapsule_Type, &matrixCapsule,
-                                  &eval_ratio_min
-                                  );
-    // if something went wrong
-    if (!status) return 0;
-    // bail out if the {matrix} capsule is not valid
-    if (!PyCapsule_IsValid(matrixCapsule, gsl::matrix::capsule_t)) {
-        PyErr_SetString(PyExc_TypeError, "invalid matrix capsule");
-        return 0;
-    }
+            gsl_eigen_symmv(&sigma, eval, evec, w);
+            gsl_eigen_symmv_free(w);
 
-    // get the {sigma} matrix
-    gsl_matrix * sigma =
-        static_cast<gsl_matrix *>(PyCapsule_GetPointer(matrixCapsule, gsl::matrix::capsule_t));
+            // sort the eigen values in ascending order (magnitude)
+            gsl_eigen_symmv_sort(eval, evec, GSL_EIGEN_SORT_ABS_ASC);
 
-    // get matrix size
-    size_t m = sigma->size1;
+            // make a transpose of the eigen vector matrix
+            gsl_matrix * evecT = gsl_matrix_alloc(n, n);
+            gsl_matrix_transpose_memcpy(evecT, evec);
 
-    // solve the eigen value problem
-    gsl_vector *eval = gsl_vector_alloc (m);
-    gsl_matrix *evec = gsl_matrix_alloc (m, m);
-    gsl_eigen_symmv_workspace * w = gsl_eigen_symmv_alloc (m);
+            // allocate a matrix for conditioned eigen values
+            gsl_matrix * diagM = gsl_matrix_calloc(n, n);
 
-    gsl_eigen_symmv (sigma, eval, evec, w);
-    gsl_eigen_symmv_free (w);
+            // set the minimum eigen value as the max * ratio
+            double eval_min = eval_ratio_min * gsl_vector_get(eval, n - 1);
+            // copy the eigenvalues, set it to eval_min if smaller
+            for (size_t i = 0; i < n; i++) {
+                double eval_i = gsl_vector_get(eval, i);
+                if (eval_i < eval_min) {
+                    gsl_matrix_set(diagM, i, i, eval_min);
+                } else {
+                    gsl_matrix_set(diagM, i, i, eval_i);
+                }
+            }
 
-    // sort the eigen values in ascending order (magnitude)
-    gsl_eigen_symmv_sort (eval, evec,  GSL_EIGEN_SORT_ABS_ASC);
+            // reconstruct sigma from the conditioned eigen values
+            gsl_matrix * tmp = gsl_matrix_alloc(n, n);
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, diagM, evecT, 0.0, tmp);
+            gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, evec, tmp, 0.0, &sigma);
 
-    // make a transpose of the eigen vector matrix
-    gsl_matrix *evecT = gsl_matrix_alloc(m,m);
-    gsl_matrix_transpose_memcpy(evecT, evec);
+            // make sigma symmetric
+            gsl_matrix_transpose_memcpy(tmp, &sigma);
+            gsl_matrix_add(&sigma, tmp);
+            gsl_matrix_scale(&sigma, 0.5);
 
-    // allocate a matrix for conditioned eigen values
-    gsl_matrix *diagM = gsl_matrix_calloc(m,m);
+            // free temporary data
+            gsl_vector_free(eval);
+            gsl_matrix_free(evec);
+            gsl_matrix_free(evecT);
+            gsl_matrix_free(diagM);
+            gsl_matrix_free(tmp);
 
-    // set the minimum eigen value as the max * ratio
-    double eval_min = eval_ratio_min*gsl_vector_get(eval,m-1);
-    double eval_i;
-    // copy the eigenvalues, set it to eval_min if smaller
-    for (size_t i = 0; i < m; i++)
-    {
-        eval_i  = gsl_vector_get (eval, i);
-        if (eval_i<eval_min) gsl_matrix_set(diagM, i, i, eval_min);
-        else gsl_matrix_set(diagM, i, i, eval_i);
-    }
+            // all done
+            return;
+        },
+        "sigma"_a, "eval_ratio_min"_a,
+        "condition a matrix to be positive definite: replace negative or small "
+        "eigenvalues with ratio*max_eigenvalue");
 
-    // reconstruct sigma from the conditioned eigen values
-    gsl_matrix *tmp = gsl_matrix_alloc(m,m);
-    gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, diagM, evecT, 0.0, tmp);
-    gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, evec, tmp, 0.0, sigma);
-
-    // make sigma symmetric
-    gsl_matrix_transpose_memcpy(tmp, sigma);
-    gsl_matrix_add(sigma,tmp);
-    gsl_matrix_scale(sigma, 0.5);
-
-    // free temporary data
-    gsl_vector_free (eval);
-    gsl_matrix_free (evec);
-    gsl_matrix_free (evecT);
-    gsl_matrix_free (diagM);
-    gsl_matrix_free (tmp);
-
-    // all done
-    // return None
-    Py_INCREF(Py_None);
-    return Py_None;
-
+    return;
 }
 
 // end of file

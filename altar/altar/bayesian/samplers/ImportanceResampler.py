@@ -66,7 +66,7 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
         posterior = altar.vector(shape=postOld.shape)
 
         # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(w=w, step=step).values()
+        multi = self.compute_sample_multiplicities(w=w, step=step).counts()
 
         # unique samples count
         unique_samples = 0
@@ -121,7 +121,7 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
         r = altar.vector(shape=samples)
         if self.use_low_variance_resampler:
             # use equal spaced random number s+i/samples in [0, 1]
-            altar.libaltar.low_variance_random(self.rng.rng, r.data)
+            altar.libaltar.low_variance_random(self.rng, r)
         else:
             # use uniform pdf generator in [0, 1]
             r.random(pdf=self.uniform)
@@ -129,7 +129,7 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
         # compute the bin edges in the range [0, 1]
         ticks = tuple(self.build_histogram_ranges(w))
         # build a histogram
-        h = altar.histogram(bins=samples).ranges(points=ticks).fill(r)
+        h = altar.histogram(bins=samples).ranges(edges=ticks).fill(r)
         # and return it
         return h
 

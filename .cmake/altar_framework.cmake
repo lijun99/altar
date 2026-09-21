@@ -100,15 +100,13 @@ function(altar_buildModule)
     ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
-  target_link_libraries(altarmodule PRIVATE libaltar journal)
+  target_link_libraries(altarmodule PRIVATE libaltar journal pybind11::module)
   # add the sources
   target_sources(altarmodule PRIVATE
     ext/altar.cc
     ext/metadata.cc
-    ext/exceptions.cc
     ext/dbeta.cc
     ext/condition.cc
-    ext/distributions.cc
     )
 
   # install the altar extension

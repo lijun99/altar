@@ -259,7 +259,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         """
         Ensure Σ is symmetric positive definite by lifting small/negative eigenvalues
         """
-        altar.libaltar.matrix_condition(Σ.data, self.min_eigenvalue_ratio)
+        altar.libaltar.matrix_condition(Σ, self.min_eigenvalue_ratio)
         return Σ
 
     @altar.export
