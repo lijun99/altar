@@ -14,6 +14,14 @@ def annealer():
 
 @altar.foundry(
     implements=controller,
+    tip="the CATMIP controller: simulated annealing driven by the COV schedule")
+def catmip():
+    from .Catmip import Catmip
+    __doc__ = Catmip.__doc__
+    return Catmip
+
+@altar.foundry(
+    implements=controller,
     tip="a Bayesian controller that implements stochastic gradient Langevin dynamics")
 def langevin():
     from .Langevin import Langevin

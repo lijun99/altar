@@ -12,4 +12,12 @@ def recorder():
     __doc__ = Recorder.__doc__
     return Recorder
 
+@altar.foundry(
+    implements=archiver,
+    tip="an archiver that records the results and progress to HDF5 files")
+def h5recorder():
+    from .H5Recorder import H5Recorder
+    __doc__ = H5Recorder.__doc__
+    return H5Recorder
+
 # end of file

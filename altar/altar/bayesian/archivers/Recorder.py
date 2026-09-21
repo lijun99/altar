@@ -132,6 +132,7 @@ class Recorder(
         self._record_statistics()
         return self
 
+    @altar.export
     def write(self, path, data, info=None):
         """
         Store one dataset in memory.
@@ -147,6 +148,7 @@ class Recorder(
         self.records[key].append((path, arr, info))
         return self
 
+    @altar.export
     def register(self, component):
         """
         Register a component whose record(archiver) will be called at each save point.

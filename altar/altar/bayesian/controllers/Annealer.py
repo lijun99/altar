@@ -61,10 +61,13 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         # and initialize it
         self.worker.initialize(application=application)
 
+        # initialize the archiver first: components initialized below (e.g. the sampler's
+        # proposal) may self-register with it, and registration must land on the archiver's
+        # own post-initialize() state, not be wiped out by it running afterwards
+        self.archiver.initialize(application=application)
         # initialize my other parts
         self.sampler.initialize(application=application)
         self.scheduler.initialize(application=application)
-        self.archiver.initialize(application=application)
 
         # go through the registered monitors
         for monitor in application.monitors.values():

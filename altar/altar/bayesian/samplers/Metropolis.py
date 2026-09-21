@@ -18,7 +18,7 @@ import altar
 from .Sampler import Sampler as sampler
 
 # acceptance statistics container
-Statistics = namedtuple('Statistics', ['accepted', 'rejected', 'unlikely'])
+Statistics = namedtuple('Statistics', ['accepted', 'invalid', 'rejected'])
 
 
 # declaration
@@ -45,6 +45,8 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         """
         Initialize me and my parts given an {application} context
         """
+        # grab the info channel
+        self.info = application.info
         # pull the chain length from the job specification
         self.steps = application.job.steps
         # get the capsule of the random number generator
@@ -86,10 +88,10 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         Update my parameters based on the results of walking my Markov chains
         """
         # unpack the statistics
-        accepted, rejected, unlikely = statistics
+        accepted, invalid, rejected = statistics
         # delegate step size adjustment to the stepsizer
         self.scaling = self.stepsizer.adjust(
-            attempts=accepted + rejected + unlikely,
+            attempts=accepted + invalid + rejected,
             accepted=accepted)
         # all done
         return
@@ -117,8 +119,19 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         exp = math.exp
         log = math.log
 
+        # debug: report entry state
+        import numpy
+        def _stats(v):
+            a = v.ndarray()
+            return (f"min={a.min():.4g}  max={a.max():.4g}  mean={a.mean():.4g}"
+                    f"  finite={numpy.isfinite(a).sum()}/{samples}")
+        self.info.line(f"Metropolis.walk_chains: β={β:.6g}, samples={samples}")
+        self.info.line(f"  prior:     {_stats(prior)}")
+        self.info.line(f"  data llk:  {_stats(data)}")
+        self.info.line(f"  posterior: {_stats(posterior)}")
+
         # reset the accept/reject counters
-        accepted = rejected = unlikely = 0
+        accepted = invalid = rejected = 0
 
         # allocate some vectors that we use throughout the following
         # candidate likelihoods
@@ -127,7 +140,6 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         cpost = altar.vector(shape=samples)
         # a fake covariance matrix for the candidate steps, just so we don't have to rebuild it
         # every time
-        csigma = altar.matrix(shape=(parameters,parameters))
         # the mask of samples rejected due to model constraint violations
         rejects = altar.vector(shape=samples)
         # and a vector with random numbers for the Metropolis acceptance
@@ -142,11 +154,8 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
             cθ = self.proposal.propose(sampler=self, step=step, annealer=annealer)
             # initialize the likelihoods
             likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
-            # and the covariance matrix
-            csigma.zero()
             # build a candidate state
-            candidate = self.CoolingStep(beta=β, theta=cθ,
-                                         likelihoods=likelihoods, sigma=csigma)
+            candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=likelihoods)
 
             # the random displacement may have generated candidates that are outside the
             # support of the model, so we must give it an opportunity to reject them;
@@ -171,6 +180,13 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
             diff = cpost.clone()
             # subtract the previous posterior
             diff -= posterior
+            # debug: first inner step only
+            if _ == 0:
+                cp_arr = cpost.ndarray()
+                d_arr  = diff.ndarray()
+                self.info.line(f"  [step 0] cpost: min={cp_arr.min():.4g} max={cp_arr.max():.4g}"
+                               f"  diff: min={d_arr.min():.4g} max={d_arr.max():.4g}"
+                               f"  finite_cpost={numpy.isfinite(cp_arr).sum()}/{samples}")
             # randomize the Metropolis acceptance vector
             dice.random(self.uniform)
 
@@ -179,19 +195,19 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
 
             # accept/reject: go through all the samples
             for sample in range(samples):
-                # a candidate is rejected if the model considered it invalid
+                # a candidate is invalid if the model considered it outside its support
                 if rejects[sample]:
+                    # nothing to do: θ, priorL, dataL, and postL contain the right statistics
+                    # for this sample; just update the invalid count
+                    invalid += 1
+                    # and move on
+                    continue
+                # a candidate is rejected if it was considered less likely than the original
+                # and it wasn't saved by the {dice}
+                if log(dice[sample]) > diff[sample]:
                     # nothing to do: θ, priorL, dataL, and postL contain the right statistics
                     # for this sample; just update the rejection count
                     rejected += 1
-                    # and move on
-                    continue
-                # a candidate is also rejected if the model considered it less likely than the
-                # original and it wasn't saved by the {dice}
-                if log(dice[sample]) > diff[sample]:
-                    # nothing to do: θ, priorL, dataL, and postL contain the right statistics
-                    # for this sample; just update the unlikely count
-                    unlikely += 1
                     # and move on
                     continue
 
@@ -212,7 +228,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
 
 
         # store statistics on self for access by update() and the controller
-        self.statistics = Statistics(accepted, rejected, unlikely)
+        self.statistics = Statistics(accepted, invalid, rejected)
         # all done
         return
 
@@ -220,8 +236,9 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
     # private data
     steps = 1          # the length of each Markov chain
     scaling = 0.1      # current proposal scaling; updated by stepsizer after each update
-    statistics = None  # (accepted, rejected, unlikely) from the last walk_chains call
+    statistics = None  # (accepted, invalid, rejected) from the last walk_chains call
 
+    info = None        # the application info channel
     uniform = None     # the distribution of the sample multiplicities
     dispatcher = None  # a reference to the event dispatcher
 

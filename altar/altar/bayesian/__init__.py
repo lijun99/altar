@@ -23,14 +23,14 @@ from .langevin_schedulers.LangevinScheduler import LangevinScheduler as langevin
 from .stepsizers.StepSizer import StepSizer as stepsizer
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace
-from .controllers import annealer, langevin
+from .controllers import annealer, catmip, langevin
 from .samplers import metropolis
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal
 from .stepsizers import fixedstep, linearrate, targetedrate, dual
 from .monitoring import profiler
-from .archivers import recorder
+from .archivers import recorder, h5recorder
 from .langevin_schedulers import powerdecay, expdecay
 
 # end of file

@@ -1,7 +1,7 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# A scheduler that keeps beta=1 (temperature=1) always
+# A scheduler that keeps beta fixed at a constant value (default 1)
 #
 
 import altar
@@ -9,44 +9,33 @@ from .Scheduler import Scheduler as scheduler
 
 class ConstantTemperature(altar.component, family="altar.schedulers.constant", implements=scheduler):
     """
-    A scheduler that keeps the temperature fixed at 1 (beta=1)
+    A scheduler that keeps the temperature fixed at a constant beta value.
     """
 
-    @altar.provides
+    beta_start = altar.properties.float(default=1.0)
+    beta_start.doc = "the fixed beta value used for the entire run"
+
+    @altar.export
     def initialize(self, application):
-        """
-        Initialize the scheduler (no-op for constant temperature)
-        """
         return self
 
-    @altar.provides
+    @altar.export
     def update(self, step):
-        """
-        Set beta to 1 (no-op after the first call since temperature is constant)
-        """
         self.update_temperature(step=step)
+        step.compute_posterior()
         return step
 
-    @altar.provides
+    @altar.export
     def update_temperature(self, step):
-        """
-        Set beta to 1 (temperature=1)
-        """
-        step.beta = 1.0
+        step.beta = self.beta_start
         return step
 
-    @altar.provides
+    @altar.export
     def compute_covariance(self, step):
-        """
-        Optionally compute covariance (no-op for constant temperature)
-        """
         return step
 
-    @altar.provides
+    @altar.export
     def rank(self, step):
-        """
-        Optionally rank samples (no-op for constant temperature)
-        """
         return step
 
 # end of file

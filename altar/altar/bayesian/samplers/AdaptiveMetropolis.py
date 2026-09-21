@@ -104,13 +104,12 @@ class AdaptiveMetropolis(Metropolis,
         log = math.log
 
         # reset accept/reject counters
-        accepted = rejected = unlikely = 0
+        accepted = invalid = rejected = 0
 
         # allocate workspace (reused across MC steps)
         cprior = altar.vector(shape=samples)
         cdata  = altar.vector(shape=samples)
         cpost  = altar.vector(shape=samples)
-        csigma = altar.matrix(shape=(parameters, parameters))
         rejects = altar.vector(shape=samples)
         dice    = altar.vector(shape=samples)
 
@@ -134,12 +133,10 @@ class AdaptiveMetropolis(Metropolis,
 
                 # propose a displacement
                 cθ = self.proposal.propose(sampler=self, step=step, annealer=annealer)
-                # initialize the likelihoods and covariance scratch space
+                # initialize the likelihoods
                 likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
-                csigma.zero()
                 # build a candidate state
-                candidate = self.CoolingStep(beta=β, theta=cθ,
-                                             likelihoods=likelihoods, sigma=csigma)
+                candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=likelihoods)
 
                 # verify candidates against model constraints
                 dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
@@ -162,10 +159,10 @@ class AdaptiveMetropolis(Metropolis,
 
                 for sample in range(samples):
                     if rejects[sample]:
-                        rejected += 1
+                        invalid += 1
                         continue
                     if log(dice[sample]) > diff[sample]:
-                        unlikely += 1
+                        rejected += 1
                         continue
                     # accept
                     accepted += 1
@@ -186,7 +183,7 @@ class AdaptiveMetropolis(Metropolis,
                     f"Adaptive Metropolis: correlation {correlation:.4f} at step {mcsteps}")
 
         # store statistics for update() and the controller
-        self.statistics = Statistics(accepted, rejected, unlikely)
+        self.statistics = Statistics(accepted, invalid, rejected)
         # all done
         return
 

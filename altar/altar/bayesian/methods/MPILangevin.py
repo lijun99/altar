@@ -117,15 +117,15 @@ class MPILangevin(LangevinMethod):
         # who is the boss?
         manager = self.manager
         # unpack the acceptance/rejection statistics
-        accepted, rejected, unlikely = statistics
+        accepted, invalid, rejected = statistics
 
         # add up the acceptance/rejection statistics from all the nodes
         accepted = int(self.communicator.sum(accepted))
+        invalid = int(self.communicator.sum(invalid))
         rejected = int(self.communicator.sum(rejected))
-        unlikely = int(self.communicator.sum(unlikely))
 
         # chain up
-        statistics = super().resample(controller=controller, statistics=(accepted,rejected,unlikely))
+        statistics = super().resample(controller=controller, statistics=(accepted,invalid,rejected))
 
         # all done
         return statistics

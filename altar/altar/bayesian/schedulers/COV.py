@@ -56,7 +56,6 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     use_low_variance_resampler.doc = "whether to equal spaced random numbers for resampling"
 
     # public data
-    w = None # the vector of re-sampling weights
     cov = 0.0 # the actual value for COV we were able to attain
 
 
@@ -141,7 +140,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         The covariance Σ gets used to build a proposal pdf for the posterior
         """
         # unpack what i need
-        w = self.w # w is assumed normalized
+        w = step.weights # published by update_temperature(); assumed normalized
         θ = step.theta # the current sample set
         # extract the number of samples and number of parameters
         samples = step.samples
@@ -310,7 +309,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         # print("    computing sample multiplicities:")
         # unpack what we need
-        w = self.w
+        w = step.weights
         samples = step.samples
 
         # build a vector of random numbers uniformly distributed in [0,1]

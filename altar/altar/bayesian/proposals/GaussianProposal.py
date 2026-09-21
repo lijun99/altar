@@ -42,6 +42,9 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         '0 = compute once at initialization, never auto-update afterwards'
     )
 
+    archive_sigma = altar.properties.bool(default=True)
+    archive_sigma.doc = 'whether to record the proposal covariance Σ at each archiver save point'
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -55,10 +58,13 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         # distribution for random walk displacement vectors
         self.uninormal = altar.pdf.ugaussian(rng=self.rng)
 
-        # register with the archiver so our record() is called at each save point
-        archiver = getattr(application, 'archiver', None)
-        if archiver is not None:
-            archiver.register(self)
+        # register with the archiver so our record() is called at each save point; the
+        # archiver lives on the controller, not the application itself, and by this point
+        # the controller has already initialized it (see Annealer.initialize())
+        if self.archive_sigma:
+            archiver = getattr(getattr(application, 'controller', None), 'archiver', None)
+            if archiver is not None:
+                archiver.register(self)
 
         # all done
         return self
@@ -112,8 +118,13 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
                 if self.update_interval > 0 and (self._anneal_count % self.update_interval == 0):
                     self._sigma = self._compute_sigma(step=step, annealer=annealer)
 
-        # copy to step.sigma for archiving / downstream use
-        step.sigma.copy(self._sigma)
+        # debug: report Σ diagonal and scaling
+        import numpy
+        diag = numpy.array([self._sigma[i, i] for i in range(self._sigma.rows)])
+        self.info.line(f"GaussianProposal._prepare: β={step.beta:.6g}  scaling={sampler.scaling:.4g}"
+                       f"  sigma_is_fixed={self._sigma_is_fixed}  new_beta={new_beta}")
+        self.info.line(f"  Σ diag: min={diag.min():.4g}  max={diag.max():.4g}  mean={diag.mean():.4g}")
+        self.info.line(f"  weights source: {'step.weights' if getattr(step, 'weights', None) is not None else 'uniform fallback'}")
 
         # scale Σ by the sampler scaling factor and Cholesky-decompose for sampling
         Σ = self._sigma.clone()
@@ -151,8 +162,15 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         """
         Compute Σ from the importance-weighted auto-correlation of {step.theta}
         """
+        import numpy
         weights = self._get_weights(step=step, annealer=annealer)
+        w_arr = weights.ndarray()
+        self.info.line(f"  _compute_sigma: weights min={w_arr.min():.4g}  max={w_arr.max():.4g}"
+                       f"  sum={w_arr.sum():.4g}")
         Σ = self.compute_covariance(step=step, w=weights)
+        diag = numpy.array([Σ[i, i] for i in range(Σ.rows)])
+        self.info.line(f"  _compute_sigma: Σ diag min={diag.min():.4g}  max={diag.max():.4g}"
+                       f"  mean={diag.mean():.4g}")
         return Σ
 
 

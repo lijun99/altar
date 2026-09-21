@@ -120,15 +120,15 @@ class MPIAnnealing(AnnealingMethod):
         # who is the boss?
         manager = self.manager
         # unpack the acceptance/rejection statistics
-        accepted, rejected, unlikely = statistics
+        accepted, invalid, rejected = statistics
 
         # add up the acceptance/rejection statistics from all the nodes
         accepted = int(self.communicator.sum(accepted))
+        invalid = int(self.communicator.sum(invalid))
         rejected = int(self.communicator.sum(rejected))
-        unlikely = int(self.communicator.sum(unlikely))
 
         # chain up
-        statistics = super().resample(annealer=annealer, statistics=(accepted,rejected,unlikely))
+        statistics = super().resample(annealer=annealer, statistics=(accepted,invalid,rejected))
 
         # all done
         return statistics
@@ -246,11 +246,10 @@ class MPIAnnealing(AnnealingMethod):
             # just return the local state
             return step
 
-        # the manager packs the state of the problem and returns it; everybody has the same
-        # covariance matrix, so the local copy is good enough
+        # the manager packs the state of the problem and returns it
         return self.CoolingStep(
             beta=β, theta=θ,
-            likelihoods=(prior,data,posterior), sigma=step.sigma)
+            likelihoods=(prior,data,posterior))
 
 
     def partition(self):
@@ -266,14 +265,13 @@ class MPIAnnealing(AnnealingMethod):
             # unpack it
             β = step.beta
             θ = step.theta
-            Σ = step.sigma
             prior = step.prior
             data = step.data
             posterior = step.posterior
         # the others
         else:
             # know nothing
-            β = θ = Σ = prior = data = posterior = None
+            β = θ = prior = data = posterior = None
 
         # cache my communicator
         comm = self.communicator
@@ -294,8 +292,12 @@ class MPIAnnealing(AnnealingMethod):
         step.data.excerpt(vector=data, source=manager, communicator=comm)
         step.posterior.excerpt(vector=posterior, source=manager, communicator=comm)
 
-        # finally, the covariance matrix
-        step.sigma.copy(altar.matrix.bcast(matrix=Σ, source=manager, communicator=comm))
+        # NOTE: the proposal covariance Σ used to be broadcast here, back when it lived on
+        # {step.sigma}; it now lives in GaussianProposal, computed per-rank from each rank's
+        # local {step.theta}/{step.weights} after this partition. That means MPI ranks running
+        # GaussianProposal will independently derive different Σ from their own local sample
+        # shard instead of agreeing on one global covariance -- a known distributed-correctness
+        # gap, left for the worker/parallelism generalization milestone to resolve.
 
         # all done
         return step

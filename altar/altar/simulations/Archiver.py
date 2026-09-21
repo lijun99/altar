@@ -61,7 +61,7 @@ class Archiver(altar.protocol, family="altar.simulations.archivers"):
         Supply a default implementation
         """
         # pull the in-memory archiver
-        from .Recorder import Recorder as default
+        from ..bayesian.archivers.Recorder import Recorder as default
         # and return it
         return default
 

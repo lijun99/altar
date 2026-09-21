@@ -128,7 +128,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             annealer - the controller
             step - cpu CoolingStep
         Return:
-            statistics (accepted/rejected/invalid) or (accepted/unlikely/rejected)
+            statistics (accepted, invalid, rejected)
         """
         # grab the dispatcher
         dispatcher = annealer.dispatcher
@@ -219,7 +219,7 @@ class cudaAdaptiveMetropolis(altar.component, family="altar.samplers.adaptivemet
             annealer: cudaAnnealer
             step: cudaCoolingStep
         Return:
-            statistics = (accepted, rejected, unlikely)
+            statistics = (accepted, invalid, rejected)
         """
         # get the model
         model = annealer.model

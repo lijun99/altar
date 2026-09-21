@@ -139,6 +139,7 @@ class H5Recorder(
         self._close_file()
         return self
 
+    @altar.export
     def write(self, path, data, info=None):
         """
         Persist one dataset into the current HDF5 file.
@@ -162,6 +163,7 @@ class H5Recorder(
             ds.attrs.update(info)
         return self
 
+    @altar.export
     def register(self, component):
         """
         Register a component whose record(archiver) will be called at each save point.

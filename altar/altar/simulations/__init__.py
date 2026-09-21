@@ -40,16 +40,6 @@ def job():
     return job
 
 
-@altar.foundry(implements=archiver, tip="a simple in-memory archiver")
-def recorder():
-    # grab the factory
-    from .Recorder import Recorder as recorder
-    # attach its docstring
-    __doc__ = recorder.__doc__
-    # and return it
-    return recorder
-
-
 @altar.foundry(implements=monitor, tip="simple monitor that uses journal channels")
 def reporter():
     # grab the factory

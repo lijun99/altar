@@ -33,7 +33,13 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
 
     prior = altar.distributions.distribution()
     prior.default = altar.distributions.gaussian()
-    prior.doc = "the prior distribution"
+    prior.doc = "the prior distribution; ignored when {psets} is non-empty"
+
+    psets = altar.properties.dict(schema=altar.models.parameters())
+    psets.default = dict() # empty
+    psets.doc = "an optional decomposition of the {parameters} into named sets, each with " \
+                 "its own prior/prep distribution; when empty, the single {prior}/{prep} " \
+                 "distributions apply to the whole parameter vector"
 
     # the norm to use for computing the data log likelihood
     norm = altar.norms.norm()
@@ -70,9 +76,25 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         # get the random number generator; it gets attached to me by the {initialize} method of
         # my superclass
         rng = self.rng
-        # and initialize my distributions
-        self.prep.initialize(rng=rng)
-        self.prior.initialize(rng=rng)
+
+        # if the user decomposed the parameter vector into named sets, each with its own
+        # prior/prep distribution
+        if self.psets:
+            # lay them out one after another, in declaration order, and let each one
+            # initialize itself
+            offset = 0
+            for name, pset in self.psets.items():
+                offset += pset.initialize(model=self, offset=offset)
+            # the sets must account for the whole parameter vector
+            if offset != self.parameters:
+                channel = self.error
+                channel.log(
+                    f"psets cover {offset} parameters, but 'parameters' is {self.parameters}")
+                raise SystemExit(1)
+        # otherwise, the single {prior}/{prep} distributions apply to the whole vector
+        else:
+            self.prep.initialize(rng=rng)
+            self.prior.initialize(rng=rng)
 
         # mount my input data space
         self.ifs = self.mount_input_dataspace(pfs=application.pfs)
@@ -122,8 +144,13 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
-        # fill it with random numbers from my initializer
-        self.prep.initialize_sample(theta=θ)
+        # if the parameter vector is decomposed into named sets, let each one draw its own
+        if self.psets:
+            for pset in self.psets.values():
+                pset.initialize_sample(theta=θ)
+        # otherwise, fill it with random numbers from my single initializer
+        else:
+            self.prep.initialize_sample(theta=θ)
         # and return
         return self
 
@@ -134,15 +161,18 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
         """
-        # grab my prior pdf
-        pdf = self.prior
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # and the storage for the prior likelihoods
         likelihood = step.prior
 
-        # fill my portion of the prior likelihood vector
-        pdf.eval_prior(theta=θ, likelihood=likelihood)
+        # if the parameter vector is decomposed into named sets, each contributes its share
+        if self.psets:
+            for pset in self.psets.values():
+                pset.eval_prior(theta=θ, prior=likelihood)
+        # otherwise, my single prior distribution covers the whole vector
+        else:
+            self.prior.eval_prior(theta=θ, likelihood=likelihood)
 
         # all done
         return self
@@ -194,11 +224,14 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
-        # grab my prior
-        pdf = self.prior
 
-        # ask it to verify my samples
-        pdf.verify(theta=θ, mask=mask)
+        # if the parameter vector is decomposed into named sets, each verifies its own share
+        if self.psets:
+            for pset in self.psets.values():
+                pset.verify(theta=θ, mask=mask)
+        # otherwise, my single prior distribution verifies the whole vector
+        else:
+            self.prior.verify(theta=θ, mask=mask)
 
         # all done; return the rejection map
         return mask
