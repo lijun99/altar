@@ -34,7 +34,9 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     embedded.doc = "whether the model is embedded in an ensemble of models"
 
     psets_list = altar.properties.list(schema=altar.properties.str(), default=None)
-    psets_list.doc = "list of parameter sets, used to set orders"
+    psets_list.doc = "the order in which {psets} are laid out in the overall parameter " \
+                 "vector; required when {psets} is non-empty, since {psets} itself is a " \
+                 "dict and doesn't guarantee iteration order"
 
     psets = altar.properties.dict(schema=altar.models.parameters())
     psets.default = dict() # empty
@@ -73,19 +75,9 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         self.dataobs.initialize(application=application)
         self.observations = self.dataobs.observations
 
-        # initialize the parametersets
-        # initialize the offset
-        psets = self.psets
-        # initialize the offset
-        offset = 0
-
-        for name in self.psets_list:
-            # get the parameter set from psets dictionary
-            pset = self.psets[name]
-            # initialize the parameter set
-            offset += pset.initialize(model=self, offset=offset)
-        # the total number of parameters is now known, so record it
-        self.parameters = offset
+        # lay out my parameter sets, in {psets_list} order, and let each one initialize
+        # itself; the total number of parameters is now known, so record it
+        self.parameters = self.initialize_psets()
 
         # all done
         return self
@@ -105,8 +97,10 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
-        # go through each parameter set
-        for pset in self.psets.values():
+        # go through each parameter set, in {psets_list} order -- {psets} is a dict and may
+        # carry extra entries merged in from other configuration sources
+        for name in self.psets_list:
+            pset = self.psets[name]
             # and ask each one to {prep} the sample
             pset.initialize_sample(theta=θ)
         # and return
@@ -120,21 +114,27 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
-        # ask my subsets
-        for pset in self.psets.values():
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            pset = self.psets[name]
             # and ask each one to verify the sample
             pset.verify(theta=θ, mask=mask)
         # all done; return the rejection map
         return mask
 
-    def eval_prior(self, theta, prior):
+    @altar.export
+    def eval_prior(self, step):
         """
-        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
+        Fill {step.prior} with the log likelihoods of the samples in {step.theta} in my prior
+        distribution
         """
-        # ask my subsets
-        for pset in self.psets.values():
-            # and ask each one to verify the sample
-            pset.eval_prior(theta, prior)
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            pset = self.psets[name]
+            # and ask each one to evaluate the prior
+            pset.eval_prior(theta=θ, prior=step.prior)
 
         # all done
         return self
@@ -192,6 +192,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
+    @altar.export
     def eval_posterior(self, step):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
@@ -220,7 +221,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # notify we are about to compute the prior likelihood
         dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.eval_prior(theta=step.theta, prior=step.prior)
+        self.eval_prior(step=step)
         # done
         dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
@@ -302,7 +303,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         try:
             # get the path to the file
             file = ifs[filename]
-        except not ifs.NotFoundError:
+        except ifs.NotFoundError:
             channel.log(f"no file '{filename}' found in '{ifs.path()}'")
             raise
         else:
@@ -340,10 +341,21 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             cpuData = cpuData.reshape(shape)
 
         # convert to gsl data
+        return self._cpuToGsl(cpuData)
 
-
-        # all done
-        return cpuData
+    def _cpuToGsl(self, cpuData):
+        """
+        Convert a numpy array into a gsl vector or matrix
+        """
+        if cpuData.ndim == 1:
+            vec = altar.vector(shape=cpuData.shape[0])
+            vec.ndarray()[:] = cpuData
+            return vec
+        if cpuData.ndim == 2:
+            mat = altar.matrix(shape=cpuData.shape)
+            mat.ndarray()[:] = cpuData
+            return mat
+        raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
     def restrict(self, theta):
         """
@@ -366,11 +378,48 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # determined by my parameter count
         return theta.view(start=start, shape=shape)
 
+    def initialize_psets(self):
+        """
+        Lay out my {psets} one after another, in {psets_list} order -- {psets} is a dict and
+        doesn't guarantee iteration order matches the user's declared layout -- and let each
+        one initialize itself. Returns the total number of parameters they cover.
+        """
+        # accumulate the offset as we go
+        offset = 0
+        # in the user-declared order
+        for name in self.psets_list:
+            # get the parameter set
+            pset = self.psets[name]
+            # and let it initialize itself at the current offset
+            offset += pset.initialize(model=self, offset=offset)
+        # all done
+        return offset
+
+    def verify_unbounded_priors(self):
+        """
+        Raise if any active prior is bounded: gradient-based samplers (SGLD, HMC) have no
+        accept/reject step, so a bounded prior (e.g. a uniform one) needs an unconstrained
+        reparameterization -- not yet implemented -- before it can be sampled this way
+        """
+        bounded = [self.psets[name].prior for name in self.psets_list
+                   if self.psets[name].prior.bounded]
+        if bounded:
+            channel = self.error
+            names = ", ".join(type(p).__name__ for p in bounded)
+            channel.log(
+                f"gradient-based samplers (SGLD, HMC) only support unbounded priors; "
+                f"found bounded prior(s): {names}. Use CATMIP/Metropolis for this model, "
+                f"or wait for logistic-transform support.")
+            raise SystemExit(1)
+        self.checked_unbounded_priors = True
+        return self
+
     # private data
     observations = None
     device = None
     precision = None
     ifs = None # the filesystem with the input files
+    checked_unbounded_priors = False # whether {gradient} has already verified all priors are unbounded
 
 
 # end of file

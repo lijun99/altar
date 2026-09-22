@@ -147,9 +147,12 @@ class DataL2(altar.component, family="altar.data.datal2", implements=data):
                 dp -= self.dataobs
             if self.merge_cd_with_data:
                 # cd already merged, no need to multiply it by cd
-                likelihood[idx] = self.normalization - 0.5 * self.norm.eval(v=dp)
+                norm = self.norm.eval(v=dp)
             else:
-                likelihood[idx] = self.normalization - 0.5 * self.norm.eval(v=dp, sigma_inv=self.cd_inv)
+                norm = self.norm.eval(v=dp, sigma_inv=self.cd_inv)
+            # {norm.eval} returns the (unsquared) L2 norm; the Gaussian log-likelihood needs
+            # its square
+            likelihood[idx] = self.normalization - 0.5 * norm * norm
         # all done
         return self
 

@@ -11,10 +11,12 @@
 
 # the package
 import altar
+# my base class, for its {psets}/{psets_list} and {dataobs} support
+from altar.models.BayesianL2 import BayesianL2
 
 
 # declaration
-class Linear(altar.models.bayesian, family="altar.models.linear"):
+class Linear(BayesianL2, family="altar.models.linear"):
     """
     """
 
@@ -23,42 +25,27 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
     parameters = altar.properties.int(default=None)
     parameters.doc = "the number of parameters in the model"
 
-    observations = altar.properties.int(default=None)
-    observations.doc = "the number of data samples"
-
-    # my distributions
-    prep = altar.distributions.distribution()
-    prep.default = altar.distributions.gaussian()
-    prep.doc = "the distribution used to generate the initial sample"
-
-    prior = altar.distributions.distribution()
-    prior.default = altar.distributions.gaussian()
-    prior.doc = "the prior distribution; ignored when {psets} is non-empty"
-
-    psets = altar.properties.dict(schema=altar.models.parameters())
-    psets.default = dict() # empty
-    psets.doc = "an optional decomposition of the {parameters} into named sets, each with " \
-                 "its own prior/prep distribution; when empty, the single {prior}/{prep} " \
-                 "distributions apply to the whole parameter vector"
-
-    # the norm to use for computing the data log likelihood
-    norm = altar.norms.norm()
-    norm.default = altar.norms.l2()
-    norm.doc = "the norm to use when computing the data log likelihood"
+    # {psets_list}/{psets} and {dataobs} (observations, data covariance, norm) are inherited
+    # from {BayesianL2}
 
     # the name of the test case
     case = altar.properties.path(default="patch-9")
     case.doc = "the directory with the input files"
 
-    # the file based inputs
+    # the Green functions; the rest of the forward model's data (observations, covariance,
+    # norm) is handled by {dataobs}
     green = altar.properties.path(default="green.txt")
     green.doc = "the name of the file with the Green functions"
 
-    data = altar.properties.path(default="data.txt")
-    data.doc = "the name of the file with the observations"
+    # settings for running the forward problem only, e.g. with the posterior mean theta
+    theta_input = altar.properties.path(default="theta.txt")
+    theta_input.doc = "the theta input file with a vector of parameters"
 
-    cd = altar.properties.path(default="cd.txt")
-    cd.doc = "the name of the file with the data covariance matrix"
+    theta_dataset = altar.properties.str(default=None)
+    theta_dataset.doc = "the name/path of the theta dataset in an h5 input file"
+
+    forward_output = altar.properties.path(default="forward_prediction.h5")
+    forward_output.doc = "the name/path of the file to save forward problem results"
 
 
     # protocol obligations
@@ -67,45 +54,15 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         """
         Initialize the state of the model given a {problem} specification
         """
-        # chain up
+        # chain up; handles job/rng setup, mounting my input dataspace, {dataobs}
+        # initialization (observations, data covariance, norm), and laying out my psets
         super().initialize(application=application)
 
-        # find out how many samples I will be working with; this equal to the number of chains
-        samples = application.job.chains
-
-        # get the random number generator; it gets attached to me by the {initialize} method of
-        # my superclass
-        rng = self.rng
-
-        # if the user decomposed the parameter vector into named sets, each with its own
-        # prior/prep distribution
-        if self.psets:
-            # lay them out one after another, in declaration order, and let each one
-            # initialize itself
-            offset = 0
-            for name, pset in self.psets.items():
-                offset += pset.initialize(model=self, offset=offset)
-            # the sets must account for the whole parameter vector
-            if offset != self.parameters:
-                channel = self.error
-                channel.log(
-                    f"psets cover {offset} parameters, but 'parameters' is {self.parameters}")
-                raise SystemExit(1)
-        # otherwise, the single {prior}/{prep} distributions apply to the whole vector
-        else:
-            self.prep.initialize(rng=rng)
-            self.prior.initialize(rng=rng)
-
-        # mount my input data space
-        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
-        # convert the input filenames into data
-        self.G, self.d, self.Cd = self.load_inputs()
-        # compute the normalization
-        self.normalization = self.compute_normalization(observations=self.d.shape, cd=self.Cd)
-        # compute the inverse of {Cd}
-        self.Cd_inv = self.compute_covariance_inverse(self.Cd)
+        # load my Green functions
+        self.G = self.load_green()
         # prepare the residuals matrix
-        self.residuals = self.initialize_residuals(samples=samples, data=self.d)
+        self.residuals = self.initialize_residuals(
+            samples=self.samples, data=self.dataobs.dataobs)
 
         # grab a channel
         channel = self.debug
@@ -124,12 +81,6 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         # the loaded data
         channel.line(f" -- inputs in memory:")
         channel.line(f"    green functions: shape={self.G.shape}")
-        channel.line(f"    observations: shape={self.d.shape}")
-        channel.line(f"    data covariance: shape={self.Cd.shape}")
-        # distributions
-        channel.line(f" -- distributions:")
-        channel.line(f"    prior: {self.prior}")
-        channel.line(f"    initializer: {self.prep}")
         # flush
         channel.log()
 
@@ -137,139 +88,135 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
         return self
 
 
-    @altar.export
-    def initialize_sample(self, step):
+    def forward_model_batched(self, theta, prediction):
         """
-        Fill {step.θ} with an initial random sample from my prior distribution.
+        Fill {prediction}, shape (samples x observations), with the residual G·θ - d for
+        each sample in {theta}
         """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # if the parameter vector is decomposed into named sets, let each one draw its own
-        if self.psets:
-            for pset in self.psets.values():
-                pset.initialize_sample(theta=θ)
-        # otherwise, fill it with random numbers from my single initializer
-        else:
-            self.prep.initialize_sample(theta=θ)
-        # and return
-        return self
-
-
-    @altar.export
-    def eval_prior(self, step):
-        """
-        Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
-        distribution
-        """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # and the storage for the prior likelihoods
-        likelihood = step.prior
-
-        # if the parameter vector is decomposed into named sets, each contributes its share
-        if self.psets:
-            for pset in self.psets.values():
-                pset.eval_prior(theta=θ, prior=likelihood)
-        # otherwise, my single prior distribution covers the whole vector
-        else:
-            self.prior.eval_prior(theta=θ, likelihood=likelihood)
-
-        # all done
-        return self
-
-
-    @altar.export
-    def data_likelihood(self, step):
-        """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data. This is what is usually referred to as the "forward model"
-        """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # the green functions
+        # the green functions and the observed data
         G = self.G
-        # the observations
-        d = self.d
-        # the inverse of the data covariance
-        Cd_inv = self.Cd_inv
-        # the normalization
-        normalization = self.normalization
-        # and the storage for the data likelihoods
-        dataLLK = step.data
+        d = self.dataobs.dataobs
 
-        # clone the residuals since the operations that follow write in-place
+        # compute G·θ^T - d, shape (observations x samples): we must transpose θ because its
+        # shape is (samples x parameters) while the shape of G is (observations x parameters)
         residuals = self.residuals.clone()
-        # compute G * transpose(θ) - d
-        # we must transpose θ because its shape is (samples x parameters)
-        # while the shape of G is (observations x parameters)
-        residuals = altar.blas.dgemm(G.opNoTrans, θ.opTrans, 1.0, G, θ, -1.0, residuals)
+        residuals = altar.blas.dgemm(G.opNoTrans, theta.opTrans, 1.0, G, theta, -1.0, residuals)
 
-        # go through the residual of each sample
-        for idx in range(residuals.columns):
-            # extract it
-            residual = residuals.getColumn(idx)
-            # compute its norm, normalize, and store it as the data log likelihood
-            norm = self.norm.eval(v=residual, sigma_inv=Cd_inv)
-            dataLLK[idx] = normalization - norm*norm/2
+        # transpose to the (samples x observations) convention {prediction} expects
+        residuals.transpose(prediction)
 
         # all done
         return self
 
 
-    @altar.export
-    def verify(self, step, mask):
+    def forward_model(self, theta, green=None, prediction=None, observation=None):
         """
-        Check whether the samples in {step.theta} are consistent with the model requirements and
-        update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
+        Linear forward model prediction = G * theta for a single sample, optionally
+        subtracting {observation} to get the residual instead
         """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
+        # resolve inputs
+        green = green or self.G
+        if prediction is None:
+            prediction = altar.vector(shape=self.observations)
 
-        # if the parameter vector is decomposed into named sets, each verifies its own share
-        if self.psets:
-            for pset in self.psets.values():
-                pset.verify(theta=θ, mask=mask)
-        # otherwise, my single prior distribution verifies the whole vector
+        # prediction = G * theta, optionally subtract observation
+        if observation is None:
+            beta = 0.0
         else:
-            self.prior.verify(theta=θ, mask=mask)
+            prediction.copy(observation)
+            beta = -1.0
 
-        # all done; return the rejection map
-        return mask
+        altar.blas.dgemv(green.opNoTrans, 1.0, green, theta, beta, prediction)
+
+        # all done
+        return prediction
+
+
+    @altar.export
+    def forward_problem(self, application, theta=None):
+        """
+        Perform the forward modeling with a given {theta}, comparing against the observed
+        data; used by the {forward} action, e.g. to check the residuals of the posterior
+        mean model
+        """
+        import h5py
+
+        # load theta if not provided
+        if theta is None:
+            theta = self.load_file(
+                filename=self.theta_input, shape=self.parameters, dataset=self.theta_dataset)
+
+        # the residual: G*theta - d
+        residual = self.forward_model(theta=theta, observation=self.dataobs.dataobs)
+
+        # save it
+        h5file = h5py.File(name=self.forward_output.path, mode='a')
+        if 'residual' in h5file.keys():
+            del h5file['residual']
+        h5file.create_dataset(name='residual', data=residual.ndarray())
+        h5file.close()
+
+        # all done
+        return
+
+
+    @altar.export
+    def gradient(self, controller, step, batch=None):
+        """
+        Fill {step.grad_prior} and {step.grad_data} with the gradients of the log prior and
+        log data likelihood with respect to {step.theta}, for use by gradient-based samplers
+        (e.g. SGLD)
+        """
+        # gradient-based samplers have no accept/reject step to catch a proposal that walked
+        # outside a bounded prior's support, so they currently only support unbounded priors;
+        # check once and cache, since {gradient} is called on every sweep
+        if not self.checked_unbounded_priors:
+            self.verify_unbounded_priors()
+
+        # grab the portion of the sample, and of the gradient buffers, that are mine
+        θ = self.restrict(theta=step.theta)
+        grad_prior = self.restrict(theta=step.grad_prior)
+        grad_data = self.restrict(theta=step.grad_data)
+
+        # the prior gradient, in {psets_list} order -- {psets} is a dict and may carry extra
+        # entries merged in from other configuration sources
+        for name in self.psets_list:
+            self.psets[name].prior_gradient(theta=θ, gradient=grad_prior)
+
+        # the data likelihood gradient: for r = Gθ - d and Cd_inv = L (the lower Cholesky
+        # factor of the inverse data covariance, so the data covariance is (L^T L)^-1),
+        #     grad_data_likelihood = -G^T L^T (L r)
+        G = self.G
+        Cd_inv = self.dataobs.cd_inv
+        samples = θ.rows
+
+        # r = Gθ^T - d, shape (observations x samples)
+        r = self.residuals.clone()
+        r = altar.blas.dgemm(G.opNoTrans, θ.opTrans, 1.0, G, θ, -1.0, r)
+        # w = L r, then wt = L^T w (both in place)
+        w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
+                             Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, r)
+        wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
+                              Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, w)
+
+        # grad_T = -G^T wt, shape (parameters x samples)
+        grad_data_T = altar.matrix(shape=(self.parameters, samples)).zero()
+        grad_data_T = altar.blas.dgemm(G.opTrans, G.opNoTrans, -1.0, G, wt, 0.0, grad_data_T)
+
+        # transpose to the (samples x parameters) convention {grad_data} expects
+        grad_data_T.transpose(grad_data)
+
+        # all done
+        return self
 
 
     # implementation details
-    def mount_input_dataspace(self, pfs):
+    def load_green(self):
         """
-        Mount the directory with my input files
-        """
-        # attempt to
-        try:
-            # mount the directory with my input data
-            ifs = altar.filesystem.local(root=self.case)
-        # if it fails
-        except altar.filesystem.MountPointError as error:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"bad case name: '{self.case}'")
-            channel.log(str(error))
-            # and bail
-            raise SystemExit(1)
-
-        # if all goes well, explore it and mount it
-        pfs["inputs"] = ifs.discover()
-        # all done
-        return ifs
-
-
-    def load_inputs(self):
-        """
-        Load the data in the input files into memory
+        Load the Green functions into memory
         """
         # grab the input dataspace
         ifs = self.ifs
-
-        # first the green functions
         try:
             # get the path to the file
             gf = ifs[self.green]
@@ -281,85 +228,13 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
             channel.log(f"missing Green functions: no '{self.green}' in '{self.case}'")
             # and raise the exception again
             raise
-        # if all goes well
-        else:
-            # allocate the matrix
-            green = altar.matrix(shape=(self.observations, self.parameters))
-            # and load the file contents into memory
-            green.load(gf.uri)
 
-        # next, the observations
-        try:
-            # get the path to the file
-            df = ifs[self.data]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing observations: no '{self.data}' in '{self.case}'")
-            # and raise the exception again
-            raise
-        # if all goes well
-        else:
-            # allocate the vector
-            data = altar.vector(shape=self.observations)
-            # and load the file contents into memory
-            data.load(df.uri)
-
-        # finally, the data covariance
-        try:
-            # get the path to the file
-            cf = ifs[self.cd]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing data covariance matrix: no '{self.cd}' in '{self.case}'")
-            # and raise the exception again
-            raise
-        # if all goes well
-        else:
-            # allocate the matrix
-            cd = altar.matrix(shape=(self.observations, self.observations))
-            # and load the file contents into memory
-            cd.load(cf.uri)
-
+        # allocate the matrix
+        green = altar.matrix(shape=(self.observations, self.parameters))
+        # and load the file contents into memory
+        green.load(gf.uri)
         # all done
-        return green, data, cd
-
-
-    def compute_covariance_inverse(self, cd):
-        """
-        Compute the inverse of the data covariance matrix
-        """
-        # make a copy so we don't destroy the original
-        cd = cd.clone()
-        # perform the LU decomposition
-        lu = altar.lapack.LU_decomposition(cd)
-        # invert; this creates a new matrix
-        inv = altar.lapack.LU_invert(*lu)
-        # compute the Cholesky decomposition
-        inv = altar.lapack.cholesky_decomposition(inv)
-        # and return it
-        return inv
-
-
-    def compute_normalization(self, observations, cd):
-        """
-        Compute the normalization of the L2 norm
-        """
-        # support
-        from math import log, pi as π
-        # make a copy of cd
-        cd = cd.clone()
-        # compute its LU decomposition
-        decomposition = altar.lapack.LU_decomposition(cd)
-        # use it to compute the log of its determinant
-        logdet = altar.lapack.LU_lndet(*decomposition)
-        # all done
-        return - (log(2*π)*observations + logdet) / 2;
+        return green
 
 
     def initialize_residuals(self, samples, data):
@@ -378,17 +253,11 @@ class Linear(altar.models.bayesian, family="altar.models.linear"):
 
 
     # private data
-    ifs = None # the filesystem with the input files
-
     # inputs
     G = None # the Green functions
-    d = None # the vector with the observations
-    Cd = None # the data covariance matrix
 
     # computed
-    Cd_inv = None # the inverse of the data covariance matrix
     residuals = None # matrix that holds (G θ - d) for each sample
-    normalization = 1 # the normalization of the L2 norm
 
 
 # end of file
