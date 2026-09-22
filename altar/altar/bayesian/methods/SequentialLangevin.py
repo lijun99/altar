@@ -8,7 +8,8 @@
 # all rights reserved
 #
 
-
+# the package
+import altar
 # superclass
 from .LangevinMethod import LangevinMethod
 
@@ -27,16 +28,60 @@ class SequentialLangevin(LangevinMethod):
 
 
     # interface
+    def initialize(self, application):
+        """
+        Initialize me and my parts given an {application} context
+        """
+        # chain up
+        super().initialize(application=application)
+        # grab the rng, and build the unit-normal pdf used to draw the SGLD noise term
+        self.rng = application.rng.rng
+        self.uninormal = altar.pdf.ugaussian(rng=self.rng)
+        # all done
+        return self
+
+
     def start(self, controller):
         """
         Start the langevin process
         """
         # chain up
         super().start(controller=controller)
-        # build a cooling step to hold the state of the problem
-        self.step = self.CoolingStep.start(controller=controller)
+        # build a langevin step to hold the state of the problem
+        self.step = self.LangevinStep.start(annealer=controller)
         # all done
         return self
+
+
+    def walk(self, controller):
+        """
+        SGLD walk: sweep {controller.sweeps} times, recomputing the gradients and taking an
+        SGLD step at the current sampling rate {controller.epsilon_t} each time
+        """
+        # increment the iteration index
+        self.iteration += 1
+
+        # grab the state and set the sampling rate
+        step = self.step
+        step.epsilon_t = controller.epsilon_t
+
+        # grab the model
+        model = controller.model
+
+        # iterate {sweeps} times for a given epsilon_t
+        for sweep in range(controller.sweeps):
+            # compute prior and data likelihood gradients
+            model.gradient(controller=controller, step=step, batch=step.samples)
+            # update theta
+            step.updateTheta(uninormal=self.uninormal)
+
+        # all done
+        return self
+
+
+    # private data
+    rng = None
+    uninormal = None
 
 
 # end of file

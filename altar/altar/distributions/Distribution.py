@@ -27,6 +27,13 @@ class Distribution(altar.protocol, family="altar.distributions"):
     offset = altar.properties.int(default=0)
     offset.doc = "the starting point of my parameters in the overall model state"
 
+    # whether my support is a strict subset of the reals. Gradient-based samplers (SGLD, HMC)
+    # have no accept/reject step to catch a proposal that walked outside a bounded support, so
+    # they currently only support distributions with {bounded} False; a bounded distribution
+    # needs a to-be-implemented unconstrained reparameterization (e.g. a logistic transform)
+    # before it can be used with one of them
+    bounded = False
+
 
     # configuration
     @altar.provides
@@ -50,9 +57,10 @@ class Distribution(altar.protocol, family="altar.distributions"):
         """
 
     @altar.provides
-    def prior_gradient(self, theta, index, prior):
+    def prior_gradient(self, theta, gradient):
         r"""
-        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        Fill my portion of {gradient} with d\log P(\theta)/d\theta, elementwise, for the
+        samples in {theta}. {gradient} has the same shape as {theta}.
         """
 
     @altar.provides

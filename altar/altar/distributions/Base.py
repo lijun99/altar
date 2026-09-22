@@ -32,6 +32,10 @@ class Base(altar.component, implements=distribution):
     offset = altar.properties.int(default=0)
     offset.doc = "the starting point of my parameters in the overall model state"
 
+    # whether my support is a strict subset of the reals; see the protocol docstring in
+    # Distribution.py. False by default; a bounded distribution (e.g. Uniform) overrides it
+    bounded = False
+
 
     # configuration
     @altar.export
@@ -78,12 +82,15 @@ class Base(altar.component, implements=distribution):
         # all done
         return self
 
-    @altar.provides
-    def prior_gradient(self, theta, index, prior):
+    @altar.export
+    def prior_gradient(self, theta, gradient):
         r"""
-        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        Fill my portion of {gradient} with d\log P(\theta)/d\theta, elementwise, for the
+        samples in {theta}. {gradient} has the same shape as {theta}.
         """
-        # default, assume 0
+        # default: assume a flat (improper) prior, so the gradient is 0
+        self.restrict(theta=gradient).zero()
+        # all done
         return self
 
 

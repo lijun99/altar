@@ -147,14 +147,22 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
 
         # first let's figure out the base worker factory: if the user asked for gpus and we
         # have them, go CUDA, else use plain vanilla sequential
-
-        # currently, only simple gpu is supported
-        worker = self.cuda
+        worker = self.cuda if gpus > 0 else self.sequential
         # ask the factory for a worker instance
         worker = worker()
 
         # all done
         return worker
+
+
+    def sequential(self):
+        """
+        Instantiate the plain sequential langevin method
+        """
+        # import the sequential langevin method
+        from ..methods.SequentialLangevin import SequentialLangevin
+        # instantiate it and return it
+        return SequentialLangevin(controller=self)
 
 
     def cuda(self):

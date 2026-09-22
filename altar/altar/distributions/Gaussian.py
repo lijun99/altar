@@ -58,15 +58,17 @@ class Gaussian(base, family="altar.distributions.gaussian"):
         # all samples are valid, so there is nothing to do
         return mask
 
-    @altar.provides
-    def prior_gradient(self, theta, index, prior):
+    @altar.export
+    def prior_gradient(self, theta, gradient):
         r"""
-        Fill my portion of {prior} with the gradient of d\log P(\theta)/d\theta_{index}
+        Fill my portion of {gradient} with d\log P(\theta)/d\theta, elementwise, for the
+        samples in {theta}. {gradient} has the same shape as {theta}.
+
+        For a Gaussian, d\log P(\theta)/d\theta = (mean - theta) / sigma^2, elementwise.
         """
-        # unpack my support
-        low, high = self.support
-        # grab the portion of the sample that's mine
+        # grab the portion of the sample and gradient that are mine
         θ = self.restrict(theta=theta)
+        g = self.restrict(theta=gradient)
 
         # find out how many samples in the set
         samples = θ.rows
@@ -75,9 +77,9 @@ class Gaussian(base, family="altar.distributions.gaussian"):
 
         # go through the samples in θ
         for sample in range(samples):
-            # and the parameters in this sample
-            gradient = (self.mean-θ[index])*self.sigma_invsqr
-            prior[sample] += gradient
+            # and every parameter in this sample
+            for parameter in range(parameters):
+                g[sample, parameter] = (self.mean - θ[sample, parameter]) * self.sigma_invsqr
 
         # all done
         return self

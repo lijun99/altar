@@ -28,6 +28,9 @@ class Uniform(base, family="altar.distributions.uniform"):
     support = altar.properties.array(default=(0,1))
     support.doc = "the support interval of the prior distribution"
 
+    # a finite interval is a strict subset of the reals
+    bounded = True
+
 
     # protocol obligations
     @altar.export
