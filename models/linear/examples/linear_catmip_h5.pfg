@@ -13,22 +13,23 @@ linear:
         case = patch-9
         ; the number of free parameters
         parameters = 18
-        ; observed data
-        dataobs:
-            observations = 108
-            cd_file = cd.txt
+        ; the number of observations
+        observations = 108
 
-        ; a single parameter set covering the whole vector
-        psets_list = [all]
-        psets:
-            all = contiguous
-            all:
-                count = {linear.model.parameters}
-                prep = gaussian
-                prep.sigma = 0.5
-                prior = gaussian
-                prior.sigma = 0.5
+        ; sample initializer
+        prep:
+            parameters = {linear.model.parameters}
+            sigma = 0.5
 
+        ; prior
+        prior:
+            parameters = {linear.model.parameters}
+            sigma = 0.5
+
+
+    controller = altar.bayesian.catmip
+    controller.archiver = altar.bayesian.h5recorder
+    controller.archiver.output_dir = catmip_h5_results
 
     ; run configuration
     job.tasks = 1 ; number of tasks per host

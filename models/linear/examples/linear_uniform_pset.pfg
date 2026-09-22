@@ -1,0 +1,57 @@
+;
+; test config: catmip controller + a bounded (uniform) parameter set alongside a
+; Gaussian one, to exercise model.verify()'s rejection of out-of-bound proposals
+;
+; parameter set naming follows the seismic static model's convention (see
+; models/seismic/examples/static_sgld.pfg): strikeslip, then dipslip
+;
+
+; the linear app
+linear:
+    ; test case configuration
+    moodel = altar.models.linear
+    controller = altar.bayesian.catmip
+    model:
+        ; the name of the test case
+        case = patch-9
+        ; the number of free parameters
+        parameters = 18
+        ; observed data
+        dataobs:
+            observations = 108
+            cd_file = cd.txt
+
+        ; parameter sets: 9 patches of strikeslip (uniform, enforced positive, using the
+        ; static model's dipslip support range), then 9 patches of dipslip (gaussian,
+        ; matching the static model's strikeslip prior); the order should be consistent
+        ; with the green's function
+        psets_list = [strikeslip, dipslip]
+
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
+
+            strikeslip:
+                count = 9
+                prep = uniform
+                prior = uniform
+                prep:
+                    support = (-0.5, 20) ; slip range, matching the static model
+                prior:
+                    support = (-0.5, 20)
+            dipslip:
+                count = 9
+                prep = gaussian
+                prior = gaussian
+                prep:
+                    sigma = 0.5
+                prior:
+                    sigma = 0.5
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 0  ; number of gpus per task
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 2**8
+
+; end of file

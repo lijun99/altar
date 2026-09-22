@@ -1,0 +1,51 @@
+;
+; CPU SGLD (Stochastic Gradient Langevin Dynamics) smoke test, using the linear model's
+; closed-form gradient() and the CPU SequentialLangevin worker
+;
+
+; the linear app
+linear:
+    ; test case configuration
+    moodel = altar.models.linear
+    controller = altar.bayesian.langevin
+    model:
+        ; the name of the test case
+        case = patch-9
+        ; the number of free parameters
+        parameters = 18
+        ; the number of observations
+        observations = 108
+
+        ; sample initializer
+        prep:
+            parameters = {linear.model.parameters}
+            sigma = 0.5
+
+        ; prior
+        prior:
+            parameters = {linear.model.parameters}
+            sigma = 0.5
+
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver.output_dir = sgld_h5_long_results
+        ; number of outer SGLD steps
+        tsteps = 500
+        ; how often to report
+        tsteps_report = 50
+        ; number of gradient sweeps per epsilon_t
+        sweeps = 5
+        ; the epsilon_t schedule
+        scheduler = altar.bayesian.powerdecay
+        scheduler:
+            a = 5.0e-4
+            b = 1
+            gamma = 0.33
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 0  ; number of gpus per task
+    job.chains = 2**6 ; number of chains per task
+    job.steps = 1
+
+; end of file
