@@ -37,9 +37,12 @@ class StepSizer(altar.protocol, family="altar.bayesian.stepsizers"):
     @classmethod
     def pyre_default(cls, **kwds):
         """
-        Default adjuster is the fixed strategy.
+        Default adjuster targets a fixed acceptance rate; a step size that never adapts
+        (e.g. {FixedStepSize}) lets the Markov chains freeze at whatever scale they started
+        with, which can converge confidently to the wrong posterior (see the linear model's
+        CATMIP regression: fixed 0.01 scaling produced a tight but badly biased posterior).
         """
-        return FixedStepSize
+        return TargetedRate
 
 
 class FixedStepSize(altar.component, family="altar.bayesian.stepsizers.fixedstep", implements=StepSizer):

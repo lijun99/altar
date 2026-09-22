@@ -53,7 +53,7 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         rng = application.rng.rng
 
         # initialize the step size regulator and record the initial scaling
-        self.scaling = self.stepsizer.initialize()
+        self.scaling = self.stepsizer.initialize(value=self.scaling)
 
         # initialize the proposal mechanism
         self.proposal.initialize(application=application)
