@@ -89,6 +89,21 @@ class Contiguous(altar.component,
 
 
     @altar.export
+    def prior_gradient(self, theta, gradient):
+        """
+        Fill {gradient} with d\\log P(\\theta)/d\\theta for my portion of the samples in
+        {theta}, for use by gradient-based samplers (e.g. SGLD)
+        """
+        # grab the portion of the sample and gradient that are mine
+        θ = self.restrict(theta=theta)
+        g = self.restrict(theta=gradient)
+        # delegate
+        self.prior.prior_gradient(theta=θ, gradient=g)
+        # all done
+        return self
+
+
+    @altar.export
     def verify(self, theta, mask):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and

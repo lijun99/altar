@@ -59,7 +59,7 @@ class Linear(BayesianL2, family="altar.models.linear"):
         super().initialize(application=application)
 
         # load my Green functions
-        self.G = self.load_green()
+        self.G = self.io.load(filename=self.green, shape=(self.observations, self.parameters))
         # prepare the residuals matrix
         self.residuals = self.initialize_residuals(
             samples=self.samples, data=self.dataobs.dataobs)
@@ -139,22 +139,16 @@ class Linear(BayesianL2, family="altar.models.linear"):
         data; used by the {forward} action, e.g. to check the residuals of the posterior
         mean model
         """
-        import h5py
-
         # load theta if not provided
         if theta is None:
-            theta = self.load_file(
+            theta = self.io.load(
                 filename=self.theta_input, shape=self.parameters, dataset=self.theta_dataset)
 
         # the residual: G*theta - d
         residual = self.forward_model(theta=theta, observation=self.dataobs.dataobs)
 
         # save it
-        h5file = h5py.File(name=self.forward_output.path, mode='a')
-        if 'residual' in h5file.keys():
-            del h5file['residual']
-        h5file.create_dataset(name='residual', data=residual.ndarray())
-        h5file.close()
+        self.io.save(filename=self.forward_output, data=residual, dataset='residual')
 
         # all done
         return
@@ -211,32 +205,6 @@ class Linear(BayesianL2, family="altar.models.linear"):
 
 
     # implementation details
-    def load_green(self):
-        """
-        Load the Green functions into memory
-        """
-        # grab the input dataspace
-        ifs = self.ifs
-        try:
-            # get the path to the file
-            gf = ifs[self.green]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing Green functions: no '{self.green}' in '{self.case}'")
-            # and raise the exception again
-            raise
-
-        # allocate the matrix
-        green = altar.matrix(shape=(self.observations, self.parameters))
-        # and load the file contents into memory
-        green.load(gf.uri)
-        # all done
-        return green
-
-
     def initialize_residuals(self, samples, data):
         """
         Prime the matrix that will hold the residuals (G θ - d) for each sample by duplicating the

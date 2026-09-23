@@ -13,9 +13,6 @@ import altar
 # my protocol
 from .Bayesian import Bayesian
 
-# other
-import numpy
-
 # declaration
 class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     """
@@ -68,6 +65,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
         # mount my input data space
         self.ifs = self.mount_input_dataspace(pfs=application.pfs)
+        # set up my file reader/writer
+        self.io = altar.io.FileIO(ifs=self.ifs, error=self.error, precision=self.precision)
         # find out how many samples I will be working with; this equal to the number of chains
         self.samples = application.job.chains
 
@@ -279,84 +278,6 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # all done
         return ifs
 
-    def load_file(self, filename, shape=None, dataset=None, dtype=None):
-        """
-        Load an input file to a gsl vector or matrix (for both float32/64 support)
-        Supported format:
-        1. text file in '.txt' suffix, stored in prescribed shape
-        2. binary file with '.bin' or '.dat' suffix,
-            the precision must be same as the desired gpuprecision,
-            and users must specify the shape of the data
-        3. (preferred) hdf5 file in '.h5' suffix (preferred)
-            the metadata of shape, precision is included in .h5 file
-        :param filename: str, the input file name
-        :param shape: list of int
-        :param dataset: str, name/key of dataset for h5 input only
-        :return: output gsl vector/matrix
-        """
-
-        # decide the data type of the loaded vector/matrix
-        dtype = dtype or self.precision
-
-        ifs = self.ifs
-        channel = self.error
-        try:
-            # get the path to the file
-            file = ifs[filename]
-        except ifs.NotFoundError:
-            channel.log(f"no file '{filename}' found in '{ifs.path()}'")
-            raise
-        else:
-            # get the suffix to determine type
-            suffix = file.uri.suffix
-            # use .txt for non-binary input
-            if suffix == '.txt':
-                # load to a cpu array
-                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype)
-            # binary data
-            elif suffix == '.bin' or suffix == '.dat':
-                # check shape
-                if shape is None:
-                    # check whether I can get shape from output
-                    if out is None:
-                        raise channel.log(f"must specify shape for binary input '{filename}'")
-                    else:
-                        shape = out.shape
-                # read and reshape, users need to check the precision
-                cpuData = numpy.fromfile(file.uri.path, dtype=self.precision).reshape(shape)
-            # hdf5 file
-            elif suffix == '.h5':
-                # get support
-                import h5py
-                # open
-                h5file = h5py.File(file.uri.path, 'r')
-                # get the desired dataset
-                if dataset is None:
-                    # if not provided, assume the only or first dataset as default
-                    dataset = list(h5file.keys())[0]
-                cpuData = numpy.asarray(h5file.get(dataset), dtype=dtype)
-                h5file.close()
-
-        if shape is not None:
-            cpuData = cpuData.reshape(shape)
-
-        # convert to gsl data
-        return self._cpuToGsl(cpuData)
-
-    def _cpuToGsl(self, cpuData):
-        """
-        Convert a numpy array into a gsl vector or matrix
-        """
-        if cpuData.ndim == 1:
-            vec = altar.vector(shape=cpuData.shape[0])
-            vec.ndarray()[:] = cpuData
-            return vec
-        if cpuData.ndim == 2:
-            mat = altar.matrix(shape=cpuData.shape)
-            mat.ndarray()[:] = cpuData
-            return mat
-        raise ValueError(f"unsupported data dimensions {cpuData.shape}")
-
     def restrict(self, theta):
         """
         Return my portion of the sample matrix {theta}
@@ -419,6 +340,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     device = None
     precision = None
     ifs = None # the filesystem with the input files
+    io = None # my file reader/writer
     checked_unbounded_priors = False # whether {gradient} has already verified all priors are unbounded
 
 

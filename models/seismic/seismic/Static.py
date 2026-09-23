@@ -62,7 +62,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         super().initialize(application=application)
 
         # load Green's function
-        self.GF = self.load_file(
+        self.GF = self.io.load(
             filename=self.green,
             shape=(self.observations, self.parameters),
         )
@@ -166,11 +166,9 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         """
         Perform the forward modeling with given {theta}
         """
-        import h5py
-
         # load theta if not provided
         if theta is None:
-            gtheta = self.load_file(
+            gtheta = self.io.load(
                 filename=self.theta_input,
                 shape=self.parameters,
                 dataset=self.theta_dataset,
@@ -178,7 +176,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         elif isinstance(theta, altar.vector):
             gtheta = theta
         else:
-            gtheta = self._cpuToGsl(numpy.asarray(theta))
+            gtheta = self.io.toGsl(numpy.asarray(theta))
 
         # allocate predicted data
         data = altar.vector(shape=self.observations)
@@ -186,12 +184,7 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
         self.forward_model(theta=gtheta, green=self.GF, prediction=data, observation=None)
 
         # save data prediction
-        h5file = h5py.File(name=self.forward_output.path, mode='a')
-        # if already exists, del the old dataset
-        if 'static.Data' in h5file.keys():
-            del h5file['static.Data']
-        h5file.create_dataset(name='static.Data', data=numpy.asarray(data))
-        h5file.close()
+        self.io.save(filename=self.forward_output, data=data, dataset='static.Data')
 
         # all done
         return
@@ -225,64 +218,6 @@ class Static(BayesianL2, family="altar.models.seismic.static"):
 
         # all done
         return self
-
-
-    def load_file(self, filename, shape=None, dataset=None, dtype=None):
-        """
-        Load an input file to a gsl vector or matrix.
-        Supported format:
-        1. text file in '.txt' suffix, stored in prescribed shape
-        2. binary file with '.bin' or '.dat' suffix
-        3. hdf5 file in '.h5' suffix
-        """
-        dtype = dtype or numpy.float64
-
-        ifs = self.ifs
-        channel = self.error
-        try:
-            # get the path to the file
-            file = ifs[filename]
-        except ifs.NotFoundError:
-            channel.log(f"missing input: no '{filename}' in '{ifs.path()}'")
-            raise
-        else:
-            suffix = file.uri.suffix
-            if suffix == '.txt':
-                cpuData = numpy.loadtxt(file.uri.path, dtype=dtype)
-            elif suffix in ('.bin', '.dat'):
-                if shape is None:
-                    raise channel.log(f"must specify shape for binary input '{filename}'")
-                cpuData = numpy.fromfile(file.uri.path, dtype=dtype)
-            elif suffix == '.h5':
-                import h5py
-
-                h5file = h5py.File(file.uri.path, 'r')
-                if dataset is None:
-                    dataset = list(h5file.keys())[0]
-                cpuData = numpy.asarray(h5file.get(dataset), dtype=dtype)
-                h5file.close()
-            else:
-                raise channel.log(f"unsupported input suffix '{suffix}' for '{filename}'")
-
-        if shape is not None:
-            cpuData = cpuData.reshape(shape)
-
-        return self._cpuToGsl(cpuData)
-
-
-    def _cpuToGsl(self, cpuData):
-        """
-        Convert a numpy array into a gsl vector or matrix.
-        """
-        if cpuData.ndim == 1:
-            vec = altar.vector(shape=cpuData.shape[0])
-            vec.ndarray()[:] = cpuData
-            return vec
-        if cpuData.ndim == 2:
-            mat = altar.matrix(shape=cpuData.shape)
-            mat.ndarray()[:] = cpuData
-            return mat
-        raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
 
     def compute_covariance_inverse(self, cd):
