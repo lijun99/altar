@@ -1,6 +1,6 @@
 ;
-; CPU HMC (Hamiltonian Monte Carlo) smoke test: same CATMIP/annealing controller as
-; linear_catmip.pfg, but with the sampler swapped for the leapfrog-based Hmc sampler
+; CPU HMC (Hamiltonian Monte Carlo) smoke test: the CatmipHmc controller, i.e. CATMIP's COV
+; annealing ladder with the sampler pinned to the leapfrog-based Hmc sampler
 ;
 
 ; the linear app
@@ -28,9 +28,8 @@ linear:
                 prior.sigma = 0.5
 
 
-    controller = altar.bayesian.catmip
+    controller = altar.bayesian.catmiphmc
     controller:
-        sampler = altar.bayesian.hmc
         sampler:
             leapfrog_steps = 10
             step_size = 0.01

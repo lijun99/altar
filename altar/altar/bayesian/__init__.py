@@ -23,7 +23,7 @@ from .langevin_schedulers.LangevinScheduler import LangevinScheduler as langevin
 from .stepsizers.StepSizer import StepSizer as stepsizer
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace
-from .controllers import annealer, catmip, langevin
+from .controllers import annealer, catmip, langevin, plainhmc, catmiphmc
 from .samplers import metropolis, hmc
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid

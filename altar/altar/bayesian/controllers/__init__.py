@@ -28,4 +28,20 @@ def langevin():
     __doc__ = Langevin.__doc__
     return Langevin
 
+@altar.foundry(
+    implements=controller,
+    tip="Hamiltonian Monte Carlo with no annealing ladder (beta fixed at 1)")
+def plainhmc():
+    from .Hmc import Hmc
+    __doc__ = Hmc.__doc__
+    return Hmc
+
+@altar.foundry(
+    implements=controller,
+    tip="CATMIP annealing (the COV schedule) with the sampler pinned to Hamiltonian Monte Carlo")
+def catmiphmc():
+    from .CatmipHmc import CatmipHmc
+    __doc__ = CatmipHmc.__doc__
+    return CatmipHmc
+
 # end of file
