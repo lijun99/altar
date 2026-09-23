@@ -1,0 +1,44 @@
+;
+; CPU HMC (Hamiltonian Monte Carlo) smoke test: same CATMIP/annealing controller as
+; linear_catmip.pfg, but with the sampler swapped for the leapfrog-based Hmc sampler
+;
+
+; the linear app
+linear:
+    ; test case configuration
+    model:
+        ; the name of the test case
+        case = patch-9
+        ; the number of free parameters
+        parameters = 18
+        ; observed data
+        dataobs:
+            observations = 108
+            cd_file = cd.txt
+
+        ; a single parameter set covering the whole vector
+        psets_list = [all]
+        psets:
+            all = contiguous
+            all:
+                count = {linear.model.parameters}
+                prep = gaussian
+                prep.sigma = 0.5
+                prior = gaussian
+                prior.sigma = 0.5
+
+
+    controller = altar.bayesian.catmip
+    controller:
+        sampler = altar.bayesian.hmc
+        sampler:
+            leapfrog_steps = 10
+            step_size = 0.01
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 0  ; number of gpus per task
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 20 ; number of hmc trajectories per beta step
+
+; end of file

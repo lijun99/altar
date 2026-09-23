@@ -75,9 +75,13 @@ class Base(altar.component, implements=distribution):
 
         # for each one
         for sample in range(samples):
-            # fill the vector with the log likelihoods
+            # fill the vector with the log likelihoods; a sample far enough into the tail can
+            # underflow {density} to exactly zero (e.g. a gradient-based sampler's trajectory
+            # straying through an extreme, strongly-rejected region), and {math.log} raises
+            # rather than returning {-inf} for that, so guard it explicitly
             likelihood[sample] += sum(
-                math.log(pdf.density(parameter)) for parameter in θ.getRow(sample))
+                math.log(density) if (density := pdf.density(parameter)) > 0 else float('-inf')
+                for parameter in θ.getRow(sample))
 
         # all done
         return self

@@ -24,7 +24,7 @@ from .stepsizers.StepSizer import StepSizer as stepsizer
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace
 from .controllers import annealer, catmip, langevin
-from .samplers import metropolis
+from .samplers import metropolis, hmc
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal
