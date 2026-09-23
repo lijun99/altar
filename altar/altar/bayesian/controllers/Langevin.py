@@ -141,8 +141,6 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         # the machine layout part of the {job} parameters has already been vetted; if we get
         # this far, we have what the user asked for; unpack the parameters we use
         mode = job.mode
-        hosts = job.hosts
-        tasks = job.tasks
         gpus = job.gpus
 
         # first let's figure out the base worker factory: if the user asked for gpus and we
@@ -150,6 +148,12 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         worker = self.cuda if gpus > 0 else self.sequential
         # ask the factory for a worker instance
         worker = worker()
+
+        # if we are running under mpi, wrap it in the mpi-aware method; N.B.: unlike
+        # {Annealer}, there is no threaded Langevin method yet, so multiple {tasks}/{gpus}
+        # per host without mpi are not supported here
+        if mode == "mpi":
+            worker = self.mpi(worker=worker)
 
         # all done
         return worker
@@ -173,6 +177,15 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         from ..methods.CUDASGLD import CUDASGLD
         # instantiate it and return it
         return CUDASGLD(controller=self)
+
+
+    def mpi(self, worker):
+        """
+        Instantiate the MPI aware Langevin method
+        """
+        from ..methods.MPILangevin import MPILangevin
+        # instantiate it and return it
+        return MPILangevin(controller=self, worker=worker)
 
 
     # private data

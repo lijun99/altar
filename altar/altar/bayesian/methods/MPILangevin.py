@@ -35,10 +35,11 @@ class MPILangevin(LangevinMethod):
 
         # ask the application context for the rng component
         rng = application.rng
-        # make a rank dependent seed
+        # make a rank dependent seed; {rng.seed} is a float trait but the gsl binding
+        # requires an int
         seed = rng.seed + 29*(self.rank+1) + 1
         # seed the rng
-        rng.rng.seed(seed=seed)
+        rng.rng.seed(seed=int(seed))
 
         # show me
         application.info.log(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
@@ -237,17 +238,21 @@ class MPILangevin(LangevinMethod):
         # the prior
         posterior = altar.vector.collect(
             vector=step.posterior, communicator=communicator, destination=manager)
+        # the gradients, so the archived state reflects the last sweep, not zeros
+        grad_prior = altar.matrix.collect(
+            matrix=step.grad_prior, communicator=communicator, destination=manager)
+        grad_data = altar.matrix.collect(
+            matrix=step.grad_data, communicator=communicator, destination=manager)
 
         # if I am not the manager task
         if self.rank != self.manager:
             # just return the local state
             return step
 
-        # the manager packs the state of the problem and returns it; everybody has the same
-        # covariance matrix, so the local copy is good enough
+        # the manager packs the state of the problem and returns it
         return self.LangevinStep(
             beta=β, theta=θ,
-            likelihoods=(prior,data,posterior), sigma=step.sigma)
+            likelihoods=(prior,data,posterior), gradients=(grad_prior,grad_data))
 
 
     def partition(self):
@@ -263,14 +268,13 @@ class MPILangevin(LangevinMethod):
             # unpack it
             β = step.beta
             θ = step.theta
-            Σ = step.sigma
             prior = step.prior
             data = step.data
             posterior = step.posterior
         # the others
         else:
             # know nothing
-            β = θ = Σ = prior = data = posterior = None
+            β = θ = prior = data = posterior = None
 
         # cache my communicator
         comm = self.communicator
@@ -290,9 +294,6 @@ class MPILangevin(LangevinMethod):
         step.prior.excerpt(vector=prior, source=manager, communicator=comm)
         step.data.excerpt(vector=data, source=manager, communicator=comm)
         step.posterior.excerpt(vector=posterior, source=manager, communicator=comm)
-
-        # finally, the covariance matrix
-        step.sigma.copy(altar.matrix.bcast(matrix=Σ, source=manager, communicator=comm))
 
         # all done
         return step

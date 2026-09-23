@@ -1,0 +1,57 @@
+;
+; CPU SGLD (Stochastic Gradient Langevin Dynamics) MPI smoke test, using the linear model's
+; closed-form gradient() and the MPI-aware Langevin worker
+;
+
+; the linear app
+linear:
+    ; test case configuration
+    controller = altar.bayesian.langevin
+    model:
+        ; the name of the test case
+        case = patch-9
+        ; the number of free parameters
+        parameters = 18
+        ; observed data
+        dataobs:
+            observations = 108
+            cd_file = cd.txt
+
+        ; a single parameter set covering the whole vector
+        psets_list = [all]
+        psets:
+            all = contiguous
+            all:
+                count = {linear.model.parameters}
+                prep = gaussian
+                prep.sigma = 0.5
+                prior = gaussian
+                prior.sigma = 0.5
+
+    controller:
+        ; number of outer SGLD steps
+        tsteps = 20
+        ; how often to report
+        tsteps_report = 5
+        ; number of gradient sweeps per epsilon_t
+        sweeps = 5
+        ; the epsilon_t schedule
+        scheduler = altar.bayesian.powerdecay
+        scheduler:
+            a = 1.0e-4
+            b = 1
+            gamma = 0.33
+
+    ; run configuration
+    job.tasks = 2 ; number of tasks per host
+    job.gpus = 0  ; number of gpus per task
+    job.chains = 2**6 ; number of chains per task
+
+    ; shell
+    shell = mpi.shells.mpirun ; for running with mpi
+
+; for parallel runs
+mpi.shells.mpirun # altar.plexus.shell:
+    extra = -mca btl self,tcp
+
+; end of file

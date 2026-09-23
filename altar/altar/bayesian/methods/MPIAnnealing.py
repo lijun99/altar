@@ -35,10 +35,11 @@ class MPIAnnealing(AnnealingMethod):
 
         # ask the application context for the rng component
         rng = application.rng
-        # make a rank dependent seed
+        # make a rank dependent seed; {rng.seed} is a float trait but the gsl binding
+        # requires an int
         seed = rng.seed + 29*(self.rank+1) + 1
         # seed the rng
-        rng.rng.seed(seed=seed)
+        rng.rng.seed(seed=int(seed))
 
         # show me
         application.info.log(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
