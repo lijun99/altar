@@ -1,7 +1,10 @@
 ;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
 ; CPU SGLD (Stochastic Gradient Langevin Dynamics) smoke test, using the linear model's
 ; closed-form gradient() and the CPU SequentialLangevin worker
-;
 
 ; the linear app
 linear:

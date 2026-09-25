@@ -1,8 +1,11 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# A scheduler that keeps beta fixed at a constant value (default 1)
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
 #
+# A scheduler that keeps beta fixed at a constant value (default 1)
 
 import altar
 from .Scheduler import Scheduler as scheduler

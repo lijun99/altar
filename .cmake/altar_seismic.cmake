@@ -1,7 +1,9 @@
 # -*- cmake -*-
 #
-# Lijun Zhu (ljzhu@gps.caltech.edu)
-# (c) 2019-2021 all rights reserved
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
 
 # build the seismic package
 function(altar_seismic_buildPackage)
@@ -71,9 +73,7 @@ function(altar_seismic_cuda_buildLibrary)
     ${CMAKE_INSTALL_PREFIX}/lib
     ${PYRE_PREFIX_PATH}/lib
     )
-  # add the dependencies; {cublas} replaces the old {pyrecuda} link -- the kernels here call
-  # cublas directly (cublasSgemm/cublasDgemm in cudaKinematicG.cu), and {pyrecuda} was pyre's
-  # old capsule-based cuda bridge, gone along with the rest of the pre-pybind11 headers
+  # add the dependencies
   target_link_libraries(
     libcudaseismic PRIVATE
     ${GSL_LIBRARIES} journal cublas
@@ -88,8 +88,7 @@ function(altar_seismic_cuda_buildLibrary)
     lib/libcudaseismic/version.cc
     )
 
-  # copy the seismic headers; note the trickery with the terminating slash in the source
-  # directory that let's us place the files in the correct destination
+  # copy the seismic headers (the trailing slash matters: it copies contents, not the dir)
   file(
     COPY lib/libcudaseismic/
     DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda

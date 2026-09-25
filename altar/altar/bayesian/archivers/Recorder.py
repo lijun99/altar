@@ -1,12 +1,12 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# michael a.g. aïvázis <michael.aivazis@para-sim.com>
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 #
-# Author(s): michael a.g. aïvázis, Lijun Zhu
-
 
 # the package
 import altar

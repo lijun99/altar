@@ -37,8 +37,8 @@ Tutorials presented with jupyter notebooks:
 ### Copyright
 
 ```text
-    Copyright (c) 2013-2021 ParaSim Inc.
-    Copyright (c) 2010-2021 California Institute of Technology
+    Copyright (c) 2013-present ParaSim Inc.
+    Copyright (c) 2010-present California Institute of Technology
     All Rights Reserved
     
     This software is subject to the provisions of its LICENSE, a copy of

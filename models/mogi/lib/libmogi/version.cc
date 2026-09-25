@@ -1,9 +1,12 @@
 // -*- C++ -*-
 //
 // michael a.g. aïvázis <michael.aivazis@para-sim.com>
-// parasim
-// (c) 2013-2021 all rights reserved
 //
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
+// all rights reserved
+//
+// parasim
 
 // my declarations
 #include "version.h"

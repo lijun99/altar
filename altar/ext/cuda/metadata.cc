@@ -1,11 +1,10 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2025 parasim inc
-// (c) 2010-2025 california institute of technology
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
 // all rights reserved
 //
-// Author(s): Lijun Zhu
 
 // externals
 #include "external.h"
@@ -19,7 +18,7 @@ altar::cuda::extensions::metadata(py::module & m) -> void
 {
     m.def(
         "copyright", []() -> std::string {
-            return "altar.beta: (c) 2013-2025 ParaSim Inc; 2010-2025 California Institute of "
+            return "altar.beta: (c) 2013-present ParaSim Inc; 2010-present California Institute of "
                    "Technology";
         },
         "the module copyright string");
@@ -29,8 +28,8 @@ altar::cuda::extensions::metadata(py::module & m) -> void
             return
                 "\n"
                 "    altar 2.0\n"
-                "    Copyright (c) 2013-2025 ParaSim Inc.\n"
-                "    Copyright (c) 2010-2025 California Institute of Technology\n"
+                "    Copyright (c) 2013-present ParaSim Inc.\n"
+                "    Copyright (c) 2010-present California Institute of Technology\n"
                 "    All Rights Reserved\n"
                 "\n"
                 "\n"

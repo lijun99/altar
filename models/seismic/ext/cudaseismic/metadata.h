@@ -1,10 +1,11 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// Lijun Zhu
-// california institute of technology
-// (c) 2016-2021  all rights reserved
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
+// all rights reserved
 //
+// california institute of technology
 
 #if !defined(altar_extensions_models_cudacdm_metadata_h)
 #define altar_extensions_models_cudacdm_metadata_h

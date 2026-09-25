@@ -1,7 +1,11 @@
 # -*- cmake -*-
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
-# (c) 2003-2021 all rights reserved
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
 
 # build the altar_cuda package
 function(altar_cuda_buildPackage)

@@ -2,7 +2,11 @@
 // -*- coding: utf-8 -*-
 //
 // michael a.g. aïvázis <michael.aivazis@para-sim.com>
-// (c) 2013-2026 all rights reserved
+//
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
+// all rights reserved
+//
 
 
 // external dependencies
@@ -17,7 +21,7 @@ altar::py::metadata(py::module & m)
     m.def(
         "copyright",
         []() -> std::string {
-            return "altar.beta: (c) 2013-2021 ParaSim Inc; 2010-2021 California Institute of Technology";
+            return "altar.beta: (c) 2013-present ParaSim Inc; 2010-present California Institute of Technology";
         },
         "the module copyright string");
 
@@ -26,8 +30,8 @@ altar::py::metadata(py::module & m)
         []() -> std::string {
             return "\n"
                    "    altar 2.0\n"
-                   "    Copyright (c) 2013-2021 ParaSim Inc.\n"
-                   "    Copyright (c) 2010-2021 California Institute of Technology\n"
+                   "    Copyright (c) 2013-present ParaSim Inc.\n"
+                   "    Copyright (c) 2010-present California Institute of Technology\n"
                    "    All Rights Reserved\n"
                    "\n"
                    "\n"

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 #
-# Author(s): Lijun Zhu
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
 
 import h5py
 import numpy

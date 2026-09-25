@@ -4,6 +4,7 @@
 // (c) 2013-present parasim inc
 // (c) 2010-present california institute of technology
 // all rights reserved
+//
 
 //! shared support for altar's cuda kernels: a default thread block size, a ceiling-division
 //! helper for turning an element count into a grid size, and a way to check the outcome of a

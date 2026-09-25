@@ -1,11 +1,10 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# (c) 2013-2026 parasim inc
-# (c) 2010-2026 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 #
-# Author(s): Lijun Zhu
 
 # the package
 import altar

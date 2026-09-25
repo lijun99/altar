@@ -5,7 +5,6 @@
 // (c) 2010-present california institute of technology
 // all rights reserved
 //
-// Author(s): Lijun Zhu
 
 //! file cudaLeapfrog.cu
 //! Leapfrog integrator support for Hamiltonian Monte Carlo

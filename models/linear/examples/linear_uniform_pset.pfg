@@ -1,10 +1,12 @@
 ;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
 ; test config: catmip controller + a bounded (uniform) parameter set alongside a
 ; Gaussian one, to exercise model.verify()'s rejection of out-of-bound proposals
-;
 ; parameter set naming follows the seismic static model's convention (see
 ; models/seismic/examples/static_sgld.pfg): strikeslip, then dipslip
-;
 
 ; the linear app
 linear:

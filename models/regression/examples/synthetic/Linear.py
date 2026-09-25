@@ -1,3 +1,8 @@
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
 # Linear Regression synthetic example data generator
 import numpy as np
 import matplotlib.pyplot as plt

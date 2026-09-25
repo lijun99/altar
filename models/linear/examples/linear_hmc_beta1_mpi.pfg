@@ -1,8 +1,11 @@
 ;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
 ; CPU HMC sampling directly at beta=1 (no annealing ladder), 2 mpi tasks: exercises the
 ; mass-matrix estimate and the per-trajectory step size adaptation both being pooled across
 ; ranks via the communicator, not just each rank adapting off its own local chain shard
-;
 
 ; the linear app
 linear:

@@ -1,11 +1,10 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2025 parasim inc
-// (c) 2010-2025 california institute of technology
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
 // all rights reserved
 //
-// Author(s): Lijun Zhu
 
 // code guard
 #ifndef altar_cuda_distributions_cudaLogistic_h

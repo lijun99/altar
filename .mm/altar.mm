@@ -1,9 +1,12 @@
 # -*- Makefile -*-
 #
 # michael a.g. aïvázis
-# parasim
-# (c) 1998-2021 all rights reserved
 #
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
+# parasim
 
 # the framework
 include altar.def ${if ${value cuda.dir}, cudaaltar.def}

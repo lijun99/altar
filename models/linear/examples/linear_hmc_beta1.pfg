@@ -1,9 +1,12 @@
 ;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
 ; CPU HMC sampling directly at beta=1 (no annealing ladder): the Hmc controller, i.e.
 ; {Annealer}'s default {ConstantTemperature} scheduler (jumps straight to beta=1 in a single
 ; step) with the sampler pinned to the leapfrog-based Hmc sampler, so all of {job.steps}
 ; trajectories are spent sampling the actual posterior instead of a beta ladder
-;
 
 ; the linear app
 linear:
