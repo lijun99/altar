@@ -185,14 +185,4 @@ function(altar_cuda_buildModule)
 endfunction(altar_cuda_buildModule)
 
 
-# the scripts
-function(altar_cuda_buildDriver)
-  # install the scripts
-  install(
-    PROGRAMS bin/cudaaltar
-    DESTINATION bin
-    )
-  # all done
-endfunction(altar_cuda_buildDriver)
-
 # end of file

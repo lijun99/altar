@@ -91,7 +91,10 @@ altar_destinationInit()
 add_subdirectory(altar)
 
 if(WITH_CUDA)
-  add_subdirectory(cuda)
+  include(altar_cudaframework)
+  altar_cuda_buildPackage()
+  altar_cuda_buildLibrary()
+  altar_cuda_buildModule()
 endif()
 
 # build the models
