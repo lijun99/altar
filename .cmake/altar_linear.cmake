@@ -34,7 +34,7 @@ endfunction(altar_linear_buildPackage)
 function(altar_linear_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/linear
+    PROGRAMS bin/altar-linear
     DESTINATION bin
     )
   # all done
