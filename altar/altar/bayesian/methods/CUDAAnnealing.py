@@ -19,7 +19,7 @@ class CUDAAnnealing(AnnealingMethod):
     Implementation that takes advantage of CUDA on gpus to accelerate the computation
     """
 
-    from altar.cuda.bayesian.cudaCoolingStep import cudaCoolingStep
+    from altar.bayesian.states.cuda.CoolingStep import CoolingStep as cudaCoolingStep
 
     # public data
     wid = 0     # my worker id
@@ -43,8 +43,10 @@ class CUDAAnnealing(AnnealingMethod):
         gpuids = application.job.gpuids
         tasks = application.job.tasks # jobs per host
         # set gpu ids for current worker
-        self.device=altar.cuda.use_device(gpuids[self.wid % tasks])
-        application.info.log(f'current worker {self.wid} with device {self.device} id {self.device.id}')
+        did = gpuids[self.wid % tasks]
+        altar.cuda.manager.device(did)
+        self.device = altar.cuda.manager.devices[did]
+        application.info.log(f'current worker {self.wid} with device {self.device.name} id {self.device.id}')
         return self
 
     # interface
@@ -62,7 +64,7 @@ class CUDAAnnealing(AnnealingMethod):
         # initialize it
         model = annealer.model
         gstep = self.gstep
-        model.cu_init_sample(theta=gstep.theta, batch=gstep.samples)
+        model.initialize_sample(step=gstep, batch=gstep.samples)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
         # return to cpu

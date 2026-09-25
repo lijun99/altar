@@ -120,7 +120,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         # otherwise, attempt to
         try:
             # get support for cuda
-            import cuda
+            import altar.cuda
         # if this fails
         except ImportError:
             # pick a channel
@@ -137,7 +137,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
             # compute the requested number of devices
             requested = tasks * gpus
             # get the total GPU count on this node
-            available = cuda.manager.count
+            available = altar.cuda.manager.count
             # get the gpu ids requested
             if self.gpuids is None:
                 self.gpuids = list(range(requested))

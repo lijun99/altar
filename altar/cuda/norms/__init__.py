@@ -18,11 +18,13 @@ import altar.cuda
 from altar.norms.Norm import Norm as norm
 
 
-# implementations
-@altar.foundry(implements=norm, tip="the cudaL2 norm")
+# {L2} is a unified component now: it picks its cpu/cuda implementation internally, on first
+# use; this foundry exists only for {.pfg} files that still spell out the explicit
+# "altar.cuda.norms.l2" path, and resolves to the very same class {altar.norms.l2} does
+@altar.foundry(implements=norm, tip="the L2 norm")
 def l2():
     # grab the factory
-    from .cudaL2 import cudaL2 as l2
+    from altar.norms.L2 import L2 as l2
     # attach its docstring
     __doc__ = l2.__doc__
     # and return it

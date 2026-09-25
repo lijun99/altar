@@ -8,53 +8,18 @@
 # all rights reserved
 #
 
-# the package
-import altar
-# my protocol
-from .Norm import Norm
+# my base class
+from .Base import Base as base
 
 
 # declaration
-class L2(altar.component, family="altar.norms.l2", implements=Norm):
+class L2(base, family="altar.norms.l2"):
     """
     The L2 norm
+
+    My actual numerics live in {altar.norms.native.L2.L2} (cpu) or
+    {altar.norms.cuda.L2.L2}; see {Base} for how one gets picked.
     """
-
-
-    # interface
-    @altar.export
-    def eval(self, v, sigma_inv=None):
-        """
-        Compute the L2 norm of the given vector, with or without a covariance matrix
-        """
-        # if we have a covariance matrix
-        if sigma_inv is not None:
-            # use the specialized implementation
-            return self.with_covariance(v=v, sigma_inv=sigma_inv)
-        # otherwise, compute the norm and return it
-        return altar.blas.dnrm2(v)
-
-
-    # implementation details
-    def with_covariance(self, v, sigma_inv):
-        """
-        Compute the L2 norm of the given vector using the given Cholesky decomposed inverse
-        covariance matrix
-        """
-        # we assume {sigma_inv} is Cholesky decomposed, so we can pre-multiply the vector by
-        # the lower triangle, and then just take the norm
-
-        # use the lower triangle, no transpose, non-unit diagonal
-        if isinstance(sigma_inv, altar.matrix):
-            v = altar.blas.dtrmv(
-                sigma_inv.lowerTriangular, sigma_inv.opNoTrans, sigma_inv.nonUnitDiagonal,
-                sigma_inv, v)
-        elif isinstance(sigma_inv, float):
-            v *= sigma_inv
-        else:
-            raise ValueError("L2 norm, sigma_inv should be a matrix or constant")
-        # compute the dot product and return it
-        return altar.blas.dnrm2(v)
 
 
 # end of file

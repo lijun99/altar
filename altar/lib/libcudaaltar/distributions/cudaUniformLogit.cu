@@ -14,6 +14,9 @@
 #include "cudaRandom.h"
 #include "cudaUniform.h"
 // cuda utilities
+// shared NTHREADS/IDIVUP/cudaCheckError
+#include "../support.h"
+
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 

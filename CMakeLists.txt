@@ -68,7 +68,10 @@ if (WITH_CUDA AND PYRE_CUDA_FOUND)
     # enforce linker for CUDA modules; not properly set for some systems
     set(CMAKE_CUDA_HOST_LINK_LAUNCHER ${CMAKE_CXX_COMPILER})
     if(NOT DEFINED CMAKE_CUDA_STANDARD)
-      set(CMAKE_CUDA_STANDARD 11)
+      # pyre's own headers are c++23 now (e.g. {std::endian} in lib/pyre/memory/Ordered.h),
+      # and any .cu file that reaches them needs the same standard nvcc's own side compiles
+      # against; c++11 predates that entirely
+      set(CMAKE_CUDA_STANDARD 20)
       set(CMAKE_CUDA_STANDARD_REQUIRED ON)
     endif()
   # cuda toolkit not available
@@ -98,7 +101,6 @@ add_subdirectory(models/mogi)
 add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
 add_subdirectory(models/seismic)
-add_subdirectory(models/cudalinear)
 add_subdirectory(models/sir)
 add_subdirectory(models/regression)
 

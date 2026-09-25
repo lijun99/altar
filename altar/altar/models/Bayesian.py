@@ -69,7 +69,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # services
     @altar.export
-    def initialize_sample(self, step):
+    def initialize_sample(self, step, batch=None):
         """
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
@@ -77,7 +77,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def eval_prior(self, step):
+    def eval_prior(self, step, batch=None):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -86,7 +86,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def data_likelihood(self, step):
+    def data_likelihood(self, step, batch=None):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -95,7 +95,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def eval_posterior(self, step):
+    def eval_posterior(self, step, batch=None):
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
@@ -103,13 +103,19 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # prime the posterior
         step.posterior.copy(step.prior)
         # compute it; this expression reduces to Bayes' theorem for β->1
-        altar.blas.daxpy(step.beta, step.data, step.posterior)
+        if altar.backends.active() == "cuda":
+            # {altar.cuda} is already imported by {altar.backends.activate_cuda}; referencing
+            # it here (rather than a fresh `import altar.cuda`) avoids shadowing the
+            # module-level {altar} name as a local variable in this function
+            altar.cuda.cublas.axpy(alpha=step.beta, x=step.data, y=step.posterior, batch=batch)
+        else:
+            altar.blas.daxpy(step.beta, step.data, step.posterior)
         # all done
         return self
 
 
     @altar.export
-    def likelihoods(self, annealer, step):
+    def likelihoods(self, annealer, step, batch=None):
         """
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
@@ -120,7 +126,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # notify we are about to compute the prior likelihood
         dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.eval_prior(step=step)
+        self.eval_prior(step=step, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
@@ -128,14 +134,14 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # notify we are about to compute the likelihood of the prior given the data
         dispatcher.notify(event=dispatcher.data_start, controller=annealer)
         # compute it
-        self.data_likelihood(step=step)
+        self.data_likelihood(step=step, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
         dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
         # compute it
-        self.eval_posterior(step=step)
+        self.eval_posterior(step=step, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
@@ -144,7 +150,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def verify(self, step, mask):
+    def verify(self, step, mask, batch=None):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -152,6 +158,17 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # i don't know what to do, so...
         raise NotImplementedError(
             f"model '{type(self).__name__}' must implement 'verify'")
+
+
+    def verify_theta(self, theta, mask, batch=None):
+        """
+        The same check as {verify}, against a bare {theta} matrix instead of a full step --
+        for cuda samplers (e.g. Metropolis), which verify a candidate proposal before it has
+        been compacted into a full candidate step
+        """
+        # i don't know what to do, so...
+        raise NotImplementedError(
+            f"model '{type(self).__name__}' must implement 'verify_theta'")
 
 
     # notifications
@@ -207,23 +224,35 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     def restrict(self, theta):
         """
         Return my portion of the sample matrix {theta}
+
+        On cpu, {theta} is a real gsl matrix and {.view} is a genuine, offset-preserving
+        sub-view -- exactly what {altar.distributions.native.Base.restrict} and
+        {altar.models.native.Base.restrict} already rely on for individual parameter sets with
+        a non-zero offset.
+
+        On cuda, {theta} is an {altar.cuda.array.Array}: no cuda distribution or parameter set
+        downstream of me ever receives a column-sliced sub-view of theta -- each already gets
+        the *full* theta grid plus explicit (idx_begin, idx_end) bounds instead (see
+        {altar.distributions.cuda.Base.initialize}). The only case that occurs anywhere in
+        this codebase today is the identity one: a single, non-embedded model whose {offset}
+        is 0 and whose {parameters} span the whole width of {theta}.
         """
-        # find out how many samples in the set
-        samples = theta.rows
-        # get my parameter count
-        parameters = self.parameters
-        # get my offset in the samples
-        offset = self.offset
+        if altar.backends.active() != "cuda":
+            # find out how many samples in the set
+            samples = theta.rows
+            # find where my samples live within the overall sample matrix, and how wide my
+            # block is: i own data in all sample rows, starting in the column indicated by my
+            # {offset}, with a width determined by my parameter count
+            return theta.view(start=(0, self.offset), shape=(samples, self.parameters))
 
-        # find where my samples live within the overall sample matrix:
-        start = 0, offset
-        # form the shape of the sample matrix that's mine
-        shape = samples, parameters
-
-        # return a view to the portion of the sample that's mine: i own data in all sample
-        # rows, starting in the column indicated by my {offset}, and the width of my block is
-        # determined by my parameter count
-        return theta.view(start=start, shape=shape)
+        if self.offset != 0 or self.parameters != theta.shape[1]:
+            raise NotImplementedError(
+                f"'{type(self).__name__}.restrict': cuda models only support the identity "
+                f"case today (offset=0, parameters == theta.shape[1]); got "
+                f"offset={self.offset}, parameters={self.parameters}, theta.shape={theta.shape}. "
+                f"An embedded/multi-model cuda ensemble would need a real column-sliced Array "
+                f"view, which doesn't exist yet.")
+        return theta
 
 
     # public data

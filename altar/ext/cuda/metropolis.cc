@@ -1,236 +1,105 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
-//
-// Author(s): Lijun Zhu
 
-#include <portinfo>
-#include <Python.h>
-#include <cmath>
-#include <iostream>
-#include <iomanip>
+// externals
+#include "external.h"
+// my declarations
+#include "metropolis.h"
 
-// c++ class includes
+// the kernel launchers
 #include <altar/cuda/bayesian/cudaMetropolis.h>
 
-// cuda utilities
-#include <pyre/cuda.h>
-#include <pyre/cuda/capsules.h>
 
-// my declaration
-#include "metropolis.h"
-#include "capsules.h"
-
-
-// label valid samples
-const char * const altar::cuda::extensions::cudaMetropolis::setValidSampleIndices__name__ = "cudaMetropolis_setValidSampleIndices";
-const char * const altar::cuda::extensions::cudaMetropolis::setValidSampleIndices__doc__ =
-    "cudaMetropolis label valid samples";
-
-PyObject *
-altar::cuda::extensions::cudaMetropolis::setValidSampleIndices(PyObject *, PyObject * args)
+auto
+altar::cuda::extensions::metropolis::__init__(py::module & m) -> void
 {
-    PyObject * indicesCapsule, *flagsCapsule, *validCountCap;
+    auto metropolis = m.def_submodule("metropolis", "the metropolis-hastings accept/reject step");
 
-    int status = PyArg_ParseTuple(args, "O!O!O!:cudaMetropolis_setValidSampleIndices",
-                                    &PyCapsule_Type, &indicesCapsule,
-                                    &PyCapsule_Type, &flagsCapsule,
-                                    &PyCapsule_Type, &validCountCap);
-    if(!status) return 0;
-    if (!PyCapsule_IsValid(indicesCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(flagsCapsule, altar::cuda::extensions::vector::capsule_t)) {
-        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsule");
-        return 0;
-    }
+    // compact the indices of the samples not flagged in {invalid} into the front of
+    // {valid_sample_indices}, and leave the resulting count in {valid_samples[0]} (a device
+    // scalar the caller reads back after this call returns -- {synchronize} below already
+    // waits for the launch, so the value is ready as soon as this function returns)
+    metropolis.def(
+        "cudaMetropolis_setValidSampleIndices",
+        [](grid_t & valid_sample_indices, grid_t & invalid, grid_t & valid_samples) -> void {
+            altar::cuda::bayesian::cudaMetropolis::setValidSampleIndices(
+                regrid<int, 1>(valid_sample_indices), regrid<const int, 1>(invalid),
+                regrid<int, 1>(valid_samples));
+            cudaCheckError("cudaMetropolis_setValidSampleIndices");
+            synchronize("cudaMetropolis_setValidSampleIndices");
+        },
+        "valid_sample_indices"_a, "invalid"_a, "valid_samples"_a,
+        "compact the not-invalid indices to the front of valid_sample_indices; "
+        "valid_samples[0] gets the resulting count");
 
-    cuda_vector * indices = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(indicesCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * flags = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(flagsCapsule, altar::cuda::extensions::vector::capsule_t));
+    // gather the first {samples} valid proposals into {theta_candidate}:
+    // theta_candidate[s, :] = theta_proposal[valid_sample_indices[s], :]
+    metropolis.def(
+        "cudaMetropolis_queueValidSamples",
+        [](grid_t & theta_candidate, grid_t & theta_proposal, grid_t & valid_sample_indices,
+           std::size_t samples) -> void {
+            auto format = theta_proposal.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::bayesian::cudaMetropolis::queueValidSamples<double>(
+                    regrid<double, 2>(theta_candidate), regrid<const double, 2>(theta_proposal),
+                    regrid<const int, 1>(valid_sample_indices), samples);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::bayesian::cudaMetropolis::queueValidSamples<float>(
+                    regrid<float, 2>(theta_candidate), regrid<const float, 2>(theta_proposal),
+                    regrid<const int, 1>(valid_sample_indices), samples);
+            } else {
+                throw py::value_error(
+                    "cudaMetropolis_queueValidSamples: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaMetropolis_queueValidSamples");
+            synchronize("cudaMetropolis_queueValidSamples");
+        },
+        "theta_candidate"_a, "theta_proposal"_a, "valid_sample_indices"_a, "samples"_a,
+        "theta_candidate[s, :] = theta_proposal[valid_sample_indices[s], :]");
 
-    cuda_vector * validCount = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(validCountCap, altar::cuda::extensions::vector::capsule_t));
-
-    /* void altar::cuda::bayesian::cudaMetropolis::
-    setValidSampleIndices(int * const valid_sample_indices, const int * const invalid,
-    const int samples, int valid_counts, cudaStream_t stream)
-    */
-    const size_t samples = flags->size;
-    altar::cuda::bayesian::cudaMetropolis::setValidSampleIndices((int * const)indices->data,
-        (const int * const)flags->data, samples, (int *)validCount->data);
-
-    // all done
-    // return
-    Py_RETURN_NONE;
+    // one Metropolis-Hastings accept/reject test per valid sample: on acceptance, overwrite
+    // the corresponding row of {theta}/{prior}/{data}/{posterior} (indexed by
+    // {valid_sample_indices[s]}) with the candidate's, and set {acceptance_flag[s] = 1}
+    metropolis.def(
+        "cudaMetropolis_metropolisUpdate",
+        [](grid_t & theta, grid_t & prior, grid_t & data, grid_t & posterior,
+           grid_t & theta_candidate, grid_t & prior_candidate, grid_t & data_candidate,
+           grid_t & posterior_candidate, grid_t & dices, grid_t & acceptance_flag,
+           grid_t & valid_sample_indices, std::size_t batch) -> void {
+            auto format = theta.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<double>(
+                    regrid<double, 2>(theta), regrid<double, 1>(prior),
+                    regrid<double, 1>(data), regrid<double, 1>(posterior),
+                    regrid<const double, 2>(theta_candidate), regrid<const double, 1>(prior_candidate),
+                    regrid<const double, 1>(data_candidate), regrid<const double, 1>(posterior_candidate),
+                    regrid<const double, 1>(dices), regrid<int, 1>(acceptance_flag),
+                    regrid<const int, 1>(valid_sample_indices), batch);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<float>(
+                    regrid<float, 2>(theta), regrid<float, 1>(prior),
+                    regrid<float, 1>(data), regrid<float, 1>(posterior),
+                    regrid<const float, 2>(theta_candidate), regrid<const float, 1>(prior_candidate),
+                    regrid<const float, 1>(data_candidate), regrid<const float, 1>(posterior_candidate),
+                    regrid<const float, 1>(dices), regrid<int, 1>(acceptance_flag),
+                    regrid<const int, 1>(valid_sample_indices), batch);
+            } else {
+                throw py::value_error(
+                    "cudaMetropolis_metropolisUpdate: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaMetropolis_metropolisUpdate");
+            synchronize("cudaMetropolis_metropolisUpdate");
+        },
+        "theta"_a, "prior"_a, "data"_a, "posterior"_a,
+        "theta_candidate"_a, "prior_candidate"_a, "data_candidate"_a, "posterior_candidate"_a,
+        "dices"_a, "acceptance_flag"_a, "valid_sample_indices"_a, "batch"_a,
+        "accept/reject each of the first {batch} candidates; on acceptance, overwrite the "
+        "corresponding row (indexed by valid_sample_indices) in place");
 }
 
-// queue valid samples
-const char * const altar::cuda::extensions::cudaMetropolis::queueValidSamples__name__ = "cudaMetropolis_queueValidSamples";
-const char * const altar::cuda::extensions::cudaMetropolis::queueValidSamples__doc__ =
-    "cudaMetropolis label valid samples";
-
-PyObject *
-altar::cuda::extensions::cudaMetropolis::queueValidSamples(PyObject *, PyObject * args)
-{
-    PyObject * candidateCapsule, *proposalCapsule, *indicesCapsule;
-    size_t validCount;
-
-    int status = PyArg_ParseTuple(args, "O!O!O!k:cudaMetropolis_queueValidSamples",
-                                    &PyCapsule_Type, &candidateCapsule,
-                                    &PyCapsule_Type, &proposalCapsule,
-                                    &PyCapsule_Type, &indicesCapsule,
-                                    &validCount);
-    if(!status) return 0;
-    if (!PyCapsule_IsValid(indicesCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(candidateCapsule, altar::cuda::extensions::matrix::capsule_t) ||
-        !PyCapsule_IsValid(proposalCapsule, altar::cuda::extensions::matrix::capsule_t)) {
-        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsule");
-        return 0;
-    }
-
-
-    cuda_vector * indices = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(indicesCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_matrix * candidate = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(candidateCapsule, altar::cuda::extensions::matrix::capsule_t));
-    cuda_matrix * proposal = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(proposalCapsule, altar::cuda::extensions::matrix::capsule_t));
-
-
-    /*
-    template <typename realtype_t>
-    void altar::cuda::bayesian::cudaMetropolis::
-    queueValidSamples(realtype_t * const theta_candidate, const realtype_t * const theta_proposal,
-        const int * const validSample_indices,
-        const size_t valid_samples, const size_t parameters,
-        cudaStream_t stream)
-    */
-
-    const size_t parameters = candidate->size2;
-    switch(candidate->dtype) {
-    case PYCUDA_FLOAT:
-        altar::cuda::bayesian::cudaMetropolis::queueValidSamples<float>(
-            (float *)candidate->data, (const float *)proposal->data,
-            (const int *) indices->data, validCount, parameters);
-        break;
-    case PYCUDA_DOUBLE:
-        altar::cuda::bayesian::cudaMetropolis::queueValidSamples<double>(
-            (double *)candidate->data, (const double *)proposal->data,
-            (const int *) indices->data, validCount, parameters);
-        break;
-    default:
-        PyErr_SetString(PyExc_TypeError, "invalid datatype: only double/float are supported");
-        return 0;
-    }
-    // all done
-    // return none
-    Py_RETURN_NONE;
-}
-
-
-// accept/reject procedure and update original state with accepted samples
-const char * const altar::cuda::extensions::cudaMetropolis::metropolisUpdate__name__ = "cudaMetropolis_metropolisUpdate";
-const char * const altar::cuda::extensions::cudaMetropolis::metropolisUpdate__doc__ =
-    "cudaMetropolis accept/reject procedure and update original state with accepted samples";
-
-PyObject *
-altar::cuda::extensions::cudaMetropolis::metropolisUpdate(PyObject *, PyObject * args)
-{
-    PyObject *thetaCapsule, *priorCapsule, *dataCapsule, *posteriorCapsule;
-    PyObject *cthetaCapsule, *cpriorCapsule, *cdataCapsule, *cposteriorCapsule;
-    PyObject *diceCapsule, *acceptFlagsCapsule, *validIndicesCapsule;
-    size_t validCount;
-
-    int status = PyArg_ParseTuple(args, "O!O!O!O!O!O!O!O!O!O!O!k:cudaMetropolis_metropolisUpdate",
-                                    &PyCapsule_Type, &thetaCapsule,
-                                    &PyCapsule_Type, &priorCapsule,
-                                    &PyCapsule_Type, &dataCapsule,
-                                    &PyCapsule_Type, &posteriorCapsule,
-                                    &PyCapsule_Type, &cthetaCapsule,
-                                    &PyCapsule_Type, &cpriorCapsule,
-                                    &PyCapsule_Type, &cdataCapsule,
-                                    &PyCapsule_Type, &cposteriorCapsule,
-                                    &PyCapsule_Type, &diceCapsule,
-                                    &PyCapsule_Type, &acceptFlagsCapsule,
-                                    &PyCapsule_Type, &validIndicesCapsule,
-                                    &validCount);
-    if(!status) return 0;
-    // check the capsule types of input
-    if (!PyCapsule_IsValid(thetaCapsule, altar::cuda::extensions::matrix::capsule_t) ||
-        !PyCapsule_IsValid(priorCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(dataCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(posteriorCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(cthetaCapsule, altar::cuda::extensions::matrix::capsule_t) ||
-        !PyCapsule_IsValid(cpriorCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(cdataCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(cposteriorCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(diceCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(acceptFlagsCapsule, altar::cuda::extensions::vector::capsule_t) ||
-        !PyCapsule_IsValid(validIndicesCapsule, altar::cuda::extensions::vector::capsule_t))
-    {
-        PyErr_SetString(PyExc_TypeError, "invalid matrix/vector capsule");
-        return 0;
-    }
-
-    // cast capsules to c pointers
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-    cuda_vector * prior = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(priorCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * data = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(dataCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * posterior = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(posteriorCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_matrix * ctheta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(cthetaCapsule, altar::cuda::extensions::matrix::capsule_t));
-    cuda_vector * cprior = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(cpriorCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * cdata = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(cdataCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * cposterior = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(cposteriorCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * dice = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(diceCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * acceptFlags = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(acceptFlagsCapsule, altar::cuda::extensions::vector::capsule_t));
-    cuda_vector * validIndices= static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(validIndicesCapsule, altar::cuda::extensions::vector::capsule_t));
-
-    /*
-    template <typename realtype_t>
-    void altar::cuda::bayesian::cudaMetropolis::
-    metropolisUpdate(realtype_t * const theta, realtype_t * const prior,
-        realtype_t * const data, realtype_t * const posterior,
-        const realtype_t * const theta_candidate, const realtype_t * const prior_candidate,
-        const realtype_t * const data_candidate, const realtype_t * const posterior_candidate,
-        const realtype_t * const dices, int * const acceptance_flag, const int * const valid_sample_indices,
-        const int samples, const int parameters,
-        cudaStream_t stream)
-    */
-    const size_t parameters = theta->size2;
-    if(theta->dtype == PYCUDA_FLOAT)
-        altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<float>(
-            (float *)theta->data, (float *)prior->data,
-            (float *)data->data, (float *)posterior->data,
-            (const float *)ctheta->data, (const float *)cprior->data,
-            (const float *)cdata->data, (const float *)cposterior->data,
-            (const float *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,
-            validCount, parameters);
-    else
-        altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<double>(
-            (double *)theta->data, (double *)prior->data,
-            (double *)data->data, (double *)posterior->data,
-            (const double *)ctheta->data, (const double *)cprior->data,
-            (const double *)cdata->data, (const double *)cposterior->data,
-            (const double *)dice->data, (int *)acceptFlags->data, (const int *)validIndices->data,
-            validCount, parameters);
-
-    // all done
-    // return none
-    Py_RETURN_NONE;
-}
 
 // end of file

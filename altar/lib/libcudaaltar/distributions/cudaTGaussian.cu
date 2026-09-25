@@ -1,11 +1,11 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
 //
-// Author(s):  Lijun Zhu
+// Author(s): Lijun Zhu
 
 
 // declarations
@@ -13,152 +13,120 @@
 // dependencies
 #include "cudaRandom.h"
 // cuda utilities
+// shared NTHREADS/IDIVUP/cudaCheckError/matrix_view_t/vector_view_t
+#include "../support.h"
+
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 
-// cuda kernel declarations
+// cuda kernels; defined here, ahead of the launcher functions below that instantiate and
+// launch them (see cudaL2.cu/cudaGaussian.cu for why the ordering matters)
 namespace cudaTGaussian_kernels {
 
-    // sample
-    template<typename real_type>
-    __global__ void _sample(curandState_t * curand_states,
-        real_type * const theta, const size_t samples, const size_t parameters,
+    // one thread per sample: draw {theta[sample, idx_begin:idx_end]} from a Gaussian
+    // truncated to the (already normalized, Phi-space) support [low, high)
+    template <typename real_type>
+    __global__ void
+    _sample(curandState_t * curand_states, matrix_view_t<real_type, false> theta,
         const size_t idx_begin, const size_t idx_end,
         const real_type mean, const real_type sigma,
-        const real_type low, const real_type high);
+        const real_type low, const real_type high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
 
-    // log pdf
-    template<typename real_type>
-    __global__ void _logpdf(const real_type * const theta, real_type * const probability,
-        const size_t samples, const size_t parameters,
+        unsigned long long seed = (unsigned long long) clock64();
+        curand_init(seed, sample, 0, &curand_states[sample]);
+
+        auto sqrt_two_sigma = sqrt(real_type{ 2 }) * sigma;
+        auto range = high - low;
+
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto temp = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample]) * range + low;
+            theta[{ sample, static_cast<int>(i) }] = erfinv(real_type{ 2 } * temp - real_type{ 1 }) * sqrt_two_sigma + mean;
+        }
+    }
+
+    // one thread per sample: add each sample's log pdf, summed over [idx_begin, idx_end),
+    // into {probability[sample]}; {low}/{high} are the normalized (Phi-space) support bounds
+    template <typename real_type>
+    __global__ void
+    _logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
         const size_t idx_begin, const size_t idx_end,
         const real_type mean, const real_type sigma,
-        const real_type low, const real_type high);
-}
+        const real_type low, const real_type high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
 
-// generate uniform random samples
-template<typename real_type>
+        auto log_pdf = real_type{ 0 };
+        auto c1 = -log(sigma * sqrt(real_type{ 2 } * PI) * (high - low));
+        auto c2 = real_type{ 0.5 } / (sigma*sigma);
+
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto mtmp = theta[{ sample, static_cast<int>(i) }] - mean;
+            log_pdf += c1 - mtmp*mtmp*c2;
+        }
+
+        probability[{ sample }] += log_pdf;
+    }
+
+} // of namespace cudaTGaussian_kernels
+
+// launch {cudaTGaussian_kernels::_sample}
+template <typename real_type>
 void altar::cuda::distributions::cudaTGaussian::
-sample(real_type * const theta, const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type mean, const real_type sigma,
-                    const real_type low, const real_type high,
-                    cudaStream_t stream)
+sample(matrix_view_t<real_type, false> theta,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type mean, const real_type sigma,
+    const real_type low, const real_type high,
+    cudaStream_t stream)
 {
-    // determine the block/grid size
-    // one thread for one sample
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
 
-    // allocate
-    curandState_t *curand_states;
+    curandState_t * curand_states;
     cudaSafeCall(cudaMalloc((void**)&curand_states, blockSize*gridSize*sizeof(curandState)));
 
-    // call cuda kernels
-    cudaTGaussian_kernels::_sample<real_type><<<gridSize, blockSize, 0, stream>>>(curand_states,
-        theta, samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
-    cudaCheckError("cudaTGaussian::random generation error");
+    cudaTGaussian_kernels::_sample<real_type><<<gridSize, blockSize, 0, stream>>>(
+        curand_states, theta, idx_begin, idx_end, mean, sigma, low, high);
+    cudaCheckError("cudaTGaussian::sample error");
 
     cudaSafeCall(cudaFree(curand_states));
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaTGaussian::sample<float>(float * const, const size_t, const size_t,
-                    const size_t, const size_t, const float, const float, const float, const float, cudaStream_t);
-template void altar::cuda::distributions::cudaTGaussian::sample<double>(double * const, const size_t, const size_t,
-                    const size_t, const size_t, const double, const double, const double, const double, cudaStream_t);
+template void altar::cuda::distributions::cudaTGaussian::sample<float>(
+    matrix_view_t<float, false>, const size_t, const size_t, const float, const float, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaTGaussian::sample<double>(
+    matrix_view_t<double, false>, const size_t, const size_t, const double, const double, const double, const double, cudaStream_t);
 
 
-// compute log probability
+// launch {cudaTGaussian_kernels::_logpdf}
 template <typename real_type>
 void altar::cuda::distributions::cudaTGaussian::
-logpdf(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type mean, const real_type sigma,
-                    const real_type low, const real_type high,
-                    cudaStream_t stream)
-{
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
-
-    // call cuda kernels
-    cudaTGaussian_kernels::_logpdf<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, probability, samples, parameters, idx_begin, idx_end, mean, sigma, low, high);
-    cudaCheckError("cudaTGaussian:: log_pdf error");
-}
-
-// explicit instantiation
-template void altar::cuda::distributions::cudaTGaussian::logpdf<float>(const float * const, float * const, const size_t, const size_t,
-                    const size_t, const size_t, const float, const float, const float, const float, cudaStream_t);
-template void altar::cuda::distributions::cudaTGaussian::logpdf<double>(const double * const, double * const, const size_t, const size_t,
-                    const size_t, const size_t, const double, const double, const double, const double, cudaStream_t);
-
-// random sample generation
-// note the support(low, high) are normalized Phi(x)
-template <typename real_type>
-__global__ void
-cudaTGaussian_kernels::
-_sample(curandState_t * curand_states,
-    real_type * const theta, const size_t samples, const size_t parameters,
+logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
     const size_t idx_begin, const size_t idx_end,
     const real_type mean, const real_type sigma,
-    const real_type low, const real_type high)
+    const real_type low, const real_type high,
+    cudaStream_t stream)
 {
-    // get the thread id as the sample
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
 
-    // initialize seeds for each thread
-    unsigned long long seed = (unsigned long long) clock64();
-    curand_init(seed, sample, 0, &curand_states[sample]);
-
-    // get the theta pointer for each sample
-    real_type * theta_sample = theta + sample*parameters;
-
-    real_type sqrt_two_sigma = sqrt(2.0)*sigma;
-    // get the normalized support
-    real_type range = high-low;
-
-    // generate samples from idx_begin to idx_end
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        real_type temp = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample])*range + low;
-        theta_sample[i] = erfinv(2.0*temp-1.0)*sqrt_two_sigma + mean;
-    }
+    cudaTGaussian_kernels::_logpdf<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, probability, idx_begin, idx_end, mean, sigma, low, high);
+    cudaCheckError("cudaTGaussian::logpdf error");
 }
 
-//log_pdf kernel
-// note the support (low, high) are normalized Phi(x)
-template <typename real_type>
-__global__ void
-cudaTGaussian_kernels::
-_logpdf(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end, const real_type mean, const real_type sigma,
-        const real_type low, const real_type high)
-{
-    // get the thread/sample id
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // get the starting pointer for this sample
-    const real_type * theta_sample = theta + sample*parameters;
-
-    // accumulated log_pdf for this sample
-    real_type log_pdf = 0.0;
-
-    // distribution constants
-    real_type c1 = -log(sigma * sqrt(2.0*PI) * (high-low));
-    real_type c2 = 0.5/(sigma*sigma);
-
-    // iterate over each parameter in this sample
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        real_type mtmp = theta_sample[i]-mean;
-        log_pdf += c1-mtmp*mtmp*c2;
-    }
-    // add to pdf of this sample
-    probability[sample] += log_pdf;
-}
+template void altar::cuda::distributions::cudaTGaussian::logpdf<float>(
+    matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t,
+    const float, const float, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaTGaussian::logpdf<double>(
+    matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t,
+    const double, const double, const double, const double, cudaStream_t);
 
 // end of file

@@ -163,9 +163,9 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         #theta.print()
         self.forward_model_batched(theta=theta, green=self.gGF,
                                  prediction=residuals, batch=batch,
-                                 observation= self.dataobs.gdataObsBatch)
+                                 observation= self.dataobs.dataobs_batch)
         # compute the data likelihood with l2 norm
-        self.dataobs.cu_eval_likelihood(prediction=residuals,
+        self.dataobs.eval_likelihood(prediction=residuals,
                                       likelihood=likelihood,
                                       residual=True, batch=batch)
 
@@ -177,7 +177,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         merge data covariance (cd) with green function
         """
         # get references for data covariance
-        cd_inv = self.dataobs.gcd_inv
+        cd_inv = self.dataobs.cd_inv
         # get a reference for green's function
         green = self.gGF
         # copy from CPU
@@ -243,7 +243,7 @@ class cudaStatic(cudaBayesian, family="altar.models.seismic.cuda.static"):
         # residuals = G\theta - d
         residuals = self.gDataPred
         green = self.gGF
-        observation = self.dataobs.gdataObsBatch
+        observation = self.dataobs.dataobs_batch
         # make theta transformation
         self.thetaPhysical = self.cu_to_physical(theta=theta, batch=batch)
         # call forward to calculate the data prediction or its difference between dataobs

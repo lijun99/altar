@@ -39,6 +39,12 @@ function(altar_cuda_buildLibrary)
     ${GSL_LIBRARIES}
     ${PYRE_LIBRARIES}
     )
+  # {WITH_CUDA} turns on pyre's {PYRE_HOST_DEVICE} decorations on {pyre::grid}/{pyre::memory},
+  # needed by any kernel that indexes one of pyre's own grids directly (see cudaL2.cu);
+  # {--expt-relaxed-constexpr} lets device code reach the constexpr machinery under pyre's
+  # {Shape}/{Index}. Harmless for the other .cu files in this target that don't use pyre.grid
+  target_compile_definitions(libcudaaltar PRIVATE WITH_CUDA)
+  target_compile_options(libcudaaltar PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
   # add the sources
   target_sources(
     libcudaaltar PRIVATE
@@ -113,13 +119,12 @@ endfunction(altar_cuda_buildLibrary)
 
 # build the altar cuda extension module
 function(altar_cuda_buildModule)
-  # altar
-  Python_add_library(cudaaltarmodule MODULE)
+  # altar; pybind11 now, not the raw cpython api the old capsule-based bindings used
+  Python_add_library(cudaaltarmodule MODULE WITH_SOABI)
   # adjust the name to match what python expects
   set_target_properties(
     cudaaltarmodule PROPERTIES
     LIBRARY_OUTPUT_NAME cudaaltar
-    SUFFIX ${PYTHON3_SUFFIX}
     )
   # set the include directories
   target_include_directories(
@@ -129,6 +134,11 @@ function(altar_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    # {CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} doesn't reliably carry the toolkit's bundled
+    # CCCL (libcu++) headers -- e.g. <cuda/std/mdspan> -- across cmake versions, so add it
+    # explicitly; these .cc files are compiled by the host compiler, not nvcc, so they don't
+    # get nvcc's own implicit "-isystem .../include/cccl" the way .cu files do
+    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
     )
   # set the linker
   set_target_properties(cudaaltarmodule PROPERTIES LINKER_LANGUAGE CUDA)
@@ -138,21 +148,28 @@ function(altar_cuda_buildModule)
     ${CMAKE_INSTALL_PREFIX}/lib
     )
   # set the libraries to link against
-  set(CUDA_LIBRARIES cublas cusolver curand ${PYRE_LIBRARIES})
+  set(CUDA_LIBRARIES cudart cublas cusolver curand ${PYRE_LIBRARIES})
   target_link_libraries(
     cudaaltarmodule PRIVATE
-    libcudaaltar libaltar
+    libcudaaltar libaltar pybind11::module
     ${CUDA_LIBRARIES}
     )
-  # add the sources
+  # add the sources; distributions.cc/metropolis.cc/langevin.cc/leapfrog.cc are not yet
+  # ported to pybind11+AnyGrid (see the note in cudaaltar.cc) and are left out of the build
+  # until they are
   target_sources(cudaaltarmodule PRIVATE
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/cudaaltar.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metadata.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/distributions.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/langevin.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/norm.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/distributions.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/gaussian.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/uniform.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/ranged.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/tgaussian.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logistic.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/langevin.cc
     )
 
   # install the altar extension

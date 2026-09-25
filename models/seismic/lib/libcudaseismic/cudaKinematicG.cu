@@ -19,6 +19,9 @@
 #include <algorithm>
 #include <iostream>
 
+// shared NTHREADS/IDIVUP/BLOCKDIM/cudaSafeCall/cublasSafeCall
+#include <altar/cuda/support.h>
+
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 // calculate the forward model
 // input theta/M (samples x parameters) ld parameters

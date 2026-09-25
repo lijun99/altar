@@ -23,7 +23,7 @@ class CUDASGLD:
 
     # classes to save step data
     from ..states.CoolingStep import CoolingStep
-    from altar.cuda.bayesian.cudaLangevinStep import cudaLangevinStep
+    from altar.bayesian.states.cuda.LangevinStep import LangevinStep as cudaLangevinStep
 
     # public data
     step = None # the current state of the solver
@@ -50,8 +50,10 @@ class CUDASGLD:
         gpuids = application.job.gpuids
         tasks = application.job.tasks # jobs per host
         # set gpu ids for current worker
-        self.device=altar.cuda.use_device(gpuids[self.wid % tasks])
-        application.info.log(f'current worker {self.wid} with device {self.device} id {self.device.id}')
+        did = gpuids[self.wid % tasks]
+        altar.cuda.manager.device(did)
+        self.device = altar.cuda.manager.devices[did]
+        application.info.log(f'current worker {self.wid} with device {self.device.name} id {self.device.id}')
 
         samples = application.job.chains
         precision = application.job.gpuprecision
@@ -75,7 +77,7 @@ class CUDASGLD:
         # initialize it
         model = controller.model
         gstep = self.gstep
-        model.cu_init_sample(theta=gstep.theta, batch=gstep.samples)
+        model.initialize_sample(step=gstep, batch=gstep.samples)
         # compute the likelihoods
         # model.likelihoods(controller=controller, step=gstep, batch=gstep.samples)
         # return to cpu

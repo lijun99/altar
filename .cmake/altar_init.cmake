@@ -33,8 +33,10 @@ endfunction(altar_cmakeInit)
 
 # setup the c++ compiler
 function(altar_cxxInit)
-  # require c++17
-  set(CMAKE_CXX_STANDARD 17 PARENT_SCOPE)
+  # pyre's own headers are c++23 now (e.g. {std::endian}, concepts like
+  # {pyre::grid::concepts::PackingStrategy}); anything that includes them needs the same
+  # standard, cuda extension modules included
+  set(CMAKE_CXX_STANDARD 23 PARENT_SCOPE)
   set(CMAKE_CXX_STANDARD_REQUIRED ON PARENT_SCOPE)
   set(CMAKE_CXX_EXTENSIONS OFF PARENT_SCOPE)
   # all done

@@ -61,13 +61,7 @@ def bayesianl2():
 @altar.foundry(implements=parameters, tip="a contiguous parameter set")
 def contiguous():
     # grab the factory
-    if altar.backends.active() == "cuda":
-        try:
-            from altar.cuda.models.cudaParameterSet import cudaParameterSet as contiguous
-        except ImportError:
-            from .Contiguous import Contiguous as contiguous
-    else:
-        from .Contiguous import Contiguous as contiguous
+    from .Contiguous import Contiguous as contiguous
     # attach its docstring
     __doc__ = contiguous.__doc__
     # and publish it

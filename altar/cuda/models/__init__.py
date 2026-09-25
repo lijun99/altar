@@ -36,20 +36,25 @@ def bayesianensemble():
     return bayesianensemble
 
 
-@altar.foundry(implements=parameters, tip="a cuda parameter set")
+# {Contiguous}/{ParameterEnsemble} are unified components now: each picks its cpu/cuda
+# implementation internally, at {initialize} time, so these two foundries exist only for
+# {.pfg} files that still spell out the explicit "altar.cuda.models.parameterset"/
+# "...parameterensemble" path; they resolve to the very same classes {altar.models.contiguous}
+# and {altar.models.parameterensemble} do
+@altar.foundry(implements=parameters, tip="a contiguous parameter set")
 def parameterset():
     # grab the factory
-    from .cudaParameterSet import cudaParameterSet as parameterset
+    from altar.models.Contiguous import Contiguous as parameterset
     # attach its docstring
     __doc__ = parameterset.__doc__
     # and publish it
     return parameterset
 
 
-@altar.foundry(implements=parameters, tip="an ensemble of cuda parameter sets")
+@altar.foundry(implements=parameters, tip="an ensemble of parameter sets")
 def parameterensemble():
     # grab the factory
-    from .cudaParameterEnsemble import cudaParameterEnsemble as parameterensemble
+    from altar.models.ParameterEnsemble import ParameterEnsemble as parameterensemble
     # attach its docstring
     __doc__ = parameterensemble.__doc__
     # and publish it

@@ -97,15 +97,12 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         parametersets = self.parametersets
 
         if self.embedded is False: # base model
-            # make sure the top-level offset is set
-            if hasattr(parametersets, "offset"):
-                parametersets.offset = 0
             # let the parameter ensemble do its own initialization
             print(self.psets_list)
             print(self.parametersets)
 
 
-            parameters = parametersets.cu_initialize(application=application)
+            parameters = parametersets.initialize(model=self, offset=0, application=application)
 
             # keep a dict for compatibility with downstream consumers
             if hasattr(parametersets, "psets"):
@@ -185,7 +182,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prep.cu_init_sample(theta=theta, batch=batch)
+            pset.prep.initialize_sample(theta=theta, batch=batch)
 
         # all done
         return self
@@ -199,7 +196,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return mask
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_verify(theta=theta, mask=mask, batch=batch)
+            pset.prior.verify(theta=theta, mask=mask, batch=batch)
         return mask
 
     def constrain(self, theta, batch):
@@ -211,7 +208,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_constrain(theta=theta, batch=batch)
+            pset.prior.constrain(theta=theta, batch=batch)
         return self
 
     def cu_to_physical(self, theta, batch, inplace=False):
@@ -230,7 +227,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # ask my subsets
         for pset in self._iter_psets():
             if pset.prior.has_reparametrization:
-                pset.prior.cu_to_physical(theta=thetaPhysical, batch=batch)
+                pset.prior.to_physical(theta=thetaPhysical, batch=batch)
         # all done
         return thetaPhysical
 
@@ -247,7 +244,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         # ask my subsets
         for pset in self._iter_psets():
             if pset.prior.has_reparametrization:
-                pset.prior.cu_to_sampling(theta=theta, batch=batch)
+                pset.prior.to_sampling(theta=theta, batch=batch)
         # all done
         return theta
 
@@ -259,7 +256,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
+            pset.prior.eval_prior(theta=theta, likelihood=prior, batch=batch)
         return self
 
     def cu_eval_prior_with_physical(self, theta, prior, batch):
@@ -270,7 +267,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_eval_prior_with_physical(theta=theta, prior=prior, batch=batch)
+            pset.prior.eval_prior_with_physical(theta=theta, likelihood=prior, batch=batch)
         return self
 
 
@@ -282,7 +279,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_prior_gradient(theta=theta, prior=prior, batch=batch)
+            pset.prior.prior_gradient(theta=theta, gradient=prior, batch=batch)
         return self
 
     def cu_eval_prior_physical(self, theta, prior, batch):
@@ -293,7 +290,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
             return self
         # ask my subsets
         for pset in self._iter_psets():
-            pset.prior.cu_eval_prior_physical(theta=theta, prior=prior, batch=batch)
+            pset.prior.eval_prior_physical(theta=theta, likelihood=prior, batch=batch)
         return self
 
 

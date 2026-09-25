@@ -5,12 +5,15 @@
 // (c) 2010-present california institute of technology
 // all rights reserved
 //
-// Author(s): Lijun Zhu, Codex
+// Author(s): Lijun Zhu
 
 //! file cudaLeapfrog.cu
 //! Leapfrog integrator support for Hamiltonian Monte Carlo
 
 #include "cudaLeapfrog.h"
+
+// shared NTHREADS/IDIVUP/cudaCheckError/matrix_view_t/vector_view_t
+#include "../support.h"
 
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
@@ -28,326 +31,371 @@ namespace {
 
 namespace cudaLeapfrog_kernels {
 
+    // fill {momentum} with iid draws from N(0, 1), one thread per (sample, parameter) cell
     template <typename realtype_t>
-    __global__ void sampleMomentumKernel(realtype_t * const momentum,
-                                         const size_t total, const unsigned long long seed)
+    __global__ void sampleMomentumKernel(matrix_view_t<realtype_t, false> momentum,
+                                         const unsigned long long seed)
     {
-        const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid >= total) {
-            return;
-        }
+        auto samples = momentum.packing().shape()[0];
+        auto parameters = momentum.packing().shape()[1];
+        auto total = samples * parameters;
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (tid >= total) return;
 
         curandState state;
         curand_init(seed, static_cast<unsigned long long>(tid), 0, &state);
-        momentum[tid] = altar::cuda::distributions::curandNormal<realtype_t>(&state);
+        int sid = tid / parameters;
+        int pid = tid % parameters;
+        momentum[{ sid, pid }] = altar::cuda::distributions::curandNormal<realtype_t>(&state);
     }
 
+    // potential[s] = -(prior[s] + beta * data[s]), one thread per sample
     template <typename realtype_t>
-    __global__ void potentialKernel(const realtype_t * const prior,
-                                    const realtype_t * const data,
-                                    realtype_t * const potential,
-                                    const size_t samples, const realtype_t beta)
+    __global__ void potentialKernel(vector_view_t<realtype_t, true> prior,
+                                    vector_view_t<realtype_t, true> data,
+                                    vector_view_t<realtype_t, false> potential,
+                                    const realtype_t beta)
     {
-        const size_t sid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (sid >= samples) {
-            return;
-        }
-        potential[sid] = - (prior[sid] + beta * data[sid]);
+        auto samples = potential.packing().shape()[0];
+        int sid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sid >= samples) return;
+        potential[{ sid }] = -(prior[{ sid }] + beta * data[{ sid }]);
     }
 
+    // grad_potential[s, :] = -(grad_prior[s, :] + beta * grad_data[s, :]) when {hasJacobian}
+    // is false, or -(grad_prior[s, :] + beta * jacobian[s, :] * grad_data[s, :]) when true;
+    // one thread per (sample, parameter) cell
     template <typename realtype_t, bool hasJacobian>
-    __global__ void gradientKernel(const realtype_t * const grad_prior,
-                                   const realtype_t * const grad_data,
-                                   const realtype_t * const jacobian,
-                                   realtype_t * const grad_potential,
-                                   const size_t total, const size_t parameters,
+    __global__ void gradientKernel(matrix_view_t<realtype_t, true> grad_prior,
+                                   matrix_view_t<realtype_t, true> grad_data,
+                                   matrix_view_t<realtype_t, true> jacobian,
+                                   matrix_view_t<realtype_t, false> grad_potential,
                                    const realtype_t beta)
     {
-        const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid >= total) {
-            return;
-        }
+        auto samples = grad_potential.packing().shape()[0];
+        auto parameters = grad_potential.packing().shape()[1];
+        auto total = samples * parameters;
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (tid >= total) return;
+        int sid = tid / parameters;
+        int pid = tid % parameters;
+
         if constexpr (hasJacobian) {
-            const realtype_t factor = (jacobian ? jacobian[tid] : static_cast<realtype_t>(1));
-            grad_potential[tid] = - (grad_prior[tid] + beta * factor * grad_data[tid]);
+            grad_potential[{ sid, pid }] =
+                -(grad_prior[{ sid, pid }] + beta * jacobian[{ sid, pid }] * grad_data[{ sid, pid }]);
         } else {
-            (void) parameters;
-            grad_potential[tid] = - (grad_prior[tid] + beta * grad_data[tid]);
+            grad_potential[{ sid, pid }] = -(grad_prior[{ sid, pid }] + beta * grad_data[{ sid, pid }]);
         }
     }
 
+    // kinetic[s] = 0.5 * ||momentum[s, :]||^2, one thread per sample
     template <typename realtype_t>
-    __global__ void kineticKernel(const realtype_t * const momentum,
-                                  realtype_t * const kinetic,
-                                  const size_t samples, const size_t parameters)
+    __global__ void kineticKernel(matrix_view_t<realtype_t, true> momentum,
+                                  vector_view_t<realtype_t, false> kinetic)
     {
-        const size_t sid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (sid >= samples) {
-            return;
-        }
-        const realtype_t * const sample_momentum = momentum + sid * parameters;
-        realtype_t sum = 0;
-        for (size_t p = 0; p < parameters; ++p) {
-            const realtype_t value = sample_momentum[p];
+        auto samples = momentum.packing().shape()[0];
+        auto parameters = momentum.packing().shape()[1];
+        int sid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sid >= samples) return;
+
+        auto sum = realtype_t{ 0 };
+        for (int p = 0; p < parameters; ++p) {
+            auto value = momentum[{ sid, p }];
             sum += value * value;
         }
-        kinetic[sid] = static_cast<realtype_t>(0.5) * sum;
+        kinetic[{ sid }] = realtype_t{ 0.5 } * sum;
     }
 
+    // theta += step * momentum, elementwise, one thread per (sample, parameter) cell
     template <typename realtype_t>
-    __global__ void updatePositionKernel(realtype_t * const theta,
-                                         const realtype_t * const momentum,
-                                         const realtype_t step,
-                                         const size_t total)
+    __global__ void updatePositionKernel(matrix_view_t<realtype_t, false> theta,
+                                         matrix_view_t<realtype_t, true> momentum,
+                                         const realtype_t step)
     {
-        const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid >= total) {
-            return;
-        }
-        theta[tid] += step * momentum[tid];
+        auto samples = theta.packing().shape()[0];
+        auto parameters = theta.packing().shape()[1];
+        auto total = samples * parameters;
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (tid >= total) return;
+        int sid = tid / parameters;
+        int pid = tid % parameters;
+        theta[{ sid, pid }] += step * momentum[{ sid, pid }];
     }
 
+    // momentum += scale * grad, elementwise, one thread per (sample, parameter) cell
     template <typename realtype_t>
-    __global__ void updateMomentumKernel(realtype_t * const momentum,
-                                         const realtype_t * const grad,
-                                         const realtype_t scale,
-                                         const size_t total)
+    __global__ void updateMomentumKernel(matrix_view_t<realtype_t, false> momentum,
+                                         matrix_view_t<realtype_t, true> grad,
+                                         const realtype_t scale)
     {
-        const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (tid >= total) {
-            return;
-        }
-        momentum[tid] += scale * grad[tid];
+        auto samples = momentum.packing().shape()[0];
+        auto parameters = momentum.packing().shape()[1];
+        auto total = samples * parameters;
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (tid >= total) return;
+        int sid = tid / parameters;
+        int pid = tid % parameters;
+        momentum[{ sid, pid }] += scale * grad[{ sid, pid }];
     }
 
+    // one Metropolis-Hastings accept/reject test per sample
     template <typename realtype_t>
-    __global__ void metropolisKernel(const realtype_t * const deltaH,
-                                     int * const mask,
-                                     const size_t samples,
+    __global__ void metropolisKernel(vector_view_t<realtype_t, true> deltaH,
+                                     vector_view_t<int> mask,
                                      const unsigned long long seed)
     {
-        const size_t sid = blockIdx.x * blockDim.x + threadIdx.x;
-        if (sid >= samples) {
-            return;
-        }
+        auto samples = mask.packing().shape()[0];
+        int sid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sid >= samples) return;
+
         curandState state;
         curand_init(seed, static_cast<unsigned long long>(sid), 0, &state);
-        const double u = altar::cuda::distributions::curandUniform<double>(&state);
-        const double logu = log(u);
-        mask[sid] = (logu < -static_cast<double>(deltaH[sid])) ? 1 : 0;
+        auto u = altar::cuda::distributions::curandUniform<double>(&state);
+        auto logu = log(u);
+        mask[{ sid }] = (logu < -static_cast<double>(deltaH[{ sid }])) ? 1 : 0;
     }
 
+    // restore every row of {current} where {mask[sample] == 0} (rejected) to {backup}'s;
+    // one thread per (sample, parameter) cell
     template <typename realtype_t>
-    __global__ void restoreKernel(realtype_t * const current,
-                                  const realtype_t * const backup,
-                                  const int * const mask,
-                                  const size_t samples, const size_t parameters)
+    __global__ void restoreKernel(matrix_view_t<realtype_t, false> current,
+                                  matrix_view_t<realtype_t, true> backup,
+                                  vector_view_t<int, true> mask)
     {
-        const size_t tid = blockIdx.x * blockDim.x + threadIdx.x;
-        const size_t total = samples * parameters;
-        if (tid >= total) {
-            return;
-        }
-        const size_t sid = tid / parameters;
-        if (!mask[sid]) {
-            current[tid] = backup[tid];
+        auto samples = current.packing().shape()[0];
+        auto parameters = current.packing().shape()[1];
+        auto total = samples * parameters;
+        int tid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (tid >= total) return;
+        int sid = tid / parameters;
+        int pid = tid % parameters;
+        if (!mask[{ sid }]) {
+            current[{ sid, pid }] = backup[{ sid, pid }];
         }
     }
-}
+
+} // of namespace cudaLeapfrog_kernels
 
 
 namespace altar { namespace cuda { namespace bayesian { namespace cudaLeapfrog {
 
     template <typename realtype_t>
-    void sampleMomentum(realtype_t * const momentum,
-                        const size_t samples, const size_t parameters,
-                        cudaStream_t stream)
+    void sampleMomentum(matrix_view_t<realtype_t, false> momentum, cudaStream_t stream)
     {
-        if (samples == 0 || parameters == 0) {
-            return;
-        }
-        const size_t total = samples * parameters;
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(total), blockSize);
-        const unsigned long long seed = current_seed();
+        auto samples = momentum.packing().shape()[0];
+        auto parameters = momentum.packing().shape()[1];
+        auto total = samples * parameters;
+        if (total == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(total, blockSize);
+        auto seed = current_seed();
         cudaLeapfrog_kernels::sampleMomentumKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(momentum, total, seed);
-        cudaCheckError("cudaLeapfrog:sampleMomentum Error");
+            <<<gridSize, blockSize, 0, stream>>>(momentum, seed);
+        cudaCheckError("cudaLeapfrog::sampleMomentum error");
     }
 
-    template void sampleMomentum<float>(float * const, const size_t, const size_t, cudaStream_t);
-    template void sampleMomentum<double>(double * const, const size_t, const size_t, cudaStream_t);
+    template void sampleMomentum<float>(matrix_view_t<float, false>, cudaStream_t);
+    template void sampleMomentum<double>(matrix_view_t<double, false>, cudaStream_t);
 
 
     template <typename realtype_t>
-    void computePotentialAndGradient(const realtype_t * const prior,
-                                     const realtype_t * const data,
-                                     const realtype_t * const grad_prior,
-                                     const realtype_t * const grad_data,
-                                     realtype_t * const potential,
-                                     realtype_t * const grad_potential,
-                                     const realtype_t * const jacobian,
-                                     const size_t samples, const size_t parameters,
-                                     const realtype_t beta, const bool reparameterization,
-                                     cudaStream_t stream)
+    void computePotentialAndGradient(
+        vector_view_t<realtype_t, true> prior,
+        vector_view_t<realtype_t, true> data,
+        matrix_view_t<realtype_t, true> grad_prior,
+        matrix_view_t<realtype_t, true> grad_data,
+        vector_view_t<realtype_t, false> potential,
+        matrix_view_t<realtype_t, false> grad_potential,
+        const realtype_t beta,
+        cudaStream_t stream)
     {
-        if (samples == 0 || parameters == 0) {
-            return;
-        }
-        const int blockSize = NTHREADS;
-        const int gridPot = IDIVUP(static_cast<int>(samples), blockSize);
-        cudaLeapfrog_kernels::potentialKernel<realtype_t>
-            <<<gridPot, blockSize, 0, stream>>>(prior, data, potential, samples, beta);
-        cudaCheckError("cudaLeapfrog:potentialKernel Error");
+        auto samples = potential.packing().shape()[0];
+        auto parameters = grad_potential.packing().shape()[1];
+        if (samples == 0 || parameters == 0) return;
 
-        const size_t total = samples * parameters;
-        const int gridGrad = IDIVUP(static_cast<int>(total), blockSize);
-        if (reparameterization && jacobian) {
-            cudaLeapfrog_kernels::gradientKernel<realtype_t, true>
-                <<<gridGrad, blockSize, 0, stream>>>(grad_prior, grad_data, jacobian,
-                                                     grad_potential, total, parameters, beta);
-        } else {
-            cudaLeapfrog_kernels::gradientKernel<realtype_t, false>
-                <<<gridGrad, blockSize, 0, stream>>>(grad_prior, grad_data, jacobian,
-                                                     grad_potential, total, parameters, beta);
-        }
-        cudaCheckError("cudaLeapfrog:gradientKernel Error");
+        auto blockSize = NTHREADS;
+        auto gridPot = IDIVUP(samples, blockSize);
+        cudaLeapfrog_kernels::potentialKernel<realtype_t>
+            <<<gridPot, blockSize, 0, stream>>>(prior, data, potential, beta);
+        cudaCheckError("cudaLeapfrog::potentialKernel error");
+
+        auto total = samples * parameters;
+        auto gridGrad = IDIVUP(total, blockSize);
+        // {jacobian} is unused on this path; {grad_data} doubles as a placeholder argument
+        // (the {hasJacobian=false} kernel instantiation never reads it)
+        cudaLeapfrog_kernels::gradientKernel<realtype_t, false>
+            <<<gridGrad, blockSize, 0, stream>>>(grad_prior, grad_data, grad_data, grad_potential, beta);
+        cudaCheckError("cudaLeapfrog::gradientKernel error");
     }
 
-    template void computePotentialAndGradient<float>(const float *, const float *, const float *, const float *, float *, float *, const float *, const size_t, const size_t, const float, const bool, cudaStream_t);
-    template void computePotentialAndGradient<double>(const double *, const double *, const double *, const double *, double *, double *, const double *, const size_t, const size_t, const double, const bool, cudaStream_t);
+    template void computePotentialAndGradient<float>(
+        vector_view_t<float, true>, vector_view_t<float, true>, matrix_view_t<float, true>, matrix_view_t<float, true>,
+        vector_view_t<float, false>, matrix_view_t<float, false>, const float, cudaStream_t);
+    template void computePotentialAndGradient<double>(
+        vector_view_t<double, true>, vector_view_t<double, true>, matrix_view_t<double, true>, matrix_view_t<double, true>,
+        vector_view_t<double, false>, matrix_view_t<double, false>, const double, cudaStream_t);
 
 
     template <typename realtype_t>
-    void kineticEnergy(const realtype_t * const momentum,
-                       realtype_t * const kinetic,
-                       const size_t samples, const size_t parameters,
+    void computePotentialAndGradientReparam(
+        vector_view_t<realtype_t, true> prior,
+        vector_view_t<realtype_t, true> data,
+        matrix_view_t<realtype_t, true> grad_prior,
+        matrix_view_t<realtype_t, true> grad_data,
+        matrix_view_t<realtype_t, true> jacobian,
+        vector_view_t<realtype_t, false> potential,
+        matrix_view_t<realtype_t, false> grad_potential,
+        const realtype_t beta,
+        cudaStream_t stream)
+    {
+        auto samples = potential.packing().shape()[0];
+        auto parameters = grad_potential.packing().shape()[1];
+        if (samples == 0 || parameters == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridPot = IDIVUP(samples, blockSize);
+        cudaLeapfrog_kernels::potentialKernel<realtype_t>
+            <<<gridPot, blockSize, 0, stream>>>(prior, data, potential, beta);
+        cudaCheckError("cudaLeapfrog::potentialKernel error");
+
+        auto total = samples * parameters;
+        auto gridGrad = IDIVUP(total, blockSize);
+        cudaLeapfrog_kernels::gradientKernel<realtype_t, true>
+            <<<gridGrad, blockSize, 0, stream>>>(grad_prior, grad_data, jacobian, grad_potential, beta);
+        cudaCheckError("cudaLeapfrog::gradientKernel error");
+    }
+
+    template void computePotentialAndGradientReparam<float>(
+        vector_view_t<float, true>, vector_view_t<float, true>, matrix_view_t<float, true>, matrix_view_t<float, true>,
+        matrix_view_t<float, true>, vector_view_t<float, false>, matrix_view_t<float, false>, const float, cudaStream_t);
+    template void computePotentialAndGradientReparam<double>(
+        vector_view_t<double, true>, vector_view_t<double, true>, matrix_view_t<double, true>, matrix_view_t<double, true>,
+        matrix_view_t<double, true>, vector_view_t<double, false>, matrix_view_t<double, false>, const double, cudaStream_t);
+
+
+    template <typename realtype_t>
+    void kineticEnergy(matrix_view_t<realtype_t, true> momentum, vector_view_t<realtype_t, false> kinetic,
                        cudaStream_t stream)
     {
-        if (samples == 0) {
-            return;
-        }
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(samples), blockSize);
+        auto samples = kinetic.packing().shape()[0];
+        if (samples == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(samples, blockSize);
         cudaLeapfrog_kernels::kineticKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(momentum, kinetic, samples, parameters);
-        cudaCheckError("cudaLeapfrog:kineticKernel Error");
+            <<<gridSize, blockSize, 0, stream>>>(momentum, kinetic);
+        cudaCheckError("cudaLeapfrog::kineticEnergy error");
     }
 
-    template void kineticEnergy<float>(const float *, float *, const size_t, const size_t, cudaStream_t);
-    template void kineticEnergy<double>(const double *, double *, const size_t, const size_t, cudaStream_t);
+    template void kineticEnergy<float>(matrix_view_t<float, true>, vector_view_t<float, false>, cudaStream_t);
+    template void kineticEnergy<double>(matrix_view_t<double, true>, vector_view_t<double, false>, cudaStream_t);
 
 
     template <typename realtype_t>
-    void updatePosition(realtype_t * const theta,
-                        const realtype_t * const momentum,
-                        const size_t samples, const size_t parameters,
+    void updatePosition(matrix_view_t<realtype_t, false> theta, matrix_view_t<realtype_t, true> momentum,
                         const realtype_t step, cudaStream_t stream)
     {
-        const size_t total = samples * parameters;
-        if (total == 0) {
-            return;
-        }
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(total), blockSize);
+        auto samples = theta.packing().shape()[0];
+        auto parameters = theta.packing().shape()[1];
+        auto total = samples * parameters;
+        if (total == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(total, blockSize);
         cudaLeapfrog_kernels::updatePositionKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(theta, momentum, step, total);
-        cudaCheckError("cudaLeapfrog:updatePosition Error");
+            <<<gridSize, blockSize, 0, stream>>>(theta, momentum, step);
+        cudaCheckError("cudaLeapfrog::updatePosition error");
     }
 
-    template void updatePosition<float>(float * const, const float * const, const size_t, const size_t, const float, cudaStream_t);
-    template void updatePosition<double>(double * const, const double * const, const size_t, const size_t, const double, cudaStream_t);
+    template void updatePosition<float>(matrix_view_t<float, false>, matrix_view_t<float, true>, const float, cudaStream_t);
+    template void updatePosition<double>(matrix_view_t<double, false>, matrix_view_t<double, true>, const double, cudaStream_t);
 
 
     template <typename realtype_t>
-    void updateMomentum(realtype_t * const momentum,
-                        const realtype_t * const gradU,
-                        const size_t samples, const size_t parameters,
-                        const realtype_t scale,
-                        cudaStream_t stream)
+    void updateMomentum(matrix_view_t<realtype_t, false> momentum, matrix_view_t<realtype_t, true> gradU,
+                        const realtype_t scale, cudaStream_t stream)
     {
-        const size_t total = samples * parameters;
-        if (total == 0) {
-            return;
-        }
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(total), blockSize);
+        auto samples = momentum.packing().shape()[0];
+        auto parameters = momentum.packing().shape()[1];
+        auto total = samples * parameters;
+        if (total == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(total, blockSize);
         cudaLeapfrog_kernels::updateMomentumKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(momentum, gradU, scale, total);
-        cudaCheckError("cudaLeapfrog:updateMomentum Error");
+            <<<gridSize, blockSize, 0, stream>>>(momentum, gradU, scale);
+        cudaCheckError("cudaLeapfrog::updateMomentum error");
     }
 
-    template void updateMomentum<float>(float * const, const float * const, const size_t, const size_t, const float, cudaStream_t);
-    template void updateMomentum<double>(double * const, const double * const, const size_t, const size_t, const double, cudaStream_t);
+    template void updateMomentum<float>(matrix_view_t<float, false>, matrix_view_t<float, true>, const float, cudaStream_t);
+    template void updateMomentum<double>(matrix_view_t<double, false>, matrix_view_t<double, true>, const double, cudaStream_t);
 
 
     template <typename realtype_t>
-    void metropolis(const realtype_t * const deltaH,
-                    int * const mask,
-                    const size_t samples,
-                    cudaStream_t stream)
+    void metropolis(vector_view_t<realtype_t, true> deltaH, vector_view_t<int> mask, cudaStream_t stream)
     {
-        if (samples == 0) {
-            return;
-        }
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(samples), blockSize);
-        const unsigned long long seed = current_seed();
+        auto samples = mask.packing().shape()[0];
+        if (samples == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(samples, blockSize);
+        auto seed = current_seed();
         cudaLeapfrog_kernels::metropolisKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(deltaH, mask, samples, seed);
-        cudaCheckError("cudaLeapfrog:metropolisKernel Error");
+            <<<gridSize, blockSize, 0, stream>>>(deltaH, mask, seed);
+        cudaCheckError("cudaLeapfrog::metropolis error");
     }
 
-    template void metropolis<float>(const float * const, int * const, const size_t, cudaStream_t);
-    template void metropolis<double>(const double * const, int * const, const size_t, cudaStream_t);
+    template void metropolis<float>(vector_view_t<float, true>, vector_view_t<int>, cudaStream_t);
+    template void metropolis<double>(vector_view_t<double, true>, vector_view_t<int>, cudaStream_t);
 
 
     template <typename realtype_t>
-    void restoreRejected(realtype_t * const theta,
-                         const realtype_t * const theta_old,
-                         realtype_t * const momentum,
-                         const realtype_t * const momentum_old,
-                         const int * const mask,
-                         const size_t samples, const size_t parameters,
-                         cudaStream_t stream)
+    void restoreRejected(
+        matrix_view_t<realtype_t, false> theta, matrix_view_t<realtype_t, true> theta_old,
+        matrix_view_t<realtype_t, false> momentum, matrix_view_t<realtype_t, true> momentum_old,
+        vector_view_t<int, true> mask, cudaStream_t stream)
     {
-        if (samples == 0 || parameters == 0) {
-            return;
-        }
-        const size_t total = samples * parameters;
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(total), blockSize);
+        auto samples = theta.packing().shape()[0];
+        auto parameters = theta.packing().shape()[1];
+        auto total = samples * parameters;
+        if (total == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(total, blockSize);
         cudaLeapfrog_kernels::restoreKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(theta, theta_old, mask, samples, parameters);
+            <<<gridSize, blockSize, 0, stream>>>(theta, theta_old, mask);
         cudaLeapfrog_kernels::restoreKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(momentum, momentum_old, mask, samples, parameters);
-        cudaCheckError("cudaLeapfrog:restoreKernel Error");
+            <<<gridSize, blockSize, 0, stream>>>(momentum, momentum_old, mask);
+        cudaCheckError("cudaLeapfrog::restoreRejected error");
     }
 
-    template void restoreRejected<float>(float * const, const float * const, float * const, const float * const, const int * const, const size_t, const size_t, cudaStream_t);
-    template void restoreRejected<double>(double * const, const double * const, double * const, const double * const, const int * const, const size_t, const size_t, cudaStream_t);
+    template void restoreRejected<float>(
+        matrix_view_t<float, false>, matrix_view_t<float, true>, matrix_view_t<float, false>, matrix_view_t<float, true>,
+        vector_view_t<int, true>, cudaStream_t);
+    template void restoreRejected<double>(
+        matrix_view_t<double, false>, matrix_view_t<double, true>, matrix_view_t<double, false>, matrix_view_t<double, true>,
+        vector_view_t<int, true>, cudaStream_t);
 
 
     template <typename realtype_t>
-    void restoreMatrix(realtype_t * const current,
-                       const realtype_t * const backup,
-                       const int * const mask,
-                       const size_t samples, const size_t parameters,
-                       cudaStream_t stream)
+    void restoreMatrix(matrix_view_t<realtype_t, false> current, matrix_view_t<realtype_t, true> backup,
+                       vector_view_t<int, true> mask, cudaStream_t stream)
     {
-        if (samples == 0 || parameters == 0) {
-            return;
-        }
-        const size_t total = samples * parameters;
-        const int blockSize = NTHREADS;
-        const int gridSize = IDIVUP(static_cast<int>(total), blockSize);
+        auto samples = current.packing().shape()[0];
+        auto parameters = current.packing().shape()[1];
+        auto total = samples * parameters;
+        if (total == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(total, blockSize);
         cudaLeapfrog_kernels::restoreKernel<realtype_t>
-            <<<gridSize, blockSize, 0, stream>>>(current, backup, mask, samples, parameters);
-        cudaCheckError("cudaLeapfrog:restoreMatrix Error");
+            <<<gridSize, blockSize, 0, stream>>>(current, backup, mask);
+        cudaCheckError("cudaLeapfrog::restoreMatrix error");
     }
 
-    template void restoreMatrix<float>(float * const, const float * const, const int * const, const size_t, const size_t, cudaStream_t);
-    template void restoreMatrix<double>(double * const, const double * const, const int * const, const size_t, const size_t, cudaStream_t);
+    template void restoreMatrix<float>(matrix_view_t<float, false>, matrix_view_t<float, true>, vector_view_t<int, true>, cudaStream_t);
+    template void restoreMatrix<double>(matrix_view_t<double, false>, matrix_view_t<double, true>, vector_view_t<int, true>, cudaStream_t);
 
 }}}} // namespace altar::cuda::bayesian::cudaLeapfrog
 

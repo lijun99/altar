@@ -18,6 +18,9 @@
 #include <algorithm>
 #include <iostream>
 
+// shared NTHREADS/IDIVUP/BLOCKDIM/cudaSafeCall/cublasSafeCall
+#include <altar/cuda/support.h>
+
 
 namespace cudaStatic_kernels {
 

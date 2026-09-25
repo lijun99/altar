@@ -11,15 +11,17 @@
 
 # the package
 import altar
-# the protocol
-from .ParameterSet import ParameterSet as parameters
+# my base class
+from .Base import Base as base
 
 
 # component
-class Contiguous(altar.component,
-                 family="altar.models.parameters.contiguous", implements=parameters):
+class Contiguous(base, family="altar.models.parameters.contiguous"):
     """
     A contiguous parameter set
+
+    My actual numerics live in {altar.models.native.Contiguous.Contiguous} (cpu) or
+    {altar.models.cuda.Contiguous.Contiguous}; see {Base} for how one gets picked.
     """
 
 
@@ -30,116 +32,20 @@ class Contiguous(altar.component,
     prior = altar.distributions.distribution()
     prior.doc = "the prior distribution"
 
-    prep = altar.distributions.distribution()
-    prep.doc = "the distribution to use to initialize this parameter set"
-
-
-    # state set by the model
-    offset = 0 # adjusted by the model after the full set of parameters is known
-
-
-    # interface
-    @altar.export
-    def initialize(self, model, offset):
-        """
-        Initialize my state given the {model} that owns me
-        """
-        # set my offset
-        self.offset = offset
-
-        # get my count
-        count = self.count
-        # adjust the number of parameters of my distributions
-        self.prep.parameters = self.prior.parameters = count
-
-        # get the random number generator
-        rng = model.rng
-        # initialize my distributions
-        self.prep.initialize(rng=rng)
-        self.prior.initialize(rng=rng)
-
-        # return my parameter count so the next set can be initialized properly
-        return count
-
-
-    @altar.export
-    def initialize_sample(self, theta):
-        """
-        Fill {theta} with an initial random sample from my prior distribution.
-        """
-        # grab the portion of the sample that belongs to me
-        θ = self.restrict(theta=theta)
-        # fill it with random numbers from my {prep} distribution
-        self.prep.initialize_sample(theta=θ)
-        # all done
-        return self
-
-
-    @altar.export
-    def eval_prior(self, theta, prior):
-        """
-        Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
-        """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
-        # delegate
-        self.prior.eval_prior(theta=θ, likelihood=prior)
-        # all done
-        return self
-
-
-    @altar.export
-    def prior_gradient(self, theta, gradient):
-        """
-        Fill {gradient} with d\\log P(\\theta)/d\\theta for my portion of the samples in
-        {theta}, for use by gradient-based samplers (e.g. SGLD)
-        """
-        # grab the portion of the sample and gradient that are mine
-        θ = self.restrict(theta=theta)
-        g = self.restrict(theta=gradient)
-        # delegate
-        self.prior.prior_gradient(theta=θ, gradient=g)
-        # all done
-        return self
-
-
-    @altar.export
-    def verify(self, theta, mask):
-        """
-        Check whether the samples in {step.theta} are consistent with the model requirements and
-        update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
-        """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
-        # grab my prior
-        pdf = self.prior
-        # ask it to verify my samples
-        pdf.verify(theta=θ, mask=mask)
-        # all done; return the rejection map
-        return mask
+    prep = altar.distributions.distribution(default=None)
+    prep.doc = "the distribution to use to initialize this parameter set; falls back to " \
+               "{prior} when not given"
 
 
     # implementation details
-    def restrict(self, theta):
+    def _makeImpl(self):
         """
-        Return my portion of the sample matrix {theta}
+        Hand my implementation my own extra state, beyond what {Base} already copies over
         """
-        # find out how many samples in the set
-        samples = theta.rows
-        # get my parameter count
-        parameters = self.count
-        # get my offset in the samples
-        offset = self.offset
-
-        # find where my samples live within the overall sample matrix:
-        start = 0, offset
-        # form the shape of the sample matrix that's mine
-        shape = samples, parameters
-
-        # return a view to the portion of the sample that's mine: i own data in all sample
-        # rows, starting in the column indicated by my {offset}, and the width of my block is
-        # determined by my parameter count
-        return theta.view(start=start, shape=shape)
+        impl = super()._makeImpl()
+        impl.prior = self.prior
+        impl.prep = self.prep
+        return impl
 
 
 # end of file

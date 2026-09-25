@@ -1,31 +1,20 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
-//
-// Author(s): Lijun Zhu
 
+// code guard
+#pragma once
 
-#if !defined(cualtar_extensions_norm_h)
-#define cualtar_extensions_norm_h
+// externals
+#include "external.h"
 
-
-// place everything in my private namespace
-namespace altar{ namespace cuda { namespace extensions { 
-        // norm      
-        namespace cudaL2 {
-            extern const char * const norm__name__;
-            extern const char * const norm__doc__;
-            PyObject * norm(PyObject *, PyObject *);
-            
-            extern const char * const normllk__name__;
-            extern const char * const normllk__doc__;
-            PyObject * normllk(PyObject *, PyObject *);
-        } 
-} } } // of namespace altar.cuda.extensions
-
-#endif
+// the norm bindings
+namespace altar::cuda::extensions::norms {
+    // build the {norms} submodule
+    auto __init__(py::module &) -> void;
+} // namespace altar::cuda::extensions::norms
 
 // end of file

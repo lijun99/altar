@@ -1,8 +1,8 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
 //
 // Author(s): Hailiang Zhang, Lijun Zhu
@@ -11,193 +11,151 @@
 // declarations
 #include "cudaRanged.h"
 // cuda utilities
+// shared NTHREADS/IDIVUP/cudaCheckError/matrix_view_t/vector_view_t
+#include "../support.h"
+
 #include <pyre/cuda.h>
-#include <curand_kernel.h>
 
-// cuda kernel declarations
+// cuda kernels; defined here, ahead of the launcher functions below that instantiate and
+// launch them (see cudaL2.cu/cudaGaussian.cu for why the ordering matters)
 namespace cudaRanged_kernels {
-    template<typename real_type>
-    __global__ void _verify(const real_type * const theta, int * const invalid,
-        const size_t samples, const size_t parameters,
+
+    // one thread per sample: flag {invalid[sample] = 1} if any of
+    // {theta[sample, idx_begin:idx_end]} falls outside [low, high]; a sample already flagged
+    // is left alone
+    template <typename real_type>
+    __global__ void
+    _verify(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
         const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high);
+        const real_type low, const real_type high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+        if (invalid[{ sample }]) return;
 
-    // each parameter has unique support
-    template<typename real_type>
-    __global__ void _verify_unique(const real_type * const theta, int * const invalid,
-        const size_t samples, const size_t parameters,
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto value = theta[{ sample, static_cast<int>(i) }];
+            if (value < low || value > high) {
+                invalid[{ sample }] = 1;
+                return;
+            }
+        }
+    }
+
+    // the per-parameter-bounds counterpart of {_verify}
+    template <typename real_type>
+    __global__ void
+    _verify_unique(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
         const size_t idx_begin, const size_t idx_end,
-        const real_type * const low, const real_type * const high);
+        vector_view_t<real_type, true> low, vector_view_t<real_type, true> high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+        if (invalid[{ sample }]) return;
 
-    template<typename real_type>
-    __global__ void _constrain(real_type * const theta,
-        const size_t samples, const size_t parameters,
+        int j = 0;
+        for (auto i = idx_begin; i < idx_end; ++i, ++j) {
+            auto value = theta[{ sample, static_cast<int>(i) }];
+            if (value < low[{ j }] || value > high[{ j }]) {
+                invalid[{ sample }] = 1;
+                return;
+            }
+        }
+    }
+
+    // one thread per sample: clamp {theta[sample, idx_begin:idx_end]} into [low, high]
+    template <typename real_type>
+    __global__ void
+    _constrain(matrix_view_t<real_type, false> theta,
         const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high);
+        const real_type low, const real_type high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
 
-}
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto value = theta[{ sample, static_cast<int>(i) }];
+            if (value < low) {
+                theta[{ sample, static_cast<int>(i) }] = low;
+            } else if (value > high) {
+                theta[{ sample, static_cast<int>(i) }] = high;
+            }
+        }
+    }
 
-// verify whether samples are within range [low, high]
-template<typename real_type>
+} // of namespace cudaRanged_kernels
+
+// launch {cudaRanged_kernels::_verify}
+template <typename real_type>
 void altar::cuda::distributions::cudaRanged::
-verify(const real_type * const theta, int * const invalid,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high,
-        const cudaStream_t stream)
+verify(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type low, const real_type high,
+    cudaStream_t stream)
 {
-    // determine the block/grid size
-    // one thread for one sample
-    dim3 blockSize (NTHREADS);
-    dim3 gridSize (IDIVUP(samples, blockSize.x));
-    // call cuda kernels
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
     cudaRanged_kernels::_verify<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, invalid, samples, parameters, idx_begin, idx_end, low, high);
-    cudaCheckError("cudaRanged:: verify error");
+        theta, invalid, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaRanged::verify error");
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaRanged::verify<float>(const float * const, int * const, const size_t, const size_t,
-                    const size_t, const size_t, const float, const float, cudaStream_t);
-template void altar::cuda::distributions::cudaRanged::verify<double>(const double * const, int * const, const size_t, const size_t,
-                    const size_t, const size_t, const double, const double, cudaStream_t);
+template void altar::cuda::distributions::cudaRanged::verify<float>(
+    matrix_view_t<float>, vector_view_t<int>, const size_t, const size_t, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaRanged::verify<double>(
+    matrix_view_t<double>, vector_view_t<int>, const size_t, const size_t, const double, const double, cudaStream_t);
 
-// verify whether samples are within range [low, high]
-template<typename real_type>
+
+// launch {cudaRanged_kernels::_verify_unique}
+template <typename real_type>
 void altar::cuda::distributions::cudaRanged::
-verify_unique(const real_type * const theta, int * const invalid,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type * const low, const real_type * const high,
-        const cudaStream_t stream)
+verify_unique(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
+    const size_t idx_begin, const size_t idx_end,
+    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
+    cudaStream_t stream)
 {
-    // determine the block/grid size
-    // one thread for one sample
-    dim3 blockSize (NTHREADS);
-    dim3 gridSize (IDIVUP(samples, blockSize.x));
-    // call cuda kernels
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
     cudaRanged_kernels::_verify_unique<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, invalid, samples, parameters, idx_begin, idx_end, low, high);
-    cudaCheckError("cudaRanged:: verify_unique error");
+        theta, invalid, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaRanged::verify_unique error");
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaRanged::verify_unique<float>(const float * const, int * const, const size_t, const size_t,
-                    const size_t, const size_t, const float * const, const float * const, cudaStream_t);
-template void altar::cuda::distributions::cudaRanged::verify_unique<double>(const double * const, int * const, const size_t, const size_t,
-                    const size_t, const size_t, const double * const, const double * const, cudaStream_t);
+template void altar::cuda::distributions::cudaRanged::verify_unique<float>(
+    matrix_view_t<float>, vector_view_t<int>, const size_t, const size_t,
+    vector_view_t<float, true>, vector_view_t<float, true>, cudaStream_t);
+template void altar::cuda::distributions::cudaRanged::verify_unique<double>(
+    matrix_view_t<double>, vector_view_t<int>, const size_t, const size_t,
+    vector_view_t<double, true>, vector_view_t<double, true>, cudaStream_t);
 
 
-// constrain samples within range [low, high]
-template<typename real_type>
+// launch {cudaRanged_kernels::_constrain}
+template <typename real_type>
 void altar::cuda::distributions::cudaRanged::
-constrain(real_type * const theta,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end,
-        const real_type low, const real_type high,
-        const cudaStream_t stream)
+constrain(matrix_view_t<real_type, false> theta,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type low, const real_type high,
+    cudaStream_t stream)
 {
-    // determine the block/grid size
-    // one thread for one sample
-    dim3 blockSize (NTHREADS);
-    dim3 gridSize (IDIVUP(samples, blockSize.x));
-    // call cuda kernels
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
     cudaRanged_kernels::_constrain<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, samples, parameters, idx_begin, idx_end, low, high);
-    cudaCheckError("cudaRanged:: constrain error");
+        theta, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaRanged::constrain error");
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaRanged::constrain<float>(float * const, const size_t, const size_t,
-                    const size_t, const size_t, const float, const float, cudaStream_t);
-template void altar::cuda::distributions::cudaRanged::constrain<double>(double * const, const size_t, const size_t,
-                    const size_t, const size_t, const double, const double, cudaStream_t);
-
-
-
-//verify_kernel
-template <typename real_type>
-__global__ void
-cudaRanged_kernels::
-_verify(const real_type * const theta, int * const invalid,
-    const size_t samples, const size_t parameters,
-    const size_t idx_begin, const size_t idx_end,
-    const real_type low, const real_type high)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // if already invalid, return
-    if(invalid[sample]) return;
-
-    // get the starting pointer for this sample
-    const real_type * theta_sample = theta + sample*parameters;
-
-    // check each parameter
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        real_type value = theta_sample[i];
-        if(value < low || value > high) {
-            invalid[sample] = 1;
-            return;
-        }
-    }
-}
-
-//verify_kernel
-template <typename real_type>
-__global__ void
-cudaRanged_kernels::
-_verify_unique(const real_type * const theta, int * const invalid,
-    const size_t samples, const size_t parameters,
-    const size_t idx_begin, const size_t idx_end,
-    const real_type * const low, const real_type * const high)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // if already invalid, return
-    if(invalid[sample]) return;
-
-    // get the starting pointer for this sample
-    const real_type * theta_sample = theta + sample*parameters;
-
-    // check each parameter
-    for (int i=idx_begin, j=0; i<idx_end; ++i, ++j)
-    {
-        real_type value = theta_sample[i];
-        // printf("verify %g %g %g\n", value, low[j], high[j]);
-        if(value < low[j] || value > high[j]) {
-            invalid[sample] = 1;
-            return;
-        }
-    }
-}
-
-//verify_kernel
-template <typename real_type>
-__global__ void
-cudaRanged_kernels::
-_constrain(real_type * const theta,
-    const size_t samples, const size_t parameters,
-    const size_t idx_begin, const size_t idx_end,
-    const real_type low, const real_type high)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // get the starting pointer for this sample
-    real_type * theta_sample = theta + sample*parameters;
-
-    // check each parameter
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        real_type value = theta_sample[i];
-        if(value < low)
-            theta_sample[i] = low;
-        else if (value > high)
-            theta_sample[i] = high;
-    }
-}
+template void altar::cuda::distributions::cudaRanged::constrain<float>(
+    matrix_view_t<float, false>, const size_t, const size_t, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaRanged::constrain<double>(
+    matrix_view_t<double, false>, const size_t, const size_t, const double, const double, cudaStream_t);
 
 // end of file

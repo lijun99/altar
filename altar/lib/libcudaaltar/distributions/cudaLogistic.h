@@ -12,33 +12,36 @@
 #define altar_cuda_distributions_cudaLogistic_h
 
 #include <cuda_runtime.h>
+// {matrix_view_t}/{vector_view_t}
+#include "../support.h"
 
 // place everything in the local namespace
 namespace altar {
     namespace cuda {
         namespace distributions {
             namespace cudaLogistic {
-                // initialize random samples
+
+                // draw one sample per row of {theta}, for the parameters in [idx_begin,
+                // idx_end), from the standard logistic distribution
                 template <typename real_type>
-                void sample(real_type * const theta,
-                    const size_t samples, const size_t parameters,
+                void sample(matrix_view_t<real_type, false> theta,
                     const size_t idx_begin, const size_t idx_end,
                     cudaStream_t stream=0);
 
-                // calculate log probability
+                // add each sample's log pdf, summed over [idx_begin, idx_end), into
+                // {probability} (samples,)
                 template <typename real_type>
-                void logpdf(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
+                void logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
                     const size_t idx_begin, const size_t idx_end,
                     cudaStream_t stream=0);
 
-                // calculate gradient log probability for all parameters
+                // fill {probability} (samples x parameters) with the log pdf gradient with
+                // respect to every parameter in [idx_begin, idx_end) (a plain assignment, not
+                // an accumulation)
                 template <typename real_type>
-                void logpdfgradient(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
+                void logpdfgradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> probability,
                     const size_t idx_begin, const size_t idx_end,
                     cudaStream_t stream=0);
-
 
             } // of namespace cudaLogistic
         } // of namespace distributions

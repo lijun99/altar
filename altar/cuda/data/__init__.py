@@ -10,17 +10,20 @@
 
 # the package
 import altar
+import altar.cuda
 
 
 # publish the protocol for norms
 from altar.data.DataObs import DataObs as data
 
 
-# implementations
+# {DataL2} is a unified component now: it picks its cpu/cuda implementation internally, on
+# first use; this foundry exists only for {.pfg} files that still spell out the explicit
+# "altar.cuda.data.datal2" path, and resolves to the very same class {altar.data.datal2} does
 @altar.foundry(implements=data, tip="the data observation with L2 norm")
 def datal2():
     # grab the factory
-    from .cudaDataL2 import cudaDataL2 as datal2
+    from altar.data.DataL2 import DataL2 as datal2
     # attach its docstring
     __doc__ = datal2.__doc__
     # and return it

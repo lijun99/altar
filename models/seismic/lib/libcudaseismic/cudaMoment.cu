@@ -15,6 +15,9 @@
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 
+// shared NTHREADS/IDIVUP/BLOCKDIM/cudaSafeCall/cublasSafeCall
+#include <altar/cuda/support.h>
+
 // cuda kernel declarations
 namespace cudaMoment_kernels {
     // log pdf

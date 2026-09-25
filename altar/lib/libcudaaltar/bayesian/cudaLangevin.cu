@@ -1,8 +1,8 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
 //
 // Author(s): Lijun Zhu
@@ -10,142 +10,106 @@
 // declarations
 #include "cudaLangevin.h"
 // cuda utitlities
+// shared NTHREADS/IDIVUP/cudaCheckError/matrix_view_t/vector_view_t
+#include "../support.h"
+
 #include <pyre/cuda.h>
 #include <iostream>
 
-// cuda kernel declarations
+// cuda kernels; defined here, ahead of the launcher functions below that instantiate and
+// launch them (see cudaL2.cu/cudaGaussian.cu for why the ordering matters)
 namespace cudaLangevin_kernels {
 
+    // the SGLD update, one parameter at a time, one thread per sample
     template <typename realtype_t>
-    __global__ void  updateTheta_kernel(realtype_t * const theta,
-                const realtype_t * const prior_gradient,
-                const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters, const size_t index);
+    __global__ void
+    updateTheta_kernel(matrix_view_t<realtype_t, false> theta,
+        vector_view_t<realtype_t, true> prior_gradient,
+        vector_view_t<realtype_t, true> datalikelihood_gradient,
+        const realtype_t half_epsilon_t, vector_view_t<realtype_t, true> eta_t,
+        const int index)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
 
+        theta[{ sample, index }] +=
+            half_epsilon_t * (prior_gradient[{ sample }] + datalikelihood_gradient[{ sample }])
+            + eta_t[{ sample }];
+    }
+
+    // the batched SGLD update, every parameter at once, one thread per sample
     template <typename realtype_t>
-    __global__ void  updateThetaBatched_kernel(realtype_t * const theta,
-                const realtype_t alpha1, const realtype_t * const prior_gradient,
-                const realtype_t alpha2, const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters);
+    __global__ void
+    updateThetaBatched_kernel(matrix_view_t<realtype_t, false> theta,
+        const realtype_t alpha1, matrix_view_t<realtype_t, true> prior_gradient,
+        const realtype_t alpha2, matrix_view_t<realtype_t, true> datalikelihood_gradient,
+        const realtype_t half_epsilon_t, matrix_view_t<realtype_t, true> eta_t)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        auto parameters = theta.packing().shape()[1];
+        if (sample >= samples) return;
 
-}
+        for (int parameter = 0; parameter < parameters; ++parameter) {
+            theta[{ sample, parameter }] +=
+                half_epsilon_t * (alpha1*prior_gradient[{ sample, parameter }]
+                    + alpha2*datalikelihood_gradient[{ sample, parameter }])
+                + eta_t[{ sample, parameter }];
+        }
+    }
+
+} // of namespace cudaLangevin_kernels
 
 
+// launch {cudaLangevin_kernels::updateTheta_kernel}
 template <typename realtype_t>
 void altar::cuda::bayesian::cudaLangevin::
-updateTheta(realtype_t * const theta,
-                const realtype_t * const prior_gradient,
-                const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters, const size_t index,
-                cudaStream_t stream)
+updateTheta(matrix_view_t<realtype_t, false> theta,
+    vector_view_t<realtype_t, true> prior_gradient,
+    vector_view_t<realtype_t, true> datalikelihood_gradient,
+    const realtype_t half_epsilon_t, vector_view_t<realtype_t, true> eta_t,
+    const size_t index,
+    cudaStream_t stream)
 {
-    // one thread for one sample
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
     cudaLangevin_kernels::updateTheta_kernel<realtype_t><<<gridSize, blockSize, 0, stream>>>(
-        theta, prior_gradient, datalikelihood_gradient, half_epsilon_t, eta_t, 
-        samples, parameters, index);
-    cudaCheckError("cudaLangevin:updateTheta Error");
+        theta, prior_gradient, datalikelihood_gradient, half_epsilon_t, eta_t, static_cast<int>(index));
+    cudaCheckError("cudaLangevin::updateTheta error");
 }
 
-// explicit instantiation
-template void altar::cuda::bayesian::cudaLangevin::
-    updateTheta<float>(float * const,
-                const float * const,
-                const float * const,
-                const float, const float * const,
-                const size_t, const size_t, const size_t,
-                cudaStream_t);
-template void altar::cuda::bayesian::cudaLangevin::
-    updateTheta<double>(double * const,
-                const double * const,
-                const double * const,
-                const double, const double * const,
-                const size_t, const size_t, const size_t,
-                cudaStream_t);
+template void altar::cuda::bayesian::cudaLangevin::updateTheta<float>(
+    matrix_view_t<float, false>, vector_view_t<float, true>, vector_view_t<float, true>,
+    const float, vector_view_t<float, true>, const size_t, cudaStream_t);
+template void altar::cuda::bayesian::cudaLangevin::updateTheta<double>(
+    matrix_view_t<double, false>, vector_view_t<double, true>, vector_view_t<double, true>,
+    const double, vector_view_t<double, true>, const size_t, cudaStream_t);
 
 
+// launch {cudaLangevin_kernels::updateThetaBatched_kernel}
 template <typename realtype_t>
 void altar::cuda::bayesian::cudaLangevin::
-updateThetaBatched(realtype_t * const theta,
-                const realtype_t alpha1, const realtype_t * const prior_gradient,
-                const realtype_t alpha2, const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters,
-                cudaStream_t stream)
+updateThetaBatched(matrix_view_t<realtype_t, false> theta,
+    const realtype_t alpha1, matrix_view_t<realtype_t, true> prior_gradient,
+    const realtype_t alpha2, matrix_view_t<realtype_t, true> datalikelihood_gradient,
+    const realtype_t half_epsilon_t, matrix_view_t<realtype_t, true> eta_t,
+    cudaStream_t stream)
 {
-    // one thread for one sample
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
     cudaLangevin_kernels::updateThetaBatched_kernel<realtype_t><<<gridSize, blockSize, 0, stream>>>(
-        theta, alpha1, prior_gradient, alpha2, datalikelihood_gradient, half_epsilon_t, eta_t,
-        samples, parameters);
-    cudaCheckError("cudaLangevin:updateThetaBatched Error");
+        theta, alpha1, prior_gradient, alpha2, datalikelihood_gradient, half_epsilon_t, eta_t);
+    cudaCheckError("cudaLangevin::updateThetaBatched error");
 }
 
-// explicit instantiation
-template void altar::cuda::bayesian::cudaLangevin::
-    updateThetaBatched<float>(float * const,
-                const float, const float * const,
-                const float, const float * const,
-                const float, const float * const,
-                const size_t, const size_t,
-                cudaStream_t);
-template void altar::cuda::bayesian::cudaLangevin::
-    updateThetaBatched<double>(double * const,
-                const double, const double * const,
-                const double, const double * const,
-                const double, const double * const,
-                const size_t, const size_t,
-                cudaStream_t);
-
-
-// sgld update theta, one parameter only
-template <typename realtype_t>
-__global__ void
-cudaLangevin_kernels::
-updateTheta_kernel(realtype_t * const theta,
-                const realtype_t * const prior_gradient,
-                const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters, const size_t index)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    theta[sample*parameters+index] +=
-        half_epsilon_t*(prior_gradient[sample]+datalikelihood_gradient[sample])
-        + eta_t[sample];
-    // all done
-}
-
-// sgld update theta, all parameters
-template <typename realtype_t>
-__global__ void
-cudaLangevin_kernels::
-updateThetaBatched_kernel(realtype_t * const theta,
-                const realtype_t alpha1, const realtype_t * const prior_gradient,
-                const realtype_t alpha2, const realtype_t * const datalikelihood_gradient,
-                const realtype_t half_epsilon_t, const realtype_t * const eta_t,
-                const size_t samples, const size_t parameters)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    realtype_t * theta_sample = theta + sample*parameters;
-    const realtype_t * prior_gradient_sample = prior_gradient + sample*parameters;
-    const realtype_t * datalikelihood_gradient_sample = datalikelihood_gradient + sample*parameters;
-    const realtype_t * eta_t_sample = eta_t + sample*parameters;
-
-    for(int parameter=0; parameter<parameters; parameter++)
-        theta_sample[parameter] +=
-            half_epsilon_t * (alpha1*prior_gradient_sample[parameter]
-                + alpha2*datalikelihood_gradient_sample[parameter])
-            + eta_t_sample[parameter];
-    // all done
-}
+template void altar::cuda::bayesian::cudaLangevin::updateThetaBatched<float>(
+    matrix_view_t<float, false>, const float, matrix_view_t<float, true>,
+    const float, matrix_view_t<float, true>, const float, matrix_view_t<float, true>, cudaStream_t);
+template void altar::cuda::bayesian::cudaLangevin::updateThetaBatched<double>(
+    matrix_view_t<double, false>, const double, matrix_view_t<double, true>,
+    const double, matrix_view_t<double, true>, const double, matrix_view_t<double, true>, cudaStream_t);
 
 // end of file

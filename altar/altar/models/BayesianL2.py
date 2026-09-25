@@ -63,6 +63,11 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # super class method
         super().initialize(application=application)
 
+        # my working precision, needed by {eval_data_likelihood}'s cuda buffer allocation and
+        # by any concrete model's own cuda numerics (mirrors
+        # {altar.distributions.cuda.Base.initialize})
+        self.precision = application.job.gpuprecision
+
         # mount my input data space
         self.ifs = self.mount_input_dataspace(pfs=application.pfs)
         # set up my file reader/writer
@@ -76,7 +81,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
         # lay out my parameter sets, in {psets_list} order, and let each one initialize
         # itself; the total number of parameters is now known, so record it
-        self.parameters = self.initialize_psets()
+        self.parameters = self.initialize_psets(application=application)
 
         # all done
         return self
@@ -90,7 +95,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self.controller.posterior(model=self)
 
     @altar.export
-    def initialize_sample(self, step):
+    def initialize_sample(self, step, batch=None):
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -101,28 +106,37 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         for name in self.psets_list:
             pset = self.psets[name]
             # and ask each one to {prep} the sample
-            pset.initialize_sample(theta=θ)
+            pset.initialize_sample(theta=θ, batch=batch)
         # and return
         return self
 
     @altar.export
-    def verify(self, step, mask):
+    def verify(self, step, mask, batch=None):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
+        return self.verify_theta(theta=step.theta, mask=mask, batch=batch)
+
+
+    def verify_theta(self, theta, mask, batch=None):
+        """
+        The same check as {verify}, against a bare {theta} matrix instead of a full step --
+        for cuda samplers (e.g. Metropolis), which verify a candidate proposal before it has
+        been compacted into a full candidate step
+        """
         # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
+        θ = self.restrict(theta=theta)
         # ask my subsets, in {psets_list} order
         for name in self.psets_list:
             pset = self.psets[name]
             # and ask each one to verify the sample
-            pset.verify(theta=θ, mask=mask)
+            pset.verify(theta=θ, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
     @altar.export
-    def eval_prior(self, step):
+    def eval_prior(self, step, batch=None):
         """
         Fill {step.prior} with the log likelihoods of the samples in {step.theta} in my prior
         distribution
@@ -133,7 +147,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         for name in self.psets_list:
             pset = self.psets[name]
             # and ask each one to evaluate the prior
-            pset.eval_prior(theta=θ, prior=step.prior)
+            pset.eval_prior(theta=θ, prior=step.prior, batch=batch)
 
         # all done
         return self
@@ -171,7 +185,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def eval_data_likelihood(self, theta, likelihood):
+    def eval_data_likelihood(self, theta, likelihood, batch=None):
         """
         calculate data likelihood and add it to step.prior or step.data
         """
@@ -179,40 +193,31 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # Otherwise, please define your own version of this method
 
         # create a matrix for the prediction (samples, observations)
-        prediction = altar.matrix(shape=(self.samples, self.observations))
+        if altar.backends.active() == "cuda":
+            # {altar.cuda} is already imported by {altar.backends.activate_cuda}; referencing
+            # it here (rather than a fresh `import altar.cuda`) avoids shadowing the
+            # module-level {altar} name as a local variable in this function
+            prediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+        else:
+            prediction = altar.matrix(shape=(self.samples, self.observations))
         # survey forward model whether it computes residual or not
         returnResidual = self.return_residual
         # call forward_model to calculate the data prediction or its difference between dataobs
-        self.forward_model_batched(theta=theta, prediction=prediction)
+        self.forward_model_batched(theta=theta, prediction=prediction, batch=batch)
         # call data to calculate the l2 norm
-        self.dataobs.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=returnResidual)
+        self.dataobs.eval_likelihood(
+            prediction=prediction, likelihood=likelihood, residual=returnResidual, batch=batch)
 
         # all done
         return self
 
 
     @altar.export
-    def eval_posterior(self, step):
-        """
-        Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
-        {step.beta} and deposit the result in {step.post}
-        """
-        # prime the posterior
-        step.posterior.copy(step.prior)
-        # compute it; this expression reduces to Bayes' theorem for β->1
-        altar.blas.daxpy(step.beta, step.data, step.posterior)
-        # all done
-        return self
-
-
-    @altar.export
-    def likelihoods(self, annealer, step):
+    def likelihoods(self, annealer, step, batch=None):
         """
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
         """
-
-        batch = step.samples
 
         # grab the dispatcher
         dispatcher = annealer.dispatcher
@@ -220,7 +225,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # notify we are about to compute the prior likelihood
         dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
-        self.eval_prior(step=step)
+        self.eval_prior(step=step, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
@@ -230,14 +235,14 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # compute it
-        self.eval_data_likelihood(theta=θ, likelihood=step.data)
+        self.eval_data_likelihood(theta=θ, likelihood=step.data, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
         # finally, notify we are about to put together the posterior at this temperature
         dispatcher.notify(event=dispatcher.posterior_start, controller=annealer)
-        # compute it
-        self.eval_posterior(step=step)
+        # compute it; inherited from {Bayesian}, already backend-dispatching
+        self.eval_posterior(step=step, batch=batch)
         # done
         dispatcher.notify(event=dispatcher.posterior_finish, controller=annealer)
 
@@ -255,51 +260,9 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
 
     # implementation details
-    def mount_input_dataspace(self, pfs):
-        """
-        Mount the directory with my input files
-        """
-        # attempt to
-        try:
-            # mount the directory with my input data
-            ifs = altar.filesystem.local(root=self.case)
-        # if it fails
-        except altar.filesystem.MountPointError as error:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"bad case name: '{self.case}'")
-            channel.log(str(error))
-            # and bail
-            raise SystemExit(1)
+    # {mount_input_dataspace}/{restrict} are inherited unchanged from {Bayesian}
 
-        # if all goes well, explore it and mount it
-        pfs["inputs"] = ifs.discover()
-        # all done
-        return ifs
-
-    def restrict(self, theta):
-        """
-        Return my portion of the sample matrix {theta}
-        """
-        # find out how many samples in the set
-        samples = theta.rows
-        # get my parameter count
-        parameters = self.parameters
-        # get my offset in the samples
-        offset = self.offset
-
-        # find where my samples live within the overall sample matrix:
-        start = 0, offset
-        # form the shape of the sample matrix that's mine
-        shape = samples, parameters
-
-        # return a view to the portion of the sample that's mine: i own data in all sample
-        # rows, starting in the column indicated by my {offset}, and the width of my block is
-        # determined by my parameter count
-        return theta.view(start=start, shape=shape)
-
-    def initialize_psets(self):
+    def initialize_psets(self, application=None):
         """
         Lay out my {psets} one after another, in {psets_list} order -- {psets} is a dict and
         doesn't guarantee iteration order matches the user's declared layout -- and let each
@@ -312,7 +275,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             # get the parameter set
             pset = self.psets[name]
             # and let it initialize itself at the current offset
-            offset += pset.initialize(model=self, offset=offset)
+            offset += pset.initialize(model=self, offset=offset, application=application)
         # all done
         return offset
 

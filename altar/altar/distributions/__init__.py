@@ -17,47 +17,39 @@ import altar
 from .Distribution import Distribution as distribution
 
 
-# implementations
+# implementations; each is a single component that picks its cpu/cuda backend internally, at
+# {initialize} time, so there is no backend switch here any more -- see {Base._makeImpl}
 @altar.foundry(implements=distribution, tip="the uniform probability distribution")
 def uniform():
-    # grab the factory
-    if altar.backends.active() == "cuda":
-        try:
-            from altar.cuda.distributions.cudaUniform import cudaUniform as uniform
-        except ImportError:
-            from .Uniform import Uniform as uniform
-    else:
-        from .Uniform import Uniform as uniform
-    # attach its docstring
-    __doc__ = uniform.__doc__
-    # and return it
+    from .Uniform import Uniform as uniform
     return uniform
 
 
 @altar.foundry(implements=distribution, tip="the gaussian probability distribution")
 def gaussian():
-    # grab the factory
-    if altar.backends.active() == "cuda":
-        try:
-            from altar.cuda.distributions.cudaGaussian import cudaGaussian as gaussian
-        except ImportError:
-            from .Gaussian import Gaussian as gaussian
-    else:
-        from .Gaussian import Gaussian as gaussian
-    # attach its docstring
-    __doc__ = gaussian.__doc__
-    # and return it
+    from .Gaussian import Gaussian as gaussian
     return gaussian
 
 
 @altar.foundry(implements=distribution, tip="the unit gaussian probability distribution")
 def ugaussian():
-    # grab the factory
     from .UnitGaussian import UnitGaussian as ugaussian
-    # attach its docstring
-    __doc__ = ugaussian.__doc__
-    # and return it
     return ugaussian
+
+
+@altar.foundry(
+    implements=distribution,
+    tip="the uniform probability distribution over (0, 1), excluding 0")
+def positiveuniform():
+    from .PositiveUniform import PositiveUniform as positiveuniform
+    return positiveuniform
+
+
+@altar.foundry(
+    implements=distribution, tip="the gaussian probability distribution, truncated to a finite support")
+def tgaussian():
+    from .TGaussian import TGaussian as tgaussian
+    return tgaussian
 
 
 # end of file

@@ -1,33 +1,18 @@
 // -*- C++ -*-
 // -*- coding: utf-8 -*-
 //
-// (c) 2013-2021 parasim inc
-// (c) 2010-2021 california institute of technology
+// (c) 2013-2025 parasim inc
+// (c) 2010-2025 california institute of technology
 // all rights reserved
-//
-// Author(s): Lijun Zhu
 
+// code guard
+#pragma once
 
-#if !defined(cualtar_extensions_langevin_h)
-#define cualtar_extensions_langevin_h
+#include "external.h"
 
-
-// place everything in my private namespace
-namespace altar{ namespace cuda { namespace extensions { 
-        // langevin      
-        namespace cudaLangevin {
-              
-            extern const char * const updateTheta__name__;
-            extern const char * const updateTheta__doc__;
-            PyObject * updateTheta(PyObject *, PyObject *);
-
-            extern const char * const updateThetaBatched__name__;
-            extern const char * const updateThetaBatched__doc__;
-            PyObject * updateThetaBatched(PyObject *, PyObject *);
-            
-        } 
-} } } // of namespace altar.cuda.extensions
-
-#endif
+// stochastic gradient langevin dynamics (SGLD)'s own bindings
+namespace altar::cuda::extensions::langevin {
+    auto __init__(py::module & m) -> void;
+}
 
 // end of file

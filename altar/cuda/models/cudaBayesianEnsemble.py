@@ -81,10 +81,8 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         for name in self.psets_list:
             # get the parameter set from psets dictionary
             pset = self.psets[name]
-            # set the offset
-            pset.offset = parameters
             # initialize the pset
-            parameters += pset.cu_initialize(application=application)
+            parameters += pset.initialize(model=self, offset=parameters, application=application)
         self.parameters = parameters
 
         # go through my models
@@ -123,7 +121,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my subsets
         for name, pset in self.psets.items():
             # and ask each one to verify the sample
-            pset.prep.cu_init_sample(theta=theta, batch=batch)
+            pset.prep.initialize_sample(theta=theta, batch=batch)
 
         # all done
         return self
@@ -136,7 +134,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.prior.cu_verify(theta=theta, mask=mask, batch=batch)
+            pset.prior.verify(theta=theta, mask=mask, batch=batch)
         # all done; return the rejection map
         return mask
 
@@ -147,7 +145,7 @@ class cudaBayesianEnsemble(Bayesian, family="altar.models.cudaensemble"):
         # ask my subsets
         for pset in self.psets.values():
             # and ask each one to verify the sample
-            pset.prior.cu_eval_prior(theta=theta, prior=prior, batch=batch)
+            pset.prior.eval_prior(theta=theta, likelihood=prior, batch=batch)
 
         # all done
         return self

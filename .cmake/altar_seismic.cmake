@@ -71,10 +71,12 @@ function(altar_seismic_cuda_buildLibrary)
     ${CMAKE_INSTALL_PREFIX}/lib
     ${PYRE_PREFIX_PATH}/lib
     )
-  # add the dependencies
+  # add the dependencies; {cublas} replaces the old {pyrecuda} link -- the kernels here call
+  # cublas directly (cublasSgemm/cublasDgemm in cudaKinematicG.cu), and {pyrecuda} was pyre's
+  # old capsule-based cuda bridge, gone along with the rest of the pre-pybind11 headers
   target_link_libraries(
     libcudaseismic PRIVATE
-    ${GSL_LIBRARIES} journal pyrecuda
+    ${GSL_LIBRARIES} journal cublas
     )
   # add the sources
   target_sources(

@@ -11,6 +11,9 @@
 // declarations
 #include "cudaTGaussianLogit.h"
 // cuda utilities
+// shared NTHREADS/IDIVUP/cudaCheckError
+#include "../support.h"
+
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 

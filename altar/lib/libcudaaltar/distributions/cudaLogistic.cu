@@ -13,180 +13,143 @@
 // dependencies
 #include "cudaRandom.h"
 // cuda utilities
+// shared NTHREADS/IDIVUP/cudaCheckError/matrix_view_t/vector_view_t
+#include "../support.h"
+
 #include <pyre/cuda.h>
 #include <curand_kernel.h>
 
-// cuda kernel declarations
+// cuda kernels; defined here, ahead of the launcher functions below that instantiate and
+// launch them (see cudaL2.cu/cudaGaussian.cu for why the ordering matters)
 namespace cudaLogistic_kernels {
-    template<typename real_type>
-    __global__ void _sample(curandState_t * curand_states,
-        real_type * const theta, const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end);
 
-    template<typename real_type>
-    __global__ void _logpdf(const real_type * const theta, real_type * const probability,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end);
-
+    // one thread per sample: draw {theta[sample, idx_begin:idx_end]} from the standard
+    // logistic distribution, via the logit of a uniform draw
     template <typename real_type>
-    __global__ void _logpdfgradient(const real_type * const theta, real_type * const probability,
-        const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end);
+    __global__ void
+    _sample(curandState_t * curand_states, matrix_view_t<real_type, false> theta,
+        const size_t idx_begin, const size_t idx_end)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        unsigned long long seed = (unsigned long long) clock64();
+        curand_init(seed, sample, 0, &curand_states[sample]);
+
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto ran_num = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample]);
+            theta[{ sample, static_cast<int>(i) }] = log(ran_num / (real_type{ 1 } - ran_num));
+        }
+    }
+
+    // one thread per sample: add the standard logistic log pdf, summed over
+    // [idx_begin, idx_end), into {probability[sample]}: log_pdf(x) = x - 2*log(1 + e^x)
+    template <typename real_type>
+    __global__ void
+    _logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+        const size_t idx_begin, const size_t idx_end)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        auto log_pdf = real_type{ 0 };
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto theta_i = theta[{ sample, static_cast<int>(i) }];
+            log_pdf += theta_i - real_type{ 2 } * log(real_type{ 1 } + exp(theta_i));
+        }
+
+        probability[{ sample }] += log_pdf;
+    }
+
+    // one thread per sample: fill {probability[sample, idx_begin:idx_end]} with
+    // d/dx [x - 2*log(1 + e^x)] = 2/(1 + e^x) - 1
+    template <typename real_type>
+    __global__ void
+    _logpdfgradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> probability,
+        const size_t idx_begin, const size_t idx_end)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto theta_i = theta[{ sample, static_cast<int>(i) }];
+            probability[{ sample, static_cast<int>(i) }] = real_type{ 2 } / (real_type{ 1 } + exp(theta_i)) - real_type{ 1 };
+        }
+    }
 
 } // of namespace cudaLogistic_kernels
 
-// generate uniform random samples
-template<typename real_type>
+// launch {cudaLogistic_kernels::_sample}
+template <typename real_type>
 void altar::cuda::distributions::cudaLogistic::
-sample(real_type * const theta, const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    cudaStream_t stream)
+sample(matrix_view_t<real_type, false> theta,
+    const size_t idx_begin, const size_t idx_end,
+    cudaStream_t stream)
 {
-    // determine the block/grid size
-    // one thread for one sample
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
 
-    // allocate
-    curandState_t *curand_states;
+    curandState_t * curand_states;
     cudaSafeCall(cudaMalloc((void**)&curand_states, blockSize*gridSize*sizeof(curandState)));
 
-    // call cuda kernels
-    cudaLogistic_kernels::_sample<real_type><<<gridSize, blockSize, 0, stream>>>(curand_states,
-        theta, samples, parameters, idx_begin, idx_end);
-    cudaCheckError("cudaLogistic::random generation error");
+    cudaLogistic_kernels::_sample<real_type><<<gridSize, blockSize, 0, stream>>>(
+        curand_states, theta, idx_begin, idx_end);
+    cudaCheckError("cudaLogistic::sample error");
 
     cudaSafeCall(cudaFree(curand_states));
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaLogistic::sample<float>(float * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
-template void altar::cuda::distributions::cudaLogistic::sample<double>(double * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
+template void altar::cuda::distributions::cudaLogistic::sample<float>(
+    matrix_view_t<float, false>, const size_t, const size_t, cudaStream_t);
+template void altar::cuda::distributions::cudaLogistic::sample<double>(
+    matrix_view_t<double, false>, const size_t, const size_t, cudaStream_t);
 
-// compute log probability
+
+// launch {cudaLogistic_kernels::_logpdf}
 template <typename real_type>
 void altar::cuda::distributions::cudaLogistic::
-logpdf(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    cudaStream_t stream)
+logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+    const size_t idx_begin, const size_t idx_end,
+    cudaStream_t stream)
 {
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
-    // call cuda kernels
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
     cudaLogistic_kernels::_logpdf<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, probability, samples, parameters, idx_begin, idx_end);
-    cudaCheckError("cudaLogistic:: log_pdf error");
+        theta, probability, idx_begin, idx_end);
+    cudaCheckError("cudaLogistic::logpdf error");
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaLogistic::logpdf<float>(const float * const, float * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
-template void altar::cuda::distributions::cudaLogistic::logpdf<double>(const double * const, double * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
+template void altar::cuda::distributions::cudaLogistic::logpdf<float>(
+    matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t, cudaStream_t);
+template void altar::cuda::distributions::cudaLogistic::logpdf<double>(
+    matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t, cudaStream_t);
 
 
-// compute log probability
+// launch {cudaLogistic_kernels::_logpdfgradient}
 template <typename real_type>
 void altar::cuda::distributions::cudaLogistic::
-logpdfgradient(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    cudaStream_t stream)
+logpdfgradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> probability,
+    const size_t idx_begin, const size_t idx_end,
+    cudaStream_t stream)
 {
-    int blockSize = NTHREADS;
-    int gridSize = IDIVUP(samples, blockSize);
-    // call cuda kernels
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
     cudaLogistic_kernels::_logpdfgradient<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, probability, samples, parameters, idx_begin, idx_end);
-    cudaCheckError("cudaLogistic:: logpdfgradient error");
+        theta, probability, idx_begin, idx_end);
+    cudaCheckError("cudaLogistic::logpdfgradient error");
 }
 
-// explicit instantiation
-template void altar::cuda::distributions::cudaLogistic::logpdfgradient<float>(const float * const, float * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
-template void altar::cuda::distributions::cudaLogistic::logpdfgradient<double>(const double * const, double * const, const size_t, const size_t,
-                    const size_t, const size_t, cudaStream_t);
-
-namespace cudaLogistic_kernels {
-
-//random_generation_kernel
-template <typename real_type>
-__global__ void
-_sample(curandState_t * curand_states,
-    real_type * const theta, const size_t samples, const size_t parameters,
-    const size_t idx_begin, const size_t idx_end)
-{
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // initialize seeds for each thread
-    unsigned long long seed = (unsigned long long) clock64();
-    curand_init(seed, sample, 0, &curand_states[sample]);
-
-    // get the theta pointer for each sample
-    real_type * theta_sample = theta + sample*parameters;
-
-    // generate samples from idx_begin to idx_end
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        // generate a uniform random number [0, 1]
-        real_type ran_num = altar::cuda::distributions::curandUniform<real_type>(&curand_states[sample]);
-        // convert it to a logit variable
-        theta_sample[i] = log(ran_num/(1.0-ran_num));
-    }
-}
-
-//log_pdf kernel
-template <typename real_type>
-__global__ void
-_logpdf(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end)
-{
-    // get the thread/sample id
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // get the starting pointer for this sample
-    const real_type * theta_sample = theta + sample*parameters;
-
-    // accumulated log_pdf for this sample
-    real_type log_pdf = 0.0;
-
-    // iterate over parameters in this dataset and in this sample
-    for (int i=idx_begin; i<idx_end; ++i)
-    {
-        real_type theta_i = theta_sample[i];
-        // logistic function pdf e^x/(1+e^x)^2
-        log_pdf += theta_i - 2.0*log(1.0+exp(theta_i));
-    }
-
-    probability[sample] += log_pdf;
-}
-
-//log_pdf kernel
-// probability - log prior gradient (samples, parameters)
-// dlog (e^x/(1+e^x)^2) /d x = 2/(1+e^x) - 1
-template <typename real_type>
-__global__ void
-_logpdfgradient(const real_type * const theta, real_type * const probability, const size_t samples, const size_t parameters,
-        const size_t idx_begin, const size_t idx_end)
-{
-     // get the thread/sample id
-    int sample = blockIdx.x*blockDim.x + threadIdx.x;
-    if (sample >= samples) return;
-
-    // get the theta pointer
-    const real_type * theta_sample = theta + sample*parameters;
-    real_type * probability_sample = probability + sample*parameters;
-
-    // gradient
-    for (int i=idx_begin; i<idx_end; ++i)
-        probability_sample[i] = 2.0*exp(theta_sample[i])-1.0;
-}
-
-} // of namespace cudaLogistic_kernels
+template void altar::cuda::distributions::cudaLogistic::logpdfgradient<float>(
+    matrix_view_t<float>, matrix_view_t<float, false>, const size_t, const size_t, cudaStream_t);
+template void altar::cuda::distributions::cudaLogistic::logpdfgradient<double>(
+    matrix_view_t<double>, matrix_view_t<double, false>, const size_t, const size_t, cudaStream_t);
 
 // end of file

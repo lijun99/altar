@@ -199,10 +199,10 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
 
         # call forward model to calculate the data prediction or its difference between dataobs
         self.forward_model_batched(theta=theta, gf=self.gGF, prediction=residuals, batch=batch,
-                observation= self.dataobs.gdataObsBatch)
+                observation= self.dataobs.dataobs_batch)
 
         # call data method to calculate the l2 norm
-        self.dataobs.cu_eval_likelihood(prediction=residuals, likelihood=likelihood,
+        self.dataobs.eval_likelihood(prediction=residuals, likelihood=likelihood,
             residual=True, batch=batch)
         # return the likelihood
         return likelihood
@@ -212,7 +212,7 @@ class cudaKinematicG(cudaBayesian, family="altar.models.seismic.cuda.kinematicg"
         merge data covariance (cd) with green function
         """
         # get references for data covariance
-        cd_inv = self.dataobs.gcd_inv
+        cd_inv = self.dataobs.cd_inv
         # get a reference for green's function
         green = self.gGF
         # copy from CPU

@@ -1,8 +1,8 @@
 # -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-2025 parasim inc
+# (c) 2010-2025 california institute of technology
 # all rights reserved
 #
 # Author(s): Lijun Zhu
@@ -21,17 +21,25 @@ from . import (
     ext,
     )
 
-from cuda import (
-    vector,
-    matrix,
-    curand,
-    cublas,
-    Device,
-    manager,
-    stats,
-    libcuda,
-    use_device,
-    )
+# device management, and the thin cublas/cusolver/curand bindings, all from pyre now; the old
+# top-level "cuda" package (a hand rolled device manager sharing its name with nvidia's own
+# cuda-python) is gone -- see pyre's own "cuda: replace the hand-rolled device management
+# extension with cuda-python" and the cublas/cusolver/curand work that followed it
+import pyre.cuda
+
+manager = pyre.cuda.manager
+cusolver = pyre.cuda.cusolver
+
+# altar's own {cublas}/{curand}: everything pyre's own has, plus a couple of convenience
+# wrappers the bayesian sampler layer needs (see cublas.py/curand.py)
+from . import cublas
+from . import curand
+
+# the pyre.grid-backed replacement for the old capsule-based cuda.Matrix/cuda.Vector (see
+# array.py); the cuda extension's own kernels (norms, distributions, the samplers) take
+# pyre.grid grids directly with no wrapper needed on that side -- {vector}/{matrix} exist for
+# the bayesian state/sampler layer, which still calls them the way it always has
+from .array import vector, matrix
 
 # my extension modules
 from .ext import cudaaltar as libcudaaltar
@@ -39,25 +47,42 @@ from .ext import cudaaltar as libcudaaltar
 
 def get_current_device():
     """
-    Return current cuda device
+    Return the device this process runs on; altar assumes one gpu per process (or per rank,
+    under mpi), so this is always the first one pyre.cuda found
     """
-    return manager.current_device
+    return manager.devices[0]
+
 
 def curand_generator():
-    device = get_current_device()
+    """
+    The curand generator cached on the current device, allocated once and reused; see
+    {pyre.cuda.Device.curandGenerator}
+    """
+    return get_current_device().curandGenerator()
 
-    return device.get_curand_generator()
 
 def cublas_handle():
-    device = get_current_device()
-    return device.get_cublas_handle()
+    """
+    The cublas handle cached on the current device, allocated once and reused; see
+    {pyre.cuda.Device.cublasHandle}
+    """
+    return get_current_device().cublasHandle
+
+
+def cusolver_handle():
+    """
+    The cusolver handle cached on the current device, allocated once and reused; see
+    {pyre.cuda.Device.cusolverHandle}
+    """
+    return get_current_device().cusolverHandle
+
 
 # administrative
 def copyright():
     """
     Return the altar copyright note
     """
-    return print(meta.header)
+    return print(libcudaaltar.copyright())
 
 
 def license():
@@ -65,19 +90,13 @@ def license():
     Print the altar license
     """
     # print it
-    return print(meta.license)
+    return print(libcudaaltar.license())
 
 
 def version():
     """
     Return the altar version
     """
-    return meta.version
+    return libcudaaltar.version()
 
-
-def credits():
-    """
-    Print the acknowledgments
-    """
-    # print it
-    return print(meta.acknowledgments)
+# end of file

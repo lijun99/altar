@@ -21,29 +21,10 @@ from .Base import Base as base
 class UnitGaussian(base, family="altar.distributions.ugaussian"):
     """
     Special case of the Gaussian probability distribution with σ = 1
+
+    My actual numerics live in {altar.distributions.native.UnitGaussian.UnitGaussian}; there
+    is no cuda counterpart today, matching the status quo before this refactor.
     """
-
-
-    # protocol obligations
-    @altar.export
-    def initialize(self, rng):
-        """
-        Initialize with the given random number generator
-        """
-        # set up my pdf
-        self.pdf = altar.pdf.ugaussian(rng=rng.rng)
-        # all done
-        return self
-
-
-    @altar.export
-    def verify(self, theta, mask):
-        """
-        Check whether my portion of the samples in {theta} are consistent with my constraints, and
-        update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
-        """
-        # all samples are valid, so there is nothing to do
-        return mask
 
 
 # end of file
