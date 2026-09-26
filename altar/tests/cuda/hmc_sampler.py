@@ -29,6 +29,7 @@ def test():
     import numpy
     import altar
     from altar.bayesian.samplers.cuda.HMC import HMC
+    from altar.bayesian.stepsizers.StepSizer import FixedStepSize
 
     samples = 4000
     nparams = 3
@@ -42,7 +43,7 @@ def test():
             numpy.asarray(step.prior)[:] = -0.5 * numpy.sum(arr**2, axis=1)
             numpy.asarray(step.data)[:] = 0.0
 
-        def gradients(self, annealer, step):
+        def gradient(self, controller, step, batch=None):
             arr = numpy.asarray(step.theta)
             numpy.asarray(step.prior_gradient)[:, :] = -arr
             numpy.asarray(step.data_gradient)[:, :] = 0.0
@@ -59,6 +60,8 @@ def test():
     class _Job:
         chains = samples
         gpuprecision = "float64"
+        steps = 1  # one trajectory per call to sample_posterior; the test itself supplies
+                   # the repetition, via 150 external calls below
 
     class _Info:
         @staticmethod
@@ -88,13 +91,22 @@ def test():
             self.prior_gradient = altar.matrix(shape=(samples, nparams))
             self.data_gradient = altar.matrix(shape=(samples, nparams))
             self.U_gradient = altar.matrix(shape=(samples, nparams))
-            self.hmc_leapfrog_steps = 1
-            self.hmc_leapfrog_substeps = 20
-            self.hmc_step_size = 0.15
 
-    sampler = HMC(name="hmc-sampler-test")
+    sampler = HMC()  # a plain impl class now; the pyre component is the shim,
+                     # {altar.bayesian.samplers.HMC}, which this test bypasses
+    # bypassing the shim's initialize() (and its {_makeImpl} copy-down), so attach the
+    # component-typed state it would normally hand me before calling my own initialize();
+    # a fixed (non-adaptive) step size, since this test's target is the leapfrog kernels
+    # themselves at a fixed, hand-picked-good step, not the stepsizer's own convergence
+    sampler.stepsizer = FixedStepSize()
     sampler.initialize(application=_Application())
     assert sampler.proposal_state is not None
+    # 20 leapfrog substeps per trajectory, a larger-than-default step size (both previously
+    # set via magic attributes on {step} that nothing in the real pipeline ever set -- see
+    # {altar.bayesian.samplers.cuda.HMC._walk}, which now reads {self.leapfrog_steps}/
+    # {self.step_size} directly instead)
+    sampler.leapfrog_steps = 20
+    sampler.step_size = 0.15
 
     step = _Step(numpy.random.default_rng(0))
     annealer = _Annealer()

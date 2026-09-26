@@ -36,6 +36,8 @@ def test():
     import numpy
     import altar
     from altar.bayesian.samplers.cuda.Metropolis import Metropolis
+    from altar.bayesian.stepsizers.StepSizer import TargetedRate
+    from altar.bayesian.stepcounters.StepCounter import FixedSteps
 
     samples, parameters = 2000, 3
 
@@ -63,11 +65,19 @@ def test():
         model = _Model()
         dispatcher = _Dispatcher()
 
-    sampler = Metropolis(name="cuda-metropolis-test")
+    sampler = Metropolis()  # a plain impl class now; the pyre component is the shim,
+                            # {altar.bayesian.samplers.Metropolis}, which this test bypasses
     sampler.curng = altar.cuda.curand_generator()
     sampler.precision = "float64"
-    sampler.mcsteps = 1
-    sampler.scaling = 0.5
+    # bypassing the shim's initialize() (and its {_makeImpl} copy-down), so attach the
+    # component-typed state it would normally hand me, and fill in what my own initialize()
+    # would have: a fixed one-step block, and the target acceptance rate (random-walk
+    # Metropolis's theoretically-optimal rate)
+    sampler.stepcounter = FixedSteps()
+    sampler.stepcounter.steps = 1
+    sampler.stepsizer = TargetedRate()
+    sampler.stepsizer.target = 0.234
+    sampler.scaling = sampler.stepsizer.initialize(value=0.5)
 
     sampler.allocate_gpu_data(samples, parameters)
     numpy.asarray(sampler.gsigma_chol)[:, :] = numpy.eye(parameters)
@@ -81,7 +91,7 @@ def test():
     check_chol = altar.cuda.matrix(shape=(parameters, parameters), dtype="float64")
     numpy.asarray(check_chol)[:, :] = covariance
     check_chol.cholesky()
-    sampler_for_displace = Metropolis(name="cuda-metropolis-displace-test")
+    sampler_for_displace = Metropolis()
     sampler_for_displace.curng = altar.cuda.curand_generator()
     sampler_for_displace.gsigma_chol = check_chol
     displacement = altar.cuda.matrix(shape=(20000, parameters), dtype="float64").zero()
@@ -113,10 +123,11 @@ def test():
     attempts = total_accepted + total_rejected + total_invalid
     assert 0.3 < total_accepted / attempts < 0.95  # a real, working M-H correction, not 100%
 
-    # update()/adjust_covariance_scaling
+    # update(): scaling is now delegated to the stepsizer component (same protocol the cpu
+    # Metropolis sampler uses), defaulting to TargetedRate
     statistics = (total_accepted, total_invalid, total_rejected)
     assert sampler.update(annealer=annealer, statistics=statistics) is None
-    assert sampler.scalingMin <= sampler.scaling <= sampler.scalingMax
+    assert sampler.stepsizer.min_step_size <= sampler.scaling <= sampler.stepsizer.max_step_size
 
     # all done
     return

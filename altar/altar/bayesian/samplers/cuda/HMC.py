@@ -16,9 +16,6 @@ import altar
 import altar.cuda
 from altar.cuda import cublas, libcudaaltar
 
-from altar.bayesian.samplers.Sampler import Sampler
-from altar.bayesian.stepsizers.StepSizer import StepSizer
-
 from altar.bayesian.states.cuda.HMCState import HMCState
 
 # acceptance statistics container, the same shape {Metropolis}/{HMC} (cpu) use; hmc has no
@@ -26,19 +23,16 @@ from altar.bayesian.states.cuda.HMCState import HMCState
 Statistics = namedtuple('Statistics', ['accepted', 'invalid', 'rejected'])
 
 
-class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
+class HMC:
     """
-    Hamiltonian Monte Carlo sampler using a leapfrog integrator, driving the cuda
-    {altar.cuda.libcudaaltar.leapfrog} kernels. The cuda counterpart of
-    {altar.bayesian.samplers.HMC}; see that class for the algorithm itself.
+    The cuda implementation of Hamiltonian Monte Carlo, using a leapfrog integrator driving
+    the cuda {altar.cuda.libcudaaltar.leapfrog} kernels. See
+    {altar.bayesian.samplers.HMC}, the pyre component a {.pfg} actually selects, which picks
+    me (or my cpu counterpart) once, at {initialize} time; and that class's cpu
+    implementation, {altar.bayesian.samplers.native.HMC}, for the algorithm itself.
     """
 
-    step_adjuster = StepSizer()
-    step_adjuster.doc = "component that adapts the step size based on acceptance ratios"
-
-
-    # protocol obligations
-    @altar.export
+    # protocol-shaped obligations (called by the shim, not pyre-dispatched directly)
     def initialize(self, application):
         """
         Initialize me and my parts given an {application} context
@@ -48,18 +42,24 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
         samples = application.job.chains
         parameters = model.parameters
         dtype = application.job.gpuprecision
+        # the number of trajectories per call to {sample_posterior}, matching cpu
+        # {altar.bayesian.samplers.native.HMC}'s own {self.steps}
+        self.steps = application.job.steps
         reparameterization = getattr(model, 'reparameterization', False)
         self.proposal_state = HMCState.alloc(
             samples=samples, parameters=parameters, dtype=dtype,
             reparameterization=reparameterization
         )
-        self._current_eta = self.step_adjuster.initialize(self.proposal_state.eta)
-        self._set_step_size(self._current_eta)
+        # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
+        # to 0.8), unless the user picked a target explicitly
+        if getattr(self.stepsizer, "target", None) is None:
+            self.stepsizer.target = 0.7
+        self.step_size = self.stepsizer.initialize(self.proposal_state.eta)
+        self._set_step_size(self.step_size)
         # all done
         return self
 
 
-    @altar.export
     def sample_posterior(self, annealer, step):
         """
         Sample the posterior distribution
@@ -76,7 +76,6 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
         return self.statistics
 
 
-    @altar.export
     def update(self, annealer, statistics):
         """
         Notification that a β step is complete; a no-op, since the step size is already
@@ -88,18 +87,17 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
 
     def _walk(self, annealer, step):
         """
-        Advance all chains using one or more leapfrog trajectories
+        Advance all chains using one or more leapfrog trajectories: {self.steps} trajectories
+        (matching cpu {altar.bayesian.samplers.native.HMC}'s own outer loop), each with
+        {self.leapfrog_steps} leapfrog substeps
         """
         state = self.proposal_state
         state.beta = step.beta
 
-        eta = getattr(step, 'hmc_step_size', None)
-        if eta is None:
-            eta = state.eta
-        self._set_step_size(self._clamp_step_size(eta))
+        self._set_step_size(self._clamp_step_size(self.step_size))
 
-        leapfrog_repeats = int(getattr(step, 'hmc_leapfrog_steps', 1))
-        leapfrog_substeps = int(getattr(step, 'hmc_leapfrog_substeps', 1))
+        leapfrog_repeats = self.steps
+        leapfrog_substeps = self.leapfrog_steps
 
         accepted_total = 0
         dispatcher = annealer.dispatcher
@@ -120,15 +118,15 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
 
     def _set_step_size(self, eta):
         eta = float(eta)
-        self._current_eta = eta
+        self.step_size = eta
         self.proposal_state.eta = eta
-        if self.step_adjuster is not None and hasattr(self.step_adjuster, 'step_size'):
-            self.step_adjuster.step_size = eta
+        if self.stepsizer is not None and hasattr(self.stepsizer, 'step_size'):
+            self.stepsizer.step_size = eta
         return eta
 
     def _clamp_step_size(self, eta):
         eta = float(eta)
-        adjuster = self.step_adjuster
+        adjuster = self.stepsizer
         min_eta = getattr(adjuster, 'min_step_size', 1e-12)
         max_eta = getattr(adjuster, 'max_step_size', float('inf'))
         return max(min_eta, min(max_eta, eta))
@@ -140,14 +138,20 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
         model = annealer.model
 
         def compute_potential_and_gradients():
-            try:
-                model.evaluateLikelihoods(state)
-            except AttributeError:
-                model.likelihoods(annealer, state)
-            try:
-                model.evaluateGradients(state)
-            except AttributeError:
-                model.gradients(annealer, state)
+            # the real model protocol (matching {altar.bayesian.samplers.native.HMC}'s own
+            # {_evaluate}); {evaluateLikelihoods}/{evaluateGradients}/{gradients} (plural)
+            # never existed on any real model -- this branch was dead code, only ever
+            # exercised by a test double built to match it
+
+            # {eval_prior} accumulates into whatever it's handed (so multiple parameter sets
+            # can each add their contribution); this is called many times per trajectory
+            # (once per leapfrog substep, plus both endpoints), so it must be re-zeroed
+            # before every call, exactly as {altar.bayesian.samplers.native.HMC._evaluate}
+            # does for its own candidate -- without this, {state.prior} silently accumulated
+            # across calls, inflating the potential and making every trajectory reject
+            state.prior.zero()
+            model.likelihoods(annealer=annealer, step=state)
+            model.gradient(controller=annealer, step=state, batch=state.samples)
             jacobian = state.Jacobian.grid if state.Jacobian is not None else None
             leapfrog.cudaLeapfrog_computePotentialAndGradient(
                 state.prior.grid,
@@ -253,11 +257,11 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
         )
 
     def _update_step_size(self, *, accepted, attempts):
-        if self.step_adjuster is None:
+        if self.stepsizer is None:
             return self.proposal_state.eta
 
         ratio = (accepted / attempts) if attempts else 0.0
-        adjuster = self.step_adjuster
+        adjuster = self.stepsizer
 
         if hasattr(adjuster, 'record'):
             eta = adjuster.record(value=self.proposal_state.eta, accepted=accepted, attempts=attempts)
@@ -301,11 +305,17 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=Sampler):
                 source.copy_to_host(target=target)
 
 
-    # private data
+    # private data; the component-typed attributes and scalar traits are set by the shim's
+    # initialize() before it calls mine (see {altar.bayesian.samplers.HMC._makeImpl})
+    stepsizer = None         # the step size regulator
+    leapfrog_steps = 10      # the number of leapfrog substeps per trajectory
+
+    steps = 1               # the number of trajectories per call to {sample_posterior};
+                            # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, in {initialize}
     info = None             # the application info channel
     statistics = None       # (accepted, invalid, rejected) from the last {_walk} call
-    _current_eta = None      # the current leapfrog step size
+    step_size = None      # the current leapfrog step size
 
 
 # end of file

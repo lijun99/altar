@@ -16,59 +16,35 @@ from altar.cuda import curand
 from altar.cuda import cublas
 from altar.cuda import libcudaaltar
 
-# my protocol
-from altar.bayesian.samplers.Sampler import Sampler
-
 
 # declaration
-class Metropolis(altar.component, family="altar.samplers.metropolis", implements=Sampler):
+class Metropolis:
     """
-    The Metropolis algorithm as a sampler of the posterior distribution
+    The cuda implementation of the Metropolis algorithm as a sampler of the posterior
+    distribution. See {altar.bayesian.samplers.Metropolis}, the pyre component a {.pfg}
+    actually selects, which picks me (or my cpu counterpart) once, at {initialize} time.
     """
 
     # types
     from altar.bayesian.states.cuda.CoolingStep import CoolingStep
 
 
-    # user configurable state
-    scaling = altar.properties.float(default=.1)
-    scaling.doc = 'the parameter covariance Σ is scaled by the square of this'
-
-    acceptanceWeight = altar.properties.float(default=8.0/9.0)
-    acceptanceWeight.doc = 'the weight of accepted samples during covariance rescaling'
-
-    rejectionWeight = altar.properties.float(default=1.0/9.0)
-    rejectionWeight.doc = 'the weight of rejected samples during covariance rescaling'
-
-    useFixedScaling = altar.properties.bool(default=False)
-    useFixedScaling.doc = 'whether to use a fixed scaling'
-
-    scalingMin = altar.properties.float(default=.01)
-    scalingMin.doc = 'the minimum value of the scaling factor'
-
-    scalingMax = altar.properties.float(default=1)
-    scalingMax.doc = 'the maximum value of the scaling factor'
-
-    # proposal mechanism: cpu-only (its covariance computation runs against the cpu-side
-    # step this sampler is handed in {prepare_sampling_pdf}); only its unscaled covariance
-    # {_sigma} is used here, uploaded to the gpu and decomposed/scaled there (see
-    # {prepare_sampling_pdf}), so there is no cuda counterpart needed for the covariance
-    # computation itself -- it's a small (parameters x parameters) matrix, cheap on cpu
-    proposal = altar.bayesian.proposal()
-    proposal.doc = "the proposal mechanism used by this sampler"
-
-
-    # protocol obligations
-    @altar.export
+    # protocol-shaped obligations (called by the shim, not pyre-dispatched directly)
     def initialize(self, application):
         """
         Initialize me and my parts given an {application} context
         """
-        # pull the chain length from the job specification
-        self.mcsteps = application.job.steps
         # the curand generator cached on the current device
         self.curng = altar.cuda.curand_generator()
         self.precision = application.job.gpuprecision
+        # random-walk Metropolis's theoretically-optimal acceptance rate in high dimensions
+        # (Roberts-Gelman-Gilks), unless the user picked a target explicitly
+        if getattr(self.stepsizer, "target", None) is None:
+            self.stepsizer.target = 0.234
+        # initialize the step size regulator and record the initial scaling
+        self.scaling = self.stepsizer.initialize(value=self.scaling)
+        # initialize the step count regulator (e.g. {FixedSteps} fills in application.job.steps)
+        self.stepcounter.initialize(application=application)
         # initialize the (cpu) proposal mechanism
         self.proposal.initialize(application=application)
 
@@ -79,7 +55,6 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         self.initialize(application=application)
         return self
 
-    @altar.export
     def sample_posterior(self, annealer, step):
         """
         Sample the posterior distribution
@@ -119,14 +94,16 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         return statistics
 
 
-    @altar.export
     def update(self, annealer, statistics):
         """
         Update my parameters based on the results of walking my Markov chains
         """
-        # update the scaling of the parameter covariance matrix
-        if not self.useFixedScaling:
-            self.adjust_covariance_scaling(*statistics)
+        # unpack the statistics
+        accepted, invalid, rejected = statistics
+        # delegate step size adjustment to the stepsizer
+        self.scaling = self.stepsizer.adjust(
+            attempts=accepted + invalid + rejected,
+            accepted=accepted)
         # all done
         return
 
@@ -238,76 +215,85 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         # copy the beta over
         candidate.beta = step.beta
 
-        # step all chains together
-        for ihop in range(self.mcsteps):
-            # notify we are advancing the chains
-            dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+        # the step count regulator decides how many MC steps to run, in blocks, before
+        # checking whether this β step is done ({FixedSteps}: one block, the fixed count;
+        # {DecorrelatingSteps}: repeated blocks until decorrelated)
+        self.stepcounter.start(theta=θ, beta=β)
+        mcsteps = 0
 
-            # notify we are starting the verification process
-            dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
+        while not self.stepcounter.done(mcsteps=mcsteps, theta=θ, annealer=annealer):
+            block = self.stepcounter.block_size()
+            for ihop in range(block):
+                # notify we are advancing the chains
+                dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+
+                # notify we are starting the verification process
+                dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
 
 
-            # the random displacement may have generated candidates that are outside the
-            # support of the model, so we must give it an opportunity to reject them;
-            # initialize the candidate sample by randomly displacing the current one
-            self.displace(displacement=θproposal)
-            θproposal += θ
+                # the random displacement may have generated candidates that are outside the
+                # support of the model, so we must give it an opportunity to reject them;
+                # initialize the candidate sample by randomly displacing the current one
+                self.displace(displacement=θproposal)
+                θproposal += θ
 
-            # reset the mask and ask the model to verify the sample validity
-            # note that I have redefined model.verify to use theta as input
+                # reset the mask and ask the model to verify the sample validity
+                # note that I have redefined model.verify to use theta as input
 
-            model.verify_theta(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
+                model.verify_theta(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
 
-            invalid_step = invalid_flags.sum()
-            valid = samples - invalid_step
-            # if valid = 0, continue to next MC step
-            if valid == 0 :
+                invalid_step = invalid_flags.sum()
+                valid = samples - invalid_step
+                # if valid = 0, continue to next MC step
+                if valid == 0 :
+                    invalid += invalid_step
+                    continue
+
+                # if valid > 0, proceed to Metropolis accept-reject
+                # set indices for valid samples, return valid samples count
+                metropolis.cudaMetropolis_setValidSampleIndices(
+                    valid_indices.grid, invalid_flags.grid, valid_samples.grid)
+
+                # get the invalid samples count
                 invalid += invalid_step
-                continue
 
-            # if valid > 0, proceed to Metropolis accept-reject
-            # set indices for valid samples, return valid samples count
-            metropolis.cudaMetropolis_setValidSampleIndices(
-                valid_indices.grid, invalid_flags.grid, valid_samples.grid)
+                # queue valid samples to first rows of cθ
+                metropolis.cudaMetropolis_queueValidSamples(
+                    cθ.grid, θproposal.grid, valid_indices.grid, valid)
 
-            # get the invalid samples count
-            invalid += invalid_step
+                # notify that the verification process is finished
+                dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
-            # queue valid samples to first rows of cθ
-            metropolis.cudaMetropolis_queueValidSamples(
-                cθ.grid, θproposal.grid, valid_indices.grid, valid)
+                # initialize the likelihoods
+                likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
 
-            # notify that the verification process is finished
-            dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
+                # compute the probabilities/likelihoods
+                model.likelihoods(annealer=annealer, step=candidate, batch=valid)
 
-            # initialize the likelihoods
-            likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
+                # randomize the Metropolis acceptance vector
+                curand.uniform(out=dice, generator=self.curng)
 
-            # compute the probabilities/likelihoods
-            model.likelihoods(annealer=annealer, step=candidate, batch=valid)
+                # notify we are starting accepting samples
+                dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
-            # randomize the Metropolis acceptance vector
-            curand.uniform(out=dice, generator=self.curng)
+                # accept/reject: go through all the samples
+                metropolis.cudaMetropolis_metropolisUpdate(
+                    θ.grid, prior.grid, data.grid, posterior.grid,      # original
+                    cθ.grid, cprior.grid, cdata.grid, cpost.grid,       # candidate
+                    dice.grid, acceptance_flags.zero().grid, valid_indices.grid, valid)
 
-            # notify we are starting accepting samples
-            dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
+                # counting the acceptance/rejection
+                accepted_step = acceptance_flags.sum()
+                accepted += accepted_step
+                rejected += valid - accepted_step
 
-            # accept/reject: go through all the samples
-            metropolis.cudaMetropolis_metropolisUpdate(
-                θ.grid, prior.grid, data.grid, posterior.grid,      # original
-                cθ.grid, cprior.grid, cdata.grid, cpost.grid,       # candidate
-                dice.grid, acceptance_flags.zero().grid, valid_indices.grid, valid)
+                # notify we are done accepting samples
+                dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
 
-            # counting the acceptance/rejection
-            accepted_step = acceptance_flags.sum()
-            accepted += accepted_step
-            rejected += valid - accepted_step
+                # notify we are done advancing the chains
+                dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
-            # notify we are done accepting samples
-            dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
-
-            # notify we are done advancing the chains
-            dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
+            mcsteps += block
         # all done
         return accepted, invalid, rejected
 
@@ -344,28 +330,6 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         return displacement
 
 
-    def adjust_covariance_scaling(self, accepted, invalid, rejected):
-        """
-        Compute a new value for the covariance sacling factor based on the acceptance/rejection
-        ratio
-        """
-        # unpack my weights
-        aw = self.acceptanceWeight
-        rw = self.rejectionWeight
-        # compute the acceptance ratio
-        acceptance = accepted / (accepted + rejected + invalid)
-        # the fudge factor
-        kc = aw*acceptance + rw
-        # don't let it get too small
-        kc = max(kc, self.scalingMin)
-        # or too big
-        kc = min(kc, self.scalingMax)
-        # store it
-        self.scaling = kc
-
-        # and return
-        return self
-
     def allocate_gpu_data(self, samples, parameters):
         """
         initialize gpu work data
@@ -390,8 +354,13 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         self.ginit = True
         return
 
-    # private data
-    mcsteps = 1          # the length of each Markov chain
+    # private data; the component-typed attributes are set by the shim's initialize()
+    # before it calls mine (see {altar.bayesian.samplers.Metropolis._makeImpl})
+    proposal = None    # the proposal mechanism used by this sampler
+    stepsizer = None   # the step size regulator
+    stepcounter = None # the step count regulator
+    scaling = 0.1      # the parameter covariance Σ is scaled by the square of this
+
     dispatcher = None  # a reference to the event dispatcher
     ginit = False     # whether gpu data are allocated
     gstep = None # cuda/gpu step for keeping sampling states

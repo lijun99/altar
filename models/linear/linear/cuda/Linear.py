@@ -136,9 +136,12 @@ class Linear:
 
     def gradient(self, model, controller, step, batch=None):
         """
-        Fill {step.grad_prior} and {step.grad_data} with the gradients of the log prior and
-        log data likelihood with respect to {step.theta}, for use by gradient-based samplers
-        (e.g. SGLD).
+        Fill {step.prior_gradient} and {step.data_gradient} with the gradients of the log
+        prior and log data likelihood with respect to {step.theta}, for use by gradient-based
+        samplers (e.g. SGLD, HMC) -- the naming cuda state objects use (see
+        {altar.bayesian.states.cuda.HMCState}/{LangevinState}/{LangevinStep} and
+        {CUDASGLD.estimate_rate}'s own {step.data_gradient}/{step.prior_gradient} reads),
+        unlike their cpu counterparts' {grad_prior}/{grad_data}.
 
         grad_data = -G'^T @ w, where w is the (already-whitened) residual from
         {forward_model_batched}. Algebraically this is cpu's 3-step chain
@@ -150,8 +153,8 @@ class Linear:
             model.verify_unbounded_priors()
 
         θ = model.restrict(theta=step.theta)
-        grad_prior = model.restrict(theta=step.grad_prior)
-        grad_data = model.restrict(theta=step.grad_data)
+        grad_prior = model.restrict(theta=step.prior_gradient)
+        grad_data = model.restrict(theta=step.data_gradient)
         for name in model.psets_list:
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior, batch=batch)
 
