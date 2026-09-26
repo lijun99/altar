@@ -124,6 +124,16 @@ class Contiguous(base):
         return self
 
 
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill {jacobian} with d(physical)/d(sampling) for my portion of {theta}, or leave my
+        portion at its default of 1 when i'm not reparameterized
+        """
+        if self.prior.has_reparametrization:
+            self.prior.jacobian(theta=theta, jacobian=jacobian, batch=batch)
+        return self
+
+
     # private data, set by the shim before {initialize} runs
     prior = None
     prep = None

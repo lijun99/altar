@@ -16,6 +16,10 @@ import altar
 # publish the protocol for probability distributions
 from .Distribution import Distribution as distribution
 
+# publish the protocol for reparameterization transforms
+from .transforms.Transform import Transform as transform
+from .transforms import logittransform
+
 
 # implementations; each is a single component that picks its cpu/cuda backend internally, at
 # {initialize} time, so there is no backend switch here any more -- see {Base._makeImpl}

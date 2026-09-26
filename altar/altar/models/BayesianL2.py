@@ -104,8 +104,16 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # carry extra entries merged in from other configuration sources
         for name in self.psets_list:
             pset = self.psets[name]
-            # and ask each one to {prep} the sample
+            # and ask each one to {prep} the sample; always in physical space -- {step.theta}
+            # is the one buffer every sampler (Metropolis, SGLD, HMC) agrees means physical
             pset.initialize_sample(theta=θ, batch=batch)
+        # bridge into sampling space, once, for a reparameterized model: seed
+        # {step.theta_sampling} as a copy of the physical draw, then transform in place --
+        # {to_sampling} only actually does anything for the psets that are reparameterized,
+        # leaving the rest as the (correct, identity) copy
+        if self.has_reparametrization:
+            step.theta_sampling.copy(step.theta)
+            self.to_sampling(theta=step.theta_sampling, batch=batch)
         # and return
         return self
 
@@ -150,6 +158,118 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
         # all done
         return self
+
+
+    def eval_prior_with_physical(self, step, likelihood=None, batch=None):
+        """
+        Add the log-Jacobian of every reparameterized pset into {likelihood} (default
+        {step.prior}); samplers keep it in a separate per-sample buffer so {step.prior} stays
+        the physical-space prior
+        """
+        likelihood = step.prior if likelihood is None else likelihood
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            pset = self.psets[name]
+            pset.eval_prior_with_physical(theta=θ, prior=likelihood, batch=batch)
+        # all done
+        return self
+
+
+    def eval_prior_physical(self, step, batch=None):
+        """
+        Fill {step.prior} with the log likelihoods of the samples in {step.theta}, given in
+        physical space
+        """
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            pset = self.psets[name]
+            pset.eval_prior_physical(theta=θ, prior=step.prior, batch=batch)
+        # all done
+        return self
+
+
+    def to_physical(self, theta, batch=None):
+        """
+        Transform {theta} from sampling space to physical space, in place; only
+        reparameterized psets actually do anything here
+        """
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            self.psets[name].to_physical(theta=θ, batch=batch)
+        # all done
+        return self
+
+
+    def to_sampling(self, theta, batch=None):
+        """
+        Transform {theta} from physical space to sampling space, in place; the inverse of
+        {to_physical}
+        """
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            self.psets[name].to_sampling(theta=θ, batch=batch)
+        # all done
+        return self
+
+
+    def eval_jacobian(self, step, batch=None):
+        """
+        Fill {step.Jacobian} with d(physical)/d(sampling) for every reparameterized pset (1
+        elsewhere), for use by a reparameterized gradient-based sampler (e.g. HMC)
+        """
+        # grab the portion of the sample that's mine
+        θ = self.restrict(theta=step.theta)
+        # ask my subsets, in {psets_list} order
+        for name in self.psets_list:
+            self.psets[name].jacobian(theta=θ, jacobian=step.Jacobian, batch=batch)
+        # all done
+        return self
+
+
+    def transformToPhysical(self, step):
+        """
+        Refresh {step.theta} (physical space) from {step.phi} (sampling space); the bridge a
+        reparameterized gradient-based sampler (e.g. cuda {HMC}) needs after every leapfrog
+        position update
+        """
+        step.theta.copy(step.phi)
+        self.to_physical(theta=step.theta, batch=step.samples)
+        return self
+
+
+    @property
+    def has_reparametrization(self):
+        """
+        Whether any of my psets' priors are reparameterized; read by
+        {altar.bayesian.states.cuda.CoolingStep.start}/my own {initialize_sample} to decide
+        whether to carry the extra sampling/physical-space state.
+
+        Reads each prior's {reparameterize} *configuration* trait, not its
+        {has_reparametrization} attribute -- the latter is only set once the prior's own
+        {initialize} has run (inside {self.initialize}/{initialize_psets}), but
+        {Application.main} calls {controller.initialize} (and therefore this, transitively,
+        via {CoolingStep.allocate}/{HMCState.start}, which read this property through the
+        model instance before it is initialized) *before* {model.initialize} -- so this must
+        stay a plain config read, not a mirror of state set up later.
+        """
+        return any(getattr(self.psets[name].prior, 'reparameterize', False)
+                   for name in self.psets_list)
+
+
+    @property
+    def reparameterization(self):
+        """
+        Alias of {has_reparametrization}; this is the name cuda {HMC.initialize} reads
+        """
+        return self.has_reparametrization
 
 
     def forward_model(self, theta, prediction):
@@ -280,19 +400,21 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
     def verify_unbounded_priors(self):
         """
-        Raise if any active prior is bounded: gradient-based samplers (SGLD, HMC) have no
-        accept/reject step, so a bounded prior (e.g. a uniform one) needs an unconstrained
-        reparameterization -- not yet implemented -- before it can be sampled this way
+        Raise if any active prior is bounded and not reparameterized: gradient-based samplers
+        (SGLD, HMC) have no accept/reject step, so a bounded prior (e.g. a uniform one) needs
+        an unconstrained reparameterization (see {altar.distributions.Uniform.reparameterize})
+        before it can be sampled this way
         """
         bounded = [self.psets[name].prior for name in self.psets_list
-                   if self.psets[name].prior.bounded]
+                   if self.psets[name].prior.bounded
+                   and not getattr(self.psets[name].prior, 'reparameterize', False)]
         if bounded:
             channel = self.error
             names = ", ".join(type(p).__name__ for p in bounded)
             channel.log(
                 f"gradient-based samplers (SGLD, HMC) only support unbounded priors; "
                 f"found bounded prior(s): {names}. Use CATMIP/Metropolis for this model, "
-                f"or wait for logistic-transform support.")
+                f"or set reparameterize=True on the prior.")
             raise SystemExit(1)
         self.checked_unbounded_priors = True
         return self

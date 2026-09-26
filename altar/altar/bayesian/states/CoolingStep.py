@@ -38,6 +38,19 @@ class CoolingStep(BayesianState):
 
 
     @classmethod
+    def allocate(cls, annealer):
+        """
+        Build an uninitialized step sized for {annealer}'s model, carrying the extra
+        sampling/physical-space state when the model is reparameterized -- overrides
+        {BayesianState.allocate}, which doesn't know about {has_reparametrization} at all
+        """
+        model = annealer.model
+        has_reparametrization = getattr(model, 'has_reparametrization', False)
+        return cls.alloc(samples=model.job.chains, parameters=model.parameters,
+                         has_reparametrization=has_reparametrization)
+
+
+    @classmethod
     def alloc(cls, samples, parameters, has_reparametrization=False, beta=0):
         """
         Allocate storage for the parts of a cooling step

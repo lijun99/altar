@@ -91,11 +91,21 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         β = self.update_temperature(step=step)
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
-            θ, (prior, data, posterior) = self.resampling(step=step)
+            θ, (prior, data, posterior), θ_sampling, jacobian = self.resampling(step=step)
             # update the step after the resampling
             step.prior.copy(prior)
             step.data.copy(data)
             step.theta.copy(θ)
+            # a reparameterized step keeps theta_sampling/jacobian as separate buffers (see
+            # {altar.bayesian.states.CoolingStep}), not aliases of theta -- they must be
+            # reordered by the exact same sample indices, or theta/theta_sampling end up
+            # describing different chains after resampling (row i's physical theta no longer
+            # corresponds to row i's sampling-space theta), silently corrupting any
+            # reparameterized gradient-based sampler (e.g. HMC) that reads both
+            if getattr(step, 'has_reparametrization', False):
+                step.theta_sampling.copy(θ_sampling)
+                if jacobian is not None and step.jacobian is not None:
+                    step.jacobian.copy(jacobian)
 
         # update the step (common procedures with or w/o resampling)
         step.beta = β
@@ -247,6 +257,19 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         data = altar.vector(shape=dataOld.shape)
         posterior = altar.vector(shape=postOld.shape)
 
+        # a reparameterized step carries theta_sampling/jacobian as separate buffers from
+        # theta (not aliases; see {altar.bayesian.states.CoolingStep}), so they must be
+        # reordered by the exact same sample indices below, or theta/theta_sampling end up
+        # describing different chains after resampling
+        has_reparametrization = getattr(step, 'has_reparametrization', False)
+        θSamplingOld = θSampling = jacobianOld = jacobian = None
+        if has_reparametrization:
+            θSamplingOld = step.theta_sampling
+            θSampling = altar.matrix(shape=θSamplingOld.shape)
+            jacobianOld = step.jacobian
+            if jacobianOld is not None:
+                jacobian = altar.vector(shape=jacobianOld.shape)
+
         # build a histogram for the new samples and convert it into a vector
         multi = self.compute_sample_multiplicities(step=step).counts()
         # print("      histogram as vector:")
@@ -286,9 +309,15 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
             prior[i] = priorOld[old]
             data[i] = dataOld[old]
             posterior[i] = postOld[old]
+            # the same indices, for theta_sampling/jacobian, when reparameterized
+            if has_reparametrization:
+                for param in range(step.parameters):
+                    θSampling[i, param] = θSamplingOld[old, param]
+                if jacobian is not None:
+                    jacobian[i] = jacobianOld[old]
 
         # return the shuffled data
-        return θ, (prior, data, posterior)
+        return θ, (prior, data, posterior), θSampling, jacobian
 
 
     # implementation details

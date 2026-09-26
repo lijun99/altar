@@ -22,10 +22,22 @@ class LangevinStep:
 
     # public data
     beta = 1  # the inverse temperature
-    theta = None     # a (samples x parameters) matrix
+    theta_sampling = None  # a (samples x parameters) matrix in sampling space; the buffer
+                           # {updateTheta} actually evolves
+    theta = None     # a (samples x parameters) matrix in physical space; == {theta_sampling}
+                     # unless reparameterized, in which case it must be kept in sync (see
+                     # {altar.bayesian.methods.CUDASGLD.walk}) before every use
     prior = None     # a (samples) vector with logs of the sample likelihoods
     data = None      # a (samples) vector with the logs of the data likelihoods given the samples
     posterior = None # a (samples) vector with the logs of the posterior likelihood
+
+    # reparameterization flag
+    has_reparametrization = False  # whether reparameterization is implemented
+    jacobian = None  # a (samples) vector with the log of the Jacobian determinant (d theta/d
+                     # theta_sampling); only allocated if reparameterized
+    Jacobian = None  # a (samples x parameters) matrix with the raw elementwise
+                     # d(physical)/d(sampling), for scaling {data_gradient} by the chain rule;
+                     # only allocated if reparameterized
 
     epsilon_t = None          # sampling rate
     prior_gradient = None     # a (samples x parameters) matrix with gradient of log P(theta_i)
@@ -39,8 +51,8 @@ class LangevinStep:
         """
         The number of samples
         """
-        # encoded in θ
-        return self.theta.shape[0]
+        # encoded in θ_sampling
+        return self.theta_sampling.shape[0]
 
 
     @property
@@ -48,8 +60,8 @@ class LangevinStep:
         """
         The number of model parameters
         """
-        # encoded in θ
-        return self.theta.shape[1]
+        # encoded in θ_sampling
+        return self.theta_sampling.shape[1]
 
 
     # factories
@@ -66,21 +78,32 @@ class LangevinStep:
         precision = model.job.gpuprecision
 
         # build an uninitialized step
-        step = cls.alloc(samples=samples, parameters=model.parameters, dtype=precision)
+        step = cls.alloc(samples=samples, parameters=model.parameters, dtype=precision,
+                        has_reparametrization=model.has_reparametrization if hasattr(model, 'has_reparametrization') else False)
 
         # return the initialized state
         return step
 
 
     @classmethod
-    def alloc(cls, samples, parameters, dtype):
+    def alloc(cls, samples, parameters, dtype, has_reparametrization=False):
         """
         Allocate storage for the parts of a cooling step
         """
         # dtype must be given to avoid unmatched precisions
 
-        # allocate the initial sample set
-        theta = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
+        # allocate the initial sample set, in sampling space
+        theta_sampling = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
+
+        # allocate physical parameters and jacobians only if using reparameterization
+        theta = None
+        jacobian = None
+        Jacobian = None
+        if has_reparametrization:
+            theta = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
+            jacobian = altar.cuda.vector(shape=samples, dtype=dtype).zero()
+            Jacobian = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).fill(1.0)
+
         # allocate the likelihood vectors
         prior = altar.cuda.vector(shape=samples, dtype=dtype).zero()
         data = altar.cuda.vector(shape=samples, dtype=dtype).zero()
@@ -90,7 +113,10 @@ class LangevinStep:
         data_gradient = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
         eta_t = altar.cuda.matrix(shape=(samples, parameters), dtype=dtype).zero()
         # build one of my instances and return it
-        return cls(beta=1, theta=theta, likelihoods=(prior, data, posterior), epsilon_t=1, eta_t=eta_t, gradient=(prior_gradient, data_gradient))
+        return cls(beta=1, theta_sampling=theta_sampling, theta=theta, jacobian=jacobian,
+                  Jacobian=Jacobian, likelihoods=(prior, data, posterior), epsilon_t=1,
+                  eta_t=eta_t, gradient=(prior_gradient, data_gradient),
+                  has_reparametrization=has_reparametrization)
 
     # interface
     def clone(self):
@@ -124,21 +150,24 @@ class LangevinStep:
 
     def updateTheta(self, batch=None):
         """
-        Update theta(t+1) = theta(t) + epsilon_t/2 (prior_gradient + data_gradient) + eta_t
+        Update theta_sampling(t+1) = theta_sampling(t) + epsilon_t/2 (prior_gradient +
+        data_gradient) + eta_t -- {prior_gradient}/{data_gradient} must already be the
+        gradient with respect to {theta_sampling} (see {altar.bayesian.methods.CUDASGLD.walk},
+        which applies the reparameterized chain-rule scaling before calling this)
         """
         # determine the batch size
         batch = batch or self.samples
 
         # generate eta_t
         epsilon_t_sqrt = math.sqrt(self.epsilon_t)
-        altar.cuda.curand.gaussian(out=self.eta_t, scale=epsilon_t_sqrt)
+        altar.cuda.curand.gaussian(out=self.eta_t, stddev=epsilon_t_sqrt)
 
-        # theta(t+1)
+        # theta_sampling(t+1)
         half_epsilon_t = 0.5*self.epsilon_t
-        libcudaaltar.cudaLangevin_updateThetaBatched(self.theta.data,
-                                    1.0, self.prior_gradient.data,
-                                    1.0, self.data_gradient.data,
-                                    half_epsilon_t, self.eta_t.data, batch)
+        libcudaaltar.langevin.cudaLangevin_updateThetaBatched(self.theta_sampling.grid,
+                                    1.0, self.prior_gradient.grid,
+                                    1.0, self.data_gradient.grid,
+                                    half_epsilon_t, self.eta_t.grid)
 
         # all done
         return self
@@ -148,7 +177,10 @@ class LangevinStep:
         Copy cpu step to gpu step
         """
         self.beta = step.beta
-        self.theta.copy_from_host(source=step.theta)
+        self.theta_sampling.copy_from_host(source=step.theta_sampling)
+        if self.has_reparametrization:
+            self.theta.copy_from_host(source=step.theta)
+            self.jacobian.copy_from_host(source=step.jacobian)
         self.prior.copy_from_host(source=step.prior)
         self.data.copy_from_host(source=step.data)
         self.posterior.copy_from_host(source=step.posterior)
@@ -159,7 +191,10 @@ class LangevinStep:
         copy gpu step to cpu step
         """
         step.beta = self.beta
-        self.theta.copy_to_host(target=step.theta)
+        self.theta_sampling.copy_to_host(target=step.theta_sampling)
+        if self.has_reparametrization:
+            self.theta.copy_to_host(target=step.theta)
+            self.jacobian.copy_to_host(target=step.jacobian)
         self.prior.copy_to_host(target=step.prior)
         self.data.copy_to_host(target=step.data)
         self.posterior.copy_to_host(target=step.posterior)
@@ -170,11 +205,23 @@ class LangevinStep:
         """
         Report and Record
         """
+        # refresh the physical-space snapshot from the current sampling-space theta, so the
+        # report/record below reflect meaningful (physical) parameter values
+        if self.has_reparametrization:
+            model = controller.model
+            self.theta.copy(self.theta_sampling)
+            model.to_physical(theta=self.theta, batch=self.samples)
         # report
         self.print(channel=controller.info)
         # record
-        # need to compute posterior
+        # need to compute posterior; {eval_prior} accumulates, so start from zero
+        self.prior.zero()
         controller.model.likelihoods(annealer=controller, step=self)
+        # log|J| kept apart from the physical-space prior, same as HMC/CATMIP
+        if self.has_reparametrization:
+            self.jacobian.zero()
+            controller.model.eval_prior_with_physical(
+                step=self, likelihood=self.jacobian, batch=self.samples)
         self.save_hdf5(path="sgld_results", iteration=self.report_seq)
         self.report_seq += 1
 
@@ -258,6 +305,11 @@ class LangevinStep:
             # iterate over all psets
             for name, pset in psets.items():
                 psetsgrp.create_dataset(name, data=theta[:, pset.offset:pset.offset+pset.count])
+        # same extra datasets {CoolingStep} writes under reparameterization
+        if self.has_reparametrization:
+            psetsgrp.create_dataset('has_reparametrization', data=numpy.array([True]))
+            psetsgrp.create_dataset('theta_sampling', data=self.theta_sampling.copy_to_host(type="numpy"))
+            psetsgrp.create_dataset('jacobian', data=self.jacobian.copy_to_host(type="numpy"))
         # save Bayesian likelihoods/probabilities
         bayesiangrp = f.create_group('Bayesian')
         bayesiangrp.create_dataset('prior', data=self.prior.copy_to_host(type="numpy"))
@@ -269,7 +321,8 @@ class LangevinStep:
         return
 
     # meta-methods
-    def __init__(self, beta, theta, likelihoods, epsilon_t, eta_t, gradient, **kwds):
+    def __init__(self, beta, theta_sampling, likelihoods, epsilon_t, eta_t, gradient,
+                theta=None, jacobian=None, Jacobian=None, has_reparametrization=False, **kwds):
         # chain up
         super().__init__(**kwds)
 
@@ -277,7 +330,21 @@ class LangevinStep:
         self.beta = beta
         self.epsilon_t = epsilon_t
         # store the sample set
-        self.theta = theta
+        self.theta_sampling = theta_sampling
+        # store reparameterization flag
+        self.has_reparametrization = has_reparametrization
+        # handle physical parameters and jacobians based on reparameterization flag
+        if has_reparametrization:
+            self.theta = theta if theta is not None else theta_sampling.clone()
+            self.jacobian = jacobian if jacobian is not None else altar.cuda.vector(
+                shape=theta_sampling.shape[0], dtype=theta_sampling.dtype).zero()
+            self.Jacobian = Jacobian if Jacobian is not None else altar.cuda.matrix(
+                shape=theta_sampling.shape, dtype=theta_sampling.dtype).fill(1.0)
+        else:
+            # if no reparameterization, physical parameters are the same as sampling parameters
+            self.theta = self.theta_sampling
+            self.jacobian = None
+            self.Jacobian = None
         # store the likelihoods
         self.prior, self.data, self.posterior = likelihoods
         # store the gaussian noise

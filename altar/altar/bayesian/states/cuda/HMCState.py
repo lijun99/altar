@@ -22,6 +22,7 @@ class HMCState:
     theta = None
     phi = None
     Jacobian = None
+    log_jacobian = None  # (samples,) log|det d(physical)/d(sampling)|; kept apart from {prior}
     momentum = None
 
     prior = None
@@ -38,7 +39,7 @@ class HMCState:
 
     def __init__(self, *, beta, eta, theta, momentum, likelihoods,
                  gradients, potential, reparameterization=False,
-                 phi=None, jacobian=None, **kwds):
+                 phi=None, jacobian=None, log_jacobian=None, **kwds):
         super().__init__(**kwds)
         self.beta = beta
         self.eta = eta
@@ -55,9 +56,12 @@ class HMCState:
             else:
                 self.Jacobian = altar.cuda.matrix(shape=(self.samples, self.parameters),
                                                   dtype=theta.dtype).fill(1.0)
+            self.log_jacobian = log_jacobian if log_jacobian is not None else \
+                altar.cuda.vector(shape=self.samples, dtype=theta.dtype).zero()
         else:
             self.phi = theta
             self.Jacobian = None
+            self.log_jacobian = None
 
     @property
     def samples(self):
@@ -107,9 +111,11 @@ class HMCState:
         potential = (self.U.clone(), self.H.clone())
         phi = self.phi.clone() if self.reparameterization else theta
         jacobian = self.Jacobian.clone() if self.Jacobian is not None else None
+        log_jacobian = self.log_jacobian.clone() if self.log_jacobian is not None else None
         return type(self)(beta=self.beta, eta=self.eta, theta=theta, momentum=momentum,
                           likelihoods=likelihoods, gradients=gradients, potential=potential,
-                          reparameterization=self.reparameterization, phi=phi, jacobian=jacobian)
+                          reparameterization=self.reparameterization, phi=phi, jacobian=jacobian,
+                          log_jacobian=log_jacobian)
 
     def compute_posterior(self):
         self.posterior.copy(self.prior)

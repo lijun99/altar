@@ -110,14 +110,14 @@ class LangevinState(BayesianState):
 
         # generate eta_t
         epsilon_t_sqrt = math.sqrt(self.epsilon_t)
-        altar.cuda.curand.gaussian(out=self.eta_t, scale=epsilon_t_sqrt)
+        altar.cuda.curand.gaussian(out=self.eta_t, stddev=epsilon_t_sqrt)
 
         # theta(t+1)
         half_epsilon_t = 0.5*self.epsilon_t
-        libcudaaltar.cudaLangevin_updateThetaBatched(self.theta.data,
-                                    1.0, self.prior_gradient.data,
-                                    1.0, self.data_gradient.data,
-                                    half_epsilon_t, self.eta_t.data, batch)
+        libcudaaltar.langevin.cudaLangevin_updateThetaBatched(self.theta.grid,
+                                    1.0, self.prior_gradient.grid,
+                                    1.0, self.data_gradient.grid,
+                                    half_epsilon_t, self.eta_t.grid)
 
         # all done
         return self

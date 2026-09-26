@@ -68,6 +68,10 @@ class Base(altar.component, implements=distribution):
         self._impl = self._makeImpl()
         # and let it initialize itself
         self._impl.initialize(rng=rng, application=application)
+        # mirror the (possibly reparameterize-driven) flag back onto me: other code (e.g.
+        # {altar.models.BayesianL2.verify_unbounded_priors}/{has_reparametrization}) reads
+        # {self.has_reparametrization} directly, not {self._impl.has_reparametrization}
+        self.has_reparametrization = self._impl.has_reparametrization
         # all done
         return self
 
@@ -125,6 +129,15 @@ class Base(altar.component, implements=distribution):
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
         """
         return self._impl.verify(theta=theta, mask=mask, batch=batch)
+
+
+    @altar.export
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill my portion of {jacobian} with d(physical)/d(sampling), or leave it at its
+        default of 1 when i'm not reparameterized
+        """
+        return self._impl.jacobian(theta=theta, jacobian=jacobian, batch=batch)
 
 
     @altar.export

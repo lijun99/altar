@@ -48,6 +48,15 @@ class Base:
         return self.eval_prior(theta=theta, prior=prior, batch=batch)
 
 
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill {jacobian} with d(physical)/d(sampling). Default: nothing to do -- {jacobian}
+        is expected to already hold 1 (see {altar.bayesian.states.cuda.HMCState.alloc}'s own
+        default fill), the correct value for an unreparameterized parameter set.
+        """
+        return self
+
+
     def to_physical(self, theta, batch=None):
         """
         Transform {theta} from sampling space to physical space, in place. Default: a no-op.

@@ -99,6 +99,15 @@ class Base:
         return self
 
 
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill my portion of {jacobian} with d(physical)/d(sampling). Default: nothing to do --
+        {jacobian} is expected to already hold 1, the correct value when i'm not
+        reparameterized.
+        """
+        return self
+
+
     def eval_prior_with_physical(self, theta, likelihood, batch=None):
         """
         Add any prior contributions to {likelihood} that depend on my physical parameters,
@@ -182,6 +191,9 @@ class Base:
     # private data, set by the shim before any other method runs
     parameters = None
     offset = None
+    # mirrored back onto the shim after {initialize}; a concrete distribution sets this to
+    # True in its own {initialize} when reparameterizing (see {Uniform})
+    has_reparametrization = False
     # set by {initialize}
     pdf = None
 

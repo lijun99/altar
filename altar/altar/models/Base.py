@@ -140,6 +140,14 @@ class Base(altar.component, implements=parameters):
 
 
     @altar.export
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill {jacobian} with d(physical)/d(sampling), or leave it untouched (at its default
+        of 1) when i'm not reparameterized
+        """
+        return self._impl.jacobian(theta=theta, jacobian=jacobian, batch=batch)
+
+
     def to_physical(self, theta, batch=None):
         """
         Transform {theta} from sampling space to physical space, in place

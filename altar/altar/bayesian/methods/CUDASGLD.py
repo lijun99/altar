@@ -12,6 +12,7 @@ import altar.cuda
 from altar.cuda import libcudaaltar
 # externals
 import math
+import numpy
 
 # declaration
 class CUDASGLD:
@@ -102,9 +103,26 @@ class CUDASGLD:
         # iterate {sweep} times for a given epsilon_t
         for sweep in range(controller.sweeps):
 
+            # {model.gradient} always operates on physical-space theta (the forward model
+            # needs real parameter values); refresh it from the sampling-space theta the
+            # dynamics actually evolve, exactly as cuda {HMC} refreshes its own physical
+            # snapshot after every leapfrog position update
+            if step.has_reparametrization:
+                step.theta.copy(step.theta_sampling)
+                model.to_physical(theta=step.theta, batch=step.samples)
+
             # compute prior and data likelihood gradients
             model.gradient(controller=controller, step=step,  batch=step.samples)
-            # update theta
+
+            # {data_gradient} is w.r.t. physical theta; the chain rule needs it scaled by
+            # d(physical)/d(sampling) to become a gradient w.r.t. sampling-space theta.
+            # {prior_gradient} needs no such scaling: {Uniform.prior_gradient} (via its
+            # {transform.jacobian_gradient}) already computes it directly in sampling space
+            if step.has_reparametrization:
+                model.eval_jacobian(step=step, batch=step.samples)
+                numpy.asarray(step.data_gradient)[:] *= numpy.asarray(step.Jacobian)
+
+            # update theta_sampling
             step.updateTheta()
 
         # all done
@@ -121,14 +139,25 @@ class CUDASGLD:
         # grab the model
         model = controller.model
 
+        # refresh the physical-space snapshot, same as {walk}
+        if step.has_reparametrization:
+            step.theta.copy(step.theta_sampling)
+            model.to_physical(theta=step.theta, batch=step.samples)
+
         # compute the gradient
         model.gradient(controller=controller, step=step, batch=step.samples)
+
+        # scale {data_gradient} by the chain rule, same as {walk}
+        if step.has_reparametrization:
+            model.eval_jacobian(step=step, batch=step.samples)
+            numpy.asarray(step.data_gradient)[:] *= numpy.asarray(step.Jacobian)
+
         gradient = step.data_gradient
         gradient += step.prior_gradient
 
         max_gradient = max(gradient.amax(), abs(gradient.amin()))
 
-        mean, std = step.theta.mean_sd()
+        mean, std = step.theta_sampling.mean_sd()
         max_std = std.amax()
 
         rate = scale*min(4*max_std/max_gradient, max_std*max_std)

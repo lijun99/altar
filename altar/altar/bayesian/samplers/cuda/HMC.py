@@ -151,7 +151,16 @@ class HMC:
             # across calls, inflating the potential and making every trajectory reject
             state.prior.zero()
             model.likelihoods(annealer=annealer, step=state)
+            # log|J| in its own buffer so {prior}/{posterior} stay physical-space densities
+            if state.reparameterization:
+                state.log_jacobian.zero()
+                model.eval_prior_with_physical(
+                    step=state, likelihood=state.log_jacobian, batch=state.samples)
             model.gradient(controller=annealer, step=state, batch=state.samples)
+            # refresh {state.Jacobian} (d(physical)/d(sampling)) for the leapfrog kernel's
+            # reparameterized path below; stale otherwise (allocated once, at a constant 1)
+            if state.reparameterization:
+                model.eval_jacobian(step=state, batch=state.samples)
             jacobian = state.Jacobian.grid if state.Jacobian is not None else None
             leapfrog.cudaLeapfrog_computePotentialAndGradient(
                 state.prior.grid,
@@ -163,6 +172,9 @@ class HMC:
                 state.beta,
                 jacobian,
             )
+            # sampling-space potential: U -= log|J| (its gradient is already in prior_gradient)
+            if state.reparameterization:
+                cublas.axpy(alpha=-1.0, x=state.log_jacobian, y=state.U, batch=state.samples)
 
         # compute initial energy
         compute_potential_and_gradients()
@@ -279,11 +291,10 @@ class HMC:
             self.proposal_state.momentum.copy_from_host(source=step.momentum)
         else:
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(self.proposal_state.momentum.grid)
+        # {Jacobian}/{log_jacobian} are recomputed at the start of every trajectory; no copy in
         if self.proposal_state.reparameterization:
             if getattr(step, 'theta_sampling', None) is not None:
                 self.proposal_state.phi.copy_from_host(source=step.theta_sampling)
-            if getattr(step, 'jacobian', None) is not None and self.proposal_state.Jacobian is not None:
-                self.proposal_state.Jacobian.copy_from_host(source=step.jacobian)
 
     def _copy_accepted_to_step(self, step):
         self.proposal_state.theta.copy_to_host(target=step.theta)
@@ -291,8 +302,8 @@ class HMC:
             self.proposal_state.momentum.copy_to_host(target=step.momentum)
         if self.proposal_state.reparameterization and getattr(step, 'theta_sampling', None) is not None:
             self.proposal_state.phi.copy_to_host(target=step.theta_sampling)
-            if getattr(step, 'jacobian', None) is not None and self.proposal_state.Jacobian is not None:
-                self.proposal_state.Jacobian.copy_to_host(target=step.jacobian)
+            if getattr(step, 'jacobian', None) is not None:
+                self.proposal_state.log_jacobian.copy_to_host(target=step.jacobian)
         for attr in ("prior", "data", "posterior", "U", "H"):
             target = getattr(step, attr, None)
             source = getattr(self.proposal_state, attr, None)

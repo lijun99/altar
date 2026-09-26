@@ -67,6 +67,10 @@ class CUDAAnnealing(AnnealingMethod):
         model.initialize_sample(step=gstep, batch=gstep.samples)
         # compute the likelihoods
         model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
+        # log|J| of the initial sample, kept apart from the physical-space prior
+        if gstep.has_reparametrization:
+            gstep.jacobian.zero()
+            model.eval_prior_with_physical(step=gstep, likelihood=gstep.jacobian, batch=gstep.samples)
         # return to cpu
         gstep.copy_to_cpu(step=self.step)
 

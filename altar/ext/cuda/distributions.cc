@@ -17,6 +17,7 @@
 #include "ranged.h"
 #include "tgaussian.h"
 #include "logistic.h"
+#include "logittransform.h"
 
 
 // build the {distributions} submodule once, here, and hand it to each distribution's own
@@ -33,6 +34,7 @@ altar::cuda::extensions::distributions::__init__(py::module & m) -> void
     altar::cuda::extensions::distributions::ranged::__init__(distributions);
     altar::cuda::extensions::distributions::tgaussian::__init__(distributions);
     altar::cuda::extensions::distributions::logistic::__init__(distributions);
+    altar::cuda::extensions::distributions::logittransform::__init__(distributions);
 }
 
 
