@@ -21,6 +21,7 @@ from .proposals.Proposal import Proposal as proposal
 from .solvers.Solver import Solver as solver
 from .langevin_schedulers.LangevinScheduler import LangevinScheduler as langevinscheduler
 from .stepsizers.StepSizer import StepSizer as stepsizer
+from .stepcounters.StepCounter import StepCounter as stepcounter
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace
 from .controllers import annealer, catmip, langevin, plainhmc, catmiphmc
@@ -29,6 +30,7 @@ from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal
 from .stepsizers import fixedstep, linearrate, targetedrate, dual
+from .stepcounters import fixedsteps, decorrelating
 from .monitoring import profiler
 from .archivers import recorder, h5recorder
 from .langevin_schedulers import powerdecay, expdecay

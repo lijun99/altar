@@ -171,8 +171,10 @@ class TargetedRate(AdaptiveStepSizer, family="altar.bayesian.stepsizers.targeted
     the standard exponential rule: step *= exp(gain * (ratio - target)).
     """
 
-    target = altar.properties.float(default=0.7)
-    target.doc = "desired acceptance probability"
+    target = altar.properties.float(default=None)
+    target.doc = "desired acceptance probability; None lets the owning sampler fill in its " \
+                 "own family-appropriate default (e.g. ~0.234 for random-walk Metropolis, " \
+                 "~0.65-0.8 for HMC) at initialize() time"
 
     gain = altar.properties.float(default=1.0)
     gain.doc = "feedback gain controlling responsiveness"
@@ -191,8 +193,9 @@ class DualAveragingStepSize(AdaptiveStepSizer, family="altar.bayesian.stepsizers
     maintains an averaged log-step that slowly forgets past errors.
     """
 
-    target = altar.properties.float(default=0.65)
-    target.doc = "target acceptance probability"
+    target = altar.properties.float(default=None)
+    target.doc = "target acceptance probability; None lets the owning sampler fill in its " \
+                 "own family-appropriate default, same as {TargetedRate}"
 
     gamma = altar.properties.float(default=0.05)
     gamma.doc = "controls the speed of the dual averaging updates"
