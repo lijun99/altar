@@ -11,8 +11,6 @@
 ;   or   slipmodel.plexus sample --config=static_logit.pfg
 ; for forward problem only (with an input set of parameters), run
 ;        slipmodel.plexus forward --config=static_logit.pfg
-; for converting the output to physical parameters (make a copy if you want to save the sampling parameters)
-;        slipmodel.plexus tophysical --config=static_logit.pfg --h5file=step_final.h5
 
 
 ; my shell application

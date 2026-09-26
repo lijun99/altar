@@ -42,14 +42,4 @@ def forward():
     # and  return the panel
     return Forward
 
-# convert parameters from sampling to physical
-@altar.foundry(implements=altar.action, tip="convert results to physical")
-def tophysical():
-    # get the command panel
-    from .ToPhysical import ToPhysical
-    # attach the docstring
-    __doc__ = ToPhysical.__doc__
-    # and  return the panel
-    return ToPhysical
-
 # end of file
