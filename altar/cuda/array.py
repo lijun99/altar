@@ -13,14 +13,14 @@ A thin, {pyre.grid}-backed replacement for the old capsule-based {altar.cuda.mat
 {.zero()}/{.clone()}/{.copy_from_host(...)}/... call sites keep working unchanged, without
 each of them being rewritten to talk to {pyre.grid} directly.
 
-{Array} wraps a {pyre.grid.managed} grid and adds back the handful of convenience methods
+{Array} wraps a {pyre.cuda.managed} grid and adds back the handful of convenience methods
 that layer expects. Managed memory is host-visible, so every method here is just a thin
 {numpy.asarray(grid)} view over it -- there is no separate host/device copy step the way
 there was for the old capsule-based buffers, {copy_from_host}/{copy_to_host} included.
 """
 
 import numpy
-import pyre.grid
+import pyre.cuda
 
 
 # the declaration
@@ -44,7 +44,7 @@ class Array:
         """
         if isinstance(shape, int):
             shape = (shape,)
-        return cls(pyre.grid.managed(shape=tuple(shape), cell=_cell(dtype)))
+        return cls(pyre.cuda.managed(shape=tuple(shape), cell=_cell(dtype)))
 
 
     @classmethod
@@ -201,9 +201,9 @@ class Array:
         potrf = cusolver.dpotrf if double else cusolver.spotrf
         potrf_buffer_size = cusolver.dpotrf_buffer_size if double else cusolver.spotrf_buffer_size
 
-        dev_info = pyre.grid.managed(shape=(1,), cell="int32")
+        dev_info = pyre.cuda.managed(shape=(1,), cell="int32")
         lwork = potrf_buffer_size(handle, cublas.FillMode.LOWER, n, self._grid, n)
-        workspace = pyre.grid.managed(shape=(max(lwork, 1),), cell=self.dtype)
+        workspace = pyre.cuda.managed(shape=(max(lwork, 1),), cell=self.dtype)
         potrf(handle, cublas.FillMode.LOWER, n, self._grid, n, workspace, lwork, dev_info)
         return self
 
@@ -244,7 +244,7 @@ class Array:
         return f"<{type(self).__name__} shape={self.shape} dtype={self.dtype}>"
 
 
-# the cell type {pyre.grid.managed} wants, from whatever spelling a caller used (a plain
+# the cell type {pyre.cuda.managed} wants, from whatever spelling a caller used (a plain
 # string like "float64", a numpy dtype, or a numpy scalar type)
 def _cell(dtype):
     return numpy.dtype(dtype).name

@@ -18,7 +18,7 @@ requested column range), and the per-parameter-bounds counterpart {verify_unique
 
 def test():
     import numpy
-    import pyre.grid
+    import pyre.cuda
     import altar
     import altar.cuda
 
@@ -29,11 +29,11 @@ def test():
     idx_begin, idx_end = 1, 3
     low, high = -1.0, 1.0
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = rng.uniform(-2, 2, size=(samples, parameters))
     arr = numpy.asarray(theta)
 
-    invalid = pyre.grid.managed(shape=(samples,), cell="int32")
+    invalid = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(invalid)[:] = 0
     distributions.cudaRanged_verify(theta, invalid, idx_begin, idx_end, low, high)
     inv = numpy.asarray(invalid)
@@ -43,17 +43,17 @@ def test():
     assert numpy.array_equal(inv, expected)
 
     # a pre-flagged sample stays flagged even when its parameters are in range
-    invalid = pyre.grid.managed(shape=(samples,), cell="int32")
+    invalid = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(invalid)[:] = 0
     numpy.asarray(invalid)[0] = 1
-    theta_ok = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta_ok = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta_ok)[:, :] = 0.0
     distributions.cudaRanged_verify(theta_ok, invalid, idx_begin, idx_end, low, high)
     assert numpy.asarray(invalid)[0] == 1
     assert numpy.all(numpy.asarray(invalid)[1:] == 0)
 
     # constrain: clamps only the requested columns
-    clamped = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    clamped = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(clamped)[:, :] = arr
     distributions.cudaRanged_constrain(clamped, idx_begin, idx_end, low, high)
     c = numpy.asarray(clamped)
@@ -63,11 +63,11 @@ def test():
 
     # per-parameter bounds
     n = idx_end - idx_begin
-    lows = pyre.grid.managed(shape=(n,), cell="float64")
-    highs = pyre.grid.managed(shape=(n,), cell="float64")
+    lows = pyre.cuda.managed(shape=(n,), cell="float64")
+    highs = pyre.cuda.managed(shape=(n,), cell="float64")
     numpy.asarray(lows)[:] = [-0.5, -1.5]
     numpy.asarray(highs)[:] = [0.5, 1.5]
-    invalid = pyre.grid.managed(shape=(samples,), cell="int32")
+    invalid = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(invalid)[:] = 0
     distributions.cudaRanged_verify_unique(theta, invalid, idx_begin, idx_end, lows, highs)
     inv = numpy.asarray(invalid)
