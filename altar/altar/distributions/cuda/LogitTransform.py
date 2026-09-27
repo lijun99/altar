@@ -81,6 +81,16 @@ class LogitTransform:
         return self
 
 
+    def chain_gradient(self, theta, gradient, batch=None):
+        """
+        gradient[:, idx_begin:idx_end] <- gradient*(b-a)*sig*(1-sig) + (1 - 2*sig), in place
+        """
+        a, b = self.support
+        self.libcudaaltar.cudaLogitTransform_chaingradient(
+            self._grid(theta), self._grid(gradient), self.idx_begin, self.idx_end, a, b)
+        return self
+
+
     # implementation details
     @staticmethod
     def _grid(buffer):

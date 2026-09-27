@@ -28,11 +28,8 @@ class Uniform(base):
         """
         # set up my pdf
         self.pdf = altar.pdf.uniform(rng=rng.rng, support=self.support)
-        # if reparameterizing, hand my transform its bounds and let it initialize
-        if self.reparameterize:
-            self.has_reparametrization = True
-            self.transform.support = self.support
-            self.transform.initialize(application=application)
+        # set up my transform, if reparameterizing
+        self._initialize_transform(application=application)
         # all done
         return self
 
@@ -72,38 +69,6 @@ class Uniform(base):
         return mask
 
 
-    def to_physical(self, theta, batch=None):
-        """
-        Transform my portion of {theta} from sampling space to physical space, in place; a
-        no-op unless reparameterized
-        """
-        if self.reparameterize:
-            θ = self.restrict(theta=theta)
-            self.transform.to_physical(theta=θ, batch=batch)
-        return self
-
-
-    def to_sampling(self, theta, batch=None):
-        """
-        Transform my portion of {theta} from physical space to sampling space, in place; the
-        inverse of {to_physical}, a no-op unless reparameterized
-        """
-        if self.reparameterize:
-            θ = self.restrict(theta=theta)
-            self.transform.to_sampling(theta=θ, batch=batch)
-        return self
-
-
-    def eval_prior_with_physical(self, theta, likelihood, batch=None):
-        """
-        Add the transform's log-jacobian into {likelihood}, when reparameterized
-        """
-        if self.reparameterize:
-            θ = self.restrict(theta=theta)
-            self.transform.log_jacobian(theta=θ, likelihood=likelihood, batch=batch)
-        return self
-
-
     def prior_gradient(self, theta, gradient, batch=None):
         r"""
         Fill my portion of {gradient} with d\log P(\theta)/d\theta; when reparameterized,
@@ -119,24 +84,8 @@ class Uniform(base):
         return self
 
 
-    def jacobian(self, theta, jacobian, batch=None):
-        """
-        Fill my portion of {jacobian} with d(physical)/d(sampling), or 1 when not
-        reparameterized
-        """
-        if self.reparameterize:
-            θ = self.restrict(theta=theta)
-            j = self.restrict(theta=jacobian)
-            self.transform.jacobian(theta=θ, jacobian=j, batch=batch)
-        else:
-            self.restrict(theta=jacobian).fill(1.0)
-        return self
-
-
     # private data, set by the shim before {initialize} runs
     support = None
-    reparameterize = False
-    transform = None
 
 
 # end of file

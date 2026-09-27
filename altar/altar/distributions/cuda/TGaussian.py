@@ -35,6 +35,8 @@ class TGaussian(base):
         Phi = lambda x: 0.5 + 0.5 * erf((x - self.mean) / sqrt2sigma)
         low, high = self.support
         self.support_normalized = (Phi(low), Phi(high))
+        # set up my transform, if reparameterizing
+        self._initialize_transform(application=application)
         # all done
         return self
 
@@ -54,8 +56,11 @@ class TGaussian(base):
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
         {mask} must be an int32 grid. Verification happens in physical space, against the raw
-        (not normalized) {support}, unlike {initialize_sample}/{eval_prior}
+        (not normalized) {support}, unlike {initialize_sample}/{eval_prior}; a no-op when
+        reparameterized, since sampling space is unconstrained
         """
+        if self.reparameterize:
+            return mask
         low, high = self.support
         self.libcudaaltar.cudaRanged_verify(
             self._grid(theta), self._grid(mask), self.idx_begin, self.idx_end, low, high)
@@ -85,6 +90,9 @@ class TGaussian(base):
         """
         self.libcudaaltar.cudaGaussian_logpdfgradient(
             self._grid(theta), self._grid(gradient), self.idx_begin, self.idx_end, self.mean, self.sigma)
+        # reparameterized: chain the physical-space gradient into sampling space
+        if self.reparameterize:
+            self.transform.chain_gradient(theta=theta, gradient=gradient, batch=batch)
         return self
 
 

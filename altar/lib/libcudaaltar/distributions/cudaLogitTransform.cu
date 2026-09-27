@@ -106,6 +106,25 @@ namespace cudaLogitTransform_kernels {
         likelihood[{ sample }] += contribution;
     }
 
+    // one thread per sample: gradient <- gradient*(high-low)*sig*(1-sig) + (1 - 2*sig)
+    template <typename real_type>
+    __global__ void
+    _chain_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+        const size_t idx_begin, const size_t idx_end,
+        const real_type low, const real_type high)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        auto range = high - low;
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto sig = (theta[{ sample, static_cast<int>(i) }] - low) / range;
+            auto & g = gradient[{ sample, static_cast<int>(i) }];
+            g = g * range * sig * (1 - sig) + 1 - 2*sig;
+        }
+    }
+
 } // of namespace cudaLogitTransform_kernels
 
 
@@ -217,5 +236,26 @@ template void altar::cuda::distributions::cudaLogitTransform::log_jacobian<float
     matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaLogitTransform::log_jacobian<double>(
     matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t, const double, const double, cudaStream_t);
+
+// launch {cudaLogitTransform_kernels::_chain_gradient}
+template <typename real_type>
+void altar::cuda::distributions::cudaLogitTransform::
+chain_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type low, const real_type high,
+    cudaStream_t stream)
+{
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+    cudaLogitTransform_kernels::_chain_gradient<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, gradient, idx_begin, idx_end, low, high);
+    cudaCheckError("cudaLogitTransform::chain_gradient error");
+}
+
+template void altar::cuda::distributions::cudaLogitTransform::chain_gradient<float>(
+    matrix_view_t<float>, matrix_view_t<float, false>, const size_t, const size_t, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaLogitTransform::chain_gradient<double>(
+    matrix_view_t<double>, matrix_view_t<double, false>, const size_t, const size_t, const double, const double, cudaStream_t);
 
 // end of file

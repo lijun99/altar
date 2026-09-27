@@ -62,6 +62,15 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
+                // gradient[:, idx_begin:idx_end] <- gradient*(high-low)*sig*(1-sig) +
+                // (1 - 2*sig), in place: a physical-space prior gradient turned into the
+                // sampling-space one; {theta} is PHYSICAL space (read-only)
+                template <typename real_type>
+                void chain_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type low, const real_type high,
+                    cudaStream_t stream=0);
+
             } // of namespace cudaLogitTransform
         } // of namespace distributions
     } // of namespace cuda

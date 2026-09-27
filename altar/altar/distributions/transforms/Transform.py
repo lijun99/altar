@@ -73,6 +73,13 @@ class Transform(altar.protocol, family="altar.distributions.transforms"):
         (overwrites, matching {prior_gradient}'s convention)
         """
 
+    @altar.provides
+    def chain_gradient(self, theta, gradient, batch=None):
+        """
+        {theta} is physical space; turn {gradient}, a physical-space prior gradient, into the
+        sampling-space one in place: gradient <- gradient*J + d/d(sampling)[log|J|]
+        """
+
     @classmethod
     def pyre_default(cls, **kwds):
         """
@@ -174,6 +181,15 @@ class LogitTransform(altar.component, family="altar.distributions.transforms.log
         PHYSICAL space; see {log_jacobian}'s docstring for why.
         """
         return self._impl.jacobian_gradient(theta=theta, gradient=gradient, batch=batch)
+
+
+    @altar.export
+    def chain_gradient(self, theta, gradient, batch=None):
+        """
+        gradient <- gradient*(b-a)*sig*(1-sig) + (1 - 2*sig), in place; {theta} is PHYSICAL
+        space, {gradient} a physical-space prior gradient on the way in
+        """
+        return self._impl.chain_gradient(theta=theta, gradient=gradient, batch=batch)
 
 
     # private data

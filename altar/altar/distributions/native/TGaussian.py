@@ -32,6 +32,8 @@ class TGaussian(base):
         # set up my pdf
         self.pdf = altar.pdf.tgaussian(
             rng=rng.rng, mean=self.mean, sigma=self.sigma, support=self.support)
+        # set up my transform, if reparameterizing
+        self._initialize_transform(application=application)
         # all done
         return self
 
@@ -39,8 +41,11 @@ class TGaussian(base):
     def verify(self, theta, mask, batch=None):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
-        update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
+        update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
+        a no-op when reparameterized, since sampling space is unconstrained
         """
+        if self.reparameterize:
+            return mask
         # unpack my support
         low, high = self.support
         # grab the portion of the sample that's mine
@@ -89,6 +94,10 @@ class TGaussian(base):
             # and every parameter in this sample
             for parameter in range(parameters):
                 g[sample, parameter] = (self.mean - θ[sample, parameter]) * self.sigma_invsqr
+
+        # reparameterized: chain the physical-space gradient into sampling space
+        if self.reparameterize:
+            self.transform.chain_gradient(theta=θ, gradient=g, batch=batch)
 
         # all done
         return self

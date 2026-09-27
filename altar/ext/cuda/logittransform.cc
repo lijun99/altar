@@ -134,6 +134,30 @@ altar::cuda::extensions::distributions::logittransform::__init__(py::module & di
         },
         "theta"_a, "likelihood"_a, "idx_begin"_a, "idx_end"_a, "low"_a, "high"_a,
         "likelihood[s] += sum_{idx_begin..idx_end} log(sig) + log(1-sig)");
+
+    // gradient[:, idx_begin:idx_end] <- gradient*J + (1 - 2*sig), in place; {theta} is
+    // PHYSICAL space (read-only)
+    distributions.def(
+        "cudaLogitTransform_chaingradient",
+        [](grid_t & theta, grid_t & gradient, std::size_t idx_begin, std::size_t idx_end,
+           double low, double high) -> void {
+            auto format = theta.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::distributions::cudaLogitTransform::chain_gradient<double>(
+                    regrid<const double, 2>(theta), regrid<double, 2>(gradient),
+                    idx_begin, idx_end, low, high);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::distributions::cudaLogitTransform::chain_gradient<float>(
+                    regrid<const float, 2>(theta), regrid<float, 2>(gradient),
+                    idx_begin, idx_end, static_cast<float>(low), static_cast<float>(high));
+            } else {
+                throw py::value_error("cudaLogitTransform_chaingradient: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaLogitTransform_chaingradient");
+            synchronize("cudaLogitTransform_chaingradient");
+        },
+        "theta"_a, "gradient"_a, "idx_begin"_a, "idx_end"_a, "low"_a, "high"_a,
+        "gradient[:, idx_begin:idx_end] <- gradient*(high-low)*sig*(1-sig) + (1 - 2*sig)");
 }
 
 

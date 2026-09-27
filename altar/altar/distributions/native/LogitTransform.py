@@ -82,6 +82,17 @@ class LogitTransform:
         return self
 
 
+    def chain_gradient(self, theta, gradient, batch=None):
+        """
+        gradient <- gradient*(b-a)*sig*(1-sig) + (1 - 2*sig), in place
+        """
+        a, b = self.support
+        sig = (numpy.asarray(theta) - a) / (b - a)
+        g = numpy.asarray(gradient)
+        g[:] = g * (b - a) * sig * (1.0 - sig) + 1.0 - 2.0 * sig
+        return self
+
+
     # private data, set by the shim before {initialize} runs
     support = None
     idx_begin = None  # unused on cpu; native's caller already hands me a pre-sliced view

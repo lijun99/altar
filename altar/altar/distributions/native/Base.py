@@ -101,18 +101,22 @@ class Base:
 
     def jacobian(self, theta, jacobian, batch=None):
         """
-        Fill my portion of {jacobian} with d(physical)/d(sampling). Default: nothing to do --
-        {jacobian} is expected to already hold 1, the correct value when i'm not
-        reparameterized.
+        Fill my portion of {jacobian} with d(physical)/d(sampling) when reparameterized;
+        otherwise {jacobian} already holds 1, the right value
         """
+        if self.reparameterize:
+            self.transform.jacobian(
+                theta=self.restrict(theta=theta), jacobian=self.restrict(theta=jacobian), batch=batch)
         return self
 
 
     def eval_prior_with_physical(self, theta, likelihood, batch=None):
         """
-        Add any prior contributions to {likelihood} that depend on my physical parameters,
-        beyond what {eval_prior} already contributed. Default: nothing further to add.
+        Add my log|J| into {likelihood} when reparameterized; otherwise nothing to add
         """
+        if self.reparameterize:
+            self.transform.log_jacobian(
+                theta=self.restrict(theta=theta), likelihood=likelihood, batch=batch)
         return self
 
 
@@ -127,17 +131,33 @@ class Base:
 
     def to_physical(self, theta, batch=None):
         """
-        Transform my portion of {theta} from sampling space to physical space, in place.
-        Without reparameterization, the two coincide, so the default is a no-op.
+        Transform my portion of {theta} from sampling space to physical space, in place; a
+        no-op unless reparameterized
         """
+        if self.reparameterize:
+            self.transform.to_physical(theta=self.restrict(theta=theta), batch=batch)
         return self
 
 
     def to_sampling(self, theta, batch=None):
         """
-        Transform my portion of {theta} from physical space to sampling space, in place. The
-        inverse of {to_physical}; the default is likewise a no-op.
+        Transform my portion of {theta} from physical space to sampling space, in place; a
+        no-op unless reparameterized
         """
+        if self.reparameterize:
+            self.transform.to_sampling(theta=self.restrict(theta=theta), batch=batch)
+        return self
+
+
+    def _initialize_transform(self, application=None):
+        """
+        For a bounded distribution with a {reparameterize} trait: hand my transform my
+        {support} and let it initialize
+        """
+        if self.reparameterize:
+            self.has_reparametrization = True
+            self.transform.support = self.support
+            self.transform.initialize(application=application)
         return self
 
 
@@ -194,6 +214,9 @@ class Base:
     # mirrored back onto the shim after {initialize}; a concrete distribution sets this to
     # True in its own {initialize} when reparameterizing (see {Uniform})
     has_reparametrization = False
+    # set by the shim of a distribution that supports reparameterization (e.g. {Uniform})
+    reparameterize = False
+    transform = None
     # set by {initialize}
     pdf = None
 
