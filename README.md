@@ -6,32 +6,33 @@ AlTar(Al-Tar) is a software package to solve inverse problems with Bayesian infe
 AlTar uses primarily the [Cascading Adaptive Tempered Metropolis In Parallel (CATMIP) algorithm](https://thesis.library.caltech.edu/5918/), which is designed to efficiently simulate problems with high-dimensional spaces on parallel computers, include Graphics Processing Units(GPUs).
 
 ## Guides
-(work in progress, currently for AlTar 2.0 CUDA version only)
 
-Readthedocs ([html](https://altar.readthedocs.io) | [pdf](https://altar.readthedocs.io/_/downloads/en/cuda/pdf/) | [epub](https://altar.readthedocs.io/_/downloads/en/cuda/epub)):
+Readthedocs ([html](https://altar2.readthedocs.io/en/latest/) | [pdf](https://altar2.readthedocs.io/_/downloads/en/latest/pdf/) | [epub](https://altar2.readthedocs.io/_/downloads/en/latest/epub/)):
 
-- [Installation Guide](https://altar.readthedocs.io/en/cuda/cuda/Installation.html) 
-- [User Guide](https://altar.readthedocs.io/en/cuda/cuda/Manual.html) 
-- [Programming Guide](https://altar.readthedocs.io/en/cuda/cuda/Programming.html) 
-- [API Reference](https://altar.readthedocs.io/en/cuda/api/index.html)
+- [Installation Guide](https://altar2.readthedocs.io/en/latest/guide/Installation.html)
+- [Quick Start](https://altar2.readthedocs.io/en/latest/guide/QuickStart.html)
+- [User Guide](https://altar2.readthedocs.io/en/latest/guide/Manual.html)
+- [Programming Guide](https://altar2.readthedocs.io/en/latest/guide/Programming.html)
+- [API Reference](https://altar2.readthedocs.io/en/latest/api/index.html)
 
-[Source on github](https://github.com/lijun99/altar2-documentation).
+The sources of the documentation are in `docs/`. The documentation of the previous, CUDA
+version of AlTar 2.0 remains at [altar.readthedocs.io](https://altar.readthedocs.io).
 
 ## Tutorials
-Tutorials presented with jupyter notebooks:
+Tutorials presented with jupyter notebooks, in `docs/tutorials/`:
 
-- [An introduction to AlTar/pyre applications: HelloApp](https://github.com/lijun99/altar2-documentation/tree/cuda/jupyter/hello/hello.ipynb)
-- [An overview of the AlTar framework](https://github.com/lijun99/altar2-documentation/tree/cuda/jupyter/linear/linear.ipynb)
+- [An introduction to AlTar/pyre applications: HelloApp](https://altar2.readthedocs.io/en/latest/tutorials/hello/hello.html)
+- [An overview of the AlTar framework](https://altar2.readthedocs.io/en/latest/tutorials/linear/linear.html)
 
 - Static slip inversion: a toy model with epistemic uncertainties
 
-  - [Step 1: prepare the input files](https://github.com/lijun99/altar2-documentation/blob/thearagon-patch-1/jupyter/intro_cp/toymodel_step1.ipynb)
-  - [Step 2: run AlTar2](https://github.com/lijun99/altar2-documentation/blob/thearagon-patch-1/jupyter/intro_cp/toymodel_step2.ipynb)
-  
-## Support 
+  - [Step 1: prepare the input files](https://altar2.readthedocs.io/en/latest/tutorials/intro_cp/toymodel_step1.html)
+  - [Step 2: run AlTar2](https://altar2.readthedocs.io/en/latest/tutorials/intro_cp/toymodel_step2.html)
+
+## Support
 
 - [Issues @ github](https://github.com/AlTarFramework/altar/issues)
-- [Common Issues](https://altar.readthedocs.io/en/cuda/cuda/Issues.html)  
+- [Common Issues](https://altar2.readthedocs.io/en/latest/guide/Issues.html)
 - [Slack Discussion Group](https://altar-group.slack.com) (currently only for developers)
 
 ## Copyright
