@@ -32,6 +32,7 @@ class BayesianState:
     prior = None     # a (samples) vector with logs of the prior
     data = None      # a (samples) vector with the logs of the data likelihoods given the samples
     posterior = None # a (samples) vector with the logs of the posterior
+    log_evidence = None  # the running estimate of log p(d), from a scheduler that estimates it
     weights = None   # a (samples) vector of importance weights w_i ∝ exp(Δβ · data_i); set by scheduler
 
     # the statistics of samples
@@ -279,6 +280,8 @@ class BayesianState:
         # save annealer info
         annealergrp = f.create_group('Annealer')
         annealergrp.create_dataset('beta', data=numpy.asarray(self.beta))
+        if self.log_evidence is not None:
+            annealergrp.create_dataset('log_evidence', data=numpy.asarray(self.log_evidence))
         # save parameter sets
         psetsgrp = f.create_group('ParameterSets')
         self._save_parameter_sets_hdf5(psetsgrp=psetsgrp, psets=psets or {})
@@ -321,6 +324,8 @@ class BayesianState:
 
         # annealer metadata
         archiver.write("Annealer/beta", self.beta)
+        if self.log_evidence is not None:
+            archiver.write("Annealer/log_evidence", self.log_evidence)
         # importance weights (set by scheduler; may be None at beta=0)
         if self.weights is not None:
             archiver.write("Annealer/weights", self.weights)

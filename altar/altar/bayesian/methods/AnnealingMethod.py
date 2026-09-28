@@ -147,6 +147,7 @@ class AnnealingMethod:
         channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
+        self.step.log_evidence = getattr(annealer.scheduler, "log_evidence", None)
         annealer.archiver.recordstep(step=self.step, stats=info, psets=annealer.model.psets)
         # all done
         return self
@@ -182,6 +183,10 @@ class AnnealingMethod:
         step = self.step
         # ask it to render itself to the screen
         step.print(channel=annealer.info)
+        # the evidence, from a scheduler that estimates it
+        step.log_evidence = getattr(annealer.scheduler, "log_evidence", None)
+        if step.log_evidence is not None:
+            annealer.info.log(f"log evidence: {step.log_evidence}")
         # ask the recorder to record it
         annealer.archiver.final(step=step, iteration=None, psets=annealer.model.psets)
         # all done
