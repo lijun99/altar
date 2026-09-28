@@ -7,6 +7,7 @@
 #
 
 # the package
+import numpy
 import altar
 
 
@@ -92,6 +93,8 @@ class DataL2:
         """
         # next, the observations
         self.dataobs = self.io.load(filename=self.data_file, shape=self.observations)
+        # a raw copy, kept since {initialize_covariance} may merge the covariance into {dataobs}
+        self._observed = numpy.array(self.dataobs, dtype=float)
 
         if self.cd_file is not None:
             # finally, the data covariance
@@ -103,6 +106,29 @@ class DataL2:
             # use a constant covariance
             self.cd = self.cd_std
         return
+
+
+    def observed(self):
+        """
+        The raw observed data, as a numpy vector
+        """
+        return self._observed
+
+
+    def sigma(self):
+        """
+        The standard deviation of each observation, as a numpy vector
+        """
+        if isinstance(self.cd, float):
+            return numpy.full(self.observations, self.cd)
+        return numpy.sqrt(numpy.diag(numpy.asarray(self.cd)))
+
+
+    def sigma_chi(self):
+        """
+        The standard deviation of each observation under C_chi, as a numpy vector
+        """
+        return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
 
 
     def initialize_covariance(self, cd):
@@ -122,6 +148,7 @@ class DataL2:
             # merge cd to data
             if self.merge_cd_with_data:
                 Cd_inv = self.cd_inv
+                self.dataobs = self.io.toGsl(self._observed.copy())
                 self.dataobs = altar.blas.dtrmv(
                     Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
                     Cd_inv, self.dataobs)
@@ -129,10 +156,10 @@ class DataL2:
         elif isinstance(cd, float):
             # cd is standard deviation
             from math import log, pi as π
-            self.normalization = -0.5 * log(2 * π * cd) * observations
-            self.cd_inv = 1.0 / self.cd
+            self.normalization = -0.5 * log(2 * π) * observations - observations * log(cd)
+            self.cd_inv = 1.0 / cd
             if self.merge_cd_with_data:
-                self.dataobs *= self.cd_inv
+                self.dataobs = self.io.toGsl(self._observed * self.cd_inv)
 
         # all done
         return self
@@ -140,14 +167,20 @@ class DataL2:
 
     def update_covariance(self, cp=None):
         """
-        Update data covariance with cp, cd -> cd + cp
+        Use C_chi = C_d + {cp}, a numpy (observations x observations) array, from now on; back
+        to C_d alone if {cp} is None
         """
-        # make a copy of cp
-        cchi = cp.clone()
-        # add cd (scalar or matrix)
-        cchi += self.cd
-        self.initialize_covariance(cd=cchi)
-        return self
+        if cp is None:
+            self._chi_variance = None
+            return self.initialize_covariance(cd=self.cd)
+        cd = self.cd
+        if isinstance(cd, float):
+            cchi = numpy.diag(numpy.full(self.observations, cd * cd))
+        else:
+            cchi = numpy.array(cd, dtype=float)
+        cchi += numpy.asarray(cp, dtype=float)
+        self._chi_variance = numpy.diag(cchi).copy()
+        return self.initialize_covariance(cd=self.io.toGsl(cchi))
 
 
     def compute_normalization(self, observations, cd):
@@ -201,6 +234,7 @@ class DataL2:
     _dataobs_batch = None
     cd = None
     cd_inv = None
+    _chi_variance = None # diag(C_chi), when a C_p is part of it
     error = None
     info = None
 

@@ -76,15 +76,17 @@ function(altar_seismic_cuda_buildLibrary)
   # add the dependencies
   target_link_libraries(
     libcudaseismic PRIVATE
-    ${GSL_LIBRARIES} journal cublas
+    ${GSL_LIBRARIES} ${PYRE_LIBRARIES} cublas
     )
+  # kernels index pyre grids directly; see {altar_cuda_buildLibrary}
+  target_compile_definitions(libcudaseismic PRIVATE WITH_CUDA)
+  target_compile_options(libcudaseismic PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
   # add the sources
   target_sources(
     libcudaseismic PRIVATE
-    lib/libcudaseismic/cudaKinematicG_kernels.cu
-    lib/libcudaseismic/cudaKinematicG.cu
+    lib/libcudaseismic/cudaKinematic_kernels.cu
+    lib/libcudaseismic/cudaKinematic.cu
     lib/libcudaseismic/cudaMoment.cu
-    lib/libcudaseismic/cudaStatic.cu
     lib/libcudaseismic/version.cc
     )
 
@@ -107,15 +109,14 @@ endfunction(altar_seismic_cuda_buildLibrary)
 
 # build the seismic extension module
 function(altar_seismic_cuda_buildModule)
-  # seismic
-  Python_add_library(cudaseismicmodule MODULE)
+  # seismic; pybind11, like {altar_cuda_buildModule}
+  Python_add_library(cudaseismicmodule MODULE WITH_SOABI)
   # adjust the name to match what python expects
   set_target_properties(
     cudaseismicmodule PROPERTIES
     LIBRARY_OUTPUT_NAME cudaseismic
-    SUFFIX ${PYTHON3_SUFFIX}
     )
-  # set the include directories
+  # set the include directories; altar/ext/cuda provides the shared binding helpers
   target_include_directories(
     cudaseismicmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
@@ -123,6 +124,8 @@ function(altar_seismic_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda
     )
   # set the linker
   set_target_properties(cudaseismicmodule PROPERTIES LINKER_LANGUAGE CUDA)
@@ -130,28 +133,17 @@ function(altar_seismic_cuda_buildModule)
   target_link_directories(
     cudaseismicmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
-  set(CUDA_LIBRARIES cublas cusolver curand pyrecuda)
   target_link_libraries(
     cudaseismicmodule PRIVATE
-    libcudaseismic libcudaaltar libaltar journal
-    ${CUDA_LIBRARIES}
+    libcudaseismic pybind11::module cudart cublas ${PYRE_LIBRARIES}
     )
   # add the sources
   target_sources(cudaseismicmodule PRIVATE
     ext/cudaseismic/cudaseismic.cc
-    ext/cudaseismic/metadata.cc
-    ext/cudaseismic/kinematicg.cc
     ext/cudaseismic/moment.cc
-    ext/cudaseismic/static.cc
-    )
-
-  # install the capsule
-  install(
-    FILES ext/cudaseismic/capsules.h
-    DESTINATION ${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda
+    ext/cudaseismic/kinematic.cc
     )
 
   # install the seismic extension
@@ -166,7 +158,7 @@ endfunction(altar_seismic_cuda_buildModule)
 function(altar_seismic_cuda_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/slipmodel bin/slipmodel.plexus bin/kinematicForwardModel
+    PROGRAMS bin/slipmodel bin/slipmodel.plexus
     DESTINATION bin
     )
   # all done

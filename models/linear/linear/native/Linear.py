@@ -9,6 +9,8 @@
 #
 
 
+# externals
+import numpy
 # the package
 import altar
 
@@ -78,25 +80,19 @@ class Linear:
         return prediction
 
 
-    def forward_problem(self, model, application, theta=None):
+    def covariance_updated(self, model):
         """
-        Perform the forward modeling with a given {theta}, comparing against the observed
-        data; used by the {forward} action, e.g. to check the residuals of the posterior
-        mean model
+        The observed data may have changed with the covariance; refresh my residuals
         """
-        # load theta if not provided
-        if theta is None:
-            theta = model.io.load(
-                filename=model.theta_input, shape=model.parameters, dataset=model.theta_dataset)
+        self.residuals = self.initialize_residuals(samples=model.samples, data=model.dataobs.dataobs)
+        return self
 
-        # the residual: G*theta - d
-        residual = self.forward_model(model=model, theta=theta, observation=model.dataobs.dataobs)
 
-        # save it
-        model.io.save(filename=model.forward_output, data=residual, dataset='residual')
-
-        # all done
-        return
+    def green(self):
+        """
+        The raw green's functions (observations x parameters), as a numpy array
+        """
+        return numpy.asarray(self.G)
 
 
     def gradient(self, model, controller, step, batch=None):
@@ -122,8 +118,8 @@ class Linear:
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior)
 
         # the data likelihood gradient: for r = Gθ - d and Cd_inv = L (the lower Cholesky
-        # factor of the inverse data covariance, so the data covariance is (L^T L)^-1),
-        #     grad_data_likelihood = -G^T L^T (L r)
+        # factor of the inverse data covariance, L L^T),
+        #     grad_data_likelihood = -G^T L (L^T r)
         G = self.G
         Cd_inv = model.dataobs.cd_inv
         samples = θ.rows
@@ -131,10 +127,10 @@ class Linear:
         # r = Gθ^T - d, shape (observations x samples)
         r = self.residuals.clone()
         r = altar.blas.dgemm(G.opNoTrans, θ.opTrans, 1.0, G, θ, -1.0, r)
-        # w = L r, then wt = L^T w (both in place)
-        w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
+        # Cd_inv r = L L^T r: w = L^T r, then wt = L w (both in place)
+        w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
                              Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, r)
-        wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
+        wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
                               Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, w)
 
         # grad_T = -G^T wt, shape (parameters x samples)

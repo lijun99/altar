@@ -102,12 +102,25 @@ class AnnealingMethod:
         """
         Explore configuration space by walking the Markov chains
         """
+        # let the model update anything that depends on the samples, e.g. its C_p
+        if annealer.model.update_model(annealer=annealer, step=self.step):
+            self.densities(annealer=annealer)
         # get the sampler
         sampler = annealer.sampler
         # ask it to sample the posterior pdf
         stats = sampler.sample_posterior(annealer=annealer, step=self.step)
         # return the acceptance statistics
         return stats
+
+
+    def densities(self, annealer):
+        """
+        Recompute the prior, data and posterior densities of my step, after the model changed
+        """
+        step = self.step
+        step.prior.zero(), step.data.zero(), step.posterior.zero()
+        annealer.model.likelihoods(annealer=annealer, step=step)
+        return self
 
 
     def resample(self, annealer, statistics):

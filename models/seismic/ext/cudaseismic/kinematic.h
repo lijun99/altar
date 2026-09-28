@@ -10,7 +10,7 @@
 
 #include "external.h"
 
-namespace altar::models::seismic::extensions::moment {
+namespace altar::models::seismic::extensions::kinematic {
     using namespace altar::cuda::extensions;
     auto __init__(py::module & m) -> void;
 }

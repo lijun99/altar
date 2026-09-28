@@ -19,8 +19,7 @@ altar_seismic_buildDriver()
 if(WITH_CUDA)
   altar_seismic_cuda_buildPackage()
   altar_seismic_cuda_buildLibrary()
-  # not yet ported to pybind11; see altar/ext/cuda/cudaaltar.cc
-  # altar_seismic_cuda_buildModule()
+  altar_seismic_cuda_buildModule()
   altar_seismic_cuda_buildDriver()
 endif()
 # end of file

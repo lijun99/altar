@@ -47,8 +47,8 @@ class DataL2:
             self.cd = self.load_file(
                 filename=self.cd_file, shape=(observations, observations), dtype=self.cd_dtype)
         else:
-            self.cd = numpy.zeros(shape=(observations, observations), dtype=self.cd_dtype)
-            numpy.fill_diagonal(self.cd, self.cd_std ** 2)
+            # a constant variance needs no dense matrix unless a {cp} is added to it later
+            self.cd = None
 
         self.initialize_covariance()
         # all done
@@ -155,6 +155,10 @@ class DataL2:
         """
         from math import log, pi as π
 
+        # a constant variance, cd_std^2: no factorization needed
+        if cp is None and self.cd is None:
+            return self._constant_covariance()
+
         cusolver = altar.cuda.cusolver
         cublas = altar.cuda.cublas
         handle = altar.cuda.cusolver_handle()
@@ -167,12 +171,16 @@ class DataL2:
         potri_buffer_size = cusolver.dpotri_buffer_size if double else cusolver.spotri_buffer_size
 
         gCchi = pyre_grid_managed(shape=(observations, observations), cell=self.cd_dtype)
-        numpy.asarray(gCchi)[:, :] = self.cd
+        if self.cd is None:
+            numpy.asarray(gCchi)[:, :] = 0
+            numpy.fill_diagonal(numpy.asarray(gCchi), self.cd_std ** 2)
+        else:
+            numpy.asarray(gCchi)[:, :] = self.cd
+        self._chi_variance = None
         if cp is not None:
             cp_arr = numpy.asarray(cp).astype(self.cd_dtype, copy=False)
             numpy.asarray(gCchi)[:, :] += cp_arr
-
-        self.check_positive_definiteness(matrix=gCchi, name="Cchi")
+            self._chi_variance = numpy.diag(numpy.asarray(gCchi)).astype(float)
 
         devInfo = pyre_grid_managed(shape=(1,), cell="int32")
 
@@ -189,8 +197,14 @@ class DataL2:
             workspace = pyre_grid_managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
             potrf(handle, cublas.FillMode.LOWER, observations, A, observations, workspace, lwork, devInfo)
 
-        # factor Cchi = U^T U (U in the row-major upper triangle)
+        # factor Cchi = U^T U (U in the row-major upper triangle); the factorization fails,
+        # and says where, iff Cchi is not positive definite
         _factor(gCchi)
+        if int(numpy.asarray(devInfo)[0]) != 0:
+            self.error.log(
+                f"the data covariance C_chi is not positive definite: its Cholesky "
+                f"factorization failed at row {int(numpy.asarray(devInfo)[0])}")
+            raise SystemExit(1)
         # invert it in place, from that factor: gCchi now holds Cd_inv's row-major upper
         # triangle (Cd_inv is symmetric, so only one triangle is meaningful)
         lwork = potri_buffer_size(handle, cublas.FillMode.LOWER, observations, gCchi, observations)
@@ -221,6 +235,42 @@ class DataL2:
         # duplicate it into a (samples x observations) batch
         numpy.asarray(self._dataobs_batch)[:, :] = numpy.asarray(gDataVec)[None, :]
         # all done
+        return self
+
+
+    def observed(self):
+        """
+        The raw observed data, as a numpy vector
+        """
+        return numpy.asarray(self.dataobs, dtype=float)
+
+
+    def sigma(self):
+        """
+        The standard deviation of each observation, as a numpy vector
+        """
+        if self.cd is None:
+            return numpy.full(self.observations, float(self.cd_std))
+        return numpy.sqrt(numpy.diag(self.cd)).astype(float)
+
+
+    def sigma_chi(self):
+        """
+        The standard deviation of each observation under C_chi, as a numpy vector
+        """
+        return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
+
+
+    def _constant_covariance(self):
+        """
+        Cd = cd_std^2 I: {cd_inv} is the scalar 1/cd_std, the factor of Cd_inv = cd_inv^2 I
+        """
+        from math import log, pi as π
+        observations = self.observations
+        self._chi_variance = None
+        self.cd_inv = 1.0 / self.cd_std
+        self.normalization = -0.5 * log(2 * π) * observations - observations * log(self.cd_std)
+        numpy.asarray(self._dataobs_batch)[:, :] = (numpy.asarray(self.dataobs) * self.cd_inv)[None, :]
         return self
 
 
@@ -298,6 +348,8 @@ class DataL2:
     cd_file = None
     cd_std = None
     merge_cd_with_data = None
+    # diag(C_chi), when a C_p is part of it
+    _chi_variance = None
     norm = None
     cd_dtype = None
 
@@ -317,10 +369,10 @@ class DataL2:
 def pyre_grid_managed(shape, cell):
     """
     Allocate a fresh grid of cuda managed memory; a thin indirection so this module doesn't
-    need a hard import of {pyre.grid} at module-load time before cuda is known to be active
+    need a hard import of {pyre.cuda} at module-load time before cuda is known to be active
     """
-    import pyre.grid
-    return pyre.grid.managed(shape=shape, cell=cell)
+    import pyre.cuda
+    return pyre.cuda.managed(shape=shape, cell=cell)
 
 
 # end of file

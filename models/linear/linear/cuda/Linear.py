@@ -7,6 +7,8 @@
 #
 
 
+# externals
+import numpy
 # the package
 import altar
 import altar.cuda
@@ -40,6 +42,7 @@ class Linear:
 
         # {model.io.load} always returns a cpu gsl object regardless of backend; upload it
         G_cpu = model.io.load(filename=model.green, shape=(self.observations, self.parameters))
+        self.G_host = numpy.array(G_cpu, dtype=float)
         self.G = altar.cuda.matrix(source=G_cpu, dtype=self.precision)
 
         # pre-merge the covariance's Cholesky factor into G, once
@@ -62,9 +65,13 @@ class Linear:
         since a vector has no shape ambiguity. Verified against a real GPU run (comparing
         against a plain numpy {U @ G}) before being written here.
         """
+        cd_inv = self._dataobs.cd_inv
+        # a constant variance: U is the scalar cd_inv; a one-off scaling
+        if isinstance(cd_inv, float):
+            numpy.asarray(self.G)[:, :] *= cd_inv
+            return self
         cublas = altar.cuda.cublas
         handle = altar.cuda.cublas_handle()
-        cd_inv = self._dataobs.cd_inv
         obs, par = self.observations, self.parameters
         trmm = cublas.dtrmm if self.precision == "float64" else cublas.strmm
         trmm(
@@ -118,20 +125,28 @@ class Linear:
     def forward_model(self, model, theta, green=None, prediction=None, observation=None):
         """
         Linear forward model prediction = G * theta for a single sample; not used by any
-        cuda code path today (only {forward_problem}, a cpu-driven, one-off action, calls
-        it), so it is not yet implemented here
+        cuda code path today ({forward_problem} works on the host), so it is not yet
+        implemented here
         """
         raise NotImplementedError(
             "cuda 'Linear.forward_model' (single-sample) is not implemented; "
             "use 'forward_model_batched' instead")
 
 
-    def forward_problem(self, model, application, theta=None):
+    def covariance_updated(self, model):
         """
-        Perform the forward modeling with a given {theta}; not used by any cuda code path
-        today, so it is not yet implemented here
+        Premerge the new covariance into a fresh copy of the raw green's functions
         """
-        raise NotImplementedError("cuda 'Linear.forward_problem' is not implemented")
+        numpy.asarray(self.G)[:, :] = self.G_host
+        self._premerge_covariance()
+        return self
+
+
+    def green(self):
+        """
+        The raw green's functions (observations x parameters), as a numpy array
+        """
+        return self.G_host
 
 
     def gradient(self, model, controller, step, batch=None):
@@ -181,6 +196,7 @@ class Linear:
 
     # private data
     G = None # the (premerged) Green functions
+    G_host = None # the raw Green functions, on the host, for {forward_problem}
     observations = None
     parameters = None
     precision = None

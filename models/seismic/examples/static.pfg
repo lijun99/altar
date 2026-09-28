@@ -4,43 +4,32 @@
 ; all rights reserved
 ;
 
-; the static uoᴉsɹǝʌuᴉ example
+; the static inversion example: 9 patches, strike and dip slips
 ;
-; for Bayesian simulations, run
-;        slipmodel --config=static.pfg
-;   or   slipmodel.plexus sample --config=static.pfg
-; for forward problem only (with an input set of parameters), run
+; sample with
+;        slipmodel.plexus sample --config=static.pfg
+; then compare the posterior's predicted data to the observed data with
 ;        slipmodel.plexus forward --config=static.pfg
+; add --job.gpus=1 for the cuda backend
 
-
-; my shell application
-slipmodel = altar.shells.altar
 slipmodel:
 
-    ; model to be sampled
-    model = altar.models.seismic.cuda.static
+    ; the static model is the linear model d = G theta
+    model = altar.models.seismic.static
     model:
-
-        ; settings for running forward problem only
-        ; forward theta input
-        theta_input = static_mean_model.txt
-        ; forward output file
-        forward_output = forward_prediction.h5
-
-        ; whether to use tensor core gemm
-        use_tensor_core_gemm = False
 
         ; the name of the test case, also as directory for input files
         case = 9patch
 
         ; number of patches
         patches = 9
+        ; strike and dip slip for each patch
+        parameters = 2*{slipmodel.model.patches}
 
         ; green's function (observations, parameters)
         green = static.gf.h5
 
         ; data observations - use L2 norm for likelihood
-        dataobs = altar.cuda.data.datal2
         dataobs:
             observations = 108
             data_file = static.data.h5
@@ -48,63 +37,51 @@ slipmodel:
             ; or constant variance
             ; cd_std = 1e-2
 
-        ; parameter sets
-        parametersets = altar.cuda.model.parameterset
-        parametersets:
-            count = 2*{slipmodel.model.patches}
-            prior = altar.cuda.distributions.gaussian
-            prior.mean = 0
-            prior.sigma = 0.5
+        ; list of parametersets
+        ; the order should be consistent with the green's function
+        psets_list = [strikeslip, dipslip]
 
+        ; define parametersets
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
 
-            ; list of parametersets
-            ; the order should be consistent with the green's function
-            psets_list = [strikeslip, dipslip]
+            strikeslip:
+                count = {slipmodel.model.patches}
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
 
-            ; define parametersets
-            psets:
-                strikeslip = altar.cuda.models.parameterset
-                dipslip = altar.cuda.models.parameterset
+            dipslip:
+                count = {slipmodel.model.patches}
+                prior = altar.models.seismic.moment
+                prior:
+                    support = (-0.5, 20) ; slip range
+                    Mw_mean = 7.3
+                    Mw_sigma = 0.2
+                    Mu = [30] ; in GPa
+                    area = [400] ; patch area in km^2
+                    moment_constraint = True ; add a gaussian penalty on the total Mw to the prior
+                    moment_constraint_factor = 1.0 ; weight of the penalty
 
-                strikeslip:
-                    count = {slipmodel.model.patches}
-                    prior = altar.cuda.distributions.gaussian
-                    prior.mean = 0
-                    prior.sigma = 0.5
-
-                dipslip:
-                    count = {slipmodel.model.patches}
-                    prior = altar.cuda.models.seismic.moment
-                    prior:
-                        support = (-0.5, 20) ; slip range
-                        Mw_mean = 7.3
-                        Mw_sigma = 0.2
-                        Mu = [30] ; in GPa
-                        area = [400] ; patch area in km^2
-                        moment_constraint = True
-                        moment_constraint_factor = 1
-
+    controller = altar.bayesian.catmip
     controller:
-        sampler = altar.cuda.bayesian.metropolis
+        archiver = altar.bayesian.h5recorder
         archiver:
             output_dir = results/static ; output directory
             output_freq = 3 ; output frequency in beta steps
 
+    ; the forward check, on the final archived step
+    forward:
+        theta = results/static/step_final.h5
+        output = results/static/forward.h5
+
     ; run configuration
     job:
         tasks = 1 ; number of tasks per host
-        gpus = 1  ; number of gpus per task
+        gpus = 0  ; number of gpus per task
         gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
-        ;gpuids = [0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
         chains = 2**10 ; number of chains per task
         steps = 100 ; MC burn-in steps for each beta step
-
-    ; shell
-    ; shell = mpi.shells.mpirun ; for running with mpi
-
-
-; for parallel runs
-; mpi.shells.mpirun # altar.plexus.shell:
-    ; extra = -mca btl self,tcp
 
 ; end of file

@@ -6,8 +6,8 @@
 // all rights reserved
 //
 // hailiang zhang
-#ifndef cudaKinematicG_kernels_h
-#define cudaKinematicG_kernels_h
+#ifndef cudaKinematic_kernels_h
+#define cudaKinematic_kernels_h
 
 // macros
 #include <cuda.h>
@@ -16,7 +16,7 @@
 // place everything in the local namespace
 
 /// @brief home of cuda kernel for kinematic model with big-G implementation
-namespace cudaKinematicG_kernels {
+namespace cudaKinematic_kernels {
     /// Initialize T0 to be distances!!!
     //single sample
     template<typename TYPE>

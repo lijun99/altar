@@ -1,0 +1,110 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+
+; the kinematic inversion example: 9 patches, slips, rise times, rupture velocities and the
+; hypocenter; cuda only
+;
+; sample with
+;        slipmodel.plexus sample --config=kinematic.pfg
+; then compare the posterior's predicted data to the observed data with
+;        slipmodel.plexus forward --config=kinematic.pfg
+; the green's functions (kinematicG.gf.h5) are too large for github; see 9patch/NOTE
+
+slipmodel:
+
+    ; the kinematic model
+    model = altar.models.seismic.kinematic
+    model:
+
+        ; the name of the test case, also as directory for input files
+        case = 9patch
+
+        ; number of patches, Nas*Ndd
+        patches = 9
+
+        ; green's function (2*Nas*Ndd*Nt, observations)
+        green = kinematicG.gf.h5
+
+        ; data observations - use L2 norm for likelihood
+        dataobs:
+            observations = 14148
+            data_file = kinematicG.data.h5
+            cd_std = 5.0e-3
+
+        ; the fault and time meshes
+        Nas = 3 ; patches along strike
+        Ndd = 3 ; patches along dip
+        Nmesh = 30 ; mesh points for each patch
+        dsp = 20.0 ; length for each patch, km
+        Nt = 90 ; number of time intervals
+        Npt = 2 ; mesh points for each time interval
+        dt = 1.0 ; time unit for each interval, second
+        t0s = [0.0] * {slipmodel.model.patches}
+
+        ; list of parametersets; the order is the one the kinematic model expects
+        psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
+
+        ; define parametersets
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
+            risetime = contiguous
+            rupturevelocity = contiguous
+            hypocenter = contiguous
+
+            strikeslip:
+                count = {slipmodel.model.patches}
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+
+            dipslip:
+                count = {slipmodel.model.patches}
+                prior = altar.models.seismic.moment
+                prior:
+                    support = (-0.5, 20) ; slip range
+                    Mw_mean = 7.3
+                    Mw_sigma = 0.2
+                    Mu = [30] ; in GPa
+                    area = [400] ; patch area in km^2
+
+            risetime:
+                count = {slipmodel.model.patches}
+                prior = uniform
+                prior.support = (10.0, 30.0)
+
+            rupturevelocity:
+                count = {slipmodel.model.patches}
+                prior = uniform
+                prior.support = (1.0, 6.0)
+
+            hypocenter:
+                count = 2
+                prior = gaussian
+                prior.mean = 20.0
+                prior.sigma = 5.0
+
+    controller = altar.bayesian.catmip
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver:
+            output_dir = results/kinematic ; output directory
+            output_freq = 3 ; output frequency in beta steps
+
+    ; the forward check, on the final archived step
+    forward:
+        theta = results/kinematic/step_final.h5
+        output = results/kinematic/forward.h5
+
+    ; run configuration
+    job:
+        tasks = 1 ; number of tasks per host
+        gpus = 1  ; number of gpus per task
+        gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
+        chains = 2**10 ; number of chains per task
+        steps = 500 ; MC burn-in steps for each beta step
+
+; end of file

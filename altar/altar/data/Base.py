@@ -82,6 +82,28 @@ class Base(altar.component, implements=data):
         return release() if release is not None else None
 
 
+    def observed(self):
+        """
+        The raw observed data, before any covariance is merged into it, as a numpy vector
+        """
+        return self._impl.observed()
+
+
+    def sigma(self):
+        """
+        The standard deviation of each observation, sqrt(diag(Cd)), as a numpy vector
+        """
+        return self._impl.sigma()
+
+
+    def sigma_chi(self):
+        """
+        The standard deviation of each observation under C_chi = C_d + C_p, sqrt(diag(C_chi)),
+        as a numpy vector; the same as {sigma} without a C_p
+        """
+        return self._impl.sigma_chi()
+
+
     @property
     def dataobs(self):
         """

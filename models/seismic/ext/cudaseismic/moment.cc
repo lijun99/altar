@@ -6,100 +6,67 @@
 // all rights reserved
 //
 
-#include <portinfo>
-#include <Python.h>
-#include <cmath>
-#include <iostream>
-#include <iomanip>
-
-
-// declarations
+// my declarations
 #include "moment.h"
 
-// c++ class includes
+// the kernel launchers
 #include <altar/models/seismic/cuda/cudaMoment.h>
 
-// local includes
-#include "capsules.h"
 
-// cuda utilities
-#include <pyre/cuda.h>
-#include <pyre/cuda/capsules.h>
+auto
+altar::models::seismic::extensions::moment::__init__(py::module & m) -> void
+{
+    namespace kernels = altar::models::seismic::cudaMoment;
 
+    // likelihood[s] += the moment constraint's log-density of sample {s}
+    m.def(
+        "cudaMoment_logpdf",
+        [](grid_t & theta, grid_t & likelihood, std::size_t idx_begin, std::size_t idx_end,
+           double mean, double sigma, grid_t & mu_area, double factor) -> void {
+            auto format = theta.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                kernels::logpdf<double>(
+                    regrid<const double, 2>(theta), regrid<double, 1>(likelihood),
+                    idx_begin, idx_end, mean, sigma, regrid<const double, 1>(mu_area), factor);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                kernels::logpdf<float>(
+                    regrid<const float, 2>(theta), regrid<float, 1>(likelihood),
+                    idx_begin, idx_end, static_cast<float>(mean), static_cast<float>(sigma),
+                    regrid<const float, 1>(mu_area), static_cast<float>(factor));
+            } else {
+                throw py::value_error("cudaMoment_logpdf: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaMoment_logpdf");
+            synchronize("cudaMoment_logpdf");
+        },
+        "theta"_a, "likelihood"_a, "idx_begin"_a, "idx_end"_a, "mean"_a, "sigma"_a,
+        "mu_area"_a, "factor"_a,
+        "likelihood[s] -= factor*(Mw - mean)^2/(2 sigma^2), Mw = (log10|sum_i mu_area[i] theta[s,i]| + 5.9)/1.5");
 
-
-const char * const altar::extensions::models::cudaseismic::moment_logpdf__name__ = "cudaMoment_logpdf";
-const char * const altar::extensions::models::cudaseismic::moment_logpdf__doc__ =
-    "cudaMoment compute log pdf of the total moment";
-
-PyObject *
-altar::extensions::models::cudaseismic::moment_logpdf(PyObject *, PyObject * args) {
-    // the arguments
-    // sample(theta, probability, samples, (idx_begin, idx_end), (mean, sigma), mu_area)
-
-    PyObject * thetaCapsule, * probabilityCapsule;
-    size_t idx_begin, idx_end; // parameter index
-    double mean, sigma; // support or range
-    PyObject * mu_areaCapsule;
-    double moment_constraint_factor; // a factor to tune the strength of moment constraint in the logpdf calculation
-    size_t samples;
-    // unpack the argument tuple
-    int status = PyArg_ParseTuple(
-        args, "O!O!k(kk)(dd)O!d:cudaMoment_logpdf",
-        &PyCapsule_Type, &thetaCapsule,
-        &PyCapsule_Type, &probabilityCapsule,
-        &samples, &idx_begin, &idx_end,
-        &mean, &sigma,
-        &PyCapsule_Type, &mu_areaCapsule,
-        &moment_constraint_factor 
-        );
-    // if something went wrong
-    if (!status) return 0;
-    // bail out if the capsule is not valid
-    if (!PyCapsule_IsValid(thetaCapsule, matrix::capsule_t)
-            || !PyCapsule_IsValid(probabilityCapsule, vector::capsule_t) 
-            || !PyCapsule_IsValid(mu_areaCapsule, vector::capsule_t))
-    {
-        PyErr_SetString(PyExc_TypeError, "invalid capsule for cudaMoment_logpdf");
-        return 0;
-    }
-
-    // convert PyObjects to C Objects
-    cuda_matrix * theta = static_cast<cuda_matrix *>
-        (PyCapsule_GetPointer(thetaCapsule, matrix::capsule_t));
-    cuda_vector * prob = static_cast<cuda_vector *>
-        (PyCapsule_GetPointer(probabilityCapsule, vector::capsule_t));
-    cuda_vector * mu_area = static_cast<cuda_vector *> 
-        (PyCapsule_GetPointer(mu_areaCapsule, vector::capsule_t));    
-    size_t parameters = theta->size2;
-
-    // call c method
-    /* template <typename real_type>
-        void altar::models::seismic::moment_
-        logpdf(const real_type * const theta, real_type * const probability,
-                    const size_t samples, const size_t parameters,
-                    const size_t idx_begin, const size_t idx_end,
-                    const real_type mean, const real_type sigma,
-                    const real_type * const mu_area,
-                    const real_type moment_constraint_factor,
-                    cudaStream_t stream)
-    */
-    if(theta->dtype == PYCUDA_FLOAT) //single precision
-    {
-        altar::models::seismic::cudaMoment::logpdf<float>
-            ((const float *)theta->data, (float *)prob->data,
-            samples, parameters, idx_begin, idx_end, (float)mean, (float)sigma, (const float *)mu_area->data, (float)moment_constraint_factor);
-    }
-    else //double precision
-    {
-        altar::models::seismic::cudaMoment::logpdf<double>
-            ((const double *)theta->data, (double *)prob->data,
-            samples, parameters, idx_begin, idx_end, mean, sigma, (const double *)mu_area->data, moment_constraint_factor);
-    }
-    // all done
-    // return None
-    Py_INCREF(Py_None);
-    return Py_None;
+    // gradient[:, idx_begin:idx_end] <- d/dtheta of the moment constraint's log-density
+    m.def(
+        "cudaMoment_logpdfgradient",
+        [](grid_t & theta, grid_t & gradient, std::size_t idx_begin, std::size_t idx_end,
+           double mean, double sigma, grid_t & mu_area, double factor) -> void {
+            auto format = theta.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                kernels::logpdf_gradient<double>(
+                    regrid<const double, 2>(theta), regrid<double, 2>(gradient),
+                    idx_begin, idx_end, mean, sigma, regrid<const double, 1>(mu_area), factor);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                kernels::logpdf_gradient<float>(
+                    regrid<const float, 2>(theta), regrid<float, 2>(gradient),
+                    idx_begin, idx_end, static_cast<float>(mean), static_cast<float>(sigma),
+                    regrid<const float, 1>(mu_area), static_cast<float>(factor));
+            } else {
+                throw py::value_error("cudaMoment_logpdfgradient: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaMoment_logpdfgradient");
+            synchronize("cudaMoment_logpdfgradient");
+        },
+        "theta"_a, "gradient"_a, "idx_begin"_a, "idx_end"_a, "mean"_a, "sigma"_a,
+        "mu_area"_a, "factor"_a,
+        "gradient[:, idx_begin:idx_end] <- d/dtheta of the moment constraint's log-density");
 }
 
 // end of file

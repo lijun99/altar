@@ -89,9 +89,11 @@ class Model(altar.protocol, family="altar.models"):
         """
 
     @altar.provides
-    def forward_problem(self, application, theta=None):
+    def forward_problem(self, application, theta):
         """
-        Perform the forward modeling with given {theta}
+        Run the forward model for each row of {theta}, a (samples x parameters) numpy array in
+        physical space; return a dict of numpy arrays, one row per sample, with at least
+        "data", the raw predicted data (samples x observations)
         """
 
     # framework hooks

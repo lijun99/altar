@@ -36,13 +36,7 @@ def null():
 @altar.foundry(implements=model, tip="a collection of models that comprise an AlTar model")
 def ensemble():
     # grab the factory
-    if altar.backends.active() == "cuda":
-        try:
-            from altar.cuda.models.cudaBayesianEnsemble import cudaBayesianEnsemble as ensemble
-        except ImportError:
-            from .Ensemble import Ensemble as ensemble
-    else:
-        from .Ensemble import Ensemble as ensemble
+    from .Ensemble import Ensemble as ensemble
     # attach its docstring
     __doc__ = ensemble.__doc__
     # and publish it

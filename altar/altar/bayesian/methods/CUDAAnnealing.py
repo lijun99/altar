@@ -50,6 +50,18 @@ class CUDAAnnealing(AnnealingMethod):
         return self
 
     # interface
+    def densities(self, annealer):
+        """
+        Recompute the densities of my step on the gpu, after the model changed
+        """
+        gstep = self.gstep
+        gstep.copy_from_cpu(step=self.step)
+        gstep.prior.zero(), gstep.data.zero(), gstep.posterior.zero()
+        annealer.model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
+        gstep.copy_to_cpu(step=self.step)
+        return self
+
+
     def start(self, annealer):
         """
         Start the annealing process

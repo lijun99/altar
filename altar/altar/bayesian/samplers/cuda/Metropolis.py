@@ -72,16 +72,6 @@ class Metropolis:
         # prepare the sampling pdf, copy step to gpu step
         self.prepare_sampling_pdf(annealer=annealer, step=step)
 
-        # check whether model parameters needed to be updated, e.g., Cp
-        model = annealer.model
-
-        if model.update_model(annealer=annealer):
-            # if updated, recompute datalikelihood and posterior
-            gstep = self.gstep
-            batch = gstep.samples
-            gstep.prior.zero(), gstep.data.zero(), gstep.posterior.zero()
-            model.likelihoods(annealer=annealer, step=gstep, batch=batch)
-
         # walk the chains
         statistics = self.walk_chains(annealer=annealer, step=self.gstep)
 

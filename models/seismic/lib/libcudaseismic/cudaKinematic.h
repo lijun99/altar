@@ -7,8 +7,8 @@
 //
 // hailiang zhang
 // code guard
-#if !defined(altar_models_seismic_cudaKinematicG_h)
-#define altar_models_seismic_cudaKinematicG_h
+#if !defined(altar_models_seismic_cudaKinematic_h)
+#define altar_models_seismic_cudaKinematic_h
 
 
 
@@ -20,7 +20,7 @@ namespace altar {
     namespace models {
         namespace seismic {
             // forward declarations
-            template<typename TYPE> class cudaKinematicG;
+            template<typename TYPE> class cudaKinematic;
         } // of namespace seismic
     } // of namespace models
 } // of namespace altar
@@ -43,7 +43,7 @@ namespace altar {
 
 // declaration
 template <typename TYPE>
-class altar::models::seismic::cudaKinematicG
+class altar::models::seismic::cudaKinematic
 {
     // data
 protected:
@@ -113,21 +113,21 @@ public:
     // meta-methods
 public:
     /// constructor
-    cudaKinematicG(
+    cudaKinematic(
             size_t Nas, size_t Ndd, size_t Nmesh, double dsp, //patch info
             size_t Nt, size_t Npt, double dt, // time info
             const TYPE * const gt0s, // starting time
             size_t samples, size_t parameters, size_t observations, // simulation info
             const size_t * const gidxMap);
     /// destructor
-    virtual ~cudaKinematicG();
+    virtual ~cudaKinematic();
 
     // disallow
 private:
     /// copy constructor disallowed
-    inline cudaKinematicG(const cudaKinematicG &);
+    inline cudaKinematic(const cudaKinematic &);
     /// assign constructor disallowed
-    inline const cudaKinematicG & operator=(const cudaKinematicG &);
+    inline const cudaKinematic & operator=(const cudaKinematic &);
 };
 
 #endif

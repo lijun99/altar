@@ -10,8 +10,8 @@
 #include <portinfo>
 
 // get my class declaration
-#include "cudaKinematicG.h"
-#include "cudaKinematicG_kernels.h"
+#include "cudaKinematic.h"
+#include "cudaKinematic_kernels.h"
 
 // my dependencies
 #include <pyre/cuda.h>
@@ -28,7 +28,7 @@
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const Gb, TYPE * const prediction,
     const size_t parameters, const size_t batch, bool return_residual, cudaStream_t stream) const
 {
@@ -45,7 +45,7 @@ forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters,
     const size_t batch, cudaStream_t stream) const
 {
@@ -68,8 +68,8 @@ calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters
 
 // constructor
 template <typename TYPE>
-altar::models::seismic::cudaKinematicG<TYPE>::
-cudaKinematicG(
+altar::models::seismic::cudaKinematic<TYPE>::
+cudaKinematic(
             size_t  Nas, size_t Ndd, size_t Nmesh, double dsp,
             size_t Nt, size_t Npt, double dt,
             const TYPE * const gt0s,
@@ -99,7 +99,7 @@ cudaKinematicG(
 /////////////////////////////////////////////////////////////////////////////////////////////////////////
 template<typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 initialize(const size_t samples)
 {
     // setup work data
@@ -114,8 +114,8 @@ initialize(const size_t samples)
 
 // destructor
 template <typename TYPE>
-altar::models::seismic::cudaKinematicG<TYPE>::
-~cudaKinematicG()
+altar::models::seismic::cudaKinematic<TYPE>::
+~cudaKinematic()
 {
     // deallocate GPU
     cudaSafeCall(cudaFree((void*)_gpu_Mb));
@@ -128,15 +128,15 @@ altar::models::seismic::cudaKinematicG<TYPE>::
 
 
 /// @par Main functionality
-/// wrap the cudaInitT0 function by a C++ interface for the kinematicG model
+/// wrap the cudaInitT0 function by a C++ interface for the kinematic model
 /// @par CUDA threads layout
 ///- the total number of threads are the total number of (expanded) mesh points of all the samples that are used for fast sweeping;<br> the number of samples are the leading dimension in the CUDA thread layout
 ///- one thread corresponds to one (expanded) mesh point of one sample that is used for fast sweeping
 ///- the number of threads per block is BLOCKDIM*4 (defined in @c altar/utils/common.h);<br> a large block dimension is used to allow more blocks to be lauched for some large systems;<br> if there is still some CUDA launch failure, user can increase it up to 1024 on Tesla M2070/2090
-/// @note see @c cudaKernels_KinematicG.cu for detailed parameter description
+/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
@@ -145,7 +145,7 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     dim3 dim_block(1, BDIMX, BDIMY);
     dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.x), IDIVUP(_Nasf, dim_block.y));
     /// @note: BLOCKDIM is increased here to accommodate more threads
-    cudaKinematicG_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
+    cudaKinematic_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
         gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);
     cudaSafeCall(cudaGetLastError());
 
@@ -163,20 +163,20 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
 }
 
 /// @par Main functionality
-/// wrap the cudaSetT0 function by a C++ interface for the kinematicG model
+/// wrap the cudaSetT0 function by a C++ interface for the kinematic model
 /// @par CUDA threads layout
 ///- the total number of threads are the total number of good samples (pass the "verify" function test)
 ///- one thread corresponds to one good sample
 ///- the number of threads per block is BLOCKDIM (defined in @c altar/utils/common.h)
-/// @note see @c cudaKernels_KinematicG.cu for detailed parameter description
+/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 _setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
     dim3 dim_grid(IDIVUP(Ns_good, BLOCKDIM)), dim_block(BLOCKDIM);
-    cudaKinematicG_kernels::setT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(
+    cudaKinematic_kernels::setT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(
         _gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, _dsp, _it0);
     cudaSafeCall(cudaGetLastError());
 
@@ -194,15 +194,15 @@ _setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStre
 }
 
 /// @par Main functionality
-/// wrap the cudaFastSweeping function by a C++ interface for the kinematicG model
+/// wrap the cudaFastSweeping function by a C++ interface for the kinematic model
 /// @par CUDA threads layout
 ///- the total number of threads are the number of good samples (pass the "verify" function test) times the larger number of the (expanded) mesh points along the two fault dimensions;<br> the later is the leading dimension in the CUDA thread layout
 ///- one thread corresponds to one (expanded) mesh point of one good sample
 ///- the number of threads per block is the larger number of the (expanded) mesh points along the two fault dimensions
-/// @note see @c cudaKernels_KinematicG.cu for detailed parameter description
+/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
@@ -218,7 +218,7 @@ _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, c
     dim3 dim_grid(Ns_good), dim_block(blockSize);
 
     TYPE dspf = _dsp/_Nmesh;
-    cudaKinematicG_kernels::fastSweeping_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
+    cudaKinematic_kernels::fastSweeping_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
         (_gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, dspf, _sweep_iter);
     cudaSafeCall(cudaGetLastError());
     /*
@@ -235,40 +235,40 @@ _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, c
 }
 
 /// @par Main functionali// wrap the cudaInterpolateT0 function by a C++ interface for the ginematic data part
-/// wrap the cudaInterpolateT0 function by a C++ interface for the kinematicG model
+/// wrap the cudaInterpolateT0 function by a C++ interface for the kinematic model
 /// @par CUDA threads layout
 ///- the total number of threads are the total number of good samples (pass the "verify" function test)
 ///- one thread corresponds to one good sample
 ///- the number of threads per block is BLOCKDIM (defined in @c altar/utils/common.h)
-/// @note see @c cudaKernels_KinematicG.cu for detailed parameter description
+/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 _interpolateT0(const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
     dim3 dim_grid(IDIVUP(Ns_good, BLOCKDIM)), dim_block(BLOCKDIM);
-    cudaKinematicG_kernels::interpolateT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
+    cudaKinematic_kernels::interpolateT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
         (_gpu_T0,  _gpu_TI0, Ns_good, _Nas, _Ndd, _Nmesh, _Npt);
     cudaSafeCall(cudaGetLastError());
 }
 
 /// @par Main functionali// wrap the cudaInterpolateT0 function by a C++ interface for the ginematic data part
-/// wrap the cudaCastBigM function by a C++ interface for the kinematicG model
+/// wrap the cudaCastBigM function by a C++ interface for the kinematic model
 /// @par CUDA threads layout
 ///- the total number of threads are the number of samples times the number of patches;<br> the number of samples are the leading dimension in the CUDA thread layout
 ///- one thread corresponds to one patche of one sample
 ///- the number of threads per block is BLOCKDIM (defined in @c altar/utils/common.h)
-/// @note see @c cudaKernels_KinematicG.cu for detailed parameter description
+/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
-altar::models::seismic::cudaKinematicG<TYPE>::
+altar::models::seismic::cudaKinematic<TYPE>::
 _castBigM(const TYPE *const gM, TYPE *const gMb, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
 {
     // set the CUDA block dimenstions
     dim3 dim_block(1, BLOCKDIM, 1);
     dim3 dim_grid(Ns_good, IDIVUP(_Npatch, dim_block.y), 1);
-    cudaKinematicG_kernels::castBigM_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
+    cudaKinematic_kernels::castBigM_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
         (_gidx_map, gM,  _gpu_TI0, gMb,
             _gt0s, _dt, Nparam, _Nt, _Nas, _Ndd, _Npt);
     cudaSafeCall(cudaGetLastError());
@@ -276,7 +276,7 @@ _castBigM(const TYPE *const gM, TYPE *const gMb, const size_t Nparam, const size
 
 template<>
 void
-altar::models::seismic::cudaKinematicG<float>::
+altar::models::seismic::cudaKinematic<float>::
 linearBigGM(cublasHandle_t handle, const float *const gGb, const float * const gMb, float *gDataPrediction,
         const size_t Ns_good, bool return_residual, cudaStream_t stream) const
 {
@@ -305,7 +305,7 @@ linearBigGM(cublasHandle_t handle, const float *const gGb, const float * const g
 
 template<>
 void
-altar::models::seismic::cudaKinematicG<double>::
+altar::models::seismic::cudaKinematic<double>::
 linearBigGM(cublasHandle_t handle, const double *const gGb, const double *const gMb, double * const gDataPrediction,
         const size_t Ns_good, bool return_residual, cudaStream_t stream) const
 {
@@ -332,11 +332,11 @@ linearBigGM(cublasHandle_t handle, const double *const gGb, const double *const 
 }
 
 // explicit instantiation
-template class altar::models::seismic::cudaKinematicG<float>;
-template class altar::models::seismic::cudaKinematicG<double>;
+template class altar::models::seismic::cudaKinematic<float>;
+template class altar::models::seismic::cudaKinematic<double>;
 
 // if having troubles compiling instantiations to shared library
-#include "cudaKinematicG_kernels.cu"
+#include "cudaKinematic_kernels.cu"
 
 
 // end of file

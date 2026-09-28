@@ -72,11 +72,10 @@ class Null(Bayesian, family="altar.models.null"):
         return mask
 
     @altar.export
-    def forward_problem(self, application, theta=None):
+    def forward_problem(self, application, theta):
         """
-        Perform the forward modeling with given {theta}
+        Run the forward model for each row of {theta}; i have no data to predict
         """
-        # do nothing
-        return
+        return {}
 
 # end of file

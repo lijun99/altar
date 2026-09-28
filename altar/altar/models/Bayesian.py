@@ -189,13 +189,21 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # nothing to do
         return self
 
+    def update_model(self, annealer, step):
+        """
+        At the start of a walk at a new beta, update any model state that depends on the
+        samples; return True if the densities of {step} need recomputing
+        """
+        return False
+
+
     @altar.export
-    def forward_problem(self, application, theta=None):
+    def forward_problem(self, application, theta):
         """
-        Perform the forward modeling with given {theta}
+        Run the forward model for each row of {theta}; see {altar.models.Model}
         """
-        # do nothing
-        return
+        raise NotImplementedError(
+            f"model '{type(self).__name__}' must implement 'forward_problem'")
 
     # implementation details
     def mount_input_dataspace(self, pfs):

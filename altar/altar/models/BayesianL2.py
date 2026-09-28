@@ -11,6 +11,8 @@
 import altar
 # my protocol
 from .Bayesian import Bayesian
+# the model uncertainty
+from .cp import cp as uncertainty
 
 # declaration
 class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
@@ -41,6 +43,9 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     dataobs = altar.data.data()
     dataobs.default = altar.data.datal2()
     dataobs.doc = "observed data"
+
+    cp = uncertainty()
+    cp.doc = "the model uncertainty C_p added to the data covariance: none, fixed or adaptive"
 
     # the path of input files
     case = altar.properties.path(default="input")
@@ -79,8 +84,13 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         self.observations = self.dataobs.observations
 
         # lay out my parameter sets, in {psets_list} order, and let each one initialize
-        # itself; the total number of parameters is now known, so record it
-        self.parameters = self.initialize_psets(application=application)
+        # itself; the total number of parameters is now known, so record it; in an ensemble,
+        # the ensemble owns the parameter sets and has already set my {parameters}
+        if not self.embedded:
+            self.parameters = self.initialize_psets(application=application)
+
+        # the model uncertainty, e.g. a fixed C_p folded into the data covariance right away
+        self.cp.initialize(model=self, application=application)
 
         # all done
         return self
@@ -369,13 +379,40 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def update_model(self, annealer):
+    def update_model(self, annealer, step):
         """
-        Update Model parameters if needed
-        :param annealer:
-        :return: default is False
+        At the start of a walk at a new beta, let my model uncertainty update C_chi; return True
+        if it changed, so the densities of {step} get recomputed
         """
-        return False
+        return self.cp.update(model=self, annealer=annealer, step=step)
+
+
+    def update_covariance(self, cp=None):
+        """
+        Set the data likelihood's covariance to C_chi = C_d + {cp}, a numpy (observations x
+        observations) array, or back to C_d alone
+        """
+        self.dataobs.update_covariance(cp=cp)
+        self.covariance_updated()
+        return self
+
+
+    def covariance_updated(self):
+        """
+        Notification that the data covariance changed, for models that fold it into their own
+        data, e.g. premerged green's functions
+        """
+        return self
+
+
+    def compute_cp(self, theta):
+        """
+        The model uncertainty C_p, (observations x observations), for the mean model {theta};
+        models that can estimate it override this
+        """
+        raise NotImplementedError(
+            f"model '{type(self).__name__}' cannot estimate C_p from a mean model; "
+            f"use a fixed C_p (cp=altar.models.cp.fixed) instead")
 
 
     # implementation details

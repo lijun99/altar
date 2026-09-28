@@ -6,284 +6,64 @@
 # all rights reserved
 #
 
+# externals
+import numpy
 # the package
 import altar
-import numpy
-import numbers
-from altar.models.BayesianL2 import BayesianL2
+# my base class
+from altar.models.linear.Linear import Linear
 
 
 # declaration
-class Static(BayesianL2, family="altar.models.seismic.static"):
+class Static(Linear, family="altar.models.seismic.static"):
     """
-    Static inversion with CPU backend (d = G theta)
-    Modeled as N patches with dip and slip displacements
+    Static slip inversion, d = G theta: the linear model, with the strike and dip slips of
+    {patches} fault patches as its parameters
+
+    Everything else -- both backends, the gradient, the forward problem -- is the linear model's;
+    what I add is a model uncertainty C_p from the uncertain earth model the green's functions
+    were computed in, see {compute_cp}
     """
 
-    # the number of patches
+
+    # user configurable state
     patches = altar.properties.int(default=None)
-    patches.doc = "the number of patches in the model"
+    patches.doc = "the number of fault patches, each with a strike and a dip slip"
 
-    # the file based inputs
     green = altar.properties.path(default="static.gf.h5")
-    green.doc = "the name of the file with the Green functions"
+    green.doc = "the green's functions, (observations, 2*patches)"
 
-    # cpu forward-model hint for config parity with cuda
-    use_tensor_core_gemm = altar.properties.bool(default=False)
-    use_tensor_core_gemm.doc = "whether to use tensor core gemm for forward modeling"
+    # the inputs for estimating the model uncertainty C_p, with cp=altar.models.cp.adaptive
+    cmu_file = altar.properties.path(default="static.Cmu.h5")
+    cmu_file.doc = "C_mu, the covariance of the uncertain earth model inputs mu, (n x n)"
 
-    # options for performing forward model only
-    forwardonly = altar.properties.bool(default=False)
-    forwardonly.doc = "whether to run the simulation or the forward problem only"
-
-    # input theta (one sample)
-    theta_input = altar.properties.path(default="theta.h5")
-    theta_input.doc = "the theta input file with a vector of parameters"
-
-    theta_dataset = altar.properties.str(default=None)
-    theta_dataset.doc = "the name/path of the theta dataset in h5 file"
-
-    forward_output = altar.properties.path(default="forward_prediction.h5")
-    forward_output.doc = "the name/path of the file to save forward problem results"
-
-    # legacy output location for optional step dumps
-    output_path = altar.properties.path(default="results")
-    output_path.doc = "the output directory for saved steps"
+    kmu_file = altar.properties.path(default="static.kernel.h5")
+    kmu_file.doc = "the sensitivity kernels dG/dmu_i, one (observations x 2*patches) dataset each"
 
 
     # protocol obligations
     @altar.export
     def initialize(self, application):
         """
-        Initialize the state of the model given a {problem} specification
+        The linear model's setup, plus a check that my parameters match my patches
         """
-        # chain up
         super().initialize(application=application)
-
-        # load Green's function
-        self.GF = self.io.load(
-            filename=self.green,
-            shape=(self.observations, self.parameters),
-        )
-        # keep a pristine copy for covariance updates
-        self.GF0 = self.GF.clone()
-
-        # compatibility aliases for Cp variants
-        self.G = self.GF
-        self.d = self.dataobs.dataobs
-        self.Cd = self.dataobs.cd
-        self.Cd_inv = getattr(self.dataobs, "cd_inv", None)
-        self.normalization = getattr(self.dataobs, "normalization", None)
-        # additional compatibility snapshots
-        self.G0 = self.GF0
-        if hasattr(self.d, "clone"):
-            self.d0 = self.d.clone()
-        if hasattr(self.Cd, "clone"):
-            self.Cd0 = self.Cd.clone()
-
-        # merge covariance to Green's function when the data is already scaled
-        if not self.forwardonly and getattr(self.dataobs, "merge_cd_with_data", False):
-            self.merge_covariance_to_gf()
-
-        # all done
+        if self.patches is not None and self.parameters != 2 * self.patches:
+            self.error.log(
+                f"the static model with {self.patches} patches needs {2 * self.patches} "
+                f"parameters, but its parameter sets hold {self.parameters}")
+            raise SystemExit(1)
         return self
 
 
-    def forward_model_batched(self, theta, prediction, green=None, batch=None, observation=None):
+    def compute_cp(self, theta):
         """
-        Linear forward model prediction = G * theta for a batch of samples.
-        prediction has shape (samples, observations).
+        C_p = K_p C_mu K_p^T for the mean model {theta}, K_p[:, i] = K_i theta
         """
-        # resolve the inputs
-        green = green or self.GF
-        batch = batch or theta.rows
-
-        # carve out working views if needed
-        if batch == theta.rows:
-            theta_view = theta
-            pred_view = prediction
-        else:
-            theta_view = theta.view(start=(0, 0), shape=(batch, self.parameters))
-            pred_view = prediction.view(start=(0, 0), shape=(batch, self.observations))
-
-        # prediction = theta * green^T
-        altar.blas.dgemm(
-            theta_view.opNoTrans,
-            green.opTrans,
-            1.0,
-            theta_view,
-            green,
-            0.0,
-            pred_view,
-        )
-
-        # optionally convert prediction to residuals
-        if observation is None and self.return_residual:
-            observation = self.dataobs.dataobs
-
-        if observation is not None:
-            if hasattr(observation, "rows"):
-                obs_view = observation
-                if observation.rows != batch:
-                    obs_view = observation.view(
-                        start=(0, 0), shape=(batch, self.observations)
-                    )
-                pred_view -= obs_view
-            else:
-                for idx in range(batch):
-                    row = pred_view.getRow(idx)
-                    row -= observation
-
-        # all done
-        return self
-
-
-    def forward_model(self, theta, green=None, prediction=None, observation=None):
-        """
-        Linear forward model prediction = G * theta for a single sample.
-        """
-        # resolve inputs
-        green = green or self.GF
-        if prediction is None:
-            prediction = altar.vector(shape=self.observations)
-
-        # prediction = G * theta, optionally subtract observation
-        if observation is None:
-            beta = 0.0
-        else:
-            prediction.copy(observation)
-            beta = -1.0
-
-        altar.blas.dgemv(green.opNoTrans, 1.0, green, theta, beta, prediction)
-
-        # all done
-        return prediction
-
-
-    @altar.export
-    def forward_problem(self, application, theta=None):
-        """
-        Perform the forward modeling with given {theta}
-        """
-        # load theta if not provided
-        if theta is None:
-            gtheta = self.io.load(
-                filename=self.theta_input,
-                shape=self.parameters,
-                dataset=self.theta_dataset,
-            )
-        elif isinstance(theta, altar.vector):
-            gtheta = theta
-        else:
-            gtheta = self.io.toGsl(numpy.asarray(theta))
-
-        # allocate predicted data
-        data = altar.vector(shape=self.observations)
-        # forward model (prediction only)
-        self.forward_model(theta=gtheta, green=self.GF, prediction=data, observation=None)
-
-        # save data prediction
-        self.io.save(filename=self.forward_output, data=data, dataset='static.Data')
-
-        # all done
-        return
-
-
-    def merge_covariance_to_gf(self):
-        """
-        Merge data covariance with Green's function when data is pre-scaled.
-        """
-        cd_inv = self.dataobs.cd_inv
-
-        # reset to pristine Green's function before applying a new covariance
-        if self.GF0 is not None:
-            self.GF.copy(other=self.GF0)
-
-        if isinstance(cd_inv, numbers.Number):
-            self.GF *= cd_inv
-        else:
-            self.GF = altar.blas.dtrmm(
-                cd_inv.sideLeft,
-                cd_inv.upperTriangular,
-                cd_inv.opNoTrans,
-                cd_inv.nonUnitDiagonal,
-                1.0,
-                cd_inv,
-                self.GF,
-            )
-
-        # keep compatibility aliases in sync
-        self.G = self.GF
-
-        # all done
-        return self
-
-
-    def compute_covariance_inverse(self, cd):
-        """
-        Compute the inverse of the data covariance matrix (compatibility helper).
-        """
-        # make a copy so we don't destroy the original
-        cd = cd.clone()
-        # perform the LU decomposition
-        lu = altar.lapack.LU_decomposition(cd)
-        # invert; this creates a new matrix
-        inv = altar.lapack.LU_invert(*lu)
-        # compute the Cholesky decomposition
-        inv = altar.lapack.cholesky_decomposition(inv)
-
-        # and return it
-        return inv
-
-
-    def compute_normalization(self, observations, cd):
-        """
-        Compute the normalization of the L2 norm (compatibility helper).
-        """
-        # support
-        from math import log, pi
-        # make a copy of cd
-        cd = cd.clone()
-        # compute its LU decomposition
-        decomposition = altar.lapack.LU_decomposition(cd)
-        # use it to compute the log of its determinant
-        logdet = altar.lapack.LU_lndet(*decomposition)
-
-        # all done
-        return -(log(2 * pi) * observations + logdet) / 2
-
-
-    def initialize_residuals(self, samples, data):
-        """
-        Initialize the residual matrix for compatibility with older workflows.
-        """
-        # allocate the residual matrix
-        r = altar.matrix(shape=(data.shape, samples))
-        # for each sample
-        for sample in range(samples):
-            # make the corresponding column a copy of the data vector
-            r.setColumn(sample, data)
-        # all done
-        return r
-
-
-    @altar.export
-    def update(self, annealer):
-        """
-        Model updating at the bottom of each annealing step.
-        """
-        # get current worker
-        worker = annealer.worker
-        # check master
-        if worker.rank == worker.manager:
-            altar.utils.save_step(step=worker.step, path=self.output_path)
-        # all done
-        return self
-
-
-    # private data
-    GF = None
-    GF0 = None
+        from altar.models.cp import sensitivity
+        θ = numpy.asarray(theta, dtype=float)
+        return sensitivity(model=self, cmu_file=self.cmu_file, kmu_file=self.kmu_file,
+                           predict=lambda kernel: kernel.reshape(self.observations, self.parameters) @ θ)
 
 
 # end of file

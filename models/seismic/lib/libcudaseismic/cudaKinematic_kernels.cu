@@ -8,7 +8,7 @@
 // hailiang zhang
 
 #include <stdio.h>
-#include "cudaKinematicG_kernels.h"
+#include "cudaKinematic_kernels.h"
 
 /// @par Main functionality
 /// Initialize T0 to be Distances!!!
@@ -27,7 +27,7 @@
 // set T0 for each sample
 template<typename TYPE>
 __device__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE hypo_dip, TYPE hypo_strike, TYPE it0)
 {
     // index of dip meshgrid
@@ -57,7 +57,7 @@ initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE h
 
 template <typename TYPE>
 __global__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0, const size_t Nparam,
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
 {
@@ -86,7 +86,7 @@ initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0
 // setT0 for one sample
 template <typename TYPE>
 __device__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
 {
@@ -189,7 +189,7 @@ setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
 /// IT ALSO ASSUMES THE HYPO CENTER COORINATES ORIGINATEF FROM THE LEFT/BOTTOM PATCH CENTER OF THE FAULT PLANE
 template <typename TYPE>
 __global__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 setT0_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0, const size_t Nparam,
     const size_t Ns_good, const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
 {
@@ -210,7 +210,7 @@ setT0_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0, const 
 /// @note see @c cudaFastSweeping function for detailed parameter description
 template <typename TYPE>
 __device__ TYPE
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 upwind(const size_t * gIdx, const TYPE *const gT0, const int i, const int j,
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE *const gM, const TYPE h)
 {
@@ -294,7 +294,7 @@ upwind(const size_t * gIdx, const TYPE *const gT0, const int i, const int j,
 /// </pre>
 template <typename TYPE>
 __global__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 fastSweeping_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
     const size_t Nparam, const size_t Ns_good, const size_t Nas, const size_t Ndd, const size_t Nmesh,
     const TYPE h, const size_t iteration)
@@ -424,7 +424,7 @@ fastSweeping_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
 /// The leading index is along Ndd direction
 template <typename TYPE>
 __global__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 interpolateT0_batched(const TYPE *const gT0, TYPE *const gTI0, const size_t Ns_good,
     const size_t Nas, const size_t Ndd, const size_t Nmesh, const size_t Npt_gi)
 {
@@ -482,7 +482,7 @@ interpolateT0_batched(const TYPE *const gT0, TYPE *const gTI0, const size_t Ns_g
 /// @param [in] Npt_gi the number of source time functions for T0 interpolation along each dimension
 template <typename TYPE>
 __global__ void
-cudaKinematicG_kernels::
+cudaKinematic_kernels::
 castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0, TYPE *const gMb, const TYPE *const gt0s,
     const TYPE dt, const size_t Nparam, const size_t Nt, const size_t Nas, const size_t Ndd, const size_t Npt_gi)
 {

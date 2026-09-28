@@ -10,6 +10,7 @@
 
 
 # externals
+import numpy
 from importlib import import_module
 # the package
 import altar
@@ -43,17 +44,6 @@ class Linear(BayesianL2, family="altar.models.linear"):
     # norm) is handled by {dataobs}
     green = altar.properties.path(default="green.txt")
     green.doc = "the name of the file with the Green functions"
-
-    # settings for running the forward problem only, e.g. with the posterior mean theta
-    theta_input = altar.properties.path(default="theta.txt")
-    theta_input.doc = "the theta input file with a vector of parameters"
-
-    theta_dataset = altar.properties.str(default=None)
-    theta_dataset.doc = "the name/path of the theta dataset in an h5 input file"
-
-    forward_output = altar.properties.path(default="forward_prediction.h5")
-    forward_output.doc = "the name/path of the file to save forward problem results"
-
 
     # protocol obligations
     @altar.export
@@ -122,13 +112,20 @@ class Linear(BayesianL2, family="altar.models.linear"):
 
 
     @altar.export
-    def forward_problem(self, application, theta=None):
+    def forward_problem(self, application, theta):
         """
-        Perform the forward modeling with a given {theta}, comparing against the observed
-        data; used by the {forward} action, e.g. to check the residuals of the posterior
-        mean model
+        The raw predicted data G·θ for each row of {theta}; see {altar.models.Model}
         """
-        return self._impl.forward_problem(model=self, application=application, theta=theta)
+        return {"data": numpy.asarray(theta, dtype=float) @ self._impl.green().T}
+
+
+    def covariance_updated(self):
+        """
+        Redo whatever depends on the data covariance, once my implementation exists
+        """
+        if self._impl is not None:
+            self._impl.covariance_updated(model=self)
+        return self
 
 
     @altar.export

@@ -6,6 +6,6 @@
 # all rights reserved
 #
 
-# the cuda implementations of the seismic distributions; see {altar.distributions.Base}
+# the cpu implementations of the seismic distributions; see {altar.distributions.Base}
 
 # end of file

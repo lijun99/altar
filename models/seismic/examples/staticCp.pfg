@@ -4,27 +4,20 @@
 ; all rights reserved
 ;
 
-; the static uoᴉsɹǝʌuᴉ with Cp example
-
-; for Bayesian simulations, run
-;        slipmodel --config=staticCp.pfg
-;   or   slipmodel.plexus sample --config=staticCp.pfg
-; for forward problem only (with an input set of parameters), run
+; the static inversion example with a model uncertainty C_p
+;
+; sample with
+;        slipmodel.plexus sample --config=staticCp.pfg
+; then compare the posterior's predicted data to the observed data with
 ;        slipmodel.plexus forward --config=staticCp.pfg
-
 
 slipmodel:
 
-    model = altar.models.seismic.cuda.staticcp
+    ; the static model is the linear model d = G theta
+    model = altar.models.seismic.static
     model:
 
-        ; settings for running forward problem only
-        ; forward theta input
-        theta_input = static_mean_model.txt
-        ; forward output file
-        forward_output = forward_prediction.h5
-
-        ; the name of the test case
+        ; the name of the test case, also as directory for input files
         case = 9patchCp
 
         ; number of patches
@@ -33,74 +26,68 @@ slipmodel:
         ; green's function (observations, parameters)
         green = static.gf.h5
 
-        dataobs = altar.cuda.data.datal2
+        ; data observations - use L2 norm for likelihood
         dataobs:
             observations = 168
             data_file = static.data.h5
             cd_file = static.Cd.h5
+            cd_dtype = float64 ; factor C_chi = C_d + C_p in double precision
 
-        ; sensitivity kernels
-        nCmu = 2
+        ; the model uncertainty C_p, re-estimated from the posterior mean at each beta step:
+        ; C_p = K_p C_mu K_p^T, K_p[:, i] = K_i theta_mean
+        cp = altar.models.cp.adaptive
+        cp:
+            start = 0.01 ; include C_p once beta reaches this value
+            initial_model = static.initialModel.h5 ; the mean model to use early on ...
+            initial_until = 0 ; ... while beta <= this value
+        ; the covariance of the uncertain elastic structure, and the green's functions'
+        ; sensitivity to each of its components, dG/dmu_i
         cmu_file = static.Cmu.h5
         kmu_file = static.kernel.h5
-        initial_model_file = static.initialModel.h5
 
-        ; when to start using cp instead of cd
-        beta_cp_start = 0.01
-        ; when to stop using initial model (or start using mean model during run)
-        beta_use_initial_model = 0
-        ; data precision for cp calculation (if different from cd.dtype)
-        ; it might be helpful to use double precision to reduce the error in matrix inversion
-        ; dtype_cp = float64
-
-        ; list of parameterset (also used as the order parameters in theta)
+        ; list of parametersets
+        ; the order should be consistent with the green's function
         psets_list = [strikeslip, dipslip]
 
         ; define parametersets
         psets:
-            strikeslip = altar.cuda.models.parameterset
-            dipslip = altar.cuda.models.parameterset
+            strikeslip = contiguous
+            dipslip = contiguous
 
             strikeslip:
                 count = {slipmodel.model.patches}
-                prior = altar.cuda.distributions.gaussian
+                prior = gaussian
                 prior.mean = 0
                 prior.sigma = 0.7
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prior = altar.models.seismic.cuda.moment
+                prior = altar.models.seismic.moment
                 prior:
+                    support = (-0.5, 10) ; slip range
                     Mw_mean = 7.0
                     Mw_sigma = 0.5
                     Mu = [30] ; in GPa
                     area = [3600] ; patch area in km^2
-                    support = (-0.5, 10)
 
+    controller = altar.bayesian.catmip
     controller:
-        sampler = altar.cuda.bayesian.metropolis
+        archiver = altar.bayesian.h5recorder
         archiver:
-            output_dir = results/staticcp ; output directory
+            output_dir = results/staticCp ; output directory
             output_freq = 3 ; output frequency in beta steps
 
-    monitors:
-        ; profiling
-        prof = altar.bayesian.profiler
+    ; the forward check, on the final archived step
+    forward:
+        theta = results/staticCp/step_final.h5
+        output = results/staticCp/forward.h5
 
     ; run configuration
-    job.tasks = 1 ; number of tasks per host
-    job.gpus = 1  ; number of gpus per task
-    job.gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
-    ;job.gpuids = [0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
-    job.chains = 2**12 ; number of chains per task
-    job.steps = 1000 ; MC burn-in steps for each beta step
-
-    ; shell
-    ; shell = mpi.shells.mpirun ; for running with mpi
-
-
-; for parallel runs
-; mpi.shells.mpirun # altar.plexus.shell:
-    ; extra = -mca btl self,tcp
+    job:
+        tasks = 1 ; number of tasks per host
+        gpus = 0  ; number of gpus per task
+        gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
+        chains = 2**10 ; number of chains per task
+        steps = 100 ; MC burn-in steps for each beta step
 
 ; end of file
