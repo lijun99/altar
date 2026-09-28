@@ -1,0 +1,55 @@
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
+
+# the linear example on a gpu, in yaml: sample with
+#        altar-linear --config=linear_gpu.yaml
+# yaml keys must not repeat, so a component chosen in one block is configured in a block of its own
+
+# the linear app
+linear:
+  # the model
+  model: altar.models.linear
+  # sample with catmip, recording each β step in hdf5
+  controller: altar.bayesian.catmip
+  controller.archiver: altar.bayesian.h5recorder
+  controller.archiver.output_dir: results/gpu
+
+  # run configuration
+  job:
+    tasks: 1               # number of tasks per host
+    gpus: 1                # number of gpus per task; 0 runs on the cpu
+    gpuprecision: float64  # double (float64) or single (float32) precision for gpu computations
+    gpuids: [0]            # the gpus to use on each host
+    chains: 2**10          # number of chains per task
+    steps: 2**8            # MC burn-in steps for each β step
+
+  # shell: mpi.shells.mpirun  # for running with mpi, with tasks > 1
+
+# the model settings
+linear.model:
+  case: patch-9      # the name of the test case
+  parameters: 18     # the number of free parameters
+  dataobs:
+    observations: 108
+    cd_file: cd.txt
+  # a single parameter set covering the whole vector
+  psets_list: [all]
+  psets:
+    all: contiguous
+
+# the parameter set; references in braces must be quoted, or yaml reads them as a mapping
+linear.model.psets.all:
+  count: "{linear.model.parameters}"
+  prep: gaussian
+  prep.sigma: 0.5
+  prior: gaussian
+  prior.sigma: 0.5
+
+# for parallel runs; keys with a family must be quoted, or yaml reads the '#' as a comment
+"mpi.shells.mpirun # altar.plexus.shell":
+  extra: -mca btl self,tcp
+
+# end of file
