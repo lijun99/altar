@@ -33,12 +33,12 @@ class Contiguous(base):
         # get the random number generator
         rng = model.rng
         # initialize my prior
-        self.prior.initialize(rng=rng)
+        self.prior.initialize(rng=rng, application=application)
 
         # a parameter set with no {prep} of its own initializes samples from its prior instead
         if self.prep is not None:
             self.prep.parameters = count
-            self.prep.initialize(rng=rng)
+            self.prep.initialize(rng=rng, application=application)
         else:
             self.prep = self.prior
 

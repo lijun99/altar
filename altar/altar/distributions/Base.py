@@ -55,6 +55,10 @@ class Base(altar.component, implements=distribution):
     # {to_physical}/{to_sampling}/{eval_prior_physical} below
     has_reparametrization = False
 
+    # the package holding my {native}/{cuda} implementations; a distribution defined outside
+    # {altar.distributions} (e.g. in a model package) points this at its own package
+    impl_package = "altar.distributions"
+
 
     # configuration
     @altar.export
@@ -85,7 +89,7 @@ class Base(altar.component, implements=distribution):
         # the package it lives in
         backend = "cuda" if altar.backends.active() == "cuda" else "native"
         # reach it
-        module = import_module(f"altar.distributions.{backend}.{name}")
+        module = import_module(f"{self.impl_package}.{backend}.{name}")
         factory = getattr(module, name)
         # build it
         impl = factory()

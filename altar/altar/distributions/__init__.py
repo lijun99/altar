@@ -29,6 +29,12 @@ def uniform():
     return uniform
 
 
+@altar.foundry(implements=distribution, tip="samples read from a file, for initializing a parameter set")
+def preset():
+    from .Preset import Preset as preset
+    return preset
+
+
 @altar.foundry(implements=distribution, tip="the gaussian probability distribution")
 def gaussian():
     from .Gaussian import Gaussian as gaussian
