@@ -38,25 +38,30 @@ class HMC:
         Initialize me and my parts given an {application} context
         """
         self.info = application.info
-        model = application.model
-        samples = application.job.chains
-        parameters = model.parameters
-        dtype = application.job.gpuprecision
+        self.samples = application.job.chains
+        self.dtype = application.job.gpuprecision
         # the number of trajectories per call to {sample_posterior}, matching cpu
         # {altar.bayesian.samplers.native.HMC}'s own {self.steps}
         self.steps = application.job.steps
-        reparameterization = getattr(model, 'reparameterization', False)
-        self.proposal_state = HMCState.alloc(
-            samples=samples, parameters=parameters, dtype=dtype,
-            reparameterization=reparameterization
-        )
         # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
         # to 0.8), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
             self.stepsizer.target = 0.7
+        # all done
+        return self
+
+
+    def _allocate(self, model):
+        """
+        Allocate my scratch state on first use: the model, initialized after me, only knows its
+        parameter count and whether it reparameterizes once its parameter sets are laid out
+        """
+        self.proposal_state = HMCState.alloc(
+            samples=self.samples, parameters=model.parameters, dtype=self.dtype,
+            reparameterization=getattr(model, 'reparameterization', False)
+        )
         self.step_size = self.stepsizer.initialize(self.proposal_state.eta)
         self._set_step_size(self.step_size)
-        # all done
         return self
 
 
@@ -91,6 +96,8 @@ class HMC:
         (matching cpu {altar.bayesian.samplers.native.HMC}'s own outer loop), each with
         {self.leapfrog_steps} leapfrog substeps
         """
+        if self.proposal_state is None:
+            self._allocate(model=annealer.model)
         state = self.proposal_state
         state.beta = step.beta
 
@@ -323,7 +330,9 @@ class HMC:
 
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}
-    proposal_state = None   # my {HMCState} scratch state, allocated once, in {initialize}
+    proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
+    samples = None          # the number of chains, for {_allocate}
+    dtype = None            # the gpu precision, for {_allocate}
     info = None             # the application info channel
     statistics = None       # (accepted, invalid, rejected) from the last {_walk} call
     step_size = None      # the current leapfrog step size

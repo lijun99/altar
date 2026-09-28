@@ -100,6 +100,10 @@ def test():
     # themselves at a fixed, hand-picked-good step, not the stepsizer's own convergence
     sampler.stepsizer = FixedStepSize()
     sampler.initialize(application=_Application())
+    # the scratch state waits for the model, initialized after the sampler; allocate it now,
+    # ahead of the first walk, so the step size set below sticks
+    assert sampler.proposal_state is None
+    sampler._allocate(model=_Model())
     assert sampler.proposal_state is not None
     # 20 leapfrog substeps per trajectory, a larger-than-default step size (both previously
     # set via magic attributes on {step} that nothing in the real pipeline ever set -- see
