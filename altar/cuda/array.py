@@ -48,12 +48,12 @@ class Array:
 
 
     @classmethod
-    def _wrap(cls, source):
+    def _wrap(cls, source, dtype=None):
         """
-        Allocate a new grid matching {source}'s shape/dtype, and copy {source} into it
+        Allocate a new grid matching {source}'s shape and dtype (or {dtype}), and copy {source} into it
         """
         source = numpy.asarray(source)
-        self = cls._allocate(shape=source.shape, dtype=source.dtype)
+        self = cls._allocate(shape=source.shape, dtype=dtype or source.dtype)
         self.copy_from_host(source=source)
         return self
 
@@ -251,24 +251,26 @@ def _cell(dtype):
 
 
 # the module-level factories: the "alias" for the old {altar.cuda.matrix}/{altar.cuda.vector}
-def matrix(shape=None, dtype="float64", source=None):
+def matrix(shape=None, dtype=None, source=None):
     """
     Allocate a (rows x cols) managed-memory matrix, or, with {source} given instead of
-    {shape}/{dtype}, one that duplicates {source}'s shape/dtype/cells
+    {shape}, one that duplicates {source}'s shape/cells, in {dtype} if given; {dtype}
+    defaults to float64 for a fresh allocation, and to {source}'s own otherwise
     """
     if source is not None:
-        return Array._wrap(source)
-    return Array._allocate(shape=shape, dtype=dtype)
+        return Array._wrap(source, dtype=dtype)
+    return Array._allocate(shape=shape, dtype=dtype or "float64")
 
 
-def vector(shape=None, dtype="float64", source=None):
+def vector(shape=None, dtype=None, source=None):
     """
     Allocate a managed-memory vector of {shape} cells, or, with {source} given instead of
-    {shape}/{dtype}, one that duplicates {source}'s shape/dtype/cells
+    {shape}, one that duplicates {source}'s shape/cells, in {dtype} if given; {dtype}
+    defaults to float64 for a fresh allocation, and to {source}'s own otherwise
     """
     if source is not None:
-        return Array._wrap(source)
-    return Array._allocate(shape=shape, dtype=dtype)
+        return Array._wrap(source, dtype=dtype)
+    return Array._allocate(shape=shape, dtype=dtype or "float64")
 
 
 # end of file
