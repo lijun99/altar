@@ -18,7 +18,7 @@
 # -- Project information -----------------------------------------------------
 
 project = 'AlTar'
-copyright = '2013-2020 ParaSim Inc., 2010-2020 California Institute of Technology.'
+copyright = '2013-present ParaSim Inc., 2010-present California Institute of Technology'
 author = 'AlTar Development Team'
 
 # The full version, including alpha/beta/rc tags
@@ -30,9 +30,9 @@ release = '2.0'
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 extensions = [
+    'autoapi.extension', # the api reference, generated from the sources
     'sphinx.ext.autodoc', # import the modules
     #'sphinx.ext.autosectionlabel', # auto label sections
-    'sphinx.ext.extlinks', # for shared external links
     'nbsphinx', # include jupyter notebooks
     #'recommonmark', # include markdown
     'myst_parser', # markdown support
@@ -53,6 +53,7 @@ exclude_patterns = ['_build',
                     'Thumbs.db', '.DS_Store',
                     'api-gen', # ignore api reference generators
                     '**.ipynb_checkpoints', # jupyter notebook progress
+                    'tutorials/static', # an unfinished copy of the linear tutorial
                     ]
 
 # -- Options for HTML output -------------------------------------------------
@@ -66,7 +67,57 @@ html_theme = 'sphinx_rtd_theme'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+
+# -- the api reference --------------------------------------------------------
+# sphinx-autoapi reads the sources without importing them, so the docs build without compiling
+# altar; the sources are laid out as they are installed, with symlinks, before it reads them
+import pathlib
+import shutil
+
+
+def _stage_sources():
+    """
+    Mirror the installed package: altar/altar as {altar}, altar/cuda as {altar.cuda}, and each
+    models/<name>/<name> as {altar.models.<name>}
+    """
+    docs = pathlib.Path(__file__).resolve().parent
+    root = docs.parent
+    stage = docs / "_autoapi_src" / "altar"
+    shutil.rmtree(stage.parent, ignore_errors=True)
+    (stage / "models").mkdir(parents=True)
+    for entry in (root / "altar" / "altar").iterdir():
+        if entry.name not in ("models", "__pycache__"):
+            (stage / entry.name).symlink_to(entry)
+    (stage / "cuda").symlink_to(root / "altar" / "cuda")
+    for entry in (root / "altar" / "altar" / "models").iterdir():
+        if entry.name != "__pycache__":
+            (stage / "models" / entry.name).symlink_to(entry)
+    for model in sorted((root / "models").iterdir()):
+        package = model / model.name
+        if (package / "__init__.py").exists():
+            (stage / "models" / model.name).symlink_to(package)
+    return stage
+
+
+autoapi_dirs = [str(_stage_sources())]
+autoapi_follow_symlinks = True
+autoapi_root = 'api'
+autoapi_add_toctree_entry = False # {index} lists api/index itself
+autoapi_options = ['members', 'undoc-members', 'show-inheritance', 'show-module-summary']
+# the pre-2.0 cuda layer, superseded by the native/cuda implementations in each package
+autoapi_ignore = [f'*/_autoapi_src/altar/cuda/{legacy}/*'
+                  for legacy in ('bayesian', 'data', 'distributions', 'models', 'norms')]
+# a sketch, not ready for use
+autoapi_ignore += ['*/_autoapi_src/altar/models/reverso/*']
+# compiled extension modules have no python source to resolve imports into
+suppress_warnings = ['autoapi.python_import_resolution']
+
+# -- jupyter notebooks ------------------------------------------------------------
+# rendered with their saved outputs; running them needs altar, and a gpu for some
+nbsphinx_execute = 'never'
+
+# markdown (MyST): math with $...$ and $$...$$, amsmath environments, definition lists
+myst_enable_extensions = ["dollarmath", "amsmath", "deflist"]
 
 # for markdown
 source_suffix = {
@@ -74,31 +125,9 @@ source_suffix = {
     '.md': 'markdown',
 }
 
+# number the equations of amsmath environments, as LaTeX does
 mathjax3_config = {
-    'TeX': {'equationNumbers': {'autoNumber': 'AMS', 'useLabelIds': True}},
-}
-
-# -- Common used hyperlinks ---------------------------------------------------
-# altar_ will be converted to <a href="https://github.com/AlTarFramework/altar">altar</a>
-rst_epilog = """
-.. _altar: https://github.com/AlTarFramework/altar
-.. _AlTar: https://github.com/AlTarFramework/altar
-.. _altar cuda branch: https://github.com/lijun99/altar
-.. _AlTar Documentation: https://altar.readthedocs.io
-.. _pyre: https://github.com/pyre/pyre
-.. _pyre cuda branch: https://github.com/lijun99/pyre
-.. _pyre Documentation: https://pyre-doc.readthedocs.io
-.. _mm: https://github.com/aivazis/mm
-.. _config.mm: https://github.com/lijun99/altar2-documentation/tree/cuda/config.mm
-"""
-
-# --- external links --------------
-# 'altar': ('link', prefix)
-extlinks = {
-    'altar_src': ('https://github.com/lijun99/altar/tree/cuda/%s', None),
-    'pyre_src': ('https://github.com/lijun99/pyre/tree/cuda/%s', None),
-    'altar_doc_src': ('https://github.com/lijun99/altar2-documentation/tree/cuda/%s', None),
-    'tutorials': ('https://github.com/lijun99/altar2-documentation/tree/cuda/jupyter/%s', 'Tutorials:%s')
+    'tex': {'tags': 'ams'},
 }
 
 # --- latex pdf ---------
