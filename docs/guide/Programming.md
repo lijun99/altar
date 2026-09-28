@@ -204,6 +204,24 @@ sets, and each model computes its data likelihood from its own columns of $\bold
 {doc}`Kinematic`). A model that works in an ensemble only needs its `parameters`, which the ensemble
 sets, and its own `psets_list`, with the names of the ensemble's parameter sets it uses.
 
+## Checking a sampler
+
+The linear example has an exact posterior: its data are linear in the parameters, with Gaussian
+noise, so under a Gaussian prior the posterior is Gaussian, known in closed form.
+`models/linear/tests/posterior.py` runs the samplers on it and compares the mean, the standard
+deviations and the correlations of their final samples with the exact ones:
+
+```bash
+cd ~/tools/src/altar/models/linear/tests
+python posterior.py --list          # the cases: controllers, samplers, priors
+python posterior.py                 # all of them, on the cpu
+python posterior.py mala --gpu      # one, on the GPU
+```
+
+The tolerances allow for the noise of 256 chains; they catch errors of the size of a wrongly
+handled prior, not biases much below 0.3 posterior standard deviations. A new sampler should
+pass it, on both backends, with and without a reparameterized prior.
+
 ## Code organization
 
 A model is a python package under `models/`, built and installed with the rest of AlTar. For a
