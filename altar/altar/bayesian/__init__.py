@@ -25,7 +25,7 @@ from .stepcounters.StepCounter import StepCounter as stepcounter
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace
 from .controllers import annealer, catmip, langevin, mcmc, plainhmc, catmiphmc
-from .samplers import metropolis, hmc
+from .samplers import metropolis, hmc, mala
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal

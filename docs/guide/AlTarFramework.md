@@ -80,7 +80,8 @@ linear:
 The annealing controllers are built from these components, each configurable:
 
 `sampler`
-: moves the chains at each $\beta$: {ref}`Metropolis <metropolis>` or {ref}`HMC <hmc>`;
+: moves the chains at each $\beta$: {ref}`Metropolis <metropolis>`, {ref}`HMC <hmc>` or
+  {ref}`MALA <mala>`;
 
 `scheduler`
 : chooses the next $\beta$: {ref}`COV or a constant <schedulers>`;
@@ -183,6 +184,33 @@ linear:
     job.steps = 20 ; trajectories per β step
 ```
 
+(mala)=
+### Metropolis-adjusted Langevin
+
+`altar.bayesian.mala` proposes, for each chain, a step along the gradient of the log posterior
+plus a Gaussian perturbation,
+
+$$
+\boldsymbol\theta' = \boldsymbol\theta + \frac{\epsilon^2}{2} \mathbf M^{-1} \nabla \log P_m(\boldsymbol\theta|\mathbf d)
++ \epsilon\, \mathbf M^{-1/2} \mathbf z, \qquad \mathbf z \sim N(0, \mathbf I),
+$$
+
+and accepts or rejects it with the Metropolis–Hastings rule. That is HMC with a single leapfrog
+step, and it takes the same settings, with `leapfrog_steps` = 1 and a step size aimed at an
+acceptance rate of 0.574; it runs `job.steps` proposals at each $\beta$. Like HMC, it needs the
+gradient of the data likelihood, and unbounded or reparameterized priors. Each proposal costs one
+gradient evaluation, against `leapfrog_steps` for an HMC trajectory, but moves the chains less
+far. Sample with it at a fixed $\beta$ with `mcmc`, or annealed with `catmip`:
+
+```none
+linear:
+    controller = altar.bayesian.mcmc
+    controller:
+        sampler = altar.bayesian.mala
+        rounds = 4
+    job.steps = 500 ; proposals per round
+```
+
 (stepsizers)=
 ### Step sizes
 
@@ -209,7 +237,7 @@ The regulators are
 | `altar.bayesian.fixedstep` | a fixed step size |
 
 where $r$ is the acceptance rate. The target defaults to the sampler's: 0.234 for Metropolis, 0.7
-for HMC.
+for HMC, 0.574 for MALA.
 
 (stepcounters)=
 ### Step counts

@@ -25,4 +25,12 @@ def hmc():
     __doc__ = HMC.__doc__
     return HMC
 
+@altar.foundry(
+    implements=sampler,
+    tip="a Bayesian sampler based on the Metropolis-adjusted Langevin algorithm")
+def mala():
+    from .MALA import MALA
+    __doc__ = MALA.__doc__
+    return MALA
+
 # end of file
