@@ -143,7 +143,7 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     // use Ns_good (number of samples) as block.z index
     // each xy block(s) treats Nddf x Nasf mesh grids for one sample
     dim3 dim_block(1, BDIMX, BDIMY);
-    dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.x), IDIVUP(_Nasf, dim_block.y));
+    dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.y), IDIVUP(_Nasf, dim_block.z));
     /// @note: BLOCKDIM is increased here to accommodate more threads
     cudaKinematic_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
         gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);

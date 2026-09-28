@@ -153,7 +153,7 @@ setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
                     if(id_strike_patch <0) id_strike_patch =0;
                     else if (id_strike_patch >= Nas) id_strike_patch = Nas-1;
                     if(id_dip_patch <0) id_dip_patch =0;
-                    else if (id_dip_patch >= Nas) id_dip_patch = Nas-1;
+                    else if (id_dip_patch >= Ndd) id_dip_patch = Ndd-1;
                     // get the patch index in flattened notation
                     int id_patch = id_strike_patch*Ndd + id_dip_patch;
                     // get the rupture velocity
