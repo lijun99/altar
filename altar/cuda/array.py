@@ -229,9 +229,11 @@ class Array:
 
     # buffer protocol support
     def __array__(self, dtype=None, copy=None):
-        # let {numpy.asarray(array)} work directly, zero-copy
+        # let {numpy.asarray(array)} work directly, zero-copy; {numpy.array(array)} copies
         arr = numpy.asarray(self._grid)
-        return arr if dtype is None else arr.astype(dtype, copy=bool(copy))
+        if dtype is not None:
+            return arr.astype(dtype, copy=bool(copy))
+        return arr.copy() if copy else arr
 
 
     def __getattr__(self, name):
