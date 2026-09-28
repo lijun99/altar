@@ -2,8 +2,9 @@
 # Installation Guide
 
 AlTar is built on the [pyre](https://github.com/pyre/pyre) framework, and both are installed
-from source with [CMake](https://cmake.org). The recommended way is to build both into a conda
-environment, which also supplies every library they need:
+from source with [CMake](https://cmake.org), or with pyre's own build tool, {ref}`mm
+<installation-mm>`. The recommended way is to build both into a conda environment, which also
+supplies every library they need:
 
 1. check the {ref}`requirements <installation-requirements>`;
 2. create a {ref}`conda environment <installation-conda>` with the prerequisites;
@@ -156,6 +157,69 @@ Both packages take the standard CMake options, among them
 The compilers are picked from the `CXX` and `CUDACXX` environment variables, e.g.
 `CXX=g++-13 CUDACXX=/usr/local/cuda/bin/nvcc cmake -S . -B build ...`. To see the full compile
 commands, add `--verbose` to `cmake --build`.
+
+(installation-mm)=
+## Build with mm
+
+Instead of CMake, pyre and AlTar can be built with [mm](https://github.com/aivazis/mm), pyre's own
+build tool, which finds the sources itself and reads its description of the projects from their
+`.mm` directories.
+
+### Set up mm
+
+Get mm, and make a shortcut for it, e.g. in `~/.bashrc`:
+
+```bash
+git clone https://github.com/aivazis/mm.git ~/tools/src/mm
+alias mm='python3 ${HOME}/tools/src/mm/mm'
+```
+
+Tell mm to build into the active conda environment, in `~/.config/pyre/mm.yaml`:
+
+```yaml
+mm:
+  # optimized, shared libraries
+  target: "opt, shared"
+  # install into the active conda environment, and find the prerequisites there
+  mode: conda
+  pkgdb: conda
+  # the compilers
+  compilers: "gcc, python/python3"
+  # the intermediate build products, one directory per environment
+  bldroot: "{pyre.environ.HOME}/tmp/builds/mm/{pyre.environ.CONDA_DEFAULT_ENV}"
+```
+
+and where to find what the environment doesn't provide, in `~/.config/mm/config.mm`: pyre, once
+it is installed in the environment, and, for GPU support, the CUDA toolkit:
+
+```make
+# the conda environment
+sys.prefix := ${CONDA_PREFIX}
+# pyre
+pyre.dir := $(sys.prefix)
+# the CUDA toolkit
+cuda.dir := /usr/local/cuda
+```
+
+### Build
+
+With the environment active, build pyre, then AlTar, each from its source directory:
+
+```bash
+cd ~/tools/src/pyre
+mm --slots=4
+cd ~/tools/src/altar
+mm --slots=4
+```
+
+`--slots` sets the number of parallel jobs; as with CMake, lower it if the machine runs short of
+memory. mm installs everything, the python packages included, straight into the environment, so no
+`packages` link is needed. It builds the GPU parts of AlTar, `altar-cuda` and `seismic-cuda`, only
+when it finds CUDA, through `cuda.dir`.
+
+The projects AlTar builds, and where their sources are, are listed in `.mm/projects.mm` and in a
+file per project, e.g. `.mm/altar.mm` for the framework and `.mm/linear.mm` for the linear model.
+mm and CMake install the same files to the same places; the last build installed is the one in use.
 
 (installation-check)=
 ## Check the installation

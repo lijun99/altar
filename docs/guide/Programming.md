@@ -236,9 +236,12 @@ models/seismic
 └── ext/cudaseismic         # their pybind11 bindings, the module cudaseismic
 ```
 
-The build functions of a model go in `.cmake/altar_<model>.cmake` at the root of the source tree
-(e.g. `.cmake/altar_seismic.cmake`), and the model into the root `CMakeLists.txt`, with
-`add_subdirectory(models/<model>)`.
+For CMake, the build functions of a model go in `.cmake/altar_<model>.cmake` at the root of the
+source tree (e.g. `.cmake/altar_seismic.cmake`), and the model into the root `CMakeLists.txt`, with
+`add_subdirectory(models/<model>)`. For mm, a model is a project: add it to `.mm/projects.mm`, and
+describe its package, library and extension module, with their source directories, in
+`.mm/<model>.mm` (e.g. `.mm/mogi.mm`; `.mm/seismic-cuda.mm` for the GPU parts of a model, built
+only when mm finds CUDA).
 
 ## Data types
 
