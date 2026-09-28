@@ -28,7 +28,7 @@ class Null(Bayesian, family="altar.models.null"):
 
     # protocol obligations
     @altar.export
-    def initialize_sample(self, step):
+    def initialize_sample(self, step, batch=None):
         """
         Fill {step.θ} with an initial random sample from my prior distribution
         """
@@ -43,7 +43,7 @@ class Null(Bayesian, family="altar.models.null"):
 
 
     @altar.export
-    def eval_prior(self, step):
+    def eval_prior(self, step, batch=None):
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -53,7 +53,7 @@ class Null(Bayesian, family="altar.models.null"):
 
 
     @altar.export
-    def data_likelihood(self, step):
+    def data_likelihood(self, step, batch=None):
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -63,7 +63,7 @@ class Null(Bayesian, family="altar.models.null"):
 
 
     @altar.export
-    def verify(self, step, mask):
+    def verify(self, step, mask, batch=None):
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -77,5 +77,9 @@ class Null(Bayesian, family="altar.models.null"):
         Run the forward model for each row of {theta}; i have no data to predict
         """
         return {}
+
+
+    # private data
+    psets = {}  # no parameter sets: the archivers record theta as a whole
 
 # end of file
