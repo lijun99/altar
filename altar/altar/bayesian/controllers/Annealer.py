@@ -104,8 +104,12 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         # bottom process: compute mean,sd and print a summary
         worker.bottom(annealer=self)
 
-        # iterate until β is sufficiently close to one
-        while worker.beta + tolerance < 1:
+        # iterate until done, by default until β is sufficiently close to one; the count of
+        # iterations is kept here, since under mpi only the manager's worker counts them
+        iteration = 0
+        while self.continuing(worker=worker, iteration=iteration, tolerance=tolerance):
+            # count this one
+            iteration += 1
             # notify that we are at the top of the current step
             dispatcher.notify(event=dispatcher.beta_start, controller=self)
 
@@ -152,6 +156,14 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
         # all done; indicate success
         return 0
+
+
+    def continuing(self, worker, iteration, tolerance):
+        """
+        Whether to take another step, after {iteration} of them: until β is within {tolerance}
+        of one
+        """
+        return worker.beta + tolerance < 1
 
 
     # implementation details

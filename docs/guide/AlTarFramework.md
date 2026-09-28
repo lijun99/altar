@@ -49,11 +49,12 @@ The controller samples the posterior. The choice of controller is the choice of 
 
 | controller | algorithm |
 |---|---|
-| `altar.bayesian.annealer` | the base annealer; with its default scheduler, Metropolis sampling at a fixed $\beta$, 1 by default |
 | `altar.bayesian.catmip` | {ref}`CATMIP <catmip>`: annealing with the COV scheduler, Metropolis sampling |
+| `altar.bayesian.mcmc` | Metropolis sampling at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.catmiphmc` | CATMIP annealing, with Hamiltonian Monte Carlo sampling |
 | `altar.bayesian.plainhmc` | Hamiltonian Monte Carlo at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD) |
+| `altar.bayesian.annealer` | the base of the annealing controllers, with the sampler and the scheduler left to configure |
 
 e.g.
 
@@ -61,6 +62,20 @@ e.g.
 linear:
     controller = altar.bayesian.catmip
 ```
+
+The controllers without annealing start the chains from the prior and sample the posterior
+directly. `mcmc` walks the chains `rounds` times (16 by default), `job.steps` Metropolis steps
+each, and adapts the proposal, its covariance and its scaling, between walks, as CATMIP does between
+$\beta$ steps:
+
+```none
+linear:
+    controller = altar.bayesian.mcmc
+    controller.rounds = 16
+    job.steps = 2**8 ; Metropolis steps per round
+```
+
+`plainhmc` spends `job.steps` HMC trajectories at $\beta = 1$, adapting its step size after each.
 
 The annealing controllers are built from these components, each configurable:
 

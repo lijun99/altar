@@ -123,12 +123,12 @@ class Metropolis:
 
         # let the (cpu) proposal component (re-)compute the *unscaled* parameter covariance
         # Σ from the weighted sample auto-correlation, exactly as the cpu Metropolis sampler
-        # does (same {step}, same weights) -- {_prepare} caches on beta/scaling, so this is a
-        # cheap no-op except right after a new annealing step; only {_sigma} (unscaled) is
-        # used, not {_sigma_chol} (whose triangle/decomposition convention isn't ours) --
+        # does (same {step}, same weights), recomputing it at the start of each walk; only
+        # {_sigma} (unscaled) is used, not {_sigma_chol} (whose triangle/decomposition convention isn't ours) --
         # decomposing on the gpu below and scaling the *factor* by {self.scaling} (not
         # squared) is mathematically identical to scaling Σ by scaling^2 before decomposing,
         # since (c·U)^T(c·U) = c^2 · U^T U
+        self.proposal.new_walk()
         self.proposal._prepare(sampler=self, step=step, annealer=annealer)
         self.gsigma_chol.copy_from_host(source=self.proposal._sigma)
 

@@ -1,0 +1,53 @@
+;
+; michael a.g. aïvázis
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; orthologue
+
+; the linear app, sampled with Metropolis at beta = 1, without annealing: the chains start from
+; the prior, and walk several rounds, the proposal adapting to the samples between them
+linear:
+    ; test case configuration
+    model = altar.models.linear
+    model:
+        ; the name of the test case
+        case = patch-9
+        ; the number of free parameters
+        parameters = 18
+        ; observed data
+        dataobs:
+            observations = 108
+            cd_file = cd.txt
+
+        ; a single parameter set covering the whole vector
+        psets_list = [all]
+        psets:
+            all = contiguous
+            all:
+                count = {linear.model.parameters}
+                prep = gaussian
+                prep.sigma = 0.5
+                prior = gaussian
+                prior.sigma = 0.5
+
+
+    controller = altar.bayesian.mcmc
+    controller.rounds = 16 ; walks of job.steps Metropolis steps each
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 0  ; number of gpus per task
+    job.chains = 2**8 ; number of chains per task
+    job.steps = 2**8 ; Metropolis steps per round
+
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
+
+; for parallel runs
+; mpi.shells.mpirun # altar.plexus.shell:
+;    extra = -mca btl self,tcp
+
+; end of file

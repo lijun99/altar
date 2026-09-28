@@ -219,7 +219,10 @@ when it finds CUDA, through `cuda.dir`.
 
 The projects AlTar builds, and where their sources are, are listed in `.mm/projects.mm` and in a
 file per project, e.g. `.mm/altar.mm` for the framework and `.mm/linear.mm` for the linear model.
-mm and CMake install the same files to the same places; the last build installed is the one in use.
+Use one of mm and CMake in an environment. They install to the same places, but CMake installs the
+python sources and mm only their compiled modules, which python ignores when a source is present:
+to switch from CMake to mm, remove the python packages CMake installed first, e.g.
+`$CONDA_PREFIX/lib/python3.13/site-packages/altar`.
 
 (installation-check)=
 ## Check the installation

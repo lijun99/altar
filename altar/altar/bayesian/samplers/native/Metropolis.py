@@ -70,6 +70,8 @@ class Metropolis:
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_start, controller=annealer)
+        # let the proposal adapt to the samples this walk starts from
+        self.proposal.new_walk()
         # walk the chains; statistics stored on self
         self.walk_chains(annealer=annealer, step=step)
         # notify we are done sampling the posterior

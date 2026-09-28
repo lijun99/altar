@@ -35,6 +35,14 @@ def langevin():
 
 @altar.foundry(
     implements=controller,
+    tip="Markov chain Monte Carlo with no annealing ladder (beta fixed at 1)")
+def mcmc():
+    from .Mcmc import Mcmc
+    __doc__ = Mcmc.__doc__
+    return Mcmc
+
+@altar.foundry(
+    implements=controller,
     tip="Hamiltonian Monte Carlo with no annealing ladder (beta fixed at 1)")
 def plainhmc():
     from .Hmc import Hmc

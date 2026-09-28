@@ -30,6 +30,13 @@ class Proposal(altar.protocol, family="altar.proposals"):
         Propose a new state by updating the samples in {step}
         """
 
+    @altar.provides
+    def new_walk(self):
+        """
+        Notification that a walk of the chains is about to start, e.g. at a new beta step, so
+        that the proposal can adapt to the current samples
+        """
+
     # framework hooks
     @classmethod
     def pyre_default(cls, **kwds):

@@ -96,6 +96,16 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return self._displace(sample=step.theta)
 
 
+    @altar.export
+    def new_walk(self):
+        """
+        A walk of the chains is about to start: recompute Σ from the current samples, when it
+        is not fixed, before the next proposal
+        """
+        self._walk_pending = True
+        return self
+
+
     # implementation details
     def _prepare(self, sampler, step, annealer):
         """
@@ -105,17 +115,17 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         if dispatcher is not None:
             dispatcher.notify(event=dispatcher.prepare_sampling_pdf_start, controller=annealer)
 
-        # detect a new annealing step (beta changed)
-        new_beta = (self._prepared_beta != step.beta)
+        # detect the start of a new walk of the chains
+        new_walk = self._walk_pending
 
         # auto-update Σ when not fixed
         if not self._sigma_is_fixed:
             if self._sigma is None:
                 # first-time initialization: always compute
                 self._sigma = self._compute_sigma(step=step, annealer=annealer)
-            elif new_beta:
+            elif new_walk:
                 self._anneal_count += 1
-                # recompute every update_interval annealing steps (0 means never after first)
+                # recompute every update_interval walks (0 means never after first)
                 if self.update_interval > 0 and (self._anneal_count % self.update_interval == 0):
                     self._sigma = self._compute_sigma(step=step, annealer=annealer)
 
@@ -123,7 +133,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         import numpy
         diag = numpy.array([self._sigma[i, i] for i in range(self._sigma.rows)])
         self.info.line(f"GaussianProposal._prepare: β={step.beta:.6g}  scaling={sampler.scaling:.4g}"
-                       f"  sigma_is_fixed={self._sigma_is_fixed}  new_beta={new_beta}")
+                       f"  sigma_is_fixed={self._sigma_is_fixed}  new_walk={new_walk}")
         self.info.line(f"  Σ diag: min={diag.min():.4g}  max={diag.max():.4g}  mean={diag.mean():.4g}")
         self.info.line(f"  weights source: {'step.weights' if getattr(step, 'weights', None) is not None else 'uniform fallback'}")
 
@@ -133,7 +143,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         self._sigma_chol = altar.lapack.cholesky_decomposition(Σ)
 
         # cache preparation state
-        self._prepared_beta = step.beta
+        self._walk_pending = False
         self._prepared_scaling = sampler.scaling
 
         if dispatcher is not None:
@@ -153,8 +163,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         # scaling changed: must re-decompose even with fixed Σ
         if self._prepared_scaling != scaling:
             return True
-        # for auto-update: trigger on every new annealing step (beta change)
-        if not self._sigma_is_fixed and self._prepared_beta != step.beta:
+        # for auto-update: trigger at the start of every walk
+        if not self._sigma_is_fixed and self._walk_pending:
             return True
         return False
 
@@ -286,8 +296,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
     _sigma_is_fixed = False  # True if sigma was set externally via set_sigma()
 
     # update tracking
-    _anneal_count = 0      # number of annealing steps since the last Σ computation
-    _prepared_beta = None  # beta value at which _prepare was last called
+    _anneal_count = 0      # number of walks since the first Σ computation
+    _walk_pending = True   # whether a walk started since _prepare was last called
     _prepared_scaling = None  # scaling at which _prepare was last called
 
 # end of file
