@@ -176,8 +176,8 @@ apart. The archived steps then hold, for each such parameter set, both `<pset>_p
 `<pset>_sampling` samples, and the log-Jacobian of each sample in `jacobian`.
 
 `uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized. Reparameterization is
-for the gradient-based samplers, HMC and SGLD, and only their GPU versions support it; they refuse
-bounded priors that aren't reparameterized, and name them. Metropolis ignores it: it walks the
+for the gradient-based samplers, HMC and SGLD, on the cpu and the GPU; they refuse bounded priors
+that aren't reparameterized, and name them. Metropolis ignores it: it walks the
 physical values, rejects the proposals outside the support, and keeps the sampling-space values in
 step, so its results are the same either way.
 

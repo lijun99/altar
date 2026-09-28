@@ -50,12 +50,6 @@ class HMC:
         """
         # grab the info channel
         self.info = application.info
-        # reparameterized priors are only supported by the cuda implementation
-        if getattr(application.model, "has_reparametrization", False):
-            application.error.log(
-                "the cpu HMC sampler doesn't support reparameterized priors; run it on the gpu "
-                "(job.gpus >= 1), or sample with Metropolis")
-            raise SystemExit(1)
         # pull the chain length (number of trajectories per outer step) from the job spec
         self.steps = application.job.steps
         # get the capsule of the random number generator
@@ -135,6 +129,10 @@ class HMC:
         samples = step.samples
         parameters = step.parameters
         log = math.log
+        # a reparameterized step moves in sampling space, where the target gains log|J|
+        reparameterized = getattr(step, "has_reparametrization", False)
+        φ = step.theta_sampling if reparameterized else θ
+        logJ = step.jacobian if reparameterized else None
 
         # reset the accept/reject counters; hmc has no notion of an invalid (out of support)
         # candidate -- gradient-based samplers only support unbounded priors to begin with
@@ -148,7 +146,7 @@ class HMC:
             # (re)estimate the mass matrix from the current population every
             # {mass_update_interval} trajectories, always including the very first
             if self.adapt_mass_matrix and trajectory % self.mass_update_interval == 0:
-                self.mass_variance = self._estimate_mass_variance(theta=θ, parameters=parameters)
+                self.mass_variance = self._estimate_mass_variance(theta=φ, parameters=parameters)
             variance = self.mass_variance if self.mass_variance is not None else numpy.ones(parameters)
             precision_sqrt = 1.0 / numpy.sqrt(variance)
 
@@ -163,6 +161,12 @@ class HMC:
                 beta=β, theta=θ.clone(),
                 likelihoods=(altar.vector(shape=samples), altar.vector(shape=samples),
                              altar.vector(shape=samples)))
+            if reparameterized:
+                candidate.phi = φ.clone()
+                candidate.Jacobian = altar.matrix(shape=(samples, parameters))
+                candidate.log_jacobian = altar.vector(shape=samples)
+            # the position the dynamics move
+            position = candidate.phi if reparameterized else candidate.theta
             # draw fresh momentum for this trajectory, scaled by the mass matrix:
             # p ~ N(0, M), M = diag(1/variance)
             candidate.momentum.random(pdf=self.uninormal)
@@ -182,7 +186,10 @@ class HMC:
             half = 0.5 * ε
             self._axpy(half, candidate.grad_posterior, candidate.momentum)
             for k in range(self.leapfrog_steps):
-                self._update_position(candidate.theta, candidate.momentum, ε, variance)
+                self._update_position(position, candidate.momentum, ε, variance)
+                if reparameterized:
+                    candidate.theta.copy(candidate.phi)
+                    model.to_physical(theta=candidate.theta)
                 self._evaluate(annealer=annealer, model=model, candidate=candidate, samples=samples)
                 if k < self.leapfrog_steps - 1:
                     self._axpy(ε, candidate.grad_posterior, candidate.momentum)
@@ -203,6 +210,8 @@ class HMC:
             trajectory_accepted = 0
             for sample in range(samples):
                 Δ = (candidate.posterior[sample] - posterior[sample]) - (ke_new[sample] - ke_old[sample])
+                if reparameterized:
+                    Δ += candidate.log_jacobian[sample] - logJ[sample]
                 if log(dice[sample]) > Δ:
                     # rejected: {θ}, {prior}, {data}, {posterior} already hold the right values
                     rejected += 1
@@ -211,6 +220,9 @@ class HMC:
                 accepted += 1
                 trajectory_accepted += 1
                 θ.setRow(sample, candidate.theta.getRow(sample))
+                if reparameterized:
+                    φ.setRow(sample, candidate.phi.getRow(sample))
+                    logJ[sample] = candidate.log_jacobian[sample]
                 prior[sample] = candidate.prior[sample]
                 data[sample] = candidate.data[sample]
                 posterior[sample] = candidate.posterior[sample]
@@ -272,7 +284,8 @@ class HMC:
     def _evaluate(self, annealer, model, candidate, samples):
         """
         Evaluate the (prior, data, posterior) likelihoods and their gradients at
-        {candidate.theta}, and combine them into {candidate.grad_posterior}
+        {candidate.theta}, and combine them into {candidate.grad_posterior}; when
+        reparameterized, the gradients w.r.t. {candidate.phi}, and log|J| on the side
         """
         # {eval_prior} accumulates into whatever it's handed, so it can add up the
         # contributions of multiple parameter sets; re-zero before every evaluation, exactly
@@ -280,6 +293,15 @@ class HMC:
         candidate.prior.zero()
         model.likelihoods(annealer=annealer, step=candidate)
         model.gradient(controller=annealer, step=candidate, batch=samples)
+        # the prior gradient of a reparameterized prior is already w.r.t. phi; the data one
+        # needs the chain rule
+        if candidate.phi is not None:
+            candidate.Jacobian.fill(1.0)
+            model.eval_jacobian(step=candidate, batch=samples)
+            candidate.grad_data.ndarray()[:] *= candidate.Jacobian.ndarray()
+            candidate.log_jacobian.zero()
+            model.eval_prior_with_physical(
+                step=candidate, likelihood=candidate.log_jacobian, batch=samples)
         candidate.compute_posterior()
         return candidate
 

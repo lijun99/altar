@@ -79,6 +79,15 @@ class ParameterEnsemble(base):
         return self
 
 
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill {jacobian} with d(physical)/d(sampling), for the reparameterized parameter sets
+        """
+        for pset in self._iter_psets():
+            pset.jacobian(theta=theta, jacobian=jacobian, batch=batch)
+        return self
+
+
     def to_physical(self, theta, batch=None):
         """
         Transform {theta} from sampling space to physical space, in place

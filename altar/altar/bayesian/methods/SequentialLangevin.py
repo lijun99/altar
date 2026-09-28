@@ -47,13 +47,6 @@ class SequentialLangevin(LangevinMethod):
         """
         # chain up
         super().start(controller=controller)
-        # reparameterized priors are only supported by the cuda implementation
-        model = controller.model
-        if getattr(model, "has_reparametrization", False):
-            model.error.log(
-                "the cpu SGLD sampler doesn't support reparameterized priors; run it on the gpu "
-                "(job.gpus >= 1), or sample with Metropolis")
-            raise SystemExit(1)
         # build a langevin step to hold the state of the problem
         self.step = self.LangevinStep.start(annealer=controller)
         # all done
@@ -77,10 +70,11 @@ class SequentialLangevin(LangevinMethod):
 
         # iterate {sweeps} times for a given epsilon_t
         for sweep in range(controller.sweeps):
-            # compute prior and data likelihood gradients
-            model.gradient(controller=controller, step=step, batch=step.samples)
-            # update theta
+            # compute prior and data likelihood gradients, in sampling space
+            step.compute_gradients(controller=controller)
+            # update theta, and its physical values when reparameterized
             step.updateTheta(uninormal=self.uninormal)
+            step.refresh_physical(model=model)
 
         # all done
         return self

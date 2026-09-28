@@ -29,9 +29,8 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
 
     My implementation lives in a same-named class in {altar.bayesian.samplers.native} (the
     cpu default) or {altar.bayesian.samplers.cuda}. Neither is a pyre component; each is a
-    plain class holding the actual algorithm. Only the cuda implementation currently supports
-    reparameterized models (via {model.reparameterization}); the cpu one does not, and takes
-    the traits below unchanged.
+    plain class holding the actual algorithm. Both move reparameterized parameter sets in
+    sampling space.
     """
 
     # user configurable state

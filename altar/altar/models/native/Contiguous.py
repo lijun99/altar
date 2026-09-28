@@ -106,6 +106,15 @@ class Contiguous(base):
         return self
 
 
+    def jacobian(self, theta, jacobian, batch=None):
+        """
+        Fill my portion of {jacobian} with d(physical)/d(sampling), when reparameterized
+        """
+        self.prior.jacobian(
+            theta=self.restrict(theta=theta), jacobian=self.restrict(theta=jacobian), batch=batch)
+        return self
+
+
     def to_physical(self, theta, batch=None):
         """
         Transform my portion of {theta} from sampling space to physical space, in place

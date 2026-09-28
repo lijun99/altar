@@ -29,6 +29,11 @@ class HMCState(BayesianState):
     grad_data = None       # (samples x parameters) matrix
     grad_posterior = None  # (samples x parameters) matrix
 
+    # reparameterization, set by the sampler when the model reparameterizes
+    phi = None             # (samples x parameters) matrix, theta in sampling space
+    Jacobian = None        # (samples x parameters) matrix, d(theta)/d(phi)
+    log_jacobian = None    # (samples) vector, log|d(theta)/d(phi)|
+
 
     @classmethod
     def alloc(cls, samples, parameters):
