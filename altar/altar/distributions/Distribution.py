@@ -27,11 +27,8 @@ class Distribution(altar.protocol, family="altar.distributions"):
     offset = altar.properties.int(default=0)
     offset.doc = "the starting point of my parameters in the overall model state"
 
-    # whether my support is a strict subset of the reals. Gradient-based samplers (SGLD, HMC)
-    # have no accept/reject step to catch a proposal that walked outside a bounded support, so
-    # they currently only support distributions with {bounded} False; a bounded distribution
-    # needs a to-be-implemented unconstrained reparameterization (e.g. a logistic transform)
-    # before it can be used with one of them
+    # whether my support is a strict subset of the reals; the gradient-based samplers (HMC, MALA,
+    # SGLD) take a bounded distribution only reparameterized, see {Uniform.reparameterize}
     bounded = False
 
 

@@ -8,8 +8,8 @@
 
 """
 Protocol and implementations for reparameterizing a bounded distribution to an unconstrained
-sampling space, for use by gradient-based samplers (HMC, SGLD) that can't handle a bounded
-prior directly.
+sampling space, for use by gradient-based samplers (HMC, MALA, SGLD) that can't handle a
+bounded prior directly.
 
 {LogitTransform} is the one thing pyre ever registers and a {.pfg} ever names; like
 {altar.distributions.Base}, its own job is small: pick a backend implementation once, in

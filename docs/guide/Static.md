@@ -34,7 +34,7 @@ for the static inversion too.
 ```
 
 The static model is the {doc}`linear model <QuickStart>` with these parameters: it runs on the cpu
-and on the GPU, and it provides the gradient of its data likelihood, for HMC. It can also account
+and on the GPU, and it provides the gradient of its data likelihood, for HMC and MALA. It can also account
 for the uncertainty of its Green's functions, $C_p$ (see {doc}`StaticCp`).
 
 ## Input
@@ -215,7 +215,7 @@ $A_p$ and $D_p$ the area and the slip of patch $p$.
 : the weight $f$ of the penalty; default 1.
 
 `reparameterize`
-: sample in an unbounded space, for HMC; see {doc}`Priors`.
+: sample in an unbounded space, for HMC and MALA; see {doc}`Priors`.
 
 ```none
 dipslip:

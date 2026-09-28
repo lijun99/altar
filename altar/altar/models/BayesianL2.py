@@ -438,8 +438,9 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     def verify_unbounded_priors(self):
         """
         Raise if any active prior is bounded and not reparameterized: gradient-based samplers
-        (SGLD, HMC) have no accept/reject step, so a bounded prior (e.g. a uniform one) needs
-        an unconstrained reparameterization (see {altar.distributions.Uniform.reparameterize})
+        (HMC, MALA, SGLD) move the chains along the gradient of the posterior, which a bounded
+        prior (e.g. a uniform one) doesn't define on the whole real line, so it needs an
+        unconstrained reparameterization (see {altar.distributions.Uniform.reparameterize})
         before it can be sampled this way
         """
         bounded = [self.psets[name].prior for name in self.psets_list
@@ -449,7 +450,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             channel = self.error
             names = ", ".join(type(p).__name__ for p in bounded)
             channel.log(
-                f"gradient-based samplers (SGLD, HMC) only support unbounded priors; "
+                f"gradient-based samplers (HMC, MALA, SGLD) only support unbounded priors; "
                 f"found bounded prior(s): {names}. Use CATMIP/Metropolis for this model, "
                 f"or set reparameterize=True on the prior.")
             raise SystemExit(1)

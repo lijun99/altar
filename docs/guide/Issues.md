@@ -67,11 +67,11 @@ pyre reads `.yaml` configuration files only with PyYAML installed; use `.pfg` fi
 ### Gradient-based samplers and bounded priors
 
 ```none
-gradient-based samplers (SGLD, HMC) only support unbounded priors; found bounded prior(s): Uniform.
+gradient-based samplers (HMC, MALA, SGLD) only support unbounded priors; found bounded prior(s): Uniform.
 Use CATMIP/Metropolis for this model, or set reparameterize=True on the prior.
 ```
 
-HMC and SGLD need priors defined on the whole real line. Reparameterize the bounded priors it
+HMC, MALA and SGLD need priors defined on the whole real line. Reparameterize the bounded priors it
 names (`reparameterize = True`, see {doc}`Priors`), or sample with Metropolis.
 
 ### The kinematic model needs a GPU

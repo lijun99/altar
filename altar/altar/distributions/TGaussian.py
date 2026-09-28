@@ -40,7 +40,7 @@ class TGaussian(base, family="altar.distributions.tgaussian"):
     # a finite interval is a strict subset of the reals
     bounded = True
 
-    # reparameterization, for gradient-based samplers (HMC, SGLD)
+    # reparameterization, for gradient-based samplers (HMC, MALA, SGLD)
     reparameterize = altar.properties.bool(default=False)
     reparameterize.doc = \
         "whether to reparameterize to an unconstrained sampling space via {transform}, " \

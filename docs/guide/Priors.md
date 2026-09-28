@@ -151,7 +151,7 @@ models; see {doc}`Static`.
 (reparameterization)=
 ## Reparameterization
 
-The gradient-based samplers, HMC and SGLD, need priors defined on the whole real line: a trajectory
+The gradient-based samplers, HMC, MALA and SGLD, need priors defined on the whole real line: a trajectory
 has no way to respect the bounds of a uniform prior. A bounded prior can instead be sampled in an
 unbounded *sampling space*, mapped to its *physical space* by a transform. With the logit
 transform, the default, a sample $s \in \mathbb R$ maps to
@@ -176,7 +176,7 @@ apart. The archived steps then hold, for each such parameter set, both `<pset>_p
 `<pset>_sampling` samples, and the log-Jacobian of each sample in `jacobian`.
 
 `uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized. Reparameterization is
-for the gradient-based samplers, HMC and SGLD, on the cpu and the GPU; they refuse bounded priors
+for the gradient-based samplers, HMC, MALA and SGLD, on the cpu and the GPU; they refuse bounded priors
 that aren't reparameterized, and name them. Metropolis ignores it: it walks the
 physical values, rejects the proposals outside the support, and keeps the sampling-space values in
 step, so its results are the same either way.

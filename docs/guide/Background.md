@@ -95,10 +95,14 @@ explore high-dimensional posteriors more efficiently:
   $U(\boldsymbol\theta) = -\log P(\boldsymbol\theta|\mathbf d)$ with leapfrog integration, and
   accepts or rejects the end of each trajectory with a Metropolis test. It can replace the random
   walk in step 4 of CATMIP, or sample the posterior directly at $\beta = 1$.
+- **The Metropolis-adjusted Langevin algorithm (MALA)** proposes a step along the gradient plus a
+  Gaussian perturbation, and accepts or rejects it with the Metropolis–Hastings rule: HMC with a
+  single leapfrog step. Like HMC, it can replace the random walk in CATMIP, or sample at
+  $\beta = 1$; each proposal costs one gradient evaluation.
 - **Stochastic gradient Langevin dynamics (SGLD)** follows the gradient with injected Gaussian
   noise and a decreasing step size, without an accept/reject step.
 
-Both need the model to provide the gradient of its data likelihood, and priors that are defined on
+All of them need the model to provide the gradient of its data likelihood, and priors that are defined on
 the whole real line. Bounded priors, e.g., uniform ones, are sampled in an unbounded space instead,
 by reparameterizing them, e.g., with a logit transform; see {doc}`Priors`.
 

@@ -216,7 +216,7 @@ linear:
 (stepsizers)=
 ### Step sizes
 
-A step size regulator adjusts the Metropolis scaling or the HMC step size from the acceptance
+A step size regulator adjusts the Metropolis scaling or the HMC and MALA step size from the acceptance
 rate. All of them take
 
 `step_size`
@@ -224,7 +224,7 @@ rate. All of them take
 
 `step_window`
 : the number of proposals to collect before each adjustment; 1 adjusts after each $\beta$ step
-  (Metropolis) or trajectory (HMC); 0 or less keeps the step size fixed;
+  (Metropolis), trajectory (HMC) or proposal (MALA); 0 or less keeps the step size fixed;
 
 `min_step_size`, `max_step_size`
 : its bounds; defaults $10^{-4}$ and 1.
@@ -439,7 +439,7 @@ The `job` sets the size of the simulation and how it is deployed:
 | setting | default | |
 |---|---|---|
 | `chains` | 64 | the number of Markov chains per process |
-| `steps` | 20 | the Metropolis steps, or HMC trajectories, per $\beta$ step |
+| `steps` | 20 | the Metropolis steps, HMC trajectories or MALA proposals, per $\beta$ step |
 | `tasks` | 1 | the number of processes per host |
 | `hosts` | 1 | the number of hosts |
 | `gpus` | 0 | GPUs per process: 0 for the cpu, 1 for a GPU |
@@ -455,7 +455,7 @@ parameters, so try a few sizes, stopping each run after a $\beta$ step or two. T
 also be spread over several processes, on one or several hosts: the total number of chains is
 `hosts * tasks * chains`.
 
-At each $\beta$ step, each chain takes `job.steps` Metropolis steps (or HMC trajectories), to
+At each $\beta$ step, each chain takes `job.steps` Metropolis steps (or HMC trajectories, or MALA proposals), to
 equilibrate from one $\beta$ to the next. CATMIP adapts its $\beta$ steps to the samples, so more
 steps help, but aren't required.
 

@@ -109,7 +109,7 @@ settings are listed with the {doc}`static model <Static>`.
 
 ### Gradients
 
-The gradient-based samplers, HMC and SGLD, need
+The gradient-based samplers, HMC, MALA and SGLD, need
 
 `gradient(controller, step, batch=None)`
 : fills the gradients of the log prior and of the log data likelihood with respect to `step.theta`:

@@ -11,7 +11,7 @@ An AlTar application has three main components:
 - the **model**, which evaluates the forward problem and so the data likelihood, along with the
   prior distributions of its parameters;
 - the **controller**, which samples the posterior: the annealing schedule, the sampler that moves
-  the chains (Metropolis, HMC, ...), and the archiver that saves the results;
+  the chains (Metropolis, HMC, MALA, ...), and the archiver that saves the results;
 - the **job**, which sets the size of the simulation, the number of chains and of steps, and how it
   is deployed: cpu or GPU, one or several processes, a workstation or a cluster.
 

@@ -34,8 +34,8 @@ class Uniform(base, family="altar.distributions.uniform"):
     # a finite interval is a strict subset of the reals
     bounded = True
 
-    # reparameterization, for gradient-based samplers (HMC, SGLD) that can't handle a bounded
-    # prior directly
+    # reparameterization, for gradient-based samplers (HMC, MALA, SGLD) that can't handle a
+    # bounded prior directly
     reparameterize = altar.properties.bool(default=False)
     reparameterize.doc = \
         "whether to reparameterize to an unconstrained sampling space via {transform}, " \
