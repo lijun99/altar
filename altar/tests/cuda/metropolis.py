@@ -21,7 +21,7 @@ only accepted rows get overwritten).
 
 def test():
     import numpy
-    import pyre.grid
+    import pyre.cuda
     import altar
     import altar.cuda
 
@@ -30,12 +30,12 @@ def test():
     samples = 10
     parameters = 3
 
-    invalid = pyre.grid.managed(shape=(samples,), cell="int32")
+    invalid = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(invalid)[:] = 0
     numpy.asarray(invalid)[[2, 5, 7]] = 1
 
-    valid_indices = pyre.grid.managed(shape=(samples,), cell="int32")
-    valid_count = pyre.grid.managed(shape=(1,), cell="int32")
+    valid_indices = pyre.cuda.managed(shape=(samples,), cell="int32")
+    valid_count = pyre.cuda.managed(shape=(1,), cell="int32")
     metropolis.cudaMetropolis_setValidSampleIndices(valid_indices, invalid, valid_count)
 
     count = int(numpy.asarray(valid_count)[0])
@@ -44,9 +44,9 @@ def test():
     assert sorted(vi.tolist()) == sorted(set(range(samples)) - {2, 5, 7})
 
     # queueValidSamples: gather the valid rows of a proposal matrix
-    theta_proposal = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta_proposal = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta_proposal)[:, :] = numpy.arange(samples * parameters).reshape(samples, parameters)
-    theta_candidate = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta_candidate = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta_candidate)[:, :] = -1.0
     metropolis.cudaMetropolis_queueValidSamples(theta_candidate, theta_proposal, valid_indices, count)
 
@@ -59,29 +59,29 @@ def test():
     rng = numpy.random.default_rng(1)
     batch = count
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
-    prior = pyre.grid.managed(shape=(samples,), cell="float64")
+    prior = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(prior)[:] = 0.0
-    data = pyre.grid.managed(shape=(samples,), cell="float64")
+    data = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(data)[:] = 0.0
-    posterior = pyre.grid.managed(shape=(samples,), cell="float64")
+    posterior = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(posterior)[:] = -10.0
 
-    prior_candidate = pyre.grid.managed(shape=(batch,), cell="float64")
+    prior_candidate = pyre.cuda.managed(shape=(batch,), cell="float64")
     numpy.asarray(prior_candidate)[:] = 1.0
-    data_candidate = pyre.grid.managed(shape=(batch,), cell="float64")
+    data_candidate = pyre.cuda.managed(shape=(batch,), cell="float64")
     numpy.asarray(data_candidate)[:] = 2.0
 
     posterior_values = rng.uniform(-20, -5, size=batch)
-    posterior_candidate = pyre.grid.managed(shape=(batch,), cell="float64")
+    posterior_candidate = pyre.cuda.managed(shape=(batch,), cell="float64")
     numpy.asarray(posterior_candidate)[:] = posterior_values
 
     dice_values = rng.uniform(0.01, 0.99, size=batch)
-    dices = pyre.grid.managed(shape=(batch,), cell="float64")
+    dices = pyre.cuda.managed(shape=(batch,), cell="float64")
     numpy.asarray(dices)[:] = dice_values
 
-    acceptance_flag = pyre.grid.managed(shape=(batch,), cell="int32")
+    acceptance_flag = pyre.cuda.managed(shape=(batch,), cell="int32")
     numpy.asarray(acceptance_flag)[:] = 0
 
     metropolis.cudaMetropolis_metropolisUpdate(

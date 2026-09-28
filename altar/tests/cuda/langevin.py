@@ -18,7 +18,7 @@ the prior/data gradients).
 
 def test():
     import numpy
-    import pyre.grid
+    import pyre.cuda
     import altar
     import altar.cuda
 
@@ -27,15 +27,15 @@ def test():
     rng = numpy.random.default_rng(9)
     samples, parameters = 10000, 5
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     theta0 = rng.normal(size=(samples, parameters))
     numpy.asarray(theta)[:, :] = theta0
 
-    prior_gradient = pyre.grid.managed(shape=(samples,), cell="float64")
+    prior_gradient = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(prior_gradient)[:] = rng.normal(size=samples)
-    data_gradient = pyre.grid.managed(shape=(samples,), cell="float64")
+    data_gradient = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(data_gradient)[:] = rng.normal(size=samples)
-    eta = pyre.grid.managed(shape=(samples,), cell="float64")
+    eta = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(eta)[:] = rng.normal(size=samples) * 0.01
     half_epsilon = 0.05
     index = 2
@@ -50,15 +50,15 @@ def test():
             assert numpy.allclose(th[:, c], theta0[:, c])
 
     # the batched update: every column at once, independent alpha1/alpha2 weights
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     theta0 = rng.normal(size=(samples, parameters))
     numpy.asarray(theta)[:, :] = theta0
 
-    prior_gradient = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    prior_gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(prior_gradient)[:, :] = rng.normal(size=(samples, parameters))
-    data_gradient = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    data_gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(data_gradient)[:, :] = rng.normal(size=(samples, parameters))
-    eta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    eta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(eta)[:, :] = rng.normal(size=(samples, parameters)) * 0.01
     alpha1, alpha2 = 1.0, 0.8
 

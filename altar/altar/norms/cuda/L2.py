@@ -122,10 +122,10 @@ class L2:
 def pyre_grid_managed(shape, cell):
     """
     Allocate a fresh grid of cuda managed memory; a thin indirection so this module doesn't
-    need a hard import of {pyre.grid} at module-load time before cuda is known to be active
+    need a hard import of {pyre.cuda} at module-load time before cuda is known to be active
     """
-    import pyre.grid
-    return pyre.grid.managed(shape=shape, cell=cell)
+    import pyre.cuda
+    return pyre.cuda.managed(shape=shape, cell=cell)
 
 
 # end of file

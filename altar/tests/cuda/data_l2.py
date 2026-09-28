@@ -26,7 +26,7 @@ design (see the class docstring). The whitened-space check here mirrors that con
 
 def check(precision):
     import numpy
-    import pyre.grid
+    import pyre.cuda
     from altar.norms.cuda.L2 import L2
     from altar.data.cuda.DataL2 import DataL2, pyre_grid_managed
 

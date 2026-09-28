@@ -36,7 +36,7 @@ class _FakeApplication:
 
 def test():
     import numpy
-    import pyre.grid
+    import pyre.cuda
 
     from altar.distributions.cuda.Gaussian import Gaussian
     from altar.distributions.cuda.Uniform import Uniform
@@ -52,7 +52,7 @@ def test():
     gaussian.initialize(rng=None, application=application)
     assert (gaussian.idx_begin, gaussian.idx_end) == (1, 3)
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     gaussian.initialize_sample(theta)
     arr = numpy.asarray(theta)
@@ -60,7 +60,7 @@ def test():
     sub = arr[:, 1:3]
     assert abs(sub.mean() - 2.0) < 0.05 and abs(sub.std() - 1.5) < 0.05
 
-    likelihood = pyre.grid.managed(shape=(samples,), cell="float64")
+    likelihood = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(likelihood)[:] = 0.0
     gaussian.eval_prior(theta, likelihood)
     expected = numpy.zeros(samples)
@@ -70,7 +70,7 @@ def test():
         expected += c1 - c2 * (arr[:, i] - 2.0) ** 2
     assert numpy.allclose(numpy.asarray(likelihood), expected, atol=1e-8)
 
-    gradient = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(gradient)[:, :] = -999.0
     gaussian.prior_gradient(theta, gradient)
     gr = numpy.asarray(gradient)
@@ -84,7 +84,7 @@ def test():
     uniform.support = (-2.0, 5.0)
     uniform.initialize(rng=None, application=application)
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     uniform.initialize_sample(theta)
     arr = numpy.asarray(theta)
@@ -92,18 +92,18 @@ def test():
     sub = arr[:, 0:2]
     assert sub.min() >= -2.0 and sub.max() < 5.0
 
-    likelihood = pyre.grid.managed(shape=(samples,), cell="float64")
+    likelihood = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(likelihood)[:] = 0.0
     uniform.eval_prior(theta, likelihood)
     assert numpy.allclose(numpy.asarray(likelihood), -numpy.log(7.0) * 2)
 
-    mask = pyre.grid.managed(shape=(samples,), cell="int32")
+    mask = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(mask)[:] = 0
     arr[0, 0] = 100.0  # push one sample out of range
     uniform.verify(theta, mask)
     assert numpy.asarray(mask)[0] == 1
 
-    clamped = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    clamped = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(clamped)[:, :] = 100.0
     uniform.constrain(clamped)
     cc = numpy.asarray(clamped)
@@ -117,26 +117,26 @@ def test():
     tgaussian.support = (0.1, 0.9)
     tgaussian.initialize(rng=None, application=application)
 
-    theta = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.5  # within the raw support
-    mask = pyre.grid.managed(shape=(samples,), cell="int32")
+    mask = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(mask)[:] = 0
     tgaussian.verify(theta, mask)
     assert numpy.all(numpy.asarray(mask) == 0)
 
     arr = numpy.asarray(theta)
     arr[0, 1] = 1000.0  # push one sample's parameter 1 out of the raw support
-    mask = pyre.grid.managed(shape=(samples,), cell="int32")
+    mask = pyre.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(mask)[:] = 0
     tgaussian.verify(theta, mask)
     mk = numpy.asarray(mask)
     assert mk[0] == 1 and numpy.all(mk[1:] == 0)
 
-    likelihood = pyre.grid.managed(shape=(samples,), cell="float64")
+    likelihood = pyre.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(likelihood)[:] = 0.0
     tgaussian.eval_prior(theta, likelihood)  # just needs to run without error
 
-    gradient = pyre.grid.managed(shape=(samples, parameters), cell="float64")
+    gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(gradient)[:, :] = -999.0
     tgaussian.prior_gradient(theta, gradient)
     gr = numpy.asarray(gradient)
