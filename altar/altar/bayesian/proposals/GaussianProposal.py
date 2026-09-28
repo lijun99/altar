@@ -24,7 +24,9 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         Σ = Σ_i w_i (θ_i - θ̄)(θ_i - θ̄)^T
 
     where w_i are importance weights.  In a tempering/annealing scheme the weights are
+
         w_i ∝ exp(Δβ · log p(data|θ_i))
+
     as provided by the annealer scheduler after each temperature step.
     """
 

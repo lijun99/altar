@@ -39,6 +39,7 @@ class Archiver(altar.protocol, family="altar.simulations.archivers"):
 
         {path} is a slash-separated string "Group/Subgroup/Name"; a bare name with no
         slash is stored at the top level.  {data} may be any of:
+
           - an object with a .ndarray() method  (altar.matrix, altar.vector, gsl objects)
           - a numpy ndarray
           - a Python scalar

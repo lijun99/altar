@@ -168,7 +168,7 @@ class LinearRate(AdaptiveStepSizer, family="altar.bayesian.stepsizers.linearrate
 class TargetedRate(AdaptiveStepSizer, family="altar.bayesian.stepsizers.targetedrate"):
     """
     Multiplicative feedback that steers acceptance towards a goal using
-    the standard exponential rule: step *= exp(gain * (ratio - target)).
+    the standard exponential rule: ``step *= exp(gain * (ratio - target))``.
     """
 
     target = altar.properties.float(default=None)

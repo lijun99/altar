@@ -23,6 +23,7 @@ class LangevinStep(BayesianState):
 
     Extends {BayesianState} with the (samples x parameters) gradient matrices of the prior
     and data log-likelihoods, the current sampling rate {epsilon_t}, and the update
+
         theta(t+1) = theta(t) + epsilon_t/2 (grad_prior + grad_data) + N(0, epsilon_t)
     """
 

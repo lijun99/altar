@@ -248,11 +248,15 @@ class BayesianState:
     def save_hdf5(self, path=None, iteration=None, psets=None):
         """
         Save this step to an HDF5 file
+
         Args:
+
             path altar.primitives.path
             iteration the iteration number, or None for the final step
             psets the named parameter sets, or an empty dict/None to save the raw matrix
+
         Returns:
+
             None
         """
         import os

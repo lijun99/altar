@@ -58,10 +58,14 @@ class Metropolis:
     def sample_posterior(self, annealer, step):
         """
         Sample the posterior distribution
+
         Arguments:
+
             annealer - the controller
             step - cpu CoolingStep
+
         Return:
+
             statistics (accepted, invalid, rejected)
         """
         # grab the dispatcher
@@ -153,10 +157,14 @@ class Metropolis:
     def walk_chains(self, annealer, step):
         """
         Run the Metropolis algorithm on the Markov chains
+
         Arguments:
+
             annealer: cudaAnnealer
             step: CoolingStep
+
         Return:
+
             statistics = (accepted, invalid, rejected)
         """
         # get the model
