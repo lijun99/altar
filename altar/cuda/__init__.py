@@ -13,8 +13,6 @@ from . import (
     norms,
     # probability distribution functions
     distributions,
-    # support for Bayesian explorations using Markov chain Monte Carlo
-    bayesian,
     models,
     data,
     ext,

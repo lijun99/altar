@@ -63,7 +63,6 @@ def activate_cuda() -> None:
     import_module("altar.cuda.distributions")
     import_module("altar.cuda.norms")
     import_module("altar.cuda.data")
-    import_module("altar.cuda.bayesian")
     import_module("altar.cuda.models")
     # mark active
     _active = "cuda"

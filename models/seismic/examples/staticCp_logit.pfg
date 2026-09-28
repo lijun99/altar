@@ -71,7 +71,7 @@ slipmodel:
                     area = [3600] ; patch area in km^2
                     reparameterize = True ; sample logit(slip) instead of slip
 
-    controller = altar.bayesian.catmiphmc
+    controller = altar.bayesian.catmip_hmc
     controller:
         sampler:
             leapfrog_steps = 10

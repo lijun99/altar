@@ -51,8 +51,10 @@ The controller samples the posterior. The choice of controller is the choice of 
 |---|---|
 | `altar.bayesian.catmip` | {ref}`CATMIP <catmip>`: annealing with the COV scheduler, Metropolis sampling |
 | `altar.bayesian.mcmc` | Metropolis sampling at a fixed $\beta = 1$, without annealing |
-| `altar.bayesian.catmiphmc` | CATMIP annealing, with Hamiltonian Monte Carlo sampling |
-| `altar.bayesian.plainhmc` | Hamiltonian Monte Carlo at a fixed $\beta = 1$, without annealing |
+| `altar.bayesian.catmip_hmc` | CATMIP annealing, with Hamiltonian Monte Carlo sampling |
+| `altar.bayesian.hmc` | Hamiltonian Monte Carlo at a fixed $\beta = 1$, without annealing |
+| `altar.bayesian.catmip_mala` | CATMIP annealing, with Metropolis-adjusted Langevin sampling |
+| `altar.bayesian.mala` | the Metropolis-adjusted Langevin algorithm at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD) |
 | `altar.bayesian.annealer` | the base of the annealing controllers, with the sampler and the scheduler left to configure |
 
@@ -75,7 +77,8 @@ linear:
     job.steps = 2**8 ; Metropolis steps per round
 ```
 
-`plainhmc` spends `job.steps` HMC trajectories at $\beta = 1$, adapting its step size after each.
+`hmc` spends `job.steps` HMC trajectories at $\beta = 1$, and `mala` `job.steps` MALA proposals,
+adapting their step size after each.
 
 The annealing controllers are built from these components, each configurable:
 
@@ -101,13 +104,15 @@ configured itself.
 
 At each $\beta$, a sampler updates the chains so that they follow
 $P_m(\boldsymbol\theta|\mathbf d) \propto P(\boldsymbol\theta)\, P(\mathbf d|\boldsymbol\theta)^{\beta_m}$;
-at $\beta = 1$, that is the posterior. It is chosen in the controller, e.g.
+at $\beta = 1$, that is the posterior. It is chosen in the controller, by its name in
+`altar.bayesian.samplers`, which keeps it apart from the controller of the same name, e.g. the
+sampler `altar.bayesian.samplers.hmc` and the controller `altar.bayesian.hmc`:
 
 ```none
 linear:
     controller = altar.bayesian.catmip
     controller:
-        sampler = altar.bayesian.metropolis
+        sampler = altar.bayesian.samplers.metropolis
         sampler:
             scaling = 0.2
 ```
@@ -115,7 +120,7 @@ linear:
 (metropolis)=
 ### Metropolis
 
-`altar.bayesian.metropolis`, the default, proposes a new sample for each chain from a Gaussian
+`altar.bayesian.samplers.metropolis`, the default, proposes a new sample for each chain from a Gaussian
 centered on the current one,
 
 $$
@@ -150,7 +155,7 @@ acceptance rate adjusts $\alpha$.
 (hmc)=
 ### Hamiltonian Monte Carlo
 
-`altar.bayesian.hmc` moves each chain along a trajectory of the Hamiltonian dynamics on the
+`altar.bayesian.samplers.hmc` moves each chain along a trajectory of the Hamiltonian dynamics on the
 potential $U = -\log P_m(\boldsymbol\theta|\mathbf d)$, integrated with leapfrog steps, and accepts
 or rejects its end point. It runs `job.steps` trajectories at each $\beta$. It needs the gradient of
 the model's data likelihood, and priors defined on the whole real line: reparameterize bounded
@@ -176,7 +181,7 @@ priors (see {doc}`Priors`).
 
 ```none
 linear:
-    controller = altar.bayesian.catmiphmc
+    controller = altar.bayesian.catmip_hmc
     controller:
         sampler:
             leapfrog_steps = 10
@@ -187,7 +192,7 @@ linear:
 (mala)=
 ### Metropolis-adjusted Langevin
 
-`altar.bayesian.mala` proposes, for each chain, a step along the gradient of the log posterior
+`altar.bayesian.samplers.mala` proposes, for each chain, a step along the gradient of the log posterior
 plus a Gaussian perturbation,
 
 $$
@@ -200,15 +205,12 @@ step, and it takes the same settings, with `leapfrog_steps` = 1 and a step size 
 acceptance rate of 0.574; it runs `job.steps` proposals at each $\beta$. Like HMC, it needs the
 gradient of the data likelihood, and unbounded or reparameterized priors. Each proposal costs one
 gradient evaluation, against `leapfrog_steps` for an HMC trajectory, but moves the chains less
-far. Sample with it at a fixed $\beta$ with `mcmc`, or annealed with `catmip`:
+far. The `mala` controller samples with it at $\beta = 1$, and `catmip_mala` annealed:
 
 ```none
 linear:
-    controller = altar.bayesian.mcmc
-    controller:
-        sampler = altar.bayesian.mala
-        rounds = 4
-    job.steps = 500 ; proposals per round
+    controller = altar.bayesian.mala
+    job.steps = 2000 ; proposals at β = 1
 ```
 
 (stepsizers)=

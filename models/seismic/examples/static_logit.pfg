@@ -63,7 +63,7 @@ slipmodel:
                     moment_constraint_factor = 1.0 ; weight of the penalty
                     reparameterize = True ; sample logit(slip) instead of slip
 
-    controller = altar.bayesian.catmiphmc
+    controller = altar.bayesian.catmip_hmc
     controller:
         sampler:
             leapfrog_steps = 10

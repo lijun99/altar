@@ -108,6 +108,6 @@ The rules of the `.pfg` format are:
 - **Defaults**: anything left out keeps the default of its component.
 
 On the command line, the same settings take the form `--path=value`, e.g.
-`--job.chains=2**10` or `--controller.sampler=altar.bayesian.hmc`; they override the
+`--job.chains=2**10` or `--controller.sampler=altar.bayesian.samplers.hmc`; they override the
 configuration file. Pyre also reads user-wide settings from `~/.config/pyre`, e.g. the MPI setup
 in `~/.config/pyre/mpi.pfg` (see {doc}`Installation`).

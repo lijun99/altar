@@ -32,7 +32,7 @@ linear:
                 prior.sigma = 0.5
 
 
-    controller = altar.bayesian.plainhmc
+    controller = altar.bayesian.hmc
     controller:
         sampler:
             leapfrog_steps = 10

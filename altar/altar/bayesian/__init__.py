@@ -23,9 +23,10 @@ from .langevin_schedulers.LangevinScheduler import LangevinScheduler as langevin
 from .stepsizers.StepSizer import StepSizer as stepsizer
 from .stepcounters.StepCounter import StepCounter as stepcounter
 
-# foundry registrations — re-export from each subpackage into altar.bayesian namespace
-from .controllers import annealer, catmip, langevin, mcmc, plainhmc, catmiphmc
-from .samplers import metropolis, hmc, mala
+# foundry registrations — re-export from each subpackage into altar.bayesian namespace; the
+# samplers stay in theirs, e.g. altar.bayesian.samplers.hmc, apart from the controllers that
+# share their names, e.g. altar.bayesian.hmc
+from .controllers import annealer, catmip, langevin, mcmc, hmc, catmip_hmc, mala, catmip_mala
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal

@@ -3,8 +3,8 @@
 ; (c) 2010-present california institute of technology
 ; all rights reserved
 ;
-; CPU HMC (Hamiltonian Monte Carlo) smoke test: the CatmipHmc controller, i.e. CATMIP's COV
-; annealing ladder with the sampler pinned to the leapfrog-based Hmc sampler
+; Metropolis-adjusted Langevin sampling directly at beta=1 (no annealing ladder): the mala
+; controller, with {job.steps} proposals, each a single leapfrog step
 
 ; the linear app
 linear:
@@ -31,16 +31,12 @@ linear:
                 prior.sigma = 0.5
 
 
-    controller = altar.bayesian.catmip_hmc
-    controller:
-        sampler:
-            leapfrog_steps = 10
-            step_size = 0.01
+    controller = altar.bayesian.mala
 
     ; run configuration
     job.tasks = 1 ; number of tasks per host
     job.gpus = 0  ; number of gpus per task
     job.chains = 2**8 ; number of chains per task
-    job.steps = 20 ; number of hmc trajectories per beta step
+    job.steps = 2000 ; number of mala proposals at beta=1
 
 ; end of file

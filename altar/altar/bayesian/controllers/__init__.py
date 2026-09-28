@@ -44,7 +44,7 @@ def mcmc():
 @altar.foundry(
     implements=controller,
     tip="Hamiltonian Monte Carlo with no annealing ladder (beta fixed at 1)")
-def plainhmc():
+def hmc():
     from .Hmc import Hmc
     __doc__ = Hmc.__doc__
     return Hmc
@@ -52,9 +52,25 @@ def plainhmc():
 @altar.foundry(
     implements=controller,
     tip="CATMIP annealing (the COV schedule) with the sampler pinned to Hamiltonian Monte Carlo")
-def catmiphmc():
+def catmip_hmc():
     from .CatmipHmc import CatmipHmc
     __doc__ = CatmipHmc.__doc__
     return CatmipHmc
+
+@altar.foundry(
+    implements=controller,
+    tip="the Metropolis-adjusted Langevin algorithm with no annealing ladder (beta fixed at 1)")
+def mala():
+    from .Mala import Mala
+    __doc__ = Mala.__doc__
+    return Mala
+
+@altar.foundry(
+    implements=controller,
+    tip="CATMIP annealing (the COV schedule) with the sampler pinned to the Metropolis-adjusted Langevin algorithm")
+def catmip_mala():
+    from .CatmipMala import CatmipMala
+    __doc__ = CatmipMala.__doc__
+    return CatmipMala
 
 # end of file

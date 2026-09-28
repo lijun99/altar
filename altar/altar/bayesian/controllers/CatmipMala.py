@@ -11,18 +11,18 @@ import altar
 # my superclass
 from .Catmip import Catmip
 # my sampler default
-from ..samplers.HMC import HMC
+from ..samplers.MALA import MALA
 
 
 # my declaration
-class CatmipHmc(Catmip, family="altar.controllers.catmip_hmc"):
+class CatmipMala(Catmip, family="altar.controllers.catmip_mala"):
     """
     CATMIP annealing (the COV coefficient-of-variation beta schedule) with the sampler pinned
-    to the leapfrog-based {HMC} sampler instead of {Metropolis}
+    to the Metropolis-adjusted Langevin {MALA} sampler instead of {Metropolis}
     """
 
     # user configurable state
-    sampler = altar.bayesian.sampler(default=HMC)
+    sampler = altar.bayesian.sampler(default=MALA)
     sampler.doc = "the sampler of the posterior distribution"
 
 

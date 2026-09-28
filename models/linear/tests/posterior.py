@@ -18,7 +18,7 @@ Each case runs {altar-linear} in a scratch directory and compares the mean, the 
 deviations and the correlations of its final samples with the exact ones.
 
     python posterior.py                 # every case, on the cpu
-    python posterior.py mala plainhmc   # some of them
+    python posterior.py mala hmc        # some of them
     python posterior.py --gpu           # on the gpu
     python posterior.py --list          # the cases
 """
@@ -78,16 +78,13 @@ UNIFORM = [
 CASES = {
     "catmip": (["--controller=altar.bayesian.catmip", "--job.steps=256"], False),
     "mcmc": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256"], False),
-    "catmiphmc": (["--controller=altar.bayesian.catmiphmc", "--job.steps=20"], False),
-    "plainhmc": (["--controller=altar.bayesian.plainhmc", "--job.steps=200"], False),
-    "mala": (["--controller=altar.bayesian.mcmc", "--controller.sampler=altar.bayesian.mala",
-              "--controller.rounds=4", "--job.steps=500"], False),
-    "catmipmala": (["--controller=altar.bayesian.catmip", "--controller.sampler=altar.bayesian.mala",
-                    "--job.steps=200"], False),
+    "catmip_hmc": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20"], False),
+    "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], False),
+    "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], False),
+    "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], False),
     "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256"], True),
-    "plainhmc-uniform": (["--controller=altar.bayesian.plainhmc", "--job.steps=200"], True),
-    "mala-uniform": (["--controller=altar.bayesian.mcmc", "--controller.sampler=altar.bayesian.mala",
-                      "--controller.rounds=4", "--job.steps=500"], True),
+    "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200"], True),
+    "mala-uniform": (["--controller=altar.bayesian.mala", "--job.steps=4000"], True),
 }
 
 # the tolerances, for 256 chains: the mean within this many posterior standard deviations,
