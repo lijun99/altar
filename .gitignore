@@ -8,6 +8,7 @@ __pycache__
 # the default build locations
 /builds
 /products
+build*/
 
 # the developer
 .idea
@@ -43,6 +44,7 @@ pro*.csv
 **/examples/theta.txt
 **/examples/llk.txt
 **/results/
+**/*_results/
 BetaStatistics.txt
 
 # availabel upon request, due to large sizes
