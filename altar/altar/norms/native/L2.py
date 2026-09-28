@@ -46,13 +46,11 @@ class L2:
         Compute the L2 norm of the given vector using the given Cholesky decomposed inverse
         covariance matrix
         """
-        # we assume {sigma_inv} is Cholesky decomposed, so we can pre-multiply the vector by
-        # the lower triangle, and then just take the norm
-
-        # use the lower triangle, no transpose, non-unit diagonal
+        # {sigma_inv} holds L, the lower Cholesky factor of the inverse covariance, L L^T, so
+        # v^T L L^T v = |L^T v|^2: pre-multiply by L^T, then just take the norm
         if isinstance(sigma_inv, altar.matrix):
             v = altar.blas.dtrmv(
-                sigma_inv.lowerTriangular, sigma_inv.opNoTrans, sigma_inv.nonUnitDiagonal,
+                sigma_inv.lowerTriangular, sigma_inv.opTrans, sigma_inv.nonUnitDiagonal,
                 sigma_inv, v)
         elif isinstance(sigma_inv, float):
             v *= sigma_inv
