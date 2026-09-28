@@ -164,13 +164,14 @@ class Linear:
         is already premerged: G'^T = (LG)^T = G^T L^T, so -G'^T w = -G^T L^T (L r) = -G^T
         L^T wt, matching the cpu formula exactly.
         """
-        if not model.checked_unbounded_priors:
+        # in an ensemble, the ensemble owns the parameter sets and their priors
+        if not model.embedded and not model.checked_unbounded_priors:
             model.verify_unbounded_priors()
 
         θ = model.restrict(theta=step.theta)
         grad_prior = model.restrict(theta=step.prior_gradient)
         grad_data = model.restrict(theta=step.data_gradient)
-        for name in model.psets_list:
+        for name in ([] if model.embedded else model.psets_list):
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior, batch=batch)
 
         samples = batch if batch is not None else θ.shape[0]

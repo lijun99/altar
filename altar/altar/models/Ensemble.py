@@ -133,9 +133,30 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
     def gradient(self, controller, step, batch=None):
         """
-        Not yet: gradient-based samplers need each model's gradient scattered back to theta
+        The prior gradient from my parameter sets, plus the data gradient of each cascaded model;
+        the data gradient of the others; each model's on its own columns, scattered back to
+        theta's (gpu only)
         """
-        raise NotImplementedError("ensemble models do not support gradient-based samplers yet")
+        if altar.backends.active() != "cuda":
+            raise NotImplementedError("ensemble gradients need the gpu (job.gpus = 1)")
+        if not self.checked_unbounded_priors:
+            self.verify_unbounded_priors()
+        θ = step.theta
+        rows = θ.shape[0]
+        samples = rows if batch is None else batch
+        for name in self.psets_list:
+            self.psets[name].prior_gradient(theta=θ, gradient=step.prior_gradient, batch=batch)
+        step.data_gradient.zero()
+        for name, member in self.models.items():
+            cols = self._columns[name]
+            view = _Gradients(
+                theta=self._member_theta(name=name, theta=θ, batch=samples),
+                prior_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero(),
+                data_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero())
+            member.gradient(controller=controller, step=view, batch=batch)
+            target = step.prior_gradient if member.cascaded else step.data_gradient
+            self._scatter(name=name, gradient=view.data_gradient, target=target, batch=samples)
+        return self
 
 
     def columns(self, name):
@@ -159,14 +180,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
             θ = altar.matrix(shape=(rows, cols.size))
             numpy.asarray(θ)[:, :] = numpy.asarray(theta)[:, cols]
             return θ
-        selection, θ = self._gather.get(name, (None, None))
-        if selection is None or θ.shape[0] != rows:
-            # theta_m = theta S, S the (parameters x columns) selection matrix
-            S = numpy.zeros((self.parameters, cols.size))
-            S[cols, numpy.arange(cols.size)] = 1.0
-            selection = altar.cuda.matrix(source=S, dtype=self.precision)
-            θ = altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision)
-            self._gather[name] = (selection, θ)
+        selection, θ = self._selection(name=name, rows=rows)
         cublas = altar.cuda.cublas
         gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
         # column-major: theta_m^T (p x n) = S^T (p x P) theta^T (P x n); the row-major S read
@@ -175,6 +189,37 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
              cols.size, batch, self.parameters, 1.0,
              selection.grid, cols.size, theta.grid, self.parameters, 0.0, θ.grid, cols.size)
         return θ
+
+
+    def _scatter(self, name, gradient, target, batch):
+        """
+        target += the gradient on the columns of my model {name}, scattered to theta's columns
+        """
+        cols = self._columns[name]
+        selection, _ = self._selection(name=name, rows=gradient.shape[0])
+        cublas = altar.cuda.cublas
+        gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
+        # column-major: target^T (P x n) += S (P x p) gradient^T (p x n), S read as its transpose
+        gemm(altar.cuda.cublas_handle(), cublas.Operation.T, cublas.Operation.N,
+             self.parameters, batch, cols.size, 1.0,
+             selection.grid, cols.size, gradient.grid, cols.size, 1.0, target.grid, self.parameters)
+        return target
+
+
+    def _selection(self, name, rows):
+        """
+        The (parameters x columns) selection matrix of my model {name}, theta_m = theta S, and a
+        scratch matrix for its columns of theta, on the device
+        """
+        cols = self._columns[name]
+        selection, θ = self._gather.get(name, (None, None))
+        if selection is None or θ.shape[0] != rows:
+            S = numpy.zeros((self.parameters, cols.size))
+            S[cols, numpy.arange(cols.size)] = 1.0
+            selection = altar.cuda.matrix(source=S, dtype=self.precision)
+            θ = altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision)
+            self._gather[name] = (selection, θ)
+        return selection, θ
 
 
     def _vector(self, samples):
@@ -201,6 +246,18 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
     # private data
     _columns = None # the columns of theta each of my models works on
     _gather = None # per model, the cuda selection matrix and scratch theta
+
+
+class _Gradients:
+    """
+    A step as one of my models sees it, for its gradient: its columns of theta, and its own
+    gradient buffers
+    """
+
+    def __init__(self, theta, prior_gradient, data_gradient):
+        self.theta = theta
+        self.prior_gradient = prior_gradient
+        self.data_gradient = data_gradient
 
 
 class _Columns:

@@ -104,7 +104,8 @@ class Linear:
         # gradient-based samplers have no accept/reject step to catch a proposal that walked
         # outside a bounded prior's support, so they currently only support unbounded priors;
         # check once and cache, since {gradient} is called on every sweep
-        if not model.checked_unbounded_priors:
+        # in an ensemble, the ensemble owns the parameter sets and their priors
+        if not model.embedded and not model.checked_unbounded_priors:
             model.verify_unbounded_priors()
 
         # grab the portion of the sample, and of the gradient buffers, that are mine
@@ -114,7 +115,7 @@ class Linear:
 
         # the prior gradient, in {psets_list} order -- {psets} is a dict and may carry extra
         # entries merged in from other configuration sources
-        for name in model.psets_list:
+        for name in ([] if model.embedded else model.psets_list):
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior)
 
         # the data likelihood gradient: for r = Gθ - d and Cd_inv = L (the lower Cholesky
