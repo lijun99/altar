@@ -128,6 +128,21 @@ class CoolingStep:
         # all done
         return self
 
+    def refresh_sampling(self, model, batch=None):
+        """
+        Rebuild {theta_sampling} and {jacobian} from the physical {theta}, e.g. after a walk in
+        physical space
+        """
+        if not self.has_reparametrization:
+            return self
+        batch = batch if batch is not None else self.samples
+        self.theta_sampling.copy(self.theta)
+        model.to_sampling(theta=self.theta_sampling, batch=batch)
+        self.jacobian.zero()
+        model.eval_prior_with_physical(step=self, likelihood=self.jacobian, batch=batch)
+        return self
+
+
     def copy_from_cpu(self, step):
         """
         Copy cpu step to gpu step

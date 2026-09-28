@@ -74,6 +74,13 @@ Use CATMIP/Metropolis for this model, or set reparameterize=True on the prior.
 HMC and SGLD need priors defined on the whole real line. Reparameterize the bounded priors it
 names (`reparameterize = True`, see {doc}`Priors`), or sample with Metropolis.
 
+```none
+the cpu HMC sampler doesn't support reparameterized priors; run it on the gpu (job.gpus >= 1), or sample with Metropolis
+```
+
+Only the GPU versions of HMC and SGLD support reparameterized priors. Run them with
+`job.gpus = 1`, or sample with Metropolis.
+
 ### The kinematic model needs a GPU
 
 ```none

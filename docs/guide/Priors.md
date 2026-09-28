@@ -175,9 +175,11 @@ $\log |\mathrm{d}x/\mathrm{d}s|$, which the posterior of the sampling-space valu
 apart. The archived steps then hold, for each such parameter set, both `<pset>_physical` and
 `<pset>_sampling` samples, and the log-Jacobian of each sample in `jacobian`.
 
-`uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized. Metropolis sampling
-works either way; reparameterized, its proposals are never invalid. A gradient-based sampler
-refuses bounded priors that aren't reparameterized, and names them.
+`uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized. Reparameterization is
+for the gradient-based samplers, HMC and SGLD, and only their GPU versions support it; they refuse
+bounded priors that aren't reparameterized, and name them. Metropolis ignores it: it walks the
+physical values, rejects the proposals outside the support, and keeps the sampling-space values in
+step, so its results are the same either way.
 
 `transform`
 : the transform, `altar.distributions.logittransform` by default, the only one for now.

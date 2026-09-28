@@ -242,6 +242,15 @@ class MPIAnnealing(AnnealingMethod):
         posterior = altar.vector.collect(
             vector=step.posterior, communicator=communicator, destination=manager)
 
+        # and, when reparameterized, the sampling space and the jacobian
+        reparameterized = getattr(step, "has_reparametrization", False)
+        θ_sampling = jacobian = None
+        if reparameterized:
+            θ_sampling = altar.matrix.collect(
+                matrix=step.theta_sampling, communicator=communicator, destination=manager)
+            jacobian = altar.vector.collect(
+                vector=step.jacobian, communicator=communicator, destination=manager)
+
         # if I am not the manager task
         if self.rank != self.manager:
             # just return the local state
@@ -249,8 +258,8 @@ class MPIAnnealing(AnnealingMethod):
 
         # the manager packs the state of the problem and returns it
         return self.CoolingStep(
-            beta=β, theta=θ,
-            likelihoods=(prior,data,posterior))
+            beta=β, theta=θ, theta_sampling=θ_sampling, jacobian=jacobian,
+            likelihoods=(prior,data,posterior), has_reparametrization=reparameterized)
 
 
     def partition(self):
@@ -269,10 +278,11 @@ class MPIAnnealing(AnnealingMethod):
             prior = step.prior
             data = step.data
             posterior = step.posterior
+            θ_sampling, jacobian = step.theta_sampling, step.jacobian
         # the others
         else:
             # know nothing
-            β = θ = prior = data = posterior = None
+            β = θ = prior = data = posterior = θ_sampling = jacobian = None
 
         # cache my communicator
         comm = self.communicator
@@ -292,6 +302,10 @@ class MPIAnnealing(AnnealingMethod):
         step.prior.excerpt(vector=prior, source=manager, communicator=comm)
         step.data.excerpt(vector=data, source=manager, communicator=comm)
         step.posterior.excerpt(vector=posterior, source=manager, communicator=comm)
+        # and the sampling space and the jacobian, when reparameterized
+        if getattr(step, "has_reparametrization", False):
+            step.theta_sampling.excerpt(matrix=θ_sampling, source=manager, communicator=comm)
+            step.jacobian.excerpt(vector=jacobian, source=manager, communicator=comm)
 
         # NOTE: the proposal covariance Σ used to be broadcast here, back when it lived on
         # {step.sigma}; it now lives in GaussianProposal, computed per-rank from each rank's

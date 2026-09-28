@@ -78,6 +78,8 @@ class Metropolis:
 
         # walk the chains
         statistics = self.walk_chains(annealer=annealer, step=self.gstep)
+        # the walk is in physical space; bring the sampling space along
+        self.gstep.refresh_sampling(model=annealer.model)
 
         # finish the sampling pdf, copy gpu step back
         self.finish_sampling_pdf(step=step)

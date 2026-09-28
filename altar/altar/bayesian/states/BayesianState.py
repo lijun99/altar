@@ -77,8 +77,8 @@ class BayesianState:
         """
         # get the model
         model = annealer.model
-        # build an uninitialized step
-        step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
+        # build an uninitialized step, with the reparameterization state when my class has one
+        step = cls.allocate(annealer=annealer)
 
         # initialize it
         model.initialize_sample(step=step)

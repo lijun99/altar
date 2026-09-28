@@ -126,7 +126,31 @@ class CoolingStep(BayesianState):
         return
 
 
+    def refresh_sampling(self, model, batch=None):
+        """
+        Rebuild {theta_sampling} and {jacobian} from the physical {theta}, e.g. after a walk in
+        physical space
+        """
+        if not self.has_reparametrization:
+            return self
+        self.theta_sampling.copy(self.theta)
+        model.to_sampling(theta=self.theta_sampling, batch=batch)
+        self.jacobian.zero()
+        model.eval_prior_with_physical(step=self, likelihood=self.jacobian, batch=batch)
+        return self
+
+
     # implementation details
+    def _on_start(self, annealer):
+        """
+        The jacobian of the initial samples, when reparameterized
+        """
+        if self.has_reparametrization:
+            self.jacobian.zero()
+            annealer.model.eval_prior_with_physical(step=self, likelihood=self.jacobian)
+        return
+
+
     def _save_parameter_sets_hdf5(self, psetsgrp, psets):
         """
         Write theta_sampling (and, under reparameterization, the physical theta + jacobian)

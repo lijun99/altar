@@ -69,6 +69,34 @@ class ParameterEnsemble(base):
         return mask
 
 
+    def eval_prior_with_physical(self, theta, prior, batch=None):
+        """
+        Add any prior contributions that depend on physical parameters, e.g. the log-jacobian
+        of a reparameterized prior
+        """
+        for pset in self._iter_psets():
+            pset.eval_prior_with_physical(theta=theta, prior=prior, batch=batch)
+        return self
+
+
+    def to_physical(self, theta, batch=None):
+        """
+        Transform {theta} from sampling space to physical space, in place
+        """
+        for pset in self._iter_psets():
+            pset.to_physical(theta=theta, batch=batch)
+        return self
+
+
+    def to_sampling(self, theta, batch=None):
+        """
+        Transform {theta} from physical space to sampling space, in place
+        """
+        for pset in self._iter_psets():
+            pset.to_sampling(theta=theta, batch=batch)
+        return self
+
+
     # implementation details
     def _iter_psets(self):
         """

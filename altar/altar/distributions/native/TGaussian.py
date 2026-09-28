@@ -42,10 +42,8 @@ class TGaussian(base):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
-        a no-op when reparameterized, since sampling space is unconstrained
+        {theta} is physical, reparameterized or not
         """
-        if self.reparameterize:
-            return mask
         # unpack my support
         low, high = self.support
         # grab the portion of the sample that's mine

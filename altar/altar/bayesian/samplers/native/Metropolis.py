@@ -74,6 +74,8 @@ class Metropolis:
         self.proposal.new_walk()
         # walk the chains; statistics stored on self
         self.walk_chains(annealer=annealer, step=step)
+        # the walk is in physical space; bring the sampling space along
+        step.refresh_sampling(model=annealer.model)
         # notify we are done sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
         # all done

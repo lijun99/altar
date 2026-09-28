@@ -47,6 +47,13 @@ class SequentialLangevin(LangevinMethod):
         """
         # chain up
         super().start(controller=controller)
+        # reparameterized priors are only supported by the cuda implementation
+        model = controller.model
+        if getattr(model, "has_reparametrization", False):
+            model.error.log(
+                "the cpu SGLD sampler doesn't support reparameterized priors; run it on the gpu "
+                "(job.gpus >= 1), or sample with Metropolis")
+            raise SystemExit(1)
         # build a langevin step to hold the state of the problem
         self.step = self.LangevinStep.start(annealer=controller)
         # all done

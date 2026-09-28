@@ -50,6 +50,12 @@ class HMC:
         """
         # grab the info channel
         self.info = application.info
+        # reparameterized priors are only supported by the cuda implementation
+        if getattr(application.model, "has_reparametrization", False):
+            application.error.log(
+                "the cpu HMC sampler doesn't support reparameterized priors; run it on the gpu "
+                "(job.gpus >= 1), or sample with Metropolis")
+            raise SystemExit(1)
         # pull the chain length (number of trajectories per outer step) from the job spec
         self.steps = application.job.steps
         # get the capsule of the random number generator

@@ -97,6 +97,31 @@ class Contiguous(base):
         return mask
 
 
+    def eval_prior_with_physical(self, theta, prior, batch=None):
+        """
+        Add any prior contributions that depend on physical parameters, e.g. the log-jacobian
+        of a reparameterized prior
+        """
+        self.prior.eval_prior_with_physical(theta=self.restrict(theta=theta), likelihood=prior, batch=batch)
+        return self
+
+
+    def to_physical(self, theta, batch=None):
+        """
+        Transform my portion of {theta} from sampling space to physical space, in place
+        """
+        self.prior.to_physical(theta=self.restrict(theta=theta), batch=batch)
+        return self
+
+
+    def to_sampling(self, theta, batch=None):
+        """
+        Transform my portion of {theta} from physical space to sampling space, in place
+        """
+        self.prior.to_sampling(theta=self.restrict(theta=theta), batch=batch)
+        return self
+
+
     # private data, set by the shim before {initialize} runs
     prior = None
     prep = None

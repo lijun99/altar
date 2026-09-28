@@ -47,11 +47,8 @@ class Uniform(base):
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
-        {mask} must be an int32 grid; a no-op when reparameterized, since sampling space is
-        unconstrained
+        {mask} must be an int32 grid; {theta} is physical, reparameterized or not
         """
-        if self.reparameterize:
-            return mask
         low, high = self.support
         self.libcudaaltar.cudaRanged_verify(
             self._grid(theta), self._grid(mask), self.idx_begin, self.idx_end, low, high)
