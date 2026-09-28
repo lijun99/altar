@@ -207,6 +207,25 @@ altar::cuda::extensions::leapfrog::__init__(py::module & m) -> void
             synchronize("cudaLeapfrog_restoreMatrix");
         },
         "current"_a, "backup"_a, "mask"_a, "restore current's rows to backup's wherever mask == 0");
+
+    // the per-sample vector counterpart of {cudaLeapfrog_restoreMatrix}
+    leapfrog.def(
+        "cudaLeapfrog_restoreVector",
+        [](grid_t & current, grid_t & backup, grid_t & mask) -> void {
+            auto format = current.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::bayesian::cudaLeapfrog::restoreVector<double>(
+                    regrid<double, 1>(current), regrid<const double, 1>(backup), regrid<const int, 1>(mask));
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::bayesian::cudaLeapfrog::restoreVector<float>(
+                    regrid<float, 1>(current), regrid<const float, 1>(backup), regrid<const int, 1>(mask));
+            } else {
+                throw py::value_error("cudaLeapfrog_restoreVector: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaLeapfrog_restoreVector");
+            synchronize("cudaLeapfrog_restoreVector");
+        },
+        "current"_a, "backup"_a, "mask"_a, "restore current's entries to backup's wherever mask == 0");
 }
 
 

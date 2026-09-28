@@ -103,6 +103,14 @@ namespace altar { namespace cuda {
                 vector_view_t<int, true> mask,
                 cudaStream_t stream=0);
 
+            // the per-sample vector counterpart of {restoreMatrix}
+            template <typename realtype_t>
+            void restoreVector(
+                vector_view_t<realtype_t, false> current,
+                vector_view_t<realtype_t, true> backup,
+                vector_view_t<int, true> mask,
+                cudaStream_t stream=0);
+
         } // namespace cudaLeapfrog
     } // namespace bayesian
 }} // namespace altar::cuda

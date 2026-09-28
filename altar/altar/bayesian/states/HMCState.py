@@ -52,8 +52,14 @@ class HMCState(BayesianState):
         likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
         momentum = self.momentum.clone()
         gradients = self.grad_prior.clone(), self.grad_data.clone(), self.grad_posterior.clone()
-        return type(self)(beta=beta, theta=theta, likelihoods=likelihoods,
-                          momentum=momentum, gradients=gradients)
+        clone = type(self)(beta=beta, theta=theta, likelihoods=likelihoods,
+                           momentum=momentum, gradients=gradients)
+        # and the reparameterization state, when there is one
+        for name in ("phi", "Jacobian", "log_jacobian"):
+            value = getattr(self, name)
+            if value is not None:
+                setattr(clone, name, value.clone())
+        return clone
 
     def compute_posterior(self):
         # the shared prior + beta*data computation

@@ -46,7 +46,7 @@ class HMC:
         # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
         # to 0.8), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
-            self.stepsizer.target = 0.7
+            self.stepsizer.target = self.target_acceptance
         # all done
         return self
 
@@ -92,9 +92,10 @@ class HMC:
 
     def _walk(self, annealer, step):
         """
-        Advance all chains using one or more leapfrog trajectories: {self.steps} trajectories
-        (matching cpu {altar.bayesian.samplers.native.HMC}'s own outer loop), each with
-        {self.leapfrog_steps} leapfrog substeps
+        Advance all chains using {self.steps} leapfrog trajectories (matching cpu
+        {altar.bayesian.samplers.native.HMC}'s own outer loop), each with {self.leapfrog_steps}
+        leapfrog substeps; the potential and its gradient carry over from one trajectory to the
+        next, so they are evaluated once per substep, plus once per walk
         """
         if self.proposal_state is None:
             self._allocate(model=annealer.model)
@@ -103,21 +104,22 @@ class HMC:
 
         self._set_step_size(self._clamp_step_size(self.step_size))
 
-        leapfrog_repeats = self.steps
-        leapfrog_substeps = self.leapfrog_steps
+        # the chains, and their potential and its gradient, at the start of the walk
+        self._copy_state_from_step(step)
+        self._potential_and_gradients(annealer)
 
         accepted_total = 0
         dispatcher = annealer.dispatcher
-        for _ in range(leapfrog_repeats):
+        for _ in range(self.steps):
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
-            self._copy_state_from_step(step)
-            accepted = self._trajectory(annealer, leapfrog_substeps)
-            self._copy_accepted_to_step(step)
+            libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
+            accepted = self._trajectory(annealer, self.leapfrog_steps)
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
+        self._copy_accepted_to_step(step)
 
-        attempts = state.samples * leapfrog_repeats
+        attempts = state.samples * self.steps
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
         # all done
         return
@@ -138,76 +140,71 @@ class HMC:
         max_eta = getattr(adjuster, 'max_step_size', float('inf'))
         return max(min_eta, min(max_eta, eta))
 
+    def _potential_and_gradients(self, annealer):
+        """
+        The likelihoods, the potential U and its gradient at the current chains
+        """
+        state = self.proposal_state
+        model = annealer.model
+        # {eval_prior} accumulates into whatever it's handed, so re-zero before every call
+        state.prior.zero()
+        model.likelihoods(annealer=annealer, step=state)
+        # log|J| in its own buffer so {prior}/{posterior} stay physical-space densities
+        if state.reparameterization:
+            state.log_jacobian.zero()
+            model.eval_prior_with_physical(
+                step=state, likelihood=state.log_jacobian, batch=state.samples)
+        model.gradient(controller=annealer, step=state, batch=state.samples)
+        # d(physical)/d(sampling), for the chain rule on the data gradient in the kernel
+        if state.reparameterization:
+            model.eval_jacobian(step=state, batch=state.samples)
+        jacobian = state.Jacobian.grid if state.Jacobian is not None else None
+        libcudaaltar.leapfrog.cudaLeapfrog_computePotentialAndGradient(
+            state.prior.grid,
+            state.data.grid,
+            state.prior_gradient.grid,
+            state.data_gradient.grid,
+            state.U.grid,
+            state.U_gradient.grid,
+            state.beta,
+            jacobian,
+        )
+        # sampling-space potential: U -= log|J| (its gradient is already in prior_gradient)
+        if state.reparameterization:
+            cublas.axpy(alpha=-1.0, x=state.log_jacobian, y=state.U, batch=state.samples)
+        return
+
     def _trajectory(self, annealer, leapfrog_substeps):
+        """
+        One trajectory from the current chains, whose potential and gradient are up to date,
+        ending in the Metropolis-Hastings decision; the rejected chains get their whole starting
+        state back, so the potential and gradient stay up to date for the next trajectory
+        """
         state = self.proposal_state
         old_state = state.clone()
         leapfrog = libcudaaltar.leapfrog
-        model = annealer.model
 
-        def compute_potential_and_gradients():
-            # the real model protocol (matching {altar.bayesian.samplers.native.HMC}'s own
-            # {_evaluate}); {evaluateLikelihoods}/{evaluateGradients}/{gradients} (plural)
-            # never existed on any real model -- this branch was dead code, only ever
-            # exercised by a test double built to match it
-
-            # {eval_prior} accumulates into whatever it's handed (so multiple parameter sets
-            # can each add their contribution); this is called many times per trajectory
-            # (once per leapfrog substep, plus both endpoints), so it must be re-zeroed
-            # before every call, exactly as {altar.bayesian.samplers.native.HMC._evaluate}
-            # does for its own candidate -- without this, {state.prior} silently accumulated
-            # across calls, inflating the potential and making every trajectory reject
-            state.prior.zero()
-            model.likelihoods(annealer=annealer, step=state)
-            # log|J| in its own buffer so {prior}/{posterior} stay physical-space densities
-            if state.reparameterization:
-                state.log_jacobian.zero()
-                model.eval_prior_with_physical(
-                    step=state, likelihood=state.log_jacobian, batch=state.samples)
-            model.gradient(controller=annealer, step=state, batch=state.samples)
-            # refresh {state.Jacobian} (d(physical)/d(sampling)) for the leapfrog kernel's
-            # reparameterized path below; stale otherwise (allocated once, at a constant 1)
-            if state.reparameterization:
-                model.eval_jacobian(step=state, batch=state.samples)
-            jacobian = state.Jacobian.grid if state.Jacobian is not None else None
-            leapfrog.cudaLeapfrog_computePotentialAndGradient(
-                state.prior.grid,
-                state.data.grid,
-                state.prior_gradient.grid,
-                state.data_gradient.grid,
-                state.U.grid,
-                state.U_gradient.grid,
-                state.beta,
-                jacobian,
-            )
-            # sampling-space potential: U -= log|J| (its gradient is already in prior_gradient)
-            if state.reparameterization:
-                cublas.axpy(alpha=-1.0, x=state.log_jacobian, y=state.U, batch=state.samples)
-
-        # compute initial energy
-        compute_potential_and_gradients()
+        # the energy at the start
         kinetic_old = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
         leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_old.grid)
-        potential_old = state.U.clone()
-        h_old = potential_old.clone()
+        h_old = state.U.clone()
         cublas.axpy(alpha=1.0, x=kinetic_old, y=h_old, batch=state.samples)
 
-        # leapfrog updates
+        # leapfrog updates; the last one leaves the potential and gradient at the proposal
         eta = state.eta
         half_step = 0.5 * eta
         self._update_momentum(half_step)
         for k in range(leapfrog_substeps):
             self._update_position(annealer)
-            compute_potential_and_gradients()
+            self._potential_and_gradients(annealer)
             if k < leapfrog_substeps - 1:
                 self._update_momentum(eta)
         self._update_momentum(half_step)
 
-        # recompute energies at the proposal
-        compute_potential_and_gradients()
+        # the energy at the proposal
         kinetic_new = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
         leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_new.grid)
-        potential_new = state.U.clone()
-        h_new = potential_new.clone()
+        h_new = state.U.clone()
         cublas.axpy(alpha=1.0, x=kinetic_new, y=h_new, batch=state.samples)
 
         delta_h = h_new.clone()
@@ -218,7 +215,7 @@ class HMC:
         leapfrog.cudaLeapfrog_metropolis(delta_h.grid, mask_dev.grid)
         accepted = int(numpy.count_nonzero(mask_dev.copy_to_host(type="numpy")))
 
-        # restore rejected proposals
+        # restore the rejected chains
         leapfrog.cudaLeapfrog_restoreRejected(
             state.theta.grid,
             old_state.theta.grid,
@@ -226,21 +223,20 @@ class HMC:
             old_state.momentum.grid,
             mask_dev.grid,
         )
-        if state.reparameterization:
+        for name in ("prior_gradient", "data_gradient", "U_gradient"):
             leapfrog.cudaLeapfrog_restoreMatrix(
-                state.phi.grid,
-                old_state.phi.grid,
-                mask_dev.grid,
-            )
-            if state.Jacobian is not None and old_state.Jacobian is not None:
-                leapfrog.cudaLeapfrog_restoreMatrix(
-                    state.Jacobian.grid,
-                    old_state.Jacobian.grid,
-                    mask_dev.grid,
-                )
+                getattr(state, name).grid, getattr(old_state, name).grid, mask_dev.grid)
+        for name in ("prior", "data", "posterior", "U"):
+            leapfrog.cudaLeapfrog_restoreVector(
+                getattr(state, name).grid, getattr(old_state, name).grid, mask_dev.grid)
+        if state.reparameterization:
+            leapfrog.cudaLeapfrog_restoreMatrix(state.phi.grid, old_state.phi.grid, mask_dev.grid)
+            leapfrog.cudaLeapfrog_restoreMatrix(
+                state.Jacobian.grid, old_state.Jacobian.grid, mask_dev.grid)
+            leapfrog.cudaLeapfrog_restoreVector(
+                state.log_jacobian.grid, old_state.log_jacobian.grid, mask_dev.grid)
 
-        # update energies/gradients for the final (accepted/rejected) state
-        compute_potential_and_gradients()
+        # the total energy of the final state
         leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, state.H.grid)
         cublas.axpy(alpha=1.0, x=state.U, y=state.H, batch=state.samples)
 
@@ -294,11 +290,7 @@ class HMC:
 
     def _copy_state_from_step(self, step):
         self.proposal_state.theta.copy_from_host(source=step.theta)
-        if getattr(step, "momentum", None) is not None:
-            self.proposal_state.momentum.copy_from_host(source=step.momentum)
-        else:
-            libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(self.proposal_state.momentum.grid)
-        # {Jacobian}/{log_jacobian} are recomputed at the start of every trajectory; no copy in
+        # {Jacobian}/{log_jacobian} are recomputed at the start of the walk; no copy in
         if self.proposal_state.reparameterization:
             if getattr(step, 'theta_sampling', None) is not None:
                 self.proposal_state.phi.copy_from_host(source=step.theta_sampling)
@@ -325,6 +317,7 @@ class HMC:
 
     # private data; the component-typed attributes and scalar traits are set by the shim's
     # initialize() before it calls mine (see {altar.bayesian.samplers.HMC._makeImpl})
+    target_acceptance = 0.7  # the default acceptance rate the stepsizer steers to
     stepsizer = None         # the step size regulator
     leapfrog_steps = 10      # the number of leapfrog substeps per trajectory
 

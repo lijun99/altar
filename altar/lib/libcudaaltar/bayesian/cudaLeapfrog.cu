@@ -173,6 +173,20 @@ namespace cudaLeapfrog_kernels {
         }
     }
 
+    // restore {current[sample]} to {backup[sample]} wherever {mask[sample] == 0}; one thread per sample
+    template <typename realtype_t>
+    __global__ void restoreVectorKernel(vector_view_t<realtype_t, false> current,
+                                        vector_view_t<realtype_t, true> backup,
+                                        vector_view_t<int, true> mask)
+    {
+        auto samples = current.packing().shape()[0];
+        int sid = blockIdx.x * blockDim.x + threadIdx.x;
+        if (sid >= samples) return;
+        if (!mask[{ sid }]) {
+            current[{ sid }] = backup[{ sid }];
+        }
+    }
+
 } // of namespace cudaLeapfrog_kernels
 
 
@@ -395,6 +409,24 @@ namespace altar { namespace cuda { namespace bayesian { namespace cudaLeapfrog {
 
     template void restoreMatrix<float>(matrix_view_t<float, false>, matrix_view_t<float, true>, vector_view_t<int, true>, cudaStream_t);
     template void restoreMatrix<double>(matrix_view_t<double, false>, matrix_view_t<double, true>, vector_view_t<int, true>, cudaStream_t);
+
+
+    template <typename realtype_t>
+    void restoreVector(vector_view_t<realtype_t, false> current, vector_view_t<realtype_t, true> backup,
+                       vector_view_t<int, true> mask, cudaStream_t stream)
+    {
+        auto samples = current.packing().shape()[0];
+        if (samples == 0) return;
+
+        auto blockSize = NTHREADS;
+        auto gridSize = IDIVUP(samples, blockSize);
+        cudaLeapfrog_kernels::restoreVectorKernel<realtype_t>
+            <<<gridSize, blockSize, 0, stream>>>(current, backup, mask);
+        cudaCheckError("cudaLeapfrog::restoreVector error");
+    }
+
+    template void restoreVector<float>(vector_view_t<float, false>, vector_view_t<float, true>, vector_view_t<int, true>, cudaStream_t);
+    template void restoreVector<double>(vector_view_t<double, false>, vector_view_t<double, true>, vector_view_t<int, true>, cudaStream_t);
 
 }}}} // namespace altar::cuda::bayesian::cudaLeapfrog
 
