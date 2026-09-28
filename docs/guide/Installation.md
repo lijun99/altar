@@ -45,6 +45,7 @@ Python 3.13 and CMake 4.1, on an NVIDIA RTX 4060.
 | BLAS | | e.g. OpenBLAS; otherwise GSL's own `gslcblas` |
 | MPI | | optional: for running on several processes or nodes, e.g. Open MPI |
 | CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand` and `cusolver` |
+| PyYAML | | optional: for `.yaml` configuration files |
 | PostgreSQL client library | | optional: pyre's database support, not used by AlTar |
 
 (installation-conda)=
@@ -54,7 +55,7 @@ Install [Miniforge](https://github.com/conda-forge/miniforge) (or Miniconda/Anac
 don't have conda yet, then create an environment with the prerequisites from conda-forge:
 
 ```bash
-conda create -n altar2 -c conda-forge python=3.13 numpy h5py hdf5 gsl openblas pybind11 cmake make git
+conda create -n altar2 -c conda-forge python=3.13 numpy h5py hdf5 gsl openblas pybind11 pyyaml cmake make git
 # optional, for MPI runs
 conda install -n altar2 -c conda-forge openmpi
 conda activate altar2

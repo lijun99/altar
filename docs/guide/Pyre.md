@@ -2,7 +2,7 @@
 # Pyre Basics
 
 AlTar is built on the [pyre](https://github.com/pyre/pyre) framework. This page introduces the
-parts of pyre an AlTar user meets: protocols and components, and the `.pfg` configuration files.
+parts of pyre an AlTar user meets: protocols and components, and the `.pfg` and `.yaml` configuration files.
 
 ## Protocols and components
 
@@ -59,9 +59,9 @@ a python shell, they don't pick up any configuration.
 ## The configuration files (`.pfg`)
 
 Properties and components can be configured on the command line, or, more conveniently, in a
-configuration file. Pyre reads `.pfg` files (a format similar to YAML), `.cfg` files (an INI-style
-format used by AlTar 1.1) and `.pml` files (XML). We recommend `.pfg`; see {doc}`QuickStart` for an
-example.
+configuration file. Pyre reads `.pfg` files (a format similar to YAML), `.yaml` files (see
+{ref}`below <pyre-config-yaml>`), `.cfg` files (an INI-style format used by AlTar 1.1) and `.pml`
+files (XML). We recommend `.pfg`; see {doc}`QuickStart` for an example.
 
 The rules of the `.pfg` format are:
 
@@ -106,6 +106,46 @@ The rules of the `.pfg` format are:
   `2**10`, and values may refer to other settings in braces, e.g.
   `count = {linear.model.parameters}`.
 - **Defaults**: anything left out keeps the default of its component.
+
+(pyre-config-yaml)=
+### YAML
+
+The same settings can be written in YAML, which needs PyYAML (`conda install pyyaml`). A `.yaml`
+file is found and used like a `.pfg` one, by the application name (e.g. `linear.yaml`) or with
+`--config=file.yaml`; if both a `.pfg` and a `.yaml` file of the same name are found, the `.yaml`
+settings win. Only the `.yaml` extension is recognized, not `.yml`. The rules of YAML itself apply:
+
+- **Settings** are `key: value`, and **comments** start with `#`.
+- **Keys don't repeat**, so the `.pfg` idiom of choosing a component and then configuring it in a
+  block of the same name doesn't carry over. Configure it with dotted keys, e.g. `prior.sigma: 0.5`,
+  or in a block of its own under its full path:
+
+  ```yaml
+  linear:
+    model: altar.models.linear
+    job:
+      gpus: 1
+      gpuprecision: float64
+      chains: 2**10
+  linear.model:
+    case: patch-9
+    psets_list: [all]
+    psets:
+      all: contiguous
+  linear.model.psets.all:
+    count: "{linear.model.parameters}"
+    prior: gaussian
+    prior.sigma: 0.5
+  ```
+
+- **References in braces must be quoted**, e.g. `count: "{linear.model.parameters}"`; unquoted,
+  YAML reads them as a mapping and the setting gets a wrong value, without an error.
+- **Keys with a family must be quoted**, e.g. `"mpi.shells.mpirun # altar.plexus.shell":`;
+  unquoted, YAML reads the `#` as the start of a comment.
+- **Values** are typed by YAML: `2**10` and paths stay strings for pyre to convert, but `yes`,
+  `no`, `on` and `off` become booleans, so quote them where a string is meant.
+
+`models/linear/examples/linear_gpu.yaml` is a complete example, running on a GPU.
 
 On the command line, the same settings take the form `--path=value`, e.g.
 `--job.chains=2**10` or `--controller.sampler=altar.bayesian.samplers.hmc`; they override the
