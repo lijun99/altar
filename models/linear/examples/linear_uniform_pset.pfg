@@ -11,7 +11,7 @@
 ; the linear app
 linear:
     ; test case configuration
-    moodel = altar.models.linear
+    model = altar.models.linear
     controller = altar.bayesian.catmip
     model:
         ; the name of the test case

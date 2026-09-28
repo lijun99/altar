@@ -30,7 +30,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
     has a particular target value for
 
-        COV(w_m) := <w_m> / \sqrt{<(w_m-<w_m>)^2>}
+        COV(w_m) := \sqrt{<(w_m-<w_m>)^2>} / <w_m>
     """
 
     # user configurable state

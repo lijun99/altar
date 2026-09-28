@@ -36,7 +36,7 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
         # model specific initialization after superclass
         # grab data
-        self.x = self.load_file(self.x_file)
+        self.x = self.io.load(filename=self.x_file)
         self.y = self.dataobs.dataobs
         # set the return_residual flag
         # forward model calculates the residual between prediction and data

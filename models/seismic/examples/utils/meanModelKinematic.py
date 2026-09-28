@@ -10,6 +10,16 @@ import h5py
 import numpy
 
 
+def pset_samples(input, name):
+    """
+    The samples of parameter set {name}: physical when it was reparameterized, else as sampled
+    """
+    for key in (name + '_physical', name + '_sampling', name):
+        if 'ParameterSets/' + key in input:
+            return numpy.asarray(input['ParameterSets/' + key])
+    raise KeyError(f"no samples for parameter set '{name}'")
+
+
 def MeanModel():
     """
     Compute the mean model of the AlTar step results
@@ -24,13 +34,13 @@ def MeanModel():
     psets_list = ['strikeslip', 'dipslip', 'risetime', 'rupturevelocity', 'hypocenter']
 
     # get the number of samples
-    theta = numpy.asarray(input.get('ParameterSets/'+psets_list[0]))
+    theta = pset_samples(input, psets_list[0])
     samples = theta.shape[0]
 
     # create an empty array
     theta=numpy.empty(shape=(samples,0), dtype=theta.dtype)
     for pset_name in psets_list:
-        pset = numpy.array(input.get('ParameterSets/'+pset_name))
+        pset = pset_samples(input, pset_name)
         theta=numpy.concatenate((theta, pset), axis=1)
 
     output.create_dataset('Sample Set', data=theta)
@@ -46,7 +56,7 @@ def MeanModel():
     print("converted likelihood")
 
     # convert Covariance
-    covariance = numpy.asarray(input.get('Annealer/covariance'))
+    covariance = numpy.asarray(input.get('Proposal/sigma', input.get('Annealer/covariance')))
     output.create_dataset('Covariance', data=covariance)
     beta = numpy.asarray(input.get('Annealer/beta'))
     output.create_dataset('Beta', data=beta)

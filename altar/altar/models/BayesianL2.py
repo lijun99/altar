@@ -291,14 +291,14 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             f"model '{type(self).__name__}' must implement 'forward_model'")
 
 
-    def forward_model_batched(self, theta, prediction):
+    def forward_model_batched(self, theta, prediction, batch=None):
         """
         The forward model for a batch of theta: compute prediction from theta
         also return {residual}=True, False if the difference between data and prediction is computed
         """
 
-        # The default method computes samples one by one
-        batch = self.samples
+        # The default method computes samples one by one, the first {batch} of them
+        batch = theta.rows if batch is None else batch
         # create a prediction vector
         prediction_sample = altar.vector(shape=self.observations)
         # iterate over samples
