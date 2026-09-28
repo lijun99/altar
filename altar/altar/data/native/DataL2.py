@@ -131,6 +131,18 @@ class DataL2:
         return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
 
 
+    def covariance(self):
+        """
+        The covariance in effect, C_d or C_chi = C_d + C_p: a numpy (observations x observations)
+        array, or a float, the common variance, when it is a constant times the identity
+        """
+        if self._covariance is not None:
+            return self._covariance
+        if isinstance(self.cd, float):
+            return self.cd * self.cd
+        return numpy.array(self.cd, dtype=float)
+
+
     def initialize_covariance(self, cd):
         """
         For a given data covariance cd, compute L2 likelihood normalization, inverse of cd
@@ -172,6 +184,7 @@ class DataL2:
         """
         if cp is None:
             self._chi_variance = None
+            self._covariance = None
             return self.initialize_covariance(cd=self.cd)
         cd = self.cd
         if isinstance(cd, float):
@@ -180,6 +193,7 @@ class DataL2:
             cchi = numpy.array(cd, dtype=float)
         cchi += numpy.asarray(cp, dtype=float)
         self._chi_variance = numpy.diag(cchi).copy()
+        self._covariance = cchi
         return self.initialize_covariance(cd=self.io.toGsl(cchi))
 
 
@@ -227,6 +241,7 @@ class DataL2:
 
     # local variables
     normalization = 0
+    _covariance = None # C_chi, once a C_p is added
     ifs = None
     io = None  # my file reader/writer
     samples = None

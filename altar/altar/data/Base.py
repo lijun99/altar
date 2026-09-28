@@ -104,6 +104,14 @@ class Base(altar.component, implements=data):
         return self._impl.sigma_chi()
 
 
+    def covariance(self):
+        """
+        The covariance in effect, C_d or C_chi = C_d + C_p: a numpy (observations x observations)
+        array, or a float, the common variance, when it is a constant times the identity
+        """
+        return self._impl.covariance()
+
+
     @property
     def dataobs(self):
         """

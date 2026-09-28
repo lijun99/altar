@@ -162,8 +162,11 @@ slip component into several parameter sets, each with its own `count` and prior.
 
 The example anneals with CATMIP and Metropolis sampling, on the cpu; add `--job.gpus=1` to run it
 on the GPU. `static_logit.pfg` samples with HMC instead, which needs the bounded dip slip prior
-reparameterized (`reparameterize = True`, see {doc}`Priors`). See {doc}`AlTarFramework` for the
-controllers, and for running on several processes or GPUs.
+reparameterized (`reparameterize = True`, see {doc}`Priors`). The static model is linear in
+the slips, so it can also be sampled by {ref}`cross-fade CATMIP <cross-fade>`,
+`--controller=altar.bayesian.cf_catmip`: the 9-patch example then reaches the same posterior in
+one $\beta$ step instead of about twenty. See {doc}`AlTarFramework` for the controllers, and for
+running on several processes or GPUs.
 
 (moment-distribution)=
 ## The moment magnitude prior

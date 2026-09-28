@@ -111,6 +111,35 @@ class Linear(BayesianL2, family="altar.models.linear"):
             model=self, theta=theta, green=green, prediction=prediction, observation=observation)
 
 
+    def conjugate_posterior(self, mean, variance):
+        """
+        The posterior N(m*, C*) under the conjugate prior N(mean, diag(variance)), with
+        C* = (C_m^-1 + G^T C^-1 G)^-1 and m* = C* (C_m^-1 m + G^T C^-1 d) for the covariance C in
+        effect, and the evidence of that model, log p_conj(d) (Minson, 2024, eq. A13)
+        """
+        G = numpy.asarray(self._impl.green(), dtype=float)
+        d = numpy.asarray(self.dataobs.observed(), dtype=float)
+        observations = d.size
+        covariance = self.dataobs.covariance()
+        # whiten G and d by the covariance, C = L L^T
+        if isinstance(covariance, float):
+            Gw, dw = G / numpy.sqrt(covariance), d / numpy.sqrt(covariance)
+            logdet = observations * numpy.log(covariance)
+        else:
+            L = numpy.linalg.cholesky(covariance)
+            Gw, dw = numpy.linalg.solve(L, G), numpy.linalg.solve(L, d)
+            logdet = 2 * numpy.log(numpy.diag(L)).sum()
+        precision = numpy.diag(1 / variance) + Gw.T @ Gw
+        cstar = numpy.linalg.inv(precision)
+        cstar = (cstar + cstar.T) / 2
+        mstar = cstar @ (mean / variance + Gw.T @ dw)
+        _, logdet_star = numpy.linalg.slogdet(cstar)
+        log_evidence = 0.5 * (logdet_star - observations * numpy.log(2 * numpy.pi) - logdet
+                              - numpy.log(variance).sum()
+                              - (dw @ dw + (mean * mean / variance).sum() - mstar @ precision @ mstar))
+        return mstar, cstar, float(log_evidence)
+
+
     @altar.export
     def forward_problem(self, application, theta):
         """

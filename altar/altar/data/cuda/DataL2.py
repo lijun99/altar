@@ -177,10 +177,12 @@ class DataL2:
         else:
             numpy.asarray(gCchi)[:, :] = self.cd
         self._chi_variance = None
+        self._covariance = None
         if cp is not None:
             cp_arr = numpy.asarray(cp).astype(self.cd_dtype, copy=False)
             numpy.asarray(gCchi)[:, :] += cp_arr
             self._chi_variance = numpy.diag(numpy.asarray(gCchi)).astype(float)
+            self._covariance = numpy.array(gCchi, dtype=float)
 
         devInfo = pyre_grid_managed(shape=(1,), cell="int32")
 
@@ -261,6 +263,18 @@ class DataL2:
         return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
 
 
+    def covariance(self):
+        """
+        The covariance in effect, C_d or C_chi = C_d + C_p: a numpy (observations x observations)
+        array, or a float, the common variance, when it is a constant times the identity
+        """
+        if self._covariance is not None:
+            return self._covariance
+        if self.cd is None:
+            return float(self.cd_std) ** 2
+        return numpy.array(self.cd, dtype=float)
+
+
     def _constant_covariance(self):
         """
         Cd = cd_std^2 I: {cd_inv} is the scalar 1/cd_std, the factor of Cd_inv = cd_inv^2 I
@@ -268,6 +282,7 @@ class DataL2:
         from math import log, pi as π
         observations = self.observations
         self._chi_variance = None
+        self._covariance = None
         self.cd_inv = 1.0 / self.cd_std
         self.normalization = -0.5 * log(2 * π) * observations - observations * log(self.cd_std)
         numpy.asarray(self._dataobs_batch)[:, :] = (numpy.asarray(self.dataobs) * self.cd_inv)[None, :]
@@ -350,6 +365,7 @@ class DataL2:
     merge_cd_with_data = None
     # diag(C_chi), when a C_p is part of it
     _chi_variance = None
+    _covariance = None # C_chi, once a C_p is added
     norm = None
     cd_dtype = None
 

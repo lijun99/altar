@@ -7,6 +7,8 @@
 #
 
 
+# externals
+import numpy
 # the package
 import altar
 # my protocol
@@ -106,8 +108,17 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     @altar.export
     def initialize_sample(self, step, batch=None):
         """
-        Fill {step.θ} with an initial random sample from my prior distribution.
+        Fill {step.θ} with an initial random sample from my prior distribution, or, in
+        cross-fade sampling, from my conjugate posterior
         """
+        if self._crossfade is not None:
+            θ = self.restrict(theta=step.theta)
+            rows = numpy.asarray(θ).shape[0] if batch is None else batch
+            numpy.asarray(θ)[:rows] = self._crossfade.pool[:rows]
+            if self.has_reparametrization:
+                step.theta_sampling.copy(step.theta)
+                self.to_sampling(theta=step.theta_sampling, batch=batch)
+            return self
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
         # go through each parameter set, in {psets_list} order -- {psets} is a dict and may
@@ -351,6 +362,16 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # grab the dispatcher
         dispatcher = annealer.dispatcher
 
+        # cross-fade sampling: the conjugate posterior, and the ratio of my prior to the
+        # conjugate prior, in place of my prior and my data likelihood
+        if self._crossfade is not None:
+            dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
+            self._crossfade.log_densities(model=self, theta=self.restrict(theta=step.theta),
+                                          prior=step.prior, data=step.data, batch=batch)
+            dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
+            self.eval_posterior(step=step, batch=batch)
+            return self
+
         # notify we are about to compute the prior likelihood
         dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
@@ -457,7 +478,63 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         self.checked_unbounded_priors = True
         return self
 
+    # cross-fade sampling (Minson, 2024)
+    def crossfade(self, seed=None):
+        """
+        Switch to cross-fade sampling: draw the initial samples from my conjugate posterior,
+        within the support of my prior, and evaluate the conjugate posterior and the ratio of my
+        prior to the conjugate prior in place of my prior and my data likelihood; return the
+        evidence of the conjugate model within the support, log p_conj(d) + log q, with q the
+        fraction of the conjugate posterior within the support
+        """
+        from .CrossFade import CrossFade, Gaussian
+        if self.embedded:
+            raise NotImplementedError("cross-fade sampling of a model in an ensemble")
+        mean, variance = self.conjugate_prior()
+        mstar, cstar, log_evidence = self.conjugate_posterior(mean=mean, variance=variance)
+        precision = self.precision or "float64"
+        self._crossfade = CrossFade(
+            prior=Gaussian(mean=mean, covariance=numpy.diag(variance), precision=precision),
+            posterior=Gaussian(mean=mstar, covariance=cstar, precision=precision),
+            log_evidence=log_evidence, rng=numpy.random.default_rng(seed))
+        coverage = self._crossfade.draw(model=self, rows=self.samples)
+        return log_evidence + numpy.log(coverage)
+
+
+    def conjugate_prior(self):
+        """
+        The mean and the variance of each of my parameters under the conjugate prior, a normal
+        distribution matched to the mean and the variance of the prior of its parameter set
+        """
+        mean = numpy.zeros(self.parameters)
+        variance = numpy.zeros(self.parameters)
+        for name in self.psets_list:
+            pset = self.psets[name]
+            prior = pset.prior
+            columns = slice(pset.offset, pset.offset + pset.count)
+            if hasattr(prior, "mean") and hasattr(prior, "sigma"):
+                mean[columns], variance[columns] = prior.mean, prior.sigma ** 2
+            elif hasattr(prior, "support"):
+                low, high = prior.support
+                mean[columns], variance[columns] = (low + high) / 2, (high - low) ** 2 / 12
+            else:
+                raise NotImplementedError(
+                    f"no conjugate prior for the {type(prior).__name__} prior of '{name}'")
+        return mean, variance
+
+
+    def conjugate_posterior(self, mean, variance):
+        """
+        The mean m* and the covariance C* of my posterior under the conjugate prior N(mean,
+        diag(variance)), and the evidence of that model, log p_conj(d); models that support
+        cross-fade sampling provide them
+        """
+        raise NotImplementedError(
+            f"'{type(self).__name__}' has no conjugate posterior, for cross-fade sampling")
+
+
     # private data
+    _crossfade = None # my cross-fade state, when sampled by cross-fading
     observations = None
     device = None
     precision = None
