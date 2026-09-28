@@ -8,7 +8,8 @@ https://altar2.readthedocs.io.
 
 ## 1. A new framework
 
-The framework has been rebuilt around three components, all set from a `.pfg` file:
+The framework has been rebuilt around three components, all set from a configuration file
+(`.pfg`, or now `.yaml`, see section 7):
 
 - the **model**: the forward problem, its data likelihood and the priors of its parameters;
 - the **controller**: the sampling algorithm, i.e. the annealing schedule, the sampler that moves
@@ -230,6 +231,46 @@ pyre/pyre, the main one being a new `pyre.cuda` package:
 It uses cuda-python to find the GPUs, so GPU users need `cuda-python` in their environment. We
 plan to submit these changes upstream. Until they are merged, please build pyre from the `altar2`
 branch.
+
+## 7. YAML configuration files
+
+pyre now reads YAML, so AlTar runs can be configured with a `.yaml` file instead of a `.pfg`
+one. Nothing changes in AlTar itself; you only need `pyyaml` in your environment. A `.yaml` file is
+found like a `.pfg` one, by the application name (e.g. `linear.yaml`) or with
+`--config=run.yaml`. `.pfg` files keep working, and remain the format of the examples.
+
+`models/linear/examples/linear_gpu.yaml` is a complete example, running on the GPU:
+
+```yaml
+linear:
+  model: altar.models.linear
+  controller: altar.bayesian.catmip
+  job:
+    gpus: 1                # 0 runs on the cpu
+    gpuprecision: float64  # or float32
+    gpuids: [0]
+    chains: 2**10
+linear.model:
+  case: patch-9
+  psets_list: [all]
+  psets:
+    all: contiguous
+linear.model.psets.all:
+  count: "{linear.model.parameters}"
+  prior: gaussian
+  prior.sigma: 0.5
+```
+
+Three things differ from `.pfg`:
+- **Keys can't repeat** in YAML, so a component chosen in one block (`model: altar.models.linear`)
+  is configured in a block of its own (`linear.model:`) or with dotted keys (`prior.sigma: 0.5`).
+- **References in braces must be quoted**, as in `"{linear.model.parameters}"`. Unquoted, YAML
+  reads them as a mapping and the setting silently gets a wrong value.
+- **Keys with a family must be quoted**, e.g. `"mpi.shells.mpirun # altar.plexus.shell":`,
+  since an unquoted `#` starts a comment.
+
+`models/linear/tests/config.py` checks that a YAML translation of `linear.pfg` configures the run
+exactly as the `.pfg` does.
 
 ## What changes for existing runs
 
