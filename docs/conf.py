@@ -53,7 +53,6 @@ exclude_patterns = ['_build',
                     'Thumbs.db', '.DS_Store',
                     'api-gen', # ignore api reference generators
                     '**.ipynb_checkpoints', # jupyter notebook progress
-                    'tutorials/static', # an unfinished copy of the linear tutorial
                     ]
 
 # -- Options for HTML output -------------------------------------------------
