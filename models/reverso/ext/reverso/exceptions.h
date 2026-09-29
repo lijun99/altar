@@ -2,16 +2,16 @@
 //
 // michael a.g. aïvázis <michael.aivazis@para-sim.com>
 //
-// (c) 2013-2021 parasim inc
+// (c) 2013-2024 parasim inc
 // all rights reserved
 //
 
-#if !defined(altar_extensions_models_cudacdm_exceptions_h)
-#define altar_extensions_models_cudacdm_exceptions_h
+#if !defined(altar_extensions_models_reverso_exceptions_h)
+#define altar_extensions_models_reverso_exceptions_h
 
 
 // place everything in my private namespace
-namespace altar::extensions::models::cudacdm {
+namespace altar::extensions::models::reverso {
     // base class for altar errors
     extern PyObject * Error;
     extern const char * const Error__name__;
