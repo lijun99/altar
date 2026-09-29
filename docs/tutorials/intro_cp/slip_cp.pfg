@@ -1,0 +1,67 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+
+; the Cp toy model: C_p updated from the mean model during the sampling
+slipmodel:
+    ; the static model, d = G θ
+    model = altar.models.seismic.static
+    model:
+        ; the directory with the input files from step 1
+        case = test1
+        ; the green's functions, (observations, parameters), for a homogeneous half space
+        green = static.gf.h5
+
+        ; the observed data
+        dataobs:
+            observations = 300
+            data_file = static.data.h5
+            cd_file = static.Cd.h5
+
+        ; update C_p from the posterior mean model, from β = 0.01 on
+        cp = altar.models.cp.adaptive
+        cp:
+            start = 0.01
+            ; use the initial model until β = 0.01, then the posterior mean
+            initial_model = static.initialModel.h5
+            initial_until = 0.01
+        ; the covariance of the shear moduli, and the sensitivity kernels dG/dln(mu_i)
+        cmu_file = static.Cmu.h5
+        kmu_file = static.kernel.h5
+
+        ; the strike slips of the 20 patches, the only parameters
+        psets_list = [strikeslip]
+        psets:
+            strikeslip = contiguous
+            strikeslip:
+                count = 20
+                ; draw the initial samples from the seismic moment
+                prep = altar.models.seismic.moment
+                prep:
+                    support = (0., 40.) ; the range of the slip of each patch, in m
+                    Mw_mean = 8.05
+                    Mw_sigma = 0.3
+                    Mu = [30] ; in GPa
+                    area = [250] ; patch area, in km^2
+                prior = gaussian
+                prior.mean = 10.
+                prior.sigma = 3.
+
+    ; CATMIP, saving the samples to results/slip_cp
+    controller = altar.bayesian.catmip
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver:
+            output_dir = results/slip_cp
+            output_freq = 100 ; every 100th β step, and the final one
+
+    ; run configuration
+    job:
+        tasks = 1 ; number of tasks per host
+        gpus = 0  ; number of gpus per task
+        chains = 2**10 ; number of chains per task
+        steps = 2**5 ; Metropolis steps per chain at each β
+
+; end of file
