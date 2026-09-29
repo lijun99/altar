@@ -118,17 +118,6 @@ class Metropolis:
         exp = math.exp
         log = math.log
 
-        # debug: report entry state
-        import numpy
-        def _stats(v):
-            a = v.ndarray()
-            return (f"min={a.min():.4g}  max={a.max():.4g}  mean={a.mean():.4g}"
-                    f"  finite={numpy.isfinite(a).sum()}/{samples}")
-        self.info.line(f"Metropolis.walk_chains: β={β:.6g}, samples={samples}")
-        self.info.line(f"  prior:     {_stats(prior)}")
-        self.info.line(f"  data llk:  {_stats(data)}")
-        self.info.line(f"  posterior: {_stats(posterior)}")
-
         # reset the accept/reject counters
         accepted = invalid = rejected = 0
 
@@ -149,7 +138,6 @@ class Metropolis:
         # {DecorrelatingSteps}: repeated blocks until decorrelated)
         self.stepcounter.start(theta=θ, beta=β)
         mcsteps = 0
-        first_hop = True
 
         while not self.stepcounter.done(mcsteps=mcsteps, theta=θ, annealer=annealer):
             block = self.stepcounter.block_size()
@@ -187,14 +175,6 @@ class Metropolis:
                 diff = cpost.clone()
                 # subtract the previous posterior
                 diff -= posterior
-                # debug: first inner step only
-                if first_hop:
-                    cp_arr = cpost.ndarray()
-                    d_arr  = diff.ndarray()
-                    self.info.line(f"  [step 0] cpost: min={cp_arr.min():.4g} max={cp_arr.max():.4g}"
-                                   f"  diff: min={d_arr.min():.4g} max={d_arr.max():.4g}"
-                                   f"  finite_cpost={numpy.isfinite(cp_arr).sum()}/{samples}")
-                    first_hop = False
                 # randomize the Metropolis acceptance vector
                 dice.random(self.uniform)
 
