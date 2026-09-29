@@ -87,8 +87,6 @@ class BayesianState:
         # let subclasses do any extra work that depends on the likelihoods being ready
         step._on_start(annealer=annealer)
 
-        step.prior.print()
-
         # return the initialized state
         return step
 
