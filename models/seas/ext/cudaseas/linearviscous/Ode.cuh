@@ -23,6 +23,7 @@ struct Ode {
     int patches; // number of patches per system
     int units;   // number of units per patch, should be 2, dsdt and dvdt
     int system_size; // patches*units
+
     int systems; // total systems/samples to be processed
 
     // other custom parameters
@@ -52,9 +53,9 @@ struct Ode {
         auto ix = patches+patch_id;
         f[ix] = stressrate_ext[patch_id];
         for(int iy=0; iy<patches; ++iy)
-            f[ix] += (velocity[iy]-Vj) *stress_kernel[iy*patches+ix];
+            f[ix] += (velocity[iy]-Vj) *stress_kernel[iy*patches+patch_id];
         // get dvdt from dtau/dt
-        f[ix] /= alpha1[system_id];
+        f[ix] /= alpha1[system_id*parameters];
         // all done for this patch
         return;
     };

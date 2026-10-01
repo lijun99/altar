@@ -1,7 +1,7 @@
 # -*- cmake -*-
 #
 # Lijun Zhu (ljzhu@gps.caltech.edu)
-# (c) 2019-2022 all rights reserved
+# (c) 2019-present all rights reserved
 
 # build the seas package
 function(altar_seas_buildPackage)
@@ -26,15 +26,6 @@ function(altar_seas_buildPackage)
   # all done
 endfunction(altar_seas_buildPackage)
 
-# the scripts
-function(altar_seas_buildDriver)
-  # install the scripts
-  #install(
-  #  PROGRAMS bin/altar_seas
-  #  DESTINATION bin
-  #  )
-  # all done
-endfunction(altar_seas_buildDriver)
 
 # build the seas cuda package
 function(altar_seas_cuda_buildPackage)
@@ -50,20 +41,17 @@ endfunction(altar_seas_cuda_buildPackage)
 
 # build the seas extension module
 function(altar_seas_cuda_buildModule)
-  # seas
-  pybind11_add_module(cudaseasmodule MODULE)
+  # seas; pybind11, like {altar_cuda_buildModule}
+  Python_add_library(cudaseasmodule MODULE WITH_SOABI)
   # adjust the name to match what python expects
   set_target_properties(
     cudaseasmodule PROPERTIES
     LIBRARY_OUTPUT_NAME cudaseas
-    SUFFIX ${PYTHON3_SUFFIX}
     )
   # set the include directories
   target_include_directories(
     cudaseasmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
-    ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -74,14 +62,11 @@ function(altar_seas_cuda_buildModule)
   target_link_directories(
     cudaseasmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
     )
   # set the libraries to link against
-  set(CUDA_LIBRARIES cublas cusolver curand pyrecuda)
   target_link_libraries(
     cudaseasmodule PRIVATE
-    libcudaaltar libaltar journal
-    ${CUDA_LIBRARIES}
+    pybind11::module cudart cublas ${PYRE_LIBRARIES}
     )
   # add the sources
   target_sources(cudaseasmodule PRIVATE
@@ -102,13 +87,12 @@ function(altar_seas_cuda_buildModule)
     )
 endfunction(altar_seas_cuda_buildModule)
 
+
 # the scripts
 function(altar_seas_cuda_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/altar_seas
-    PROGRAMS bin/SEAS
-    PROGRAMS bin/SEAS3D
+    PROGRAMS bin/seas
     DESTINATION bin
     )
   # all done

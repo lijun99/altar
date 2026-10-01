@@ -19,7 +19,7 @@
 // declaration
 namespace altar::models::seas::cuda::linearviscous {
 
-template<typename T>
+template<typename T, class MethodType = ::cuda::ode::dopri5::Dopri5<T>>
 class LinearViscous {
 // methods
 public:
@@ -28,7 +28,7 @@ public:
     using OdeType = Ode<T>; // ode function defition from Ode.cuh
     using EventType = Events<T>; // event(coseismic) from Events.cuh
     // this is an ode solver with spin up procedure built-in
-    using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
+    using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType, MethodType>;
 
     LinearViscous() = default; // default constructor
     ~LinearViscous() = default; // default destructor
@@ -42,7 +42,7 @@ public:
         T* displacement_kernel_, //
         int n_coseismic_, T* t_coseismic_, T* coseismic_, // events
         int neval_, T* teval_, T* yeval_,
-        T atol_, T rtol_, int spinup_max_cycles_ // ode controls
+        T atol_, T rtol_, T spinup_atol_, T spinup_rtol_, int spinup_max_cycles_ // ode controls
         );
 
     // set spin up data (initial values)
@@ -53,6 +53,9 @@ public:
 
     // perform forward modeling
     void forward_model(const T* theta, T* prediction, const int parameters, const int batch);
+
+    // the step statistics of each system in the last batch
+    std::vector<::cuda::ode::dopri5::StepStatistics> statistics;
 
 // parameters
 private:

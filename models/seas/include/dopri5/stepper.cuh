@@ -113,6 +113,9 @@ struct StepperHolder {
 
     // constructor
     StepperHolder (const int pps, const int upp, const int sys);
+    // constructor, for the systems of {ode}
+    template <class ode_system_type>
+    StepperHolder (const ode_system_type & ode, const int sys) : StepperHolder(ode.patches, ode.units, sys) {}
     // destructor
     ~StepperHolder() noexcept(false);
 };

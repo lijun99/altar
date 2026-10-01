@@ -38,9 +38,28 @@ struct __ALIGNED__ Controller
 
     int counter;
 
+    // step statistics, over one solve
+    int accepted; // accepted steps
+    int rejected; // rejected steps
+    int stiff; // accepted steps limited by stability rather than accuracy
+    int cycles; // spin-up cycles
+    T hmin; // the smallest accepted step
+    T hmax; // the largest accepted step
+
     // methods
     __device__ void init (T atol_, T rtol_);
     __device__ void check_convergence(const cg::thread_block & cta, Stepper<T>& s);
+    __device__ void record_step(const cg::thread_block & cta, Stepper<T>& s);
+
+    __device__ void reset_statistics()
+    {
+        accepted = 0;
+        rejected = 0;
+        stiff = 0;
+        cycles = 0;
+        hmin = cuda::std::numeric_limits<T>::max();
+        hmax = static_cast<T>(0);
+    }
 
     __device__ void init_run(const T t0_, const T t1_)
     {
@@ -277,6 +296,10 @@ __device__ void Controller<T>::check_convergence(
 
             hnext *= scale;
             errold=max(err,static_cast<T>(1.0e-4));
+            // keep track of the accepted steps
+            accepted++;
+            hmin = min(hmin, hrun);
+            hmax = max(hmax, hrun);
         }
         else
         {
@@ -286,6 +309,7 @@ __device__ void Controller<T>::check_convergence(
             hnext *= scale;
             reject = true;
             converged = false;
+            rejected++;
         }
         // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
         //        blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
@@ -295,6 +319,39 @@ __device__ void Controller<T>::check_convergence(
     cta.sync();
 }
 
+
+
+// after an accepted step, test whether its size was limited by stability: following
+// Hairer & Wanner's dopri5, h|lambda| ~ h ||k7 - k6|| / ||yn - y6||, with y6 the stage 6
+// argument; past ~3.25, the step sits on the edge of the stability region
+template <class T>
+__device__ void Controller<T>::record_step(
+    const cg::thread_block & cta,
+    Stepper<T>& s)
+{
+    auto k1 = s.k1, k2 = s.k2, k3 = s.k3, k4 = s.k4, k5 = s.k5, k6 = s.k6, k7 = s.k7;
+    // ||k7 - k6||^2
+    auto dk = [=] (const int i) -> T { auto d = k7[i] - k6[i]; return d*d; };
+    auto num = cuda::detail::sum_block<T, decltype(dk)>(cta, s.system_size, dk);
+    // ||yn - y6||^2 / h^2, from the differences between the weights of yn and of y6
+    auto dy = [=] (const int i) -> T {
+        auto d = static_cast<T>(35.0/384.0 - 9017.0/3168.0)*k1[i]
+            + static_cast<T>(355.0/33.0)*k2[i]
+            + static_cast<T>(500.0/1113.0 - 46732.0/5247.0)*k3[i]
+            + static_cast<T>(125.0/192.0 - 49.0/176.0)*k4[i]
+            + static_cast<T>(-2187.0/6784.0 + 5103.0/18656.0)*k5[i]
+            + static_cast<T>(11.0/84.0)*k6[i];
+        return d*d;
+    };
+    auto den = cuda::detail::sum_block<T, decltype(dy)>(cta, s.system_size, dy);
+
+    if (cta.thread_rank() == 0 && den > static_cast<T>(0)) {
+        // h|lambda| = h sqrt(num) / (h sqrt(den))
+        if (sqrt(num/den) > static_cast<T>(3.25))
+            stiff++;
+    }
+    cta.sync();
+}
 
 
 template <class T>

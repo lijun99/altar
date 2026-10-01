@@ -9,10 +9,12 @@ from time import perf_counter
 from copy import copy, deepcopy
 from contextlib import redirect_stdout
 import numpy as np
+import pyre.cuda
 
 # import altar
 import altar
-from altar.cuda.models.cudaBayesian import cudaBayesian
+import altar.cuda
+from altar.models.BayesianL2 import BayesianL2
 from altar.models.seas.ext import cudaseas as libcudaseas
 
 # import the earthquake cycle simulator
@@ -20,10 +22,10 @@ from seqeas.subduction3d import (RateStateSteadyLogarithmic2D, Fault3D, Subducti
                                  get_surface_displacements)
 
 
-class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
+class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     """
     Wrapper around the subduction simulation class provided by
-    ``seqeas.subduction3d.SubductionSimulation3D``.
+    ``seqeas.subduction3d.SubductionSimulation3D``; runs on the gpu only
     """
     # configurable properties
     config_file = altar.properties.str()
@@ -33,6 +35,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
     cuda_threads = altar.properties.int(default=0)
     verbose = altar.properties.bool(default=False)
     tau_0 = altar.properties.float(default=None)
+    tau_0.doc = "the reference traction [Pa]; if set, integrate the traction instead of " \
+                "the logarithmic velocity"
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
     estimate_row_indices = altar.properties.list(default=None, schema=altar.properties.int())
@@ -40,7 +44,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
     # helper function to time
     def sync_and_time(self):
-        self.device.synchronize()
+        pyre.cuda.synchronize()
         return perf_counter()
 
     @altar.export
@@ -49,23 +53,23 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         Initialize the state of the model
         """
 
+        # the integrators are cuda only
+        if altar.backends.active() != "cuda":
+            self.error.log("seas3d runs on the gpu only; set job.gpus = 1")
+            raise SystemExit(1)
+
         # call the super class initialization
-        # super class method loads and initializes dataobs
-        # ask dataobs not to create duplicated data vectors
-        self.dataobs.provide_batched_data = False
-        # the model will take care of the cd_inv scaling instead
-        self.dataobs.merge_cd_to_data = False
+        # super class method loads and initializes dataobs and the parameter sets
         super().initialize(application=application)
 
         # additional preparations
-        self.gpuprec = application.job.gpuprecision
+        self.gpuprec = self.precision
+        self.device = altar.cuda.get_current_device()
         channel = self.info
-        # total number of systems to process per task
-        self.num_systems = application.job.chains
         # if the cuda_batch_size is not given, use the total number of systems
         # alternatively, use a memory estimate to compute
         if self.cuda_batch_size is None:
-            self.cuda_batch_size = self.num_systems
+            self.cuda_batch_size = self.samples
 
         # parse configuration
         ticks = []
@@ -93,6 +97,11 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # get maximum integration velocity
         self.v_ratio_max = 0 if self.sim.v_max is None else self.sim.v_max / self.rheo.v_0
+        # the traction integrator doesn't cap the velocity yet
+        if self.tau_0 is not None and self.v_ratio_max > 0:
+            self.error.log("the traction-dependent integrator (tau_0) does not support v_max; "
+                           "remove v_max from the simulation configuration")
+            raise SystemExit(1)
 
         # get index subset of values to estimate
         if self.estimate_row_indices is None:
@@ -122,13 +131,16 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             num_final_eq = self.sim.delta_tau_unbounded_nonuni.shape[0]
             self.num_eq += num_final_eq
 
-        # get euler pole kernel and rescale to match range of thetas
-        self.G_ep = self.sim.get_euler_pole_kernel() / 1e9
+        # get euler pole kernel and rescale to match range of thetas; it needs a utm zone, so
+        # only if the euler pole is estimated
+        if "euler_pole" in self.psets_list:
+            self.G_ep = self.sim.get_euler_pole_kernel() / 1e9
         # get time vector
         self.dt = self.sim.t_obs - self.sim.t_obs[0]
 
         # allocate memory
         ticks.append(self.sync_and_time())
+        patches = self.fault.inner_num_patches
         SEC_PER_YEAR = 86400 * 365.25
         self.t_obs_sec = altar.cuda.vector(
             source=(self.sim.t_obs * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False))
@@ -142,7 +154,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             altar.cuda.vector(source=np.array([0] + self.sim.i_slips_obs).astype("int32"))
         self.K_inner_inner_onfault = altar.cuda.vector(
             source=np.ascontiguousarray(self.fault.K_inner_inner[:, :2, :, :2],
-                                        dtype=self.gpuprec))
+                                        dtype=self.gpuprec).ravel())
         K_inner_asperities_v_plate = self.sim.K_inner_asperities_v_plate.T.ravel()
         self.K_inner_asperities_v_plate = \
             altar.cuda.vector(source=np.ascontiguousarray(K_inner_asperities_v_plate,
@@ -153,40 +165,34 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             altar.cuda.vector(source=np.ascontiguousarray(v_plate_ddcs_proj_eff_inner,
                                                           dtype=self.gpuprec))
 
-        # note that the state_init_arr will be overwritten if using traction-dependent
-        # integrator because of its dependence on alpha_h_vec
-        state_init_arr = np.concatenate([np.zeros(2 * self.fault.inner_num_patches),
+        # several copies of the initial state, one per system; the rate-dependent model keeps
+        # it, and starts each batch from the end state of the previous one; the
+        # traction-dependent one depends on alpha_h, so it is refilled for each batch
+        state_init_arr = np.concatenate([np.zeros(2 * patches),
                                          np.log(self.sim.v_init / self.rheo.v_0).T.ravel()])
-
-        state_init_single = altar.cuda.vector(
-            source=state_init_arr.astype(self.gpuprec, order="C", copy=False))
-
-        # change state_init to keep several copies of initial state
-        state_init = altar.cuda.matrix(
-            shape=(self.cuda_batch_size, state_init_single.size),
-            dtype=self.gpuprec)
-        state_init.duplicateVector(src=state_init_single)
+        self.state_init = altar.cuda.matrix(
+            source=np.tile(state_init_arr, (self.cuda_batch_size, 1)).astype(self.gpuprec))
 
         G_surf = self.sim.G_surf[:, :, self.sim.fault.s_inner, :] \
             .transpose(3, 2, 1, 0) \
-            .reshape(2 * self.fault.inner_num_patches, 3 * self.sim.n_observers)
+            .reshape(2 * patches, 3 * self.sim.n_observers)
         self.G_surf = altar.cuda.matrix(source=np.ascontiguousarray(G_surf, dtype=self.gpuprec))
 
         # simulate state - yeval in ode
         self.sim_state = altar.cuda.vector(
-            shape=self.cuda_batch_size * self.sim.t_obs.size * self.fault.inner_num_patches * 4,
+            shape=self.cuda_batch_size * self.sim.t_obs.size * patches * 4,
             dtype=self.gpuprec)
 
-        # copy the boolean observation mask onto the GPU
-        if self.dataobs.mask is None:
+        # copy the observation mask onto the GPU, as bytes
+        mask = self.dataobs.mask
+        if mask is None:
             self.obs_mask = altar.cuda.vector(
-                source=np.ones(self.sim.t_obs.size * 3 * self.sim.n_observers
-                               ).astype(bool, order="C"))
+                source=np.ones(self.sim.t_obs.size * 3 * self.sim.n_observers, dtype="uint8"))
             channel.log(f"Device {self.device.id}: Assuming no masked values")
         else:
-            self.obs_mask = altar.cuda.vector(source=self.dataobs.mask)
+            self.obs_mask = altar.cuda.vector(source=mask.astype("uint8"))
             channel.log(f"Device {self.device.id}: Loaded mask with "
-                        f"{(~self.dataobs.mask).sum()} masked values")
+                        f"{(~mask).sum()} masked values")
 
         # load reference stations, if present
         if self.ref_station_indices is not None:
@@ -195,95 +201,64 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
             self.n_stat_ref = len(self.ref_station_indices)
             channel.log(f"Device {self.device.id}: Found {self.n_stat_ref} reference stations")
         else:
-            self.i_stat_ref = altar.cuda.vector(
-                source=np.asarray([]).astype(dtype="int32", order="C"))
+            self.i_stat_ref = altar.cuda.vector(source=np.asarray([], dtype="int32"))
             self.n_stat_ref = 0
             channel.log(f"Device {self.device.id}: No reference stations used")
 
-        # predicted observations
+        # predicted observations, and their likelihoods
         self.obs_disp = altar.cuda.matrix(
             shape=(self.cuda_batch_size, self.sim.t_obs.size * 3 * self.sim.n_observers),
+            dtype=self.gpuprec)
+        self.likelihood_batch = altar.cuda.vector(shape=self.cuda_batch_size, dtype=self.gpuprec)
+
+        # the per-batch inputs of the forward model
+        self.alpha_h = altar.cuda.vector(
+            shape=self.cuda_batch_size * patches, dtype=self.gpuprec)
+        self.delta_tau_div_alpha_h = altar.cuda.vector(
+            shape=self.cuda_batch_size * self.num_eq * patches * 2, dtype=self.gpuprec)
+        self.obs_ref = altar.cuda.matrix(
+            shape=(self.cuda_batch_size, self.sim.t_obs.size * 3), dtype=self.gpuprec)
+        self.obs_ep = altar.cuda.vector(
+            shape=self.cuda_batch_size * self.sim.n_observers * 2 * self.dt.size,
             dtype=self.gpuprec)
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(self.sync_and_time())
-        use_default_rdlog = self.tau_0 is None
-        if use_default_rdlog:
-            if self.gpuprec == "float64":
-                self.cmodel = libcudaseas.ratedependent.model_double()
-            elif self.gpuprec == "float32":
-                self.cmodel = libcudaseas.ratedependent.model_float()
-            else:
-                raise NotImplementedError
-            channel.log(
-                f"Device {self.device.id}: Running ratedependent model "
-                f"in {self.gpuprec} precision"
-            )
-            self.cmodel.initialize(
-                self.cuda_batch_size,
-                self.sim.n_cycles_max,
-                self.sim.t_obs.size,
-                self.t_obs_sec.data,
-                self.sim.n_slips,
-                self.num_eq,
-                self.t_events.data,
-                self.i_slips_obs.data,
-                self.sim.n_slips_obs + 1,
-                self.rheo.v_0,
-                self.fault.mu_over_2vs,
-                self.fault.inner_num_patches,
-                self.K_inner_inner_onfault.data,
-                self.K_inner_asperities_v_plate.data,
-                self.v_plate_ddcs_proj_eff_inner.data,
-                state_init.data,
-                self.sim_state.data,
-                self.sim.atol,
-                self.sim.rtol,
-                self.sim.spinup_atol,
-                self.sim.spinup_rtol,
-                self.sim.n_observers,
-                self.obs_mask.data,
-                self.i_stat_ref.data,
-                self.n_stat_ref,
-                self.velocity_reference_index)
+        ode = "ratedependent" if self.tau_0 is None else "tractiondependent"
+        precision = {"float64": "double", "float32": "float"}[self.gpuprec]
+        self.cmodel = getattr(getattr(libcudaseas, ode), f"model_{precision}")()
+        channel.log(f"Device {self.device.id}: Running {ode} model in {self.gpuprec} precision")
+        # the arguments the two integrators share
+        args = dict(
+            cuda_batch_size=self.cuda_batch_size,
+            max_cycles=self.sim.n_cycles_max,
+            num_t_obs=self.sim.t_obs.size,
+            t_obs_sec=self.t_obs_sec.grid,
+            num_ix_eq=self.sim.n_slips,
+            num_eq=self.num_eq,
+            t_events=self.t_events.grid,
+            i_slips_obs=self.i_slips_obs.grid,
+            n_slips_obs=self.sim.n_slips_obs + 1,
+            v_0=self.rheo.v_0,
+            mu_over_2vs=self.fault.mu_over_2vs,
+            num_inner_patches=patches,
+            K_inner_inner_onfault=self.K_inner_inner_onfault.grid,
+            K_inner_asperities_v_plate=self.K_inner_asperities_v_plate.grid,
+            v_plate_ddcs_proj_eff_inner=self.v_plate_ddcs_proj_eff_inner.grid,
+            sim_state=self.sim_state.grid,
+            atol=self.sim.atol,
+            rtol=self.sim.rtol,
+            spinup_atol=self.sim.spinup_atol,
+            spinup_rtol=self.sim.spinup_rtol,
+            num_stations=self.sim.n_observers,
+            obs_mask=self.obs_mask.grid,
+            i_stat_ref=self.i_stat_ref.grid,
+            n_stat_ref=self.n_stat_ref,
+            ref_vel_index=self.velocity_reference_index)
+        if self.tau_0 is None:
+            self.cmodel.initialize(**args, state_init=self.state_init.grid)
         else:
-            if self.gpuprec == "float64":
-                self.cmodel = libcudaseas.tractiondependent.model_double()
-            elif self.gpuprec == "float32":
-                self.cmodel = libcudaseas.tractiondependent.model_float()
-            else:
-                raise NotImplementedError
-            channel.log(
-                f"Device {self.device.id}: Running tractiondependent model "
-                f"in {self.gpuprec} precision"
-            )
-            self.cmodel.initialize(
-                self.cuda_batch_size,
-                self.sim.n_cycles_max,
-                self.sim.t_obs.size,
-                self.t_obs_sec.data,
-                self.sim.n_slips,
-                self.num_eq,
-                self.t_events.data,
-                self.i_slips_obs.data,
-                self.sim.n_slips_obs + 1,
-                self.rheo.v_0,
-                self.fault.mu_over_2vs,
-                float(self.tau_0),
-                self.fault.inner_num_patches,
-                self.K_inner_inner_onfault.data,
-                self.K_inner_asperities_v_plate.data,
-                self.v_plate_ddcs_proj_eff_inner.data,
-                self.sim_state.data,
-                self.sim.atol,
-                self.sim.rtol,
-                self.sim.spinup_atol,
-                self.sim.spinup_rtol,
-                self.sim.n_observers,
-                self.obs_mask.data,
-                self.i_stat_ref.data,
-                self.n_stat_ref,
-                self.velocity_reference_index)
+            self.cmodel.initialize(**args, tau_0=float(self.tau_0))
 
         # remove precomputed farfield effects on observations
         ticks.append(self.sync_and_time())
@@ -312,14 +287,6 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # print timings
         ticks.append(self.sync_and_time())
         channel.log(f"Device {self.device.id}: Initialized SEAS3D in {ticks[-1] - ticks[0]:.1f}s")
-        # channel.log(f"\n(Configuration = {ticks[1] - ticks[0]:.1f}s, "
-        #             f"Python instances = {ticks[2] - ticks[1]:.1f}s, "
-        #             f"GPU allocations = {ticks[3] - ticks[2]:.1f}s, "
-        #             f"CUDA instance = {ticks[4] - ticks[3]:.1f}s, "
-        #             f"Farfield effects = {ticks[5] - ticks[4]:.1f}s)")
-
-        # keep a timer instance to check time between forwardModelBatched calls
-        self.timer_fmb = self.sync_and_time()
 
         # done
         return self
@@ -334,7 +301,7 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         rheo_kw_args = deepcopy(self.rheo_dict)
         if self.psets_list == ["log10_alpha_h_mat"]:  # single pset for entire matrix
             rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = \
-                10**theta_arr.reshape(self.alpha_h_mat_rows, -1)
+                10**theta_arr.reshape(self.n_estim_row, -1)
         else:  # parse individual rows of theta
             psets_list_alphah = [p for p in self.psets_list if p.startswith("log10_alpha_h_")]
             n_theta_rows = len(psets_list_alphah)
@@ -358,26 +325,25 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
         # return new object instance
         return RateStateSteadyLogarithmic2D(**rheo_kw_args), rotvec
 
-    def forwardModelBatched(self, theta, prediction, batch_size_run):
+    def forward_model_batched(self, theta, prediction, batch=None):
         """
-        Linear Viscous forward model in batch_size_run
-        :param theta: matrix (batch_size_run, parameters), sampling parameters
-        :param prediction: matrix (samples, observations), the predicted data or residual
-                           between predicted and observed data
-        :param batch_size_run: integer, the number of samples to be computed
-                               batch_size_run<=samples
+        SEAS forward model for the first {batch} samples
+        :param theta: array (batch, parameters), physical parameters, on the host
+        :param prediction: matrix (cuda_batch_size, observations), filled with the predicted
+                           data of the first {batch} rows
+        :param batch: integer, the number of samples to be computed, batch<=cuda_batch_size
         :return: prediction as predicted data
         """
 
         # print info
         channel = self.info
-        # channel.log(f"Device {self.device.id}: Time between forwardModelBatched calls: "
-        #             f"{self.sync_and_time() - self.timer_fmb}s")
+        batch_size_run = theta.shape[0] if batch is None else batch
+        patches = self.fault.inner_num_patches
 
         # create new rheology instances
         ticks = []
         ticks.append(self.sync_and_time())
-        parsed_thetas = [self.parse_theta(theta.get_row(i).copy_to_host(type="numpy"))
+        parsed_thetas = [self.parse_theta(np.array(theta[i], dtype=float))
                          for i in range(batch_size_run)]
         rheos = [pt[0] for pt in parsed_thetas]
 
@@ -389,14 +355,8 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
 
         # create stacked versions of alpha_h and delta_tau_div_alpha
         ticks.append(self.sync_and_time())
-        alpha_h = altar.cuda.vector(
-            shape=batch_size_run * self.fault.inner_num_patches, dtype=self.gpuprec)
-        delta_tau_div_alpha_h = altar.cuda.vector(
-            shape=(batch_size_run * self.num_eq * self.fault.inner_num_patches * 2),
-            dtype=self.gpuprec)
         alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
-        alpha_h.copy_from_host(
-            source=np.ascontiguousarray(alpha_h_vec_stacked, dtype=self.gpuprec))
+        np.asarray(self.alpha_h)[:batch_size_run * patches] = alpha_h_vec_stacked.ravel()
         if self.sim.delta_tau_bounded_nonuni is None:
             dtau_bound_comp_list = [s.delta_tau_bounded_compressed for s in sims]
         else:
@@ -404,20 +364,18 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                                                     s.delta_tau_bounded_nonuni], axis=0)
                                     for s in sims]
         delta_tau_bounded_compressed_stacked = np.stack(dtau_bound_comp_list)
+        # the traction integrator takes the stress changes as they are
         if self.tau_0 is None:
             delta_tau_bound_comp_div_alpha = \
-            delta_tau_bounded_compressed_stacked / alpha_h_vec_stacked[:, None, :, None]
+                delta_tau_bounded_compressed_stacked / alpha_h_vec_stacked[:, None, :, None]
         else:
             delta_tau_bound_comp_div_alpha = delta_tau_bounded_compressed_stacked
         delta_tau_bound_comp_div_alpha = np.concatenate(
             [delta_tau_bound_comp_div_alpha[:, :, :, 0],
              delta_tau_bound_comp_div_alpha[:, :, :, 1]],
             axis=2)
-        delta_tau_div_alpha_h.copy_from_host(
-            source=np.ascontiguousarray(delta_tau_bound_comp_div_alpha,
-                                        dtype=self.gpuprec))
-        obs_ref = altar.cuda.matrix(shape=(batch_size_run, self.sim.t_obs.size * 3),
-                                    dtype=self.gpuprec)
+        np.asarray(self.delta_tau_div_alpha_h)[:delta_tau_bound_comp_div_alpha.size] = \
+            delta_tau_bound_comp_div_alpha.ravel()
 
         # calculate euler pole motion
         if "euler_pole" in self.psets_list:
@@ -427,33 +385,34 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 .transpose(0, 3, 2, 1)
         else:
             obs_ep_np = np.zeros((batch_size_run, self.dt.size, 2, self.sim.n_observers))
-        obs_ep = altar.cuda.vector(
-            shape=(batch_size_run * self.sim.n_observers * 2 * self.dt.size),
-            dtype=self.gpuprec)
-        obs_ep.copy_from_host(source=np.ascontiguousarray(obs_ep_np, dtype=self.gpuprec))
+        np.asarray(self.obs_ep)[:obs_ep_np.size] = obs_ep_np.ravel()
+
+        # the inputs both integrators share
+        args = dict(
+            alpha_h_vec=self.alpha_h.grid,
+            delta_tau_div_alpha_h=self.delta_tau_div_alpha_h.grid,
+            delta_tau_bounded_indices=self.delta_tau_bounded_indices.grid,
+            delta_tau_bounded_indices_final=self.delta_tau_bounded_indices_final.grid,
+            G_surf=self.G_surf.grid,
+            obs_disp=prediction.grid,
+            ref_obs=self.obs_ref.grid,
+            obs_farfield=self.obs_farfield.grid,
+            obs_ep=self.obs_ep.grid,
+            batches=batch_size_run,
+            v_ratio_max=self.v_ratio_max,
+            num_threads=self.cuda_threads,
+            verbose=self.verbose)
 
         if self.tau_0 is None:
 
             # call CUDA forward model
             ticks.append(self.sync_and_time())
-            self.cmodel.forward_model_batch(alpha_h.data,
-                                            delta_tau_div_alpha_h.data,
-                                            self.delta_tau_bounded_indices.data,
-                                            self.delta_tau_bounded_indices_final.data,
-                                            self.G_surf.data,
-                                            prediction.data,
-                                            obs_ref.data,
-                                            self.obs_farfield.data,
-                                            obs_ep.data,
-                                            batch_size_run,
-                                            self.v_ratio_max,
-                                            self.cuda_threads,
-                                            self.verbose)
+            self.cmodel.forward_model_batch(**args)
 
         else:
 
             # create state_init if integrating traction
-            # // initial patch state,  (cuda_batch_size, 4 * num_inner_patches) [m|m|Pa|Pa]
+            # initial patch state, (cuda_batch_size, 4 * num_inner_patches) [m|m|Pa|Pa]
             # tau_0 + alpha_h_vec * np.log(v / v_0) + mu_over_2vs * v
 
             # alpha_h_vec_stacked is [batch_size_run, patches]
@@ -468,106 +427,71 @@ class SEAS3D(cudaBayesian, family="altar.models.seas.cuda.seas3d"):
                 (tau_init_norm[:, :, None] / v_init_norm[None, :, None])
             )  # is now [batch_size_run, patches, 2]
 
-            # make an array that also considers cuda_batch_size > batch_size_run just to be safe
-            state_init_arr = np.zeros((self.cuda_batch_size, 4 * self.fault.inner_num_patches))
-            state_init_arr[:batch_size_run, 2 * self.fault.inner_num_patches:] = (
+            # zero slip, and the traction, for each system in the batch
+            state_init = np.asarray(self.state_init)
+            state_init[:batch_size_run, :2 * patches] = 0
+            state_init[:batch_size_run, 2 * patches:] = \
                 tau_init.transpose(0, 2, 1).reshape(batch_size_run, -1)
-            )
-
-            # change state_init to keep several copies of initial state
-            state_init = altar.cuda.matrix(
-                source=state_init_arr.astype(self.gpuprec, order="C", copy=False))
 
             # call CUDA forward model
             ticks.append(self.sync_and_time())
-            self.cmodel.forward_model_batch(state_init.data,
-                                            alpha_h.data,
-                                            delta_tau_div_alpha_h.data,
-                                            self.delta_tau_bounded_indices.data,
-                                            self.delta_tau_bounded_indices_final.data,
-                                            self.G_surf.data,
-                                            prediction.data,
-                                            obs_ref.data,
-                                            self.obs_farfield.data,
-                                            obs_ep.data,
-                                            batch_size_run,
-                                            self.v_ratio_max,
-                                            self.cuda_threads,
-                                            self.verbose)
+            self.cmodel.forward_model_batch(state_init=self.state_init.grid, **args)
 
         # log timings
         ticks.append(self.sync_and_time())
-        infostr = (f"Device {self.device.id}: Ran forwardModelBatched for {batch_size_run} "
+        infostr = (f"Device {self.device.id}: Ran forward_model_batched for {batch_size_run} "
                    f"samples in {ticks[-1] - ticks[0]:.1f}s (")
         infostr += (f"Rheology instances = {ticks[1] - ticks[0]:.1f}s, "
                     f"Simulation instances = {ticks[2] - ticks[1]:.1f}s, "
                     f"Stacked parameters = {ticks[3] - ticks[2]:.1f}s, ")
         infostr += f"CUDA forward model = {ticks[4] - ticks[3]:.1f}s)"
         channel.log(infostr)
+        # the integrator's step statistics, summed over the batch
+        if self.verbose:
+            stats = {k: np.asarray(v) for k, v in self.cmodel.step_statistics().items()}
+            channel.log(f"Device {self.device.id}: steps accepted {stats['accepted'].sum()}, "
+                        f"rejected {stats['rejected'].sum()}, "
+                        f"stability limited {stats['stiff'].sum()}; "
+                        f"spin-up cycles {stats['cycles'].min()}-{stats['cycles'].max()}; "
+                        f"smallest step {stats['hmin'].min():.3g}s")
 
         # all done
-        self.timer_fmb = self.sync_and_time()
-        alpha_h.free()
-        delta_tau_div_alpha_h.free()
-        obs_ref.free()
-        obs_ep.free()
         return prediction
 
-    def cuEvalLikelihood(self, theta, likelihood, batch):
+    def eval_data_likelihood(self, theta, likelihood, batch=None):
         """
-        Compute the likelihood from my forward problem
-        :param: theta - sampled parameters, matrix of (samples, parameters)
+        Compute the likelihood from my forward problem, in batches of {cuda_batch_size}
+        :param: theta - physical parameters, matrix of (samples, parameters)
         :param: likelihood - computed likelihood, vector of (samples)
         :param: batch - number of samples to be computed
         """
+        batch = theta.shape[0] if batch is None else batch
+        # theta and the likelihood live in managed memory, so the host can see them
+        theta = np.asarray(theta)
+        llk = np.asarray(likelihood)
 
-        # get the data storage for data prediction or residual
+        # the data storage for data prediction and its likelihood
         predictions = self.obs_disp
-
-        # # get logger
-        # channel = self.info
-
-        # solve forward modeling in batches
-        # get the max batch size and allocate temporary input/out for a batch
-        cuda_batch_size = self.cuda_batch_size
-        parameters = theta.shape[1]
-        # input
-        theta_batch = altar.cuda.matrix(shape=(cuda_batch_size, parameters), dtype=self.gpuprec)
-        # output
-        likelihood_batch = altar.cuda.vector(shape=cuda_batch_size, dtype=self.gpuprec)
+        llk_batch = self.likelihood_batch
 
         # iterate over batches
+        cuda_batch_size = self.cuda_batch_size
         for system_start in range(0, batch, cuda_batch_size):
             # get the actual batch size
             batch_size_run = min(cuda_batch_size, batch - system_start)
-            # channel.log(f"Device {self.device.id}: cuEvalLikelihood loop processing systems "
-            #             f"{system_start} to {system_start + batch_size_run - 1}")
-            # copy theta (a tile)
-            theta_batch.copytile(src=theta,
-                                 src_start=(system_start, 0),
-                                 shape=(batch_size_run, parameters))
             # call forward model to calculate the data prediction
-            self.forwardModelBatched(
-                theta=theta_batch, prediction=predictions, batch_size_run=batch_size_run)
-            # compute the residual
-            data_obs = self.dataobs.gDataVec
-            observations = data_obs.shape
-            predictions.subtractVector(vector=data_obs, size=(batch_size_run, observations))
-            # call data method to calculate the l2 norm
-            self.dataobs.cuEvalLikelihood(prediction=predictions, likelihood=likelihood_batch,
-                                          residual=True, batch=batch_size_run)
+            self.forward_model_batched(
+                theta=theta[system_start:system_start + batch_size_run],
+                prediction=predictions, batch=batch_size_run)
+            # the l2 norm of its residual, applying the data covariance to it
+            self.dataobs.eval_likelihood(prediction=predictions, likelihood=llk_batch,
+                                         residual=False, whitened=False, batch=batch_size_run)
             # copy likelihood to global
-            likelihood.copytile(likelihood_batch, start=system_start, size=batch_size_run)
+            llk[system_start:system_start + batch_size_run] = \
+                np.asarray(llk_batch)[:batch_size_run]
 
-        # consider cd_inv as a constant
-        cd_inv = self.dataobs.gcd_inv
-        if isinstance(cd_inv, float):
-            likelihood *= cd_inv
-        else:
-            raise NotImplementedError
+        # all done
+        return self
 
-        theta_batch.free()
-        likelihood_batch.free()
 
-        # return the likelihood
-        return likelihood
+# end of file

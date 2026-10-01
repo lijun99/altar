@@ -20,8 +20,8 @@ namespace altar::models::seas::cuda::ratedependent {
 
 // Initialize model parameters
 // suffix underline indicate class parameters
-template <typename T>
-void RateDependent<T>::initialize(
+template <typename T, class MethodType>
+void RateDependent<T, MethodType>::initialize(
         int cuda_batch_size_,
         int max_cycles_,
         int num_t_obs_,
@@ -94,8 +94,8 @@ void RateDependent<T>::initialize(
 
 }
 
-template <typename T>
-void RateDependent<T>::forward_model_batch(
+template <typename T, class MethodType>
+void RateDependent<T, MethodType>::forward_model_batch(
     const T* alpha_h_vec, // (a-b)*sigma_E strength parameter on fault patches (num_forward_batch, num_inner_patches, ) [Pa]
     const T* delta_tau_div_alpha_h, // stress change for each system and earthquake divided by alpha_h (num_forward_batch, num_eq, num_inner_patches * 2) [-]
     int* delta_tau_bounded_indices, // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
@@ -214,6 +214,9 @@ void RateDependent<T>::forward_model_batch(
         << obs_disp[(i_slips_obs[0]+2)*n_observations+n_observations/2] << "\n";
     */
 
+    // keep the step statistics, before the solver goes away
+    statistics = solver->statistics(num_forward_batch);
+
     // clean up memory usage
     if(solver != nullptr)
     {
@@ -238,8 +241,8 @@ void RateDependent<T>::forward_model_batch(
 // size estimation methods
 
 // estimate object size
-template <typename T>
-RateDependent<T>::size_type RateDependent<T>::estimate_object_size(
+template <typename T, class MethodType>
+RateDependent<T, MethodType>::size_type RateDependent<T, MethodType>::estimate_object_size(
     const int num_ix_eq, const int n_slips_obs,
     const int num_t_obs, const int num_inner_patches, const int UNITS,
     const int cuda_batch_size, const int num_forward_batch,

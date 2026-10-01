@@ -25,6 +25,7 @@ struct __ALIGNED__ TractionDependentODE {
     int patches; // number of patches per system
     int units;   // number of units per patch
     int system_size; // patches*units
+
     int systems; // total systems/samples to be processed
 
     // other custom parameters

@@ -15,8 +15,8 @@ namespace altar::models::seas::cuda::linearviscous {
 
 // Initialize model parameters
 // suffix underline indicate class parameters
-template <typename T>
-void LinearViscous<T>::initialize(
+template <typename T, class MethodType>
+void LinearViscous<T, MethodType>::initialize(
     int max_samples_, int patches_, int stations_, //
     T Vj_,
     T* stress_kernel_, // patches * patches
@@ -24,7 +24,7 @@ void LinearViscous<T>::initialize(
     T* displacement_kernel_, //
     int n_coseismic_, T* t_coseismic_, T* coseismic_, // events
     int neval_, T* teval_, T* yeval_,
-    T atol_, T rtol_, int spinup_max_cycles_ // ode controls
+    T atol_, T rtol_, T spinup_atol_, T spinup_rtol_, int spinup_max_cycles_ // ode controls
     )
 {
     // assign parameters
@@ -32,6 +32,7 @@ void LinearViscous<T>::initialize(
     patches = patches_;
     system_size = patches*2; //units = 2, s and v
     stations = stations_;
+    displacement_kernel = displacement_kernel_;
 
     // ode
     Vj = Vj_;
@@ -39,14 +40,14 @@ void LinearViscous<T>::initialize(
     stressrate_ext = stressrate_ext_;
 
     // create an instance of odefunc
-    odefunc = new OdeType(max_samples, patches, 2);
+    odefunc = new OdeType(patches, 2, max_samples);
     odefunc->init_parameters(Vj, stress_kernel, stressrate_ext);
 
     // create an instance of events (including starting/ending time)
     events = new EventType(n_coseismic_, t_coseismic_, coseismic_, patches*2);
 
     // create the solver
-    solver = new SolverType(*odefunc, *events, atol_, rtol_, max_samples);
+    solver = new SolverType(*odefunc, *events, atol_, rtol_, spinup_atol_, spinup_rtol_, max_samples);
 
     // output
     neval = neval_;
@@ -58,16 +59,17 @@ void LinearViscous<T>::initialize(
 }
 
 
-template <typename T>
+template <typename T, class MethodType>
 void
-LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parameters, const int batch)
+LinearViscous<T, MethodType>::forward_model (const T* theta, T* prediction, const int parameters, const int batch)
 {
     // set initial values
     // parameters y0, use_y0_for_all, systems_to_process, system_offset
-    solver->set_init_values(y0, true, batch, 0);
-
-    // set parameters (pointer) to odefunc
+    // set parameters (pointer) to odefunc, before the initial values need f(t0, y0)
     odefunc->set_alpha1(theta, parameters);
+    events->set_alpha1(theta, parameters);
+
+    solver->set_init_values(y0, true, batch, 0);
 
     // iteratively solve ode until convergence
     // parameters (dense_out, systems_to_process, system_offset, max_cycles)
@@ -76,6 +78,8 @@ LinearViscous<T>::forward_model (const T* theta, T* prediction, const int parame
 
     // compute the observations
     compute_displacement(yeval, prediction, batch);
+    // keep the step statistics
+    statistics = solver->statistics(batch);
     // all done
 }
 
@@ -120,8 +124,8 @@ void compute_displacement_kernel(const T* yeval, const T* gf, T* predictions,
 //       gf is arranged in shape (times, patches, stations)
 //          - merged with data covariance, therefore, different for different t
 //       predictions is arranged in shape (samples, times, stations)
-template <typename T>
-void LinearViscous<T>::compute_displacement(const T* yeval, T* predictions, const int samples)
+template <typename T, class MethodType>
+void LinearViscous<T, MethodType>::compute_displacement(const T* yeval, T* predictions, const int samples)
 {
         // decide the execution size - one sample per thread
     const int threadsPerBlock = 128;

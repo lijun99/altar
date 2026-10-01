@@ -11,24 +11,17 @@
 
 // my definitions
 #include "ratedependent/RateDependent.h"
+#include "statistics.h"
 
 
 namespace altar::cuda::py::seas::ratedependent {
 
 using size_type = std::size_t;
 
-template <typename T, typename D>
-T* convertPyArray(py::capsule pycap)
-{
-    auto cap = static_cast<D *>(pycap.get_pointer());
-    return (T *)cap->data;
-}
-
-
-template<typename T>
+template<typename T, class MethodType = ::cuda::ode::dopri5::Dopri5<T>>
 class pyRateDependent
 {
-    using model_type = altar::models::seas::cuda::ratedependent::RateDependent<T>;
+    using model_type = altar::models::seas::cuda::ratedependent::RateDependent<T, MethodType>;
 
 private:
 
@@ -40,32 +33,35 @@ public:
     // constructor
     pyRateDependent () {_cmodel = new model_type();}
 
+    // the step statistics of the last batch
+    py::dict step_statistics() { return statistics_dict(_cmodel->statistics); }
+
     // initialize cmodel parameters
     void initialize(
         int cuda_batch_size,
         int max_cycles,
         int num_t_obs,
-        py::capsule t_obs_sec,
+        grid_t & t_obs_sec,
         int num_ix_eq,
         int num_eq,
-        py::capsule t_events,
-        py::capsule i_slips_obs,
+        grid_t & t_events,
+        grid_t & i_slips_obs,
         int n_slips_obs,
         T v_0,
         T mu_over_2vs,
         int num_inner_patches,
-        py::capsule K_inner_inner_onfault,
-        py::capsule K_inner_asperities_v_plate,
-        py::capsule v_plate_ddcs_proj_eff_inner,
-        py::capsule state_init,
-        py::capsule sim_state,
+        grid_t & K_inner_inner_onfault,
+        grid_t & K_inner_asperities_v_plate,
+        grid_t & v_plate_ddcs_proj_eff_inner,
+        grid_t & state_init,
+        grid_t & sim_state,
         T atol,
         T rtol,
         T spinup_atol,
         T spinup_rtol,
         int num_stations,
-        py::capsule obs_mask,
-        py::capsule i_stat_ref,
+        grid_t & obs_mask,
+        grid_t & i_stat_ref,
         int n_stat_ref,
         int ref_vel_index
     )
@@ -76,27 +72,27 @@ public:
             cuda_batch_size,
             max_cycles,
             num_t_obs,
-            convertPyArray<T, cuda_vector>(t_obs_sec),
+            cells<T>(t_obs_sec),
             num_ix_eq,
             num_eq,
-            convertPyArray<T, cuda_vector>(t_events),
-            convertPyArray<int, cuda_vector>(i_slips_obs),
+            cells<T>(t_events),
+            cells<int>(i_slips_obs),
             n_slips_obs,
             v_0,
             mu_over_2vs,
             num_inner_patches,
-            convertPyArray<T, cuda_vector>(K_inner_inner_onfault),
-            convertPyArray<T, cuda_vector>(K_inner_asperities_v_plate),
-            convertPyArray<T, cuda_vector>(v_plate_ddcs_proj_eff_inner),
-            convertPyArray<T, cuda_matrix>(state_init),
-            convertPyArray<T, cuda_vector>(sim_state),
+            cells<T>(K_inner_inner_onfault),
+            cells<T>(K_inner_asperities_v_plate),
+            cells<T>(v_plate_ddcs_proj_eff_inner),
+            cells<T>(state_init),
+            cells<T>(sim_state),
             atol,
             rtol,
             spinup_atol,
             spinup_rtol,
             num_stations,
-            convertPyArray<bool, cuda_vector>(obs_mask),
-            convertPyArray<int, cuda_vector>(i_stat_ref),
+            cells<bool>(obs_mask),
+            cells<int>(i_stat_ref),
             n_stat_ref,
             ref_vel_index
         );
@@ -104,15 +100,15 @@ public:
 
     // just pass forward model through
     void forward_model_batch(
-        py::capsule alpha_h_vec,
-        py::capsule delta_tau_div_alpha_h,
-        py::capsule delta_tau_bounded_indices,
-        py::capsule delta_tau_bounded_indices_final,
-        py::capsule G_surf,
-        py::capsule obs_disp,
-        py::capsule ref_obs,
-        py::capsule obs_farfield,
-        py::capsule obs_ep,
+        grid_t & alpha_h_vec,
+        grid_t & delta_tau_div_alpha_h,
+        grid_t & delta_tau_bounded_indices,
+        grid_t & delta_tau_bounded_indices_final,
+        grid_t & G_surf,
+        grid_t & obs_disp,
+        grid_t & ref_obs,
+        grid_t & obs_farfield,
+        grid_t & obs_ep,
         const int batches,
         const T v_ratio_max,
         const int num_threads = 0,
@@ -120,15 +116,15 @@ public:
     {
         // printf("inside pyRateDependent.cu:forward_model_batch\n");
         _cmodel->forward_model_batch(
-            convertPyArray<T, cuda_vector>(alpha_h_vec), // (num_systems, num_inner_patches, ) [Pa]
-            convertPyArray<T, cuda_vector>(delta_tau_div_alpha_h), // (num_systems, num_eq, num_inner_patches, 2) [-]
-            convertPyArray<int, cuda_vector>(delta_tau_bounded_indices), // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
-            convertPyArray<int, cuda_vector>(delta_tau_bounded_indices_final), // same as before but for the last, spun-up cycle
-            convertPyArray<T, cuda_matrix>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
-            convertPyArray<T, cuda_matrix>(obs_disp), // (num_systems, num_t_obs*3*num_stations) [m]
-            convertPyArray<T, cuda_matrix>(ref_obs), // (num_systems, num_t_obs*3) [m]
-            convertPyArray<T, cuda_vector>(obs_farfield), // (num_t_obs*3*num_stations) [m]
-            convertPyArray<T, cuda_vector>(obs_ep), // (num_forward_batch, num_t_obs, 2, num_stations) [m]
+            cells<T>(alpha_h_vec), // (num_systems, num_inner_patches, ) [Pa]
+            cells<T>(delta_tau_div_alpha_h), // (num_systems, num_eq, num_inner_patches, 2) [-]
+            cells<int>(delta_tau_bounded_indices), // indices mapping the num_ix_eq event occurrences to the num_eq unique events (num_ix_eq, ) [-]
+            cells<int>(delta_tau_bounded_indices_final), // same as before but for the last, spun-up cycle
+            cells<T>(G_surf), // (2*num_inner_patches, 3*num_stations) [-]
+            cells<T>(obs_disp), // (num_systems, num_t_obs*3*num_stations) [m]
+            cells<T>(ref_obs), // (num_systems, num_t_obs*3) [m]
+            cells<T>(obs_farfield), // (num_t_obs*3*num_stations) [m]
+            cells<T>(obs_ep), // (num_forward_batch, num_t_obs, 2, num_stations) [m]
             batches, // batch size <=samples (in AlTar, not all samples are computed in simulations)
             v_ratio_max, // ratio between maximum allowed velocity and reference velocity [-], zero if no maximum
             num_threads, // number of threads 1 <= num_threads <= 5120, 0 means internally estimated
@@ -149,31 +145,37 @@ public:
     }
 };
 
+// bind one instantiation of the model as {name}
+template <class P>
+void
+bind(py::module & m, const char * name)
+{
+    py::class_<P>(m, name)
+        .def(py::init())
+        .def("step_statistics", &P::step_statistics)
+        .def("initialize", &P::initialize,
+             py::arg("cuda_batch_size"), py::arg("max_cycles"), py::arg("num_t_obs"), py::arg("t_obs_sec"),
+             py::arg("num_ix_eq"), py::arg("num_eq"), py::arg("t_events"), py::arg("i_slips_obs"),
+             py::arg("n_slips_obs"), py::arg("v_0"), py::arg("mu_over_2vs"),
+             py::arg("num_inner_patches"), py::arg("K_inner_inner_onfault"),
+             py::arg("K_inner_asperities_v_plate"), py::arg("v_plate_ddcs_proj_eff_inner"), py::arg("state_init"),
+             py::arg("sim_state"), py::arg("atol"), py::arg("rtol"), py::arg("spinup_atol"),
+             py::arg("spinup_rtol"), py::arg("num_stations"), py::arg("obs_mask"),
+             py::arg("i_stat_ref"), py::arg("n_stat_ref"), py::arg("ref_vel_index"))
+        .def("forward_model_batch", &P::forward_model_batch,
+             py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
+             py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
+             py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"), py::arg("obs_ep"),
+             py::arg("batches"), py::arg("v_ratio_max") = 0, py::arg("num_threads") = 0, py::arg("verbose") = false)
+        .def("estimate_object_size", &P::estimate_object_size);
+}
+
 // add bindings for the various cuda struct
 void
 module(py::module & m)
 {
-    using pyRateDependent_float = pyRateDependent<float>;
-    using pyRateDependent_double = pyRateDependent<double>;
-
-    py::class_<pyRateDependent_double>(m, "model_double")
-        .def(py::init())
-        .def("initialize", &pyRateDependent_double::initialize)
-        .def("forward_model_batch", &pyRateDependent_double::forward_model_batch,
-             py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
-             py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"), py::arg("obs_ep"),
-             py::arg("batches"), py::arg("v_ratio_max") = 0, py::arg("num_threads") = 0, py::arg("verbose") = false)
-        .def("estimate_object_size", &pyRateDependent_double::estimate_object_size);
-    py::class_<pyRateDependent_float>(m, "model_float")
-        .def(py::init())
-        .def("initialize", &pyRateDependent_float::initialize)
-        .def("forward_model_batch", &pyRateDependent_float::forward_model_batch,
-             py::arg("alpha_h_vec"), py::arg("delta_tau_div_alpha_h"),
-             py::arg("delta_tau_bounded_indices"), py::arg("delta_tau_bounded_indices_final"),
-             py::arg("G_surf"), py::arg("obs_disp"), py::arg("ref_obs"), py::arg("obs_farfield"), py::arg("obs_ep"),
-             py::arg("batches"), py::arg("v_ratio_max") = 0, py::arg("num_threads") = 0, py::arg("verbose") = false)
-        .def("estimate_object_size", &pyRateDependent_float::estimate_object_size);
+    bind<pyRateDependent<double>>(m, "model_double");
+    bind<pyRateDependent<float>>(m, "model_float");
 }
 
 } // end of namespace pycuda::seas::ratedependent

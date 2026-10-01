@@ -20,8 +20,8 @@
 namespace altar::models::seas::cuda::tractiondependent {
 
 // Initialize model parameters
-template <typename T>
-void TractionDependent<T>::initialize(
+template <typename T, class MethodType>
+void TractionDependent<T, MethodType>::initialize(
         int cuda_batch_size_,
         int max_cycles_,
         int num_t_obs_,
@@ -87,8 +87,8 @@ void TractionDependent<T>::initialize(
     ref_vel_index = ref_vel_index_;
 }
 
-template <typename T>
-void TractionDependent<T>::forward_model_batch(
+template <typename T, class MethodType>
+void TractionDependent<T, MethodType>::forward_model_batch(
     T* state_init,
     const T* alpha_h_vec,
     const T* delta_tau_div_alpha_h,
@@ -172,6 +172,9 @@ void TractionDependent<T>::forward_model_batch(
         i_slips_obs, n_slips_obs, obs_mask, i_stat_ref, n_stat_ref,
         solver->threads);
 
+    // keep the step statistics, before the solver goes away
+    statistics = solver->statistics(num_forward_batch);
+
     // clean up
     if(solver != nullptr) { delete solver; solver = nullptr; }
     events->deallocate();
@@ -180,8 +183,8 @@ void TractionDependent<T>::forward_model_batch(
 }
 
 // size estimation (same as ratedependent)
-template <typename T>
-TractionDependent<T>::size_type TractionDependent<T>::estimate_object_size(
+template <typename T, class MethodType>
+TractionDependent<T, MethodType>::size_type TractionDependent<T, MethodType>::estimate_object_size(
     const int num_ix_eq, const int n_slips_obs,
     const int num_t_obs, const int num_inner_patches, const int UNITS,
     const int cuda_batch_size, const int num_forward_batch,

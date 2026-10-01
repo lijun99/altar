@@ -104,6 +104,7 @@ add_subdirectory(models/mogi)
 add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
 add_subdirectory(models/seismic)
+add_subdirectory(models/seas)
 add_subdirectory(models/regression)
 
 # end of file

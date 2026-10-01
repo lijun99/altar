@@ -18,7 +18,7 @@
 // declaration
 namespace altar::models::seas::cuda::ratedependent {
 
-template<typename T>
+template<typename T, class MethodType = ::cuda::ode::dopri5::Dopri5<T>>
 class RateDependent {
     // methods
     public:
@@ -27,7 +27,7 @@ class RateDependent {
         using OdeType = RateDependentODE<T>; // ode function defition from Ode.cuh
         using EventType = SEASEvents<T>; // event(coseismic) from Events.cuh
         // this is an ode solver with spin up procedure built-in
-        using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType>;
+        using SolverType = ::cuda::ode::dopri5::SpinupSolver<T, OdeType, EventType, MethodType>;
 
         using size_type = std::size_t;
 
@@ -86,6 +86,9 @@ class RateDependent {
                                               const int num_t_obs, const int num_inner_patches, const int UNITS,
                                               const int cuda_batch_size, const int num_forward_batch,
                                               const int num_eq, const int num_stations, const int n_stat_ref);
+
+        // the step statistics of each system in the last batch
+        std::vector<::cuda::ode::dopri5::StepStatistics> statistics;
 
     // parameters
     private:

@@ -22,11 +22,12 @@
 namespace cuda::ode::dopri5 {
 
 // declaration of the dopri5 solver class`
-template <class real_type, class ode_system_type, class event_type = FixedEvents<real_type>>
-struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
+template <class real_type, class ode_system_type, class event_type = FixedEvents<real_type>,
+          class method_type = Dopri5<real_type>>
+struct SpinupSolver : public Solver<real_type, ode_system_type, event_type, method_type>
 {
 
-    using single_solver_type = Solver<real_type, ode_system_type, event_type>;
+    using single_solver_type = Solver<real_type, ode_system_type, event_type, method_type>;
     using spinup_controller_type = SpinupController<real_type>;
     using spinup_controller_holder_type = SpinupControllerHolder<real_type>;
 
@@ -63,12 +64,12 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type>
 };
 
 // re-set f(t0, y0) at the beginning of each cycle
-template <class real_type, class ode_system_type, class event_type>
+template <class ode_system_type, class event_type, class stepper_type>
 __device__ void reset_f0_value( const cg::thread_block & cta,
     const int system_id,
     ode_system_type & ode,
     event_type &  events,
-    Stepper<real_type> & stepper
+    stepper_type & stepper
     )
 {
     auto tevents = events.tevents;
@@ -79,15 +80,15 @@ __device__ void reset_f0_value( const cg::thread_block & cta,
     cta.sync();
 }
 
-template <class real_type, class ode_system_type, class event_type>
+template <class real_type, class ode_system_type, class event_type, class method_type>
 __global__ void solve_ivp_cycles_kernel(const int system_offset,
     const bool dense_out,
     ode_system_type ode,
     event_type  events,
-    Stepper<real_type> * steppers,
-    Controller<real_type> * controllers,
+    typename method_type::stepper_type * steppers,
+    typename method_type::controller_type * controllers,
     SpinupController<real_type> * spinup_controllers,
-    DenseOutput<real_type> * outputs,
+    typename method_type::output_type * outputs,
     const int index_start, const int index_end,
     const int max_cycles,
     const bool verbose)
@@ -102,6 +103,11 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     auto& controller = controllers[block_id];
     auto& outputter = outputs[block_id];
     auto& spinup_controller = spinup_controllers[block_id];
+
+    // start the step statistics afresh
+    if (cta.thread_rank() == 0)
+        controller.reset_statistics();
+    cta.sync();
 
     // disable dense_out for spin up iterations
     bool dense_out_run = false;
@@ -138,6 +144,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
 
     // if debugging cycles
     if (cta.thread_rank() == 0) {
+        controller.cycles = icycle;
         if (converged && verbose)
             printf("%i %i>", system_id, icycle);
         else if (!converged)
@@ -164,8 +171,8 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     // all done
 }
 
-template <class real_type, class ode_system_type, class event_type>
-void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
+template <class real_type, class ode_system_type, class event_type, class method_type>
+void SpinupSolver<real_type, ode_system_type, event_type, method_type>::solve_ivp_cycles(
     const bool dense_out, const int systems, const int system_offset,
     const int index_start, const int index_end, // start end end indices of yn for convergence check
     const int max_cycles, const bool verbose = false)
@@ -177,7 +184,7 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
     // printf("    inside spinup_solver.cuh:solve_ivp_cycles (patches=%i, threads=%i, blocks=%i)\n",
     //        patches, threads, blocks);
 
-    solve_ivp_cycles_kernel<real_type, ode_system_type, event_type><<<blocks, this->threads, sMemSize>>>(
+    solve_ivp_cycles_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, this->threads, sMemSize>>>(
         system_offset,
         dense_out,
         this->ode,
@@ -193,8 +200,8 @@ void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
     // all done, return the yevals
 }
 
-template <class real_type, class ode_system_type, class event_type>
-void SpinupSolver<real_type, ode_system_type, event_type>::solve_ivp_cycles(
+template <class real_type, class ode_system_type, class event_type, class method_type>
+void SpinupSolver<real_type, ode_system_type, event_type, method_type>::solve_ivp_cycles(
     const bool dense_out, const int systems, const int system_offset, const int max_cycles)
 {
     solve_ivp_cycles(dense_out, systems, system_offset,

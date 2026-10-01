@@ -14,28 +14,28 @@
 #define cuda_ode_dopri5_solver_cuh
 
 #include "external.h"
-#include "stepper.cuh"
-#include "controller.cuh"
-#include "dense_output.cuh"
+#include "method.cuh"
 #include "events.cuh"
 #include <assert.h>
+#include <vector>
 
 
 // enclosed in namespace
 namespace cuda::ode::dopri5 {
 
-// declaration of the dopri5 solver class`
-template <class real_type, class ode_system_type, class event_type = FixedEvents<real_type>>
+// declaration of the solver class, integrating with {method_type}, see method.cuh
+template <class real_type, class ode_system_type, class event_type = FixedEvents<real_type>,
+          class method_type = Dopri5<real_type>>
 struct Solver
 {
     // rename types
     using size_type = std::size_t;
-    using stepper_type = cuda::ode::dopri5::Stepper<real_type>;
-    using stepper_holder_type = cuda::ode::dopri5::StepperHolder<real_type>;
-    using controller_type = cuda::ode::dopri5::Controller<real_type>;
-    using controller_holder_type = cuda::ode::dopri5::ControllerHolder<real_type>;
-    using output_type = cuda::ode::dopri5::DenseOutput<real_type>;
-    using output_holder_type = cuda::ode::dopri5::DenseOutputHolder<real_type>;
+    using stepper_type = typename method_type::stepper_type;
+    using stepper_holder_type = typename method_type::stepper_holder_type;
+    using controller_type = typename method_type::controller_type;
+    using controller_holder_type = typename method_type::controller_holder_type;
+    using output_type = typename method_type::output_type;
+    using output_holder_type = typename method_type::output_holder_type;
 
     // variables
     int systems_batch; // Batch of systems allocated, each system is processed by one block
@@ -80,19 +80,21 @@ struct Solver
     void solve_ivp(const bool dense_out, const int systems, const int system_offset);
     // a default call option
     void solve_ivp(const bool dense_out) { solve_ivp(dense_out, systems_batch, 0); };
+    // the step statistics of the first {systems} systems of the last solve
+    auto statistics(const int systems) const -> ::std::vector<StepStatistics>;
 };
 
 
 // solver constructor
-template <class real_type, class ode_system_type, class event_type>
-Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, event_type & events_,
+template <class real_type, class ode_system_type, class event_type, class method_type>
+Solver<real_type, ode_system_type, event_type, method_type>::Solver(ode_system_type & ode_, event_type & events_,
     const real_type atol=1e-8, const real_type rtol=1e-6, const int systems_batch_=8192, const int threads_=0)
     : ode(ode_), events(events_)
 {
     // if the total number of systems is smaller than provide batch, use real number of systems instead
     systems_batch = min(ode.systems, systems_batch_);
     system_size = ode.system_size;
-    stepper_holder = new stepper_holder_type(ode.patches, ode.units, systems_batch);
+    stepper_holder = new stepper_holder_type(ode, systems_batch);
     controller_holder = new controller_holder_type(systems_batch, atol, rtol);
 
     // set number of patches
@@ -121,12 +123,12 @@ Solver<real_type, ode_system_type, event_type>::Solver(ode_system_type & ode_, e
 }
 
 // cuda kernel for setting initial values y0
-template <class real_type, class ode_system_type, class event_type>
+template <class real_type, class ode_system_type, class event_type, class method_type>
 __global__ void set_init_values_kernel(
     const int system_offset,
     ode_system_type ode, // note no reference on global calls
     event_type events,
-    Stepper<real_type> * steppers,
+    typename method_type::stepper_type * steppers,
     const real_type* y0, const bool use_y0_for_all)
 {
     auto block_id = blockIdx.x;
@@ -151,8 +153,8 @@ __global__ void set_init_values_kernel(
 // set initial y0 values
 // @use_y0_for_all whether y0 is for all systems
 // @parameter y0 input [system_size] or [systems, system_size] depending on use_y0_for_all
-template <class real_type, class ode_system_type, class event_type>
-void Solver<real_type, ode_system_type, event_type>::set_init_values(
+template <class real_type, class ode_system_type, class event_type, class method_type>
+void Solver<real_type, ode_system_type, event_type, method_type>::set_init_values(
     const real_type* y0, const bool use_y0_for_all, const int systems, const int system_offset=0)
 {
     // printf("    inside solver.cuh:set_init_values\n");
@@ -163,7 +165,7 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
 
     // printf("      blocks=%i\n", blocks);
     // printf("      system_offset=%i\n", system_offset);
-    set_init_values_kernel<real_type, ode_system_type, event_type><<<blocks, threads, sMemSize>>>(
+    set_init_values_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, threads, sMemSize>>>(
         system_offset,
         ode,
         events,
@@ -173,14 +175,15 @@ void Solver<real_type, ode_system_type, event_type>::set_init_values(
     // all done
 }
 
-template <class real_type, class ode_system_type, class event_type>
+template <class ode_system_type, class event_type,
+          class stepper_type, class controller_type, class output_type>
 __device__ void solve_device( const cg::thread_block & cta,
     const int system_id, const bool dense_out,
     ode_system_type & ode,
     event_type &  events,
-    Stepper<real_type> & stepper,
-    Controller<real_type> &  controller,
-    DenseOutput<real_type> & outputter,
+    stepper_type & stepper,
+    controller_type &  controller,
+    output_type & outputter,
     const bool verbose
     )
 {
@@ -242,6 +245,8 @@ __device__ void solve_device( const cg::thread_block & cta,
                 // if(cta.thread_rank()==0)
                 //     controller.debug_info();
             }
+            // keep the statistics of the accepted step
+            controller.record_step(cta, stepper);
             if (dense_out){
                 // compute output if t_eval is within this range
                 outputter.output(cta, stepper, system_id, controller.t0, controller.hrun);
@@ -263,15 +268,15 @@ __device__ void solve_device( const cg::thread_block & cta,
     // all done
 }
 
-template <class real_type, class ode_system_type, class event_type>
+template <class real_type, class ode_system_type, class event_type, class method_type>
 __global__ void solve_ivp_kernel(
     const int system_offset,
     const bool dense_out,
     ode_system_type ode,
     event_type  events,
-    Stepper<real_type> * steppers,
-    Controller<real_type> * controllers,
-    DenseOutput<real_type> * outputs)
+    typename method_type::stepper_type * steppers,
+    typename method_type::controller_type * controllers,
+    typename method_type::output_type * outputs)
 {
     // get the system index and patch index
     auto block_id = blockIdx.x;
@@ -283,20 +288,26 @@ __global__ void solve_ivp_kernel(
     auto& stepper = steppers[block_id];
     auto& controller = controllers[block_id];
     auto& outputter = outputs[block_id];
+    if (cta.thread_rank() == 0)
+        controller.reset_statistics();
+    cta.sync();
     solve_device(cta, system_id, dense_out,
         ode,
         events,
         stepper,
         controller,
-        outputter);
+        outputter,
+        false);
 }
 
-template <class real_type, class ode_system_type, class event_type>
-void Solver<real_type, ode_system_type, event_type>::solve_ivp(const bool dense_out, const int systems, const int system_offset)
+template <class real_type, class ode_system_type, class event_type, class method_type>
+void Solver<real_type, ode_system_type, event_type, method_type>::solve_ivp(const bool dense_out, const int systems, const int system_offset)
 {
     int blocks = systems;
+    // the block reductions need one cell of shared memory per thread
+    int sMemSize = threads*sizeof(real_type);
 
-    solve_ivp_kernel<real_type, ode_system_type, event_type><<<blocks, threads>>>(
+    solve_ivp_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, threads, sMemSize>>>(
         system_offset, dense_out,
         ode,
         events,
@@ -308,10 +319,25 @@ void Solver<real_type, ode_system_type, event_type>::solve_ivp(const bool dense_
     // all done, results saved in yeval
 }
 
-template <class real_type, class ode_system_type, class event_type>
-void Solver<real_type, ode_system_type, event_type>::set_dense_output(const int neval, const real_type * tevals, real_type * yevals)
+template <class real_type, class ode_system_type, class event_type, class method_type>
+void Solver<real_type, ode_system_type, event_type, method_type>::set_dense_output(const int neval, const real_type * tevals, real_type * yevals)
 {
     output_holder = new output_holder_type(systems_batch, system_size, neval, tevals, yevals);
+}
+
+template <class real_type, class ode_system_type, class event_type, class method_type>
+auto Solver<real_type, ode_system_type, event_type, method_type>::statistics(const int systems) const
+    -> ::std::vector<StepStatistics>
+{
+    // the controllers live in managed memory; wait for the solve before reading them
+    cudaSafeCall(cudaDeviceSynchronize());
+    auto stats = ::std::vector<StepStatistics>(systems);
+    for (auto i = 0; i < systems; i++) {
+        const auto & c = controller_holder->controllers[i];
+        stats[i] = StepStatistics{ c.accepted, c.rejected, c.stiff, c.cycles,
+                                   static_cast<double>(c.hmin), static_cast<double>(c.hmax) };
+    }
+    return stats;
 }
 
 } // end of namespace cuda::ode

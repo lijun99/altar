@@ -8,45 +8,9 @@
 # all rights reserved
 #
 
-# the package
-import altar
-import altar.cuda
-
-# publish the protocol for probability distributions
-from altar.cuda.distributions import cudaDistribution as distribution  # noqa: F401
-from altar.cuda.models.cudaBayesian import cudaBayesian as model
-
-
-# implementations
-@altar.foundry(implements=model, tip="static inversion model")
-def linearviscous():
-    # grab the factory
-    from .cudaLinearViscous import cudaLinearViscous as linearviscous
-    # attach its docstring
-    __doc__ = linearviscous.__doc__  # noqa: F841
-    # and return it
-    return linearviscous
-
-
-# implementations
-@altar.foundry(implements=model, tip="Rate-dependent 3D SEAS Simulation")
-def ratedependent():
-    # grab the factory
-    from .cudaRateDependent import cudaRateDependent as ratedependent
-    # attach its docstring
-    __doc__ = ratedependent.__doc__  # noqa: F841
-    # and return it
-    return ratedependent
-
-
-@altar.foundry(implements=altar.cuda.models.cudaBayesian,
-               tip="Sequences of Earthquakes and Aseismic Slip (3D, CUDA)")
-def seas3d():
-    # grab the factory
-    from .SEAS3D import SEAS3D as seas3d
-    # attach its docstring
-    __doc__ = seas3d.__doc__  # noqa: F841
-    # and return it
-    return seas3d
+"""
+The cuda implementations of the seas models; the models themselves are published by
+{altar.models.seas}
+"""
 
 # end of file

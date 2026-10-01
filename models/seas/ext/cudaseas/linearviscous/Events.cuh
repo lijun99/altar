@@ -28,12 +28,21 @@ struct __ALIGNED__ Events {
     // other custom parameters
     int system_size;
     const T * yevents; // [nevents-1, system_size], assuming nothing happens at tn, and same for all systems
+    const T * alpha1; // viscous coefficient [systems, parameters], to turn stress changes into velocity ones
+    int parameters; // number of alpha1 per system
 
     // an example constructor
     Events (const int nevents_, const T* tevents_, const T* yevents_, const int system_size_)
         : nevents(nevents_), system_size(system_size_), tevents(tevents_), yevents(yevents_)
     {
     };
+
+    // the viscous coefficients, set for each forward run
+    void set_alpha1(const T* alpha1_, const int parameters_)
+    {
+        parameters = parameters_;
+        alpha1 = alpha1_;
+    }
 
     // keep this function
     __device__ const T* get_events_time(const int system_id)
@@ -54,9 +63,11 @@ struct __ALIGNED__ Events {
         const int system_id, const int event_id, T* yn)
     {
         auto yevent = yevents + event_id*system_size;
+        auto patches = system_size/2;
         // note one thread per patch, the iteration is for system_size > #total threads
         for(int id = cta.thread_rank(); id<system_size; id+=cta.size())
-            yn[id] += yevent[id]; // simply add coseismic changes
+            // add the coseismic slip, and the velocity change from the coseismic stress change
+            yn[id] += (id < patches) ? yevent[id] : yevent[id]/alpha1[system_id*parameters];
         // cta.sync();
         // return;
     };
