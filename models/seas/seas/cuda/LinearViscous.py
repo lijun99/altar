@@ -83,6 +83,11 @@ class LinearViscous(BayesianL2, family="altar.models.seas.linearviscous"):
     spin_up_max_cycles = altar.properties.int(default=5)
     spin_up_max_cycles.doc = "max number of cycles to stop spin up"
 
+    integrator = altar.properties.str(default="dopri5")
+    integrator.validators = altar.constraints.isMember("dopri5", "radau5")
+    integrator.doc = "the ode integrator: dopri5 (explicit Runge-Kutta 5(4)), or radau5 " \
+                     "(implicit Radau IIA, for stiff systems)"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -109,9 +114,10 @@ class LinearViscous(BayesianL2, family="altar.models.seas.linearviscous"):
                                               dtype=self.precision)
 
         # create the c model and pass parameters
-        self.info.log(f"the model is run in precision {self.precision}")
+        self.info.log(f"the model is run with {self.integrator} in precision {self.precision}")
         precision = {"float64": "double", "float32": "float"}[self.precision]
-        self.cmodel = getattr(libcudaseas.linearviscous, f"model_{precision}")()
+        method = "" if self.integrator == "dopri5" else f"_{self.integrator}"
+        self.cmodel = getattr(libcudaseas.linearviscous, f"model_{precision}{method}")()
 
         # pass parameters and data to cmodel
         self.cmodel.initialize(

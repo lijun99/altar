@@ -33,6 +33,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     cuda_batch_size.doc = \
         "max system/sample size to be processed by cuda in a batch, as limited by gpu memory"
     cuda_threads = altar.properties.int(default=0)
+    integrator = altar.properties.str(default="dopri5")
+    integrator.validators = altar.constraints.isMember("dopri5", "radau5")
+    integrator.doc = "the ode integrator: dopri5 (explicit Runge-Kutta 5(4)), or radau5 " \
+                     "(implicit Radau IIA, for stiff systems)"
     verbose = altar.properties.bool(default=False)
     tau_0 = altar.properties.float(default=None)
     tau_0.doc = "the reference traction [Pa]; if set, integrate the traction instead of " \
@@ -226,8 +230,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         ticks.append(self.sync_and_time())
         ode = "ratedependent" if self.tau_0 is None else "tractiondependent"
         precision = {"float64": "double", "float32": "float"}[self.gpuprec]
-        self.cmodel = getattr(getattr(libcudaseas, ode), f"model_{precision}")()
-        channel.log(f"Device {self.device.id}: Running {ode} model in {self.gpuprec} precision")
+        method = "" if self.integrator == "dopri5" else f"_{self.integrator}"
+        self.cmodel = getattr(getattr(libcudaseas, ode), f"model_{precision}{method}")()
+        channel.log(f"Device {self.device.id}: Running {ode} model with {self.integrator} "
+                    f"in {self.gpuprec} precision")
         # the arguments the two integrators share
         args = dict(
             cuda_batch_size=self.cuda_batch_size,

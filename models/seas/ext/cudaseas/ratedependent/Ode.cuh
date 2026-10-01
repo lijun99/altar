@@ -25,6 +25,8 @@ struct __ALIGNED__ RateDependentODE {
     int units;   // number of units per patch
     int system_size; // patches*units
 
+    // the leading components the derivatives do not depend on, the slip, for implicit methods
+    __host__ __device__ int inert_size() const { return 2*patches; }
     int systems; // total systems/samples to be processed
 
     // other custom parameters

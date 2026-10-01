@@ -215,6 +215,8 @@ TractionDependent<T, MethodType>::size_type TractionDependent<T, MethodType>::es
 
 // explicit instantiation
 template class altar::models::seas::cuda::tractiondependent::TractionDependent<float>;
+template class altar::models::seas::cuda::tractiondependent::TractionDependent<float, ::cuda::ode::radau5::Radau5<float>>;
 template class altar::models::seas::cuda::tractiondependent::TractionDependent<double>;
+template class altar::models::seas::cuda::tractiondependent::TractionDependent<double, ::cuda::ode::radau5::Radau5<double>>;
 
 } // end of namespace

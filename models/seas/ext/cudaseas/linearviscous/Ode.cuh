@@ -24,6 +24,8 @@ struct Ode {
     int units;   // number of units per patch, should be 2, dsdt and dvdt
     int system_size; // patches*units
 
+    // the leading components the derivatives do not depend on, the slip, for implicit methods
+    __host__ __device__ int inert_size() const { return patches; }
     int systems; // total systems/samples to be processed
 
     // other custom parameters

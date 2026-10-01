@@ -170,12 +170,15 @@ bind(py::module & m, const char * name)
         .def("estimate_object_size", &P::estimate_object_size);
 }
 
-// add bindings for the various cuda struct
+// add bindings for the various cuda struct, integrating with dopri5 or radau5
 void
 module(py::module & m)
 {
+    using ::cuda::ode::radau5::Radau5;
     bind<pyRateDependent<double>>(m, "model_double");
     bind<pyRateDependent<float>>(m, "model_float");
+    bind<pyRateDependent<double, Radau5<double>>>(m, "model_double_radau5");
+    bind<pyRateDependent<float, Radau5<float>>>(m, "model_float_radau5");
 }
 
 } // end of namespace pycuda::seas::ratedependent

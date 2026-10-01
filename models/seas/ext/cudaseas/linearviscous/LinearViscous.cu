@@ -140,7 +140,9 @@ void LinearViscous<T, MethodType>::compute_displacement(const T* yeval, T* predi
 
 // explicit instantiation
 template class altar::models::seas::cuda::linearviscous::LinearViscous<float>;
+template class altar::models::seas::cuda::linearviscous::LinearViscous<float, ::cuda::ode::radau5::Radau5<float>>;
 template class altar::models::seas::cuda::linearviscous::LinearViscous<double>;
+template class altar::models::seas::cuda::linearviscous::LinearViscous<double, ::cuda::ode::radau5::Radau5<double>>;
 
 } // end of namespace
 // end of file

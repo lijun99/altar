@@ -11,6 +11,7 @@
 
 // cuda ode solver
 #include "cudaode.cuh"
+#include <radau5/method.cuh>
 // my definitions of ode and events (coseismic)
 #include "Ode.cuh"
 #include "Events.cuh"

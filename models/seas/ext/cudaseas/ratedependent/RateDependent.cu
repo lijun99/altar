@@ -279,7 +279,9 @@ RateDependent<T, MethodType>::size_type RateDependent<T, MethodType>::estimate_o
 
 // explicit instantiation
 template class altar::models::seas::cuda::ratedependent::RateDependent<float>;
+template class altar::models::seas::cuda::ratedependent::RateDependent<float, ::cuda::ode::radau5::Radau5<float>>;
 template class altar::models::seas::cuda::ratedependent::RateDependent<double>;
+template class altar::models::seas::cuda::ratedependent::RateDependent<double, ::cuda::ode::radau5::Radau5<double>>;
 
 } // end of namespace
 // end of file
