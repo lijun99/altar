@@ -184,7 +184,7 @@ struct __ALIGNED__ Controller
 
         if(cta.thread_rank()==0)
         {
-            d2 = sqrt(d0/N)/h0;
+            d2 = sqrt(d2/N)/h0;
             if (d1 <= 1e-15 && d2 <= 1e-15)
                 h1 = max(1e-6, h0 * 1e-3);
             else
@@ -309,6 +309,8 @@ __device__ void Controller<T>::check_convergence(
             hnext *= scale;
             reject = true;
             converged = false;
+            // a shorter step no longer reaches t1
+            t1reached = false;
             rejected++;
         }
         // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
