@@ -73,6 +73,31 @@ namespace cudaL2_kernels {
 
         probability[{ sample }] = l2constant - 0.5*prob;
     }
+
+    // one thread per sample: probability[sample] = l2constant - 0.5 * sum_i w_i data[sample, i]^2
+    template <typename real_type>
+    __global__ void
+    _normllk_weighted(altar::cuda::norms::cudaL2::data_view_t<real_type> data,
+        altar::cuda::norms::cudaL2::weight_view_t<real_type> weight,
+        altar::cuda::norms::cudaL2::result_view_t<real_type> probability,
+        const size_t batch,
+        const real_type l2constant)
+    {
+        // see {_norm}: {sample} must stay signed, so not {auto}
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        if (sample >= batch) return;
+
+        auto parameters = data.packing().shape()[1];
+
+        auto prob = real_type{ 0 };
+        for (auto i = 0; i < parameters; ++i)
+        {
+            auto value = data[{ sample, i }];
+            prob += value*value*weight[{ i }];
+        }
+
+        probability[{ sample }] = l2constant - 0.5*prob;
+    }
 } // of namespace cudaL2_kernels
 
 // launch {cudaL2_kernels::_norm}: fill {probability} with the l2 norm of the first {batch}
@@ -126,5 +151,34 @@ template void altar::cuda::norms::cudaL2::normllk<float>(
     data_view_t<float>, result_view_t<float>, const size_t, const float, cudaStream_t);
 template void altar::cuda::norms::cudaL2::normllk<double>(
     data_view_t<double>, result_view_t<double>, const size_t, const double, cudaStream_t);
+
+
+// launch {cudaL2_kernels::_normllk_weighted}: the same as {normllk}, with column weights
+template <typename real_type>
+void altar::cuda::norms::cudaL2::
+normllk_weighted(data_view_t<real_type> data, // input data, a (samples x parameters) view
+    weight_view_t<real_type> weight, // the weight of each column, a (parameters,) view
+    result_view_t<real_type> probability, // output norm, a (samples,) view
+    const size_t batch, // first batch of samples to be computed batch<=samples
+    const real_type l2constant, // constant to be added to probability
+    cudaStream_t stream)
+{
+    // one thread per sample
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(batch, blockSize);
+
+    // call cuda kernels
+    cudaL2_kernels::_normllk_weighted<real_type><<<gridSize, blockSize, 0, stream>>>(
+        data, weight, probability, batch, l2constant);
+    cudaCheckError("cudaL2::L2normLLKWeighted error");
+}
+
+// explicit instantiation
+template void altar::cuda::norms::cudaL2::normllk_weighted<float>(
+    data_view_t<float>, weight_view_t<float>, result_view_t<float>, const size_t, const float,
+    cudaStream_t);
+template void altar::cuda::norms::cudaL2::normllk_weighted<double>(
+    data_view_t<double>, weight_view_t<double>, result_view_t<double>, const size_t,
+    const double, cudaStream_t);
 
 // end of file

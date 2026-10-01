@@ -45,16 +45,18 @@ class Base(altar.component, implements=norm):
 
 
     @altar.export
-    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None):
+    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
+                        weight=None):
         """
         Compute the log likelihood {constant - 0.5 * norm(v)^2}. {out} is cuda only: fill it
         (allocating one if not given) with the per-sample likelihoods instead of returning a
         single scalar; the cpu implementation ignores it and returns the scalar as always.
+        {weight}, if given, weighs each component of {v}, e.g. a 0/1 mask of valid observations
         """
         if self._impl is None:
             self._impl = self._makeImpl()
         return self._impl.eval_likelihood(
-            v=v, constant=constant, sigma_inv=sigma_inv, batch=batch, out=out)
+            v=v, constant=constant, sigma_inv=sigma_inv, batch=batch, out=out, weight=weight)
 
 
     def _makeImpl(self):

@@ -41,9 +41,15 @@ class DataL2:
 
         observations = self.observations
 
-        self.dataobs = self.load_file(filename=self.data_file, shape=observations)
+        self.dataobs = self.load_file(
+            filename=self.data_file, shape=observations, dataset=self.datafile_dataset)
+        # the valid observations, if some are masked
+        self.load_mask()
 
         if self.cd_file is not None:
+            if self.mask is not None:
+                self.error.log("a data mask only works with a constant covariance, cd_std")
+                raise SystemExit(1)
             self.cd = self.load_file(
                 filename=self.cd_file, shape=(observations, observations), dtype=self.cd_dtype)
         else:
@@ -55,7 +61,7 @@ class DataL2:
         return self
 
 
-    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None):
+    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None, whitened=True):
         """
         compute the datalikelihood for prediction
 
@@ -63,20 +69,33 @@ class DataL2:
         {likelihood}: (samples,) grid, pre-allocated
         {residual}: whether {prediction} is already subtracted by the observed data
         {batch}: number of (first few) samples to be computed
+        {whitened}: whether the data covariance is already merged into {prediction}; if not,
+        it is applied here, to the residual, in place
         """
         batch = batch or prediction.shape[0]
+        # the weight of each observation: the mask of valid ones, if any
+        weight = self._weight
 
         # depending on convenience, users may
         # either copy dataobs to their model and use the residual as input of prediction
         # or compute prediction from forward model and subtract the dataobs here
         if not residual:
-            pred = numpy.asarray(prediction)
-            pred[:batch, :] -= numpy.asarray(self.dataobs_batch)[:batch, :]
+            # against the merged data, or the raw one for a raw prediction
+            data = self._dataobs_merged if whitened else self._dataobs_raw
+            self._subtract(prediction=prediction, data=data, batch=batch)
 
-        # the data covariance is always pre-merged into {prediction} on the gpu path (see the
-        # class docstring), so no {sigma_inv} is passed here
+        # a raw residual: with a constant covariance, fold cd_inv^2 into the weight; otherwise,
+        # apply the covariance factor to it
+        if not whitened:
+            if isinstance(self.cd_inv, float):
+                weight = self._weight_scaled
+            else:
+                self._whiten(prediction=prediction, batch=batch)
+
+        # the covariance is merged into {prediction} by now, so no {sigma_inv} is passed here
         self.norm.eval_likelihood(
-            v=prediction, constant=self.normalization, batch=batch, out=likelihood)
+            v=prediction, constant=self.normalization, batch=batch, out=likelihood,
+            weight=weight)
         # all done
         return likelihood
 
@@ -84,9 +103,38 @@ class DataL2:
     @property
     def dataobs_batch(self):
         """
-        A batch of duplicated observations, one copy per sample
+        A batch of duplicated observations, one copy per sample; built on first use, since
+        it can be large
         """
+        if self._dataobs_batch is None:
+            self._dataobs_batch = altar.cuda.managed(
+                shape=(self.samples, self.observations), cell=self.precision)
+            numpy.asarray(self._dataobs_batch)[:, :] = numpy.asarray(self._dataobs_merged)[None, :]
         return self._dataobs_batch
+
+
+    def load_mask(self):
+        """
+        Load the mask of valid observations from {mask_dataset}, and zero the masked data
+        """
+        # no mask: all the data must be valid
+        if self.mask_dataset is None:
+            self.mask = None
+            if not numpy.isfinite(self.dataobs).all():
+                self.error.log(f"non-finite values in '{self.data_file}', but no mask_dataset")
+                raise SystemExit(1)
+            return self
+
+        self.mask = self.load_file(
+            filename=self.data_file, shape=self.observations, dataset=self.mask_dataset,
+            dtype=bool)
+        if not numpy.isfinite(self.dataobs[self.mask]).all():
+            self.error.log(f"non-finite values in '{self.data_file}' that are not masked")
+            raise SystemExit(1)
+        # masked values are left out of the likelihood; zero them so they stay finite
+        self.dataobs[~self.mask] = 0
+        # all done
+        return self
 
 
     def release_cd(self):
@@ -136,9 +184,14 @@ class DataL2:
         Initialize gpu data and data covariance
         """
         observations = self.observations
-        samples = self.samples
 
-        self._dataobs_batch = altar.cuda.managed(shape=(samples, observations), cell=self.precision)
+        # the raw observed data, for raw predictions
+        self._dataobs_raw = altar.cuda.managed(shape=(observations,), cell=self.precision)
+        numpy.asarray(self._dataobs_raw)[:] = self.dataobs
+        # the weight of each observation, the mask of valid ones
+        if self.mask is not None:
+            self._weight = altar.cuda.managed(shape=(observations,), cell=self.precision)
+            numpy.asarray(self._weight)[:] = self.mask
 
         self.update_covariance()
         # all done
@@ -158,6 +211,10 @@ class DataL2:
         # a constant variance, cd_std^2: no factorization needed
         if cp is None and self.cd is None:
             return self._constant_covariance()
+        # a full C_chi mixes the masked observations into the valid ones
+        if self.mask is not None:
+            self.error.log("a data mask only works with a constant covariance, without a C_p")
+            raise SystemExit(1)
 
         cusolver = altar.cuda.cusolver
         cublas = altar.cuda.cublas
@@ -230,10 +287,9 @@ class DataL2:
         # load the observed data and merge the covariance into it
         gDataVec = altar.cuda.managed(shape=(observations,), cell=self.precision)
         numpy.asarray(gDataVec)[:] = self.dataobs
-        gDataVec = self.merge_cdto_data(cd_inv=self.cd_inv, data=gDataVec)
-
-        # duplicate it into a (samples x observations) batch
-        numpy.asarray(self._dataobs_batch)[:, :] = numpy.asarray(gDataVec)[None, :]
+        self._dataobs_merged = self.merge_cdto_data(cd_inv=self.cd_inv, data=gDataVec)
+        # and rebuild the batch from it, when next asked for
+        self._dataobs_batch = None
         # all done
         return self
 
@@ -266,11 +322,19 @@ class DataL2:
         Cd = cd_std^2 I: {cd_inv} is the scalar 1/cd_std, the factor of Cd_inv = cd_inv^2 I
         """
         from math import log, pi as π
-        observations = self.observations
+        # only the valid observations count
+        observations = self.observations if self.mask is None else int(self.mask.sum())
         self._chi_variance = None
         self.cd_inv = 1.0 / self.cd_std
         self.normalization = -0.5 * log(2 * π) * observations - observations * log(self.cd_std)
-        numpy.asarray(self._dataobs_batch)[:, :] = (numpy.asarray(self.dataobs) * self.cd_inv)[None, :]
+        self._dataobs_merged = altar.cuda.managed(shape=(self.observations,), cell=self.precision)
+        numpy.asarray(self._dataobs_merged)[:] = numpy.asarray(self.dataobs) * self.cd_inv
+        self._dataobs_batch = None
+        # the weight of a raw residual, with cd_inv^2 folded in
+        self._weight_scaled = altar.cuda.managed(shape=(self.observations,), cell=self.precision)
+        numpy.asarray(self._weight_scaled)[:] = self.cd_inv ** 2
+        if self.mask is not None:
+            numpy.asarray(self._weight_scaled)[:] *= self.mask
         return self
 
 
@@ -333,6 +397,65 @@ class DataL2:
         return gDataVec
 
 
+    def _subtract(self, prediction, data, batch):
+        """
+        prediction[s, :] -= data, for the first {batch} rows of {prediction}, as a rank-1 gemm
+        """
+        cublas = altar.cuda.cublas
+        handle = altar.cuda.cublas_handle()
+        pred = self._grid(prediction)
+        gemm = cublas.dgemm if self._cell(pred) == "float64" else cublas.sgemm
+        observations = self.observations
+        # a row of ones, one per sample
+        if self._ones is None or self._ones.shape[0] < batch:
+            self._ones = altar.cuda.managed(shape=(max(batch, self.samples),), cell=self.precision)
+            numpy.asarray(self._ones)[:] = 1
+        # read column-major, {prediction} is (observations x samples): add -data ⊗ ones to it
+        gemm(
+            handle,
+            cublas.Operation.N, cublas.Operation.N,
+            observations, batch, 1,
+            -1.0,
+            data, observations,
+            self._ones, 1,
+            1.0,
+            pred, observations,
+        )
+        return self
+
+
+    def _whiten(self, prediction, batch):
+        """
+        prediction[s, :] <- U @ prediction[s, :], for the first {batch} rows, with U the factor
+        of Cd_inv = U^T U in {cd_inv}'s row-major upper triangle
+        """
+        cublas = altar.cuda.cublas
+        handle = altar.cuda.cublas_handle()
+        pred = self._grid(prediction)
+        trmm = cublas.dtrmm if self._cell(pred) == "float64" else cublas.strmm
+        observations = self.observations
+        # read column-major, {prediction} is (observations x samples) and {cd_inv} is the
+        # lower triangular U^T, so left-multiplying by its transpose applies U to each sample
+        trmm(
+            handle,
+            cublas.SideMode.LEFT, cublas.FillMode.LOWER, cublas.Operation.T,
+            cublas.DiagType.NON_UNIT,
+            observations, batch, 1.0,
+            self.cd_inv, observations,
+            pred, observations,
+            pred, observations,
+        )
+        return self
+
+
+    @staticmethod
+    def _grid(buffer):
+        """
+        The grid behind {buffer}, an {altar.cuda} array or a grid already
+        """
+        return getattr(buffer, "grid", buffer)
+
+
     @staticmethod
     def _cell(grid):
         """
@@ -352,6 +475,8 @@ class DataL2:
     _chi_variance = None
     norm = None
     cd_dtype = None
+    datafile_dataset = None
+    mask_dataset = None
 
     # local variables
     normalization = 0
@@ -364,6 +489,12 @@ class DataL2:
     cd = None
     cd_inv = None
     _dataobs_batch = None
+    _dataobs_merged = None # the observed data, with the covariance merged in
+    _dataobs_raw = None # the raw observed data
+    mask = None # the valid observations, a numpy bool vector; None if all are valid
+    _weight = None # the mask, as a grid of 0/1 weights
+    _weight_scaled = None # the weight of a raw residual, with a constant cd_inv^2 folded in
+    _ones = None # a vector of ones, for subtracting the data from a batch
 
 
 # end of file
