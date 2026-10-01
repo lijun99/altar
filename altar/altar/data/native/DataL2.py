@@ -41,14 +41,19 @@ class DataL2:
         return self
 
 
-    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None):
+    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None, whitened=True):
         """
-        compute the datalikelihood for prediction (samples x observations)
+        compute the datalikelihood for prediction (samples x observations); {whitened=False}
+        marks {prediction} as raw even when {merge_cd_with_data} is set
         """
         # depending on convenience, users can
         # copy dataobs to their model and use the residual as input of prediction
         # or compute prediction from forward model and subtract the dataobs here
         batch = batch if batch is not None else likelihood.shape
+        # whether {prediction} has cd merged into it
+        merged = self.merge_cd_with_data and whitened
+        # the data to compare it against
+        data = self.dataobs if merged or not self.merge_cd_with_data else self._observed_gsl
 
         # go through the residual of each sample
         for idx in range(batch):
@@ -56,15 +61,11 @@ class DataL2:
             dp = prediction.getRow(idx)
             # subtract the dataobs if residual is not pre-calculated
             if not residual:
-                dp -= self.dataobs
-            if self.merge_cd_with_data:
-                # cd already merged, no need to multiply it by cd
-                norm = self.norm.eval(v=dp)
-            else:
-                norm = self.norm.eval(v=dp, sigma_inv=self.cd_inv)
-            # {norm.eval} returns the (unsquared) L2 norm; the Gaussian log-likelihood needs
-            # its square
-            likelihood[idx] = self.normalization - 0.5 * norm * norm
+                dp -= data
+            # cd already merged, no need to multiply it by cd
+            sigma_inv = None if merged else self.cd_inv
+            likelihood[idx] = self.norm.eval_likelihood(
+                v=dp, constant=self.normalization, sigma_inv=sigma_inv, weight=self.mask)
         # all done
         return self
 
@@ -92,11 +93,19 @@ class DataL2:
         load data and covariance
         """
         # next, the observations
-        self.dataobs = self.io.load(filename=self.data_file, shape=self.observations)
+        self.dataobs = self.io.load(
+            filename=self.data_file, shape=self.observations, dataset=self.datafile_dataset)
         # a raw copy, kept since {initialize_covariance} may merge the covariance into {dataobs}
         self._observed = numpy.array(self.dataobs, dtype=float)
+        # the valid observations, if some are masked
+        self.load_mask()
+        # the raw copy, as a gsl vector, for raw predictions against merged data
+        self._observed_gsl = self.io.toGsl(self._observed.copy())
 
         if self.cd_file is not None:
+            if self.mask is not None:
+                self.error.log("a data mask only works with a constant covariance, cd_std")
+                raise SystemExit(1)
             # finally, the data covariance
             self.cd = self.io.load(
                 filename=self.cd_file,
@@ -106,6 +115,31 @@ class DataL2:
             # use a constant covariance
             self.cd = self.cd_std
         return
+
+
+    def load_mask(self):
+        """
+        Load the mask of valid observations from {mask_dataset}, and zero the masked data
+        """
+        # no mask: all the data must be valid
+        if self.mask_dataset is None:
+            self.mask = None
+            if not numpy.isfinite(self._observed).all():
+                self.error.log(f"non-finite values in '{self.data_file}', but no mask_dataset")
+                raise SystemExit(1)
+            return self
+
+        mask = self.io.load(
+            filename=self.data_file, shape=self.observations, dataset=self.mask_dataset)
+        self.mask = numpy.asarray(mask) != 0
+        if not numpy.isfinite(self._observed[self.mask]).all():
+            self.error.log(f"non-finite values in '{self.data_file}' that are not masked")
+            raise SystemExit(1)
+        # masked values are left out of the likelihood; zero them so they stay finite
+        self._observed[~self.mask] = 0
+        self.dataobs = self.io.toGsl(self._observed.copy())
+        # all done
+        return self
 
 
     def observed(self):
@@ -156,6 +190,9 @@ class DataL2:
         elif isinstance(cd, float):
             # cd is standard deviation
             from math import log, pi as π
+            # only the valid observations count
+            if self.mask is not None:
+                observations = int(self.mask.sum())
             self.normalization = -0.5 * log(2 * π) * observations - observations * log(cd)
             self.cd_inv = 1.0 / cd
             if self.merge_cd_with_data:
@@ -173,6 +210,10 @@ class DataL2:
         if cp is None:
             self._chi_variance = None
             return self.initialize_covariance(cd=self.cd)
+        # a full C_chi mixes the masked observations into the valid ones
+        if self.mask is not None:
+            self.error.log("a data mask only works with a constant covariance, without a C_p")
+            raise SystemExit(1)
         cd = self.cd
         if isinstance(cd, float):
             cchi = numpy.diag(numpy.full(self.observations, cd * cd))
@@ -224,6 +265,8 @@ class DataL2:
     cd_std = None
     merge_cd_with_data = None
     norm = None
+    datafile_dataset = None
+    mask_dataset = None
 
     # local variables
     normalization = 0
@@ -235,6 +278,8 @@ class DataL2:
     cd = None
     cd_inv = None
     _chi_variance = None # diag(C_chi), when a C_p is part of it
+    _observed_gsl = None # the raw observed data, as a gsl vector
+    mask = None # the valid observations, a numpy bool vector; None if all are valid
     error = None
     info = None
 

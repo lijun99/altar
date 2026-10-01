@@ -24,6 +24,13 @@ class DataL2(base, family="altar.data.datal2"):
     data_file = altar.properties.path(default="data.txt")
     data_file.doc = "the name of the file with the observations"
 
+    datafile_dataset = altar.properties.str(default=None)
+    datafile_dataset.doc = "the name of the dataset with the observations, for an h5 data_file"
+
+    mask_dataset = altar.properties.str(default=None)
+    mask_dataset.doc = "the name of the boolean dataset in the h5 data_file that marks the " \
+                       "valid observations; masked ones are left out of the likelihood"
+
     observations = altar.properties.int(default=1)
     observations.doc = "the number of observed data"
 
@@ -53,6 +60,8 @@ class DataL2(base, family="altar.data.datal2"):
         """
         impl = super()._makeImpl()
         impl.data_file = self.data_file
+        impl.datafile_dataset = self.datafile_dataset
+        impl.mask_dataset = self.mask_dataset
         impl.observations = self.observations
         impl.cd_file = self.cd_file
         impl.cd_std = self.cd_std

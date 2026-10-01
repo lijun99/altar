@@ -58,12 +58,15 @@ class Base(altar.component, implements=data):
 
 
     @altar.export
-    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None):
+    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None, whitened=True):
         """
-        Compute the data log likelihood for {prediction} and deposit it in {likelihood}
+        Compute the data log likelihood for {prediction} and deposit it in {likelihood};
+        {whitened=False} marks {prediction} as a raw model prediction, without the data
+        covariance merged into it
         """
         return self._impl.eval_likelihood(
-            prediction=prediction, likelihood=likelihood, residual=residual, batch=batch)
+            prediction=prediction, likelihood=likelihood, residual=residual, batch=batch,
+            whitened=whitened)
 
 
     def update_covariance(self, cp=None):
@@ -118,6 +121,14 @@ class Base(altar.component, implements=data):
         A batch of duplicated observations, one copy per sample; cuda only
         """
         return self._impl.dataobs_batch
+
+
+    @property
+    def mask(self):
+        """
+        The boolean mask of valid observations, as a numpy vector; {None} if all are valid
+        """
+        return self._impl.mask
 
 
     @property

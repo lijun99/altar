@@ -12,7 +12,7 @@ Sanity check: altar.data.cuda.DataL2, against a real GPU.
 
 Exercises {update_covariance} (the cusolver dpotrf/dpotri/dpotrf sequence that computes the
 Cholesky-decomposed inverse covariance and the l2 normalization), {merge_cdto_data} (the
-cublas dtrmv "opposite triangle" translation), {eval_likelihood}, and {release_cd} -- all
+cublas dtrmv "opposite triangle" translation), {eval_likelihood} (whitened and raw predictions, with and without a mask), and {release_cd} -- all
 against numpy references, without going through the pyre component layer (blocked for
 array-trait components by a pre-existing pyre bug; see the session notes), instantiating the
 plain backend class directly instead, exactly as {norms_l2.py} does for {altar.norms.cuda.L2}.
@@ -56,8 +56,7 @@ def check(precision):
     d.info = _Channel()
     d.norm = L2()
 
-    d._dataobs_batch = pyre_grid_managed(shape=(samples, n), cell=precision)
-    d.update_covariance()
+    d.initialize_covariance()
 
     # reference: Cd_inv = L L^T (numpy, lower L); the class stores U = L^T in cd_inv's
     # row-major upper triangle
@@ -74,7 +73,7 @@ def check(precision):
 
     # merge_cdto_data: every row of dataobs_batch equals U @ dataobs, duplicated
     merged_expected = U @ dataobs
-    batch = numpy.asarray(d._dataobs_batch)
+    batch = numpy.asarray(d.dataobs_batch)
     for s in range(samples):
         assert numpy.allclose(batch[s], merged_expected, atol=tol)
 
@@ -96,6 +95,14 @@ def check(precision):
     expected = d.normalization - 0.5 * numpy.sum(resid**2, axis=1)
     assert numpy.allclose(lik, expected, atol=max(tol, 1e-4))
 
+    # eval_likelihood of a raw prediction: the class applies U to the residual itself
+    numpy.asarray(prediction)[:, :] = theta_raw
+    d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False,
+                      batch=samples, whitened=False)
+    resid = (theta_raw.astype("float64") - dataobs.astype("float64")) @ U.T.astype("float64")
+    expected = d.normalization - 0.5 * numpy.sum(resid**2, axis=1)
+    assert numpy.allclose(numpy.asarray(likelihood), expected, atol=max(tol, 1e-4))
+
     # release_cd
     d.release_cd()
     assert d.cd_inv is None
@@ -104,9 +111,71 @@ def check(precision):
     return
 
 
+def check_masked(precision):
+    """
+    A constant covariance and a mask: the masked observations drop out of the likelihood
+    """
+    import numpy
+    from altar.norms.cuda.L2 import L2
+    from altar.data.cuda.DataL2 import DataL2, pyre_grid_managed
+
+    tol = 1e-9 if precision == "float64" else 2e-5
+    n, samples, sigma = 7, 4, 0.3
+    rng = numpy.random.default_rng(7)
+    dataobs = rng.random(n).astype(precision)
+    mask = numpy.array([1, 1, 0, 1, 0, 1, 1], dtype=bool)
+    # a masked observation may be garbage
+    dataobs[2] = numpy.nan
+
+    class _Channel:
+        def log(self, msg):
+            pass
+
+    d = DataL2()
+    d.observations = n
+    d.cd_dtype = precision
+    d.precision = precision
+    d.cd = None
+    d.cd_std = sigma
+    d.samples = samples
+    d.error = _Channel()
+    d.info = _Channel()
+    d.norm = L2()
+    d.dataobs = dataobs
+    d.mask = mask
+    d.dataobs[~mask] = 0
+    d.initialize_covariance()
+
+    valid = int(mask.sum())
+    norm_expected = -0.5 * numpy.log(2 * numpy.pi) * valid - valid * numpy.log(sigma)
+    assert abs(d.normalization - norm_expected) < tol
+
+    pred_raw = rng.random((samples, n)).astype(precision)
+    resid = (pred_raw.astype("float64") - numpy.nan_to_num(dataobs).astype("float64")) / sigma
+    expected = norm_expected - 0.5 * numpy.sum((resid * mask)**2, axis=1)
+
+    prediction = pyre_grid_managed(shape=(samples, n), cell=precision)
+    likelihood = pyre_grid_managed(shape=(samples,), cell=precision)
+    # raw predictions
+    numpy.asarray(prediction)[:, :] = pred_raw
+    d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False,
+                      batch=samples, whitened=False)
+    assert numpy.allclose(numpy.asarray(likelihood), expected, atol=max(tol, 1e-4))
+    # whitened predictions
+    numpy.asarray(prediction)[:, :] = pred_raw / sigma
+    d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False,
+                      batch=samples)
+    assert numpy.allclose(numpy.asarray(likelihood), expected, atol=max(tol, 1e-4))
+
+    # all done
+    return
+
+
 def test():
     check("float64")
     check("float32")
+    check_masked("float64")
+    check_masked("float32")
     return
 
 

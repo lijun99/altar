@@ -8,6 +8,8 @@
 # all rights reserved
 #
 
+# externals
+import numpy
 # get the package
 import altar
 
@@ -31,11 +33,16 @@ class L2:
         return altar.blas.dnrm2(v)
 
 
-    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None):
+    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
+                        weight=None):
         """
         Compute the l2 log likelihood {constant - 0.5 * norm(v)^2}. {out} is cuda only and
-        ignored here; cpu always returns the scalar likelihood directly.
+        ignored here; cpu always returns the scalar likelihood directly. {weight} is applied
+        to {v} before {sigma_inv}, so it is only meaningful with a diagonal covariance
         """
+        if weight is not None:
+            v = v.clone()
+            numpy.asarray(v)[:] *= numpy.sqrt(numpy.asarray(weight))
         norm = self.eval(v=v, sigma_inv=sigma_inv)
         return constant - 0.5 * norm * norm
 

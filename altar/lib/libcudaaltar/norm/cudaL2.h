@@ -57,6 +57,18 @@ namespace altar {
                 void normllk(data_view_t<real_type> data, result_view_t<real_type> probability,
                     const size_t batch, const real_type constant=0.0, cudaStream_t stream=0);
 
+                // a (parameters,) view over someone else's cells, read-only
+                template <typename real_type>
+                using weight_view_t = pyre::grid::grid_t<
+                    pyre::grid::canonical_t<1>, pyre::memory::View<real_type, true>>;
+
+                // the same as {normllk}, with each column weighted:
+                // {probability[s] = constant - 0.5 * sum_i weight[i] * data[s, i]^2}
+                template <typename real_type>
+                void normllk_weighted(data_view_t<real_type> data, weight_view_t<real_type> weight,
+                    result_view_t<real_type> probability, const size_t batch,
+                    const real_type constant=0.0, cudaStream_t stream=0);
+
             } // of namespace cudaL2
         } // of namespace norms
     } // of namespace cuda

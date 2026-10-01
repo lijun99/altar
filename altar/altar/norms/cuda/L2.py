@@ -47,10 +47,11 @@ class L2:
         return out
 
 
-    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None):
+    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
+                        weight=None):
         """
         Fill {out} with the l2 log likelihood {constant - 0.5 * norm(v)^2} of each of the
-        first {batch} rows of {v}
+        first {batch} rows of {v}; {weight}, a (columns,) grid, weighs each column of {v}
         """
         v = self._grid(v)
         out = self._grid(out) if out is not None else None
@@ -62,7 +63,11 @@ class L2:
         if sigma_inv is not None:
             self._apply_covariance(v=v, sigma_inv=self._grid(sigma_inv))
 
-        altar.cuda.libcudaaltar.norms.cudaL2_normllk(v, out, batch, constant)
+        if weight is None:
+            altar.cuda.libcudaaltar.norms.cudaL2_normllk(v, out, batch, constant)
+        else:
+            altar.cuda.libcudaaltar.norms.cudaL2_normllk_weighted(
+                v, self._grid(weight), out, batch, constant)
         return out
 
 

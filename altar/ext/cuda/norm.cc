@@ -62,6 +62,34 @@ altar::cuda::extensions::norms::__init__(py::module & m) -> void
         },
         "data"_a, "result"_a, "batch"_a, "constant"_a,
         "fill {result} with {constant} - 0.5 * ||data||^2 for the first {batch} rows of {data}");
+
+    // constant - 0.5 sum_i weight_i data_i^2, the weighted l2 log likelihood
+    norms.def(
+        "cudaL2_normllk_weighted",
+        [](grid_t & data, grid_t & weight, grid_t & result, std::size_t batch,
+           double constant) -> void {
+            auto format = data.view().format;
+            if (weight.view().format != format) {
+                throw py::value_error("cudaL2_normllk_weighted: data and weight cell types differ");
+            }
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::norms::cudaL2::normllk_weighted<double>(
+                    regrid<const double, 2>(data), regrid<const double, 1>(weight),
+                    regrid<double, 1>(result), batch, constant);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::norms::cudaL2::normllk_weighted<float>(
+                    regrid<const float, 2>(data), regrid<const float, 1>(weight),
+                    regrid<float, 1>(result), batch, static_cast<float>(constant));
+            } else {
+                throw py::value_error(
+                    "cudaL2_normllk_weighted: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaL2_normllk_weighted");
+            synchronize("cudaL2_normllk_weighted");
+        },
+        "data"_a, "weight"_a, "result"_a, "batch"_a, "constant"_a,
+        "fill {result} with {constant} - 0.5 * sum_i weight[i] data[s, i]^2 for the first "
+        "{batch} rows of {data}");
 }
 
 
