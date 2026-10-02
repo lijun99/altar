@@ -195,6 +195,8 @@ __device__ void solve_device( const cg::thread_block & cta,
     // iterate over events
     for(auto it=0; it<events.nevents-1; it++)
     {
+        // every thread is done with the flags of the previous segment before thread 0 resets them
+        cta.sync();
         // get the event times and initialize controller
         if(cta.thread_rank()==0)
         {
@@ -222,6 +224,8 @@ __device__ void solve_device( const cg::thread_block & cta,
         // adaptive steps from t0 to t1
         while(!controller.t1reached)
         {
+            // every thread has read t1reached before thread 0 updates it
+            cta.sync();
             if(cta.thread_rank()==0)
             {
                 // check whether t0+h >= t1
