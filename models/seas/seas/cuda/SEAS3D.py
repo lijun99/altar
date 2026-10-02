@@ -39,6 +39,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     integrator.validators = altar.constraints.isMember("dopri5", "radau5")
     integrator.doc = "the ode integrator: dopri5 (explicit Runge-Kutta 5(4)), or radau5 " \
                      "(implicit Radau IIA, for stiff systems)"
+    gradient_step = altar.properties.float(default=1e-4)
+    gradient_step.doc = "the step of the central differences of the data likelihood gradient, " \
+                        "in the units of the parameters"
     verbose = altar.properties.bool(default=False)
     tau_0 = altar.properties.float(default=None)
     tau_0.doc = "the reference traction [Pa]; if set, integrate the traction instead of " \
@@ -500,6 +503,48 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # the samples whose integration failed are as unlikely as can be
             self.reject_failed(llk[system_start:system_start + batch_size_run])
 
+        # all done
+        return self
+
+    @altar.export
+    def gradient(self, controller, step, batch=None):
+        """
+        Fill {step.prior_gradient} and {step.data_gradient} with the gradients of the log prior
+        and of the data log likelihood w.r.t. the physical parameters, the latter by central
+        differences of the forward model, all samples and perturbations batched together
+        """
+        # the differences need the likelihood to many more digits than float32 keeps
+        if self.precision != "float64":
+            self.error.log("the seas3d gradient needs job.gpuprecision = float64")
+            raise SystemExit(1)
+        # in an ensemble, the ensemble owns the parameter sets and their priors
+        if not self.embedded and not self.checked_unbounded_priors:
+            self.verify_unbounded_priors()
+
+        theta = self.restrict(theta=step.theta)
+        batch = theta.shape[0] if batch is None else batch
+        grad_prior = self.restrict(theta=step.prior_gradient)
+        for name in ([] if self.embedded else self.psets_list):
+            self.psets[name].prior_gradient(theta=theta, gradient=grad_prior, batch=batch)
+
+        # each sample, shifted by +h and -h along each parameter
+        x = np.array(np.asarray(theta)[:batch], dtype=float)
+        parameters = x.shape[1]
+        h = self.gradient_step
+        shifted = np.repeat(x[:, None, :], 2 * parameters, axis=1)
+        for j in range(parameters):
+            shifted[:, 2 * j, j] += h
+            shifted[:, 2 * j + 1, j] -= h
+        n = batch * 2 * parameters
+        theta_fd = altar.cuda.matrix(source=shifted.reshape(n, parameters), dtype=self.precision)
+        llk_fd = altar.cuda.vector(shape=n, dtype=self.precision)
+        self.eval_data_likelihood(theta=theta_fd, likelihood=llk_fd, batch=n)
+
+        # the central differences; a sample with a failed integration gets no gradient
+        llk = np.asarray(llk_fd).reshape(batch, parameters, 2)
+        grad = (llk[:, :, 0] - llk[:, :, 1]) / (2 * h)
+        grad[(llk == np.finfo(llk.dtype).min).any(axis=(1, 2))] = 0
+        np.asarray(self.restrict(theta=step.data_gradient))[:batch] = grad
         # all done
         return self
 
