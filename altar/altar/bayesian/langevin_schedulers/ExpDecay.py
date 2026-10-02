@@ -46,6 +46,14 @@ class ExpDecay(altar.component, family="altar.langevin.schedulers.logdecay", imp
 
         return self.a*math.exp(-self.b*t)
 
+    def start(self, controller):
+        """
+        Processes to run before sampling; the langevin controller calls this, as for {PowerDecay}
+        """
+        controller.info.log(f"starting sampling rate {self.a}")
+        # all done
+        return self
+
 
 
 # end of file
