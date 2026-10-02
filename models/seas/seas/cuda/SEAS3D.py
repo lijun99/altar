@@ -61,7 +61,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
         # the integrators are cuda only
         if altar.backends.active() != "cuda":
-            self.error.log("seas3d runs on the gpu only; set job.gpus = 1")
+            application.error.log("seas3d runs on the gpu only; set job.gpus = 1")
             raise SystemExit(1)
 
         # call the super class initialization

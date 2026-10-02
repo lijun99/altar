@@ -96,7 +96,7 @@ class LinearViscous(BayesianL2, family="altar.models.seas.linearviscous"):
         """
         # the integrator is cuda only
         if altar.backends.active() != "cuda":
-            self.error.log("linearviscous runs on the gpu only; set job.gpus = 1")
+            application.error.log("linearviscous runs on the gpu only; set job.gpus = 1")
             raise SystemExit(1)
 
         # chain up
