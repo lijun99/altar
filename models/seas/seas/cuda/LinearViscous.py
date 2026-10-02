@@ -235,6 +235,14 @@ class LinearViscous(BayesianL2, family="altar.models.seas.linearviscous"):
         # the l2 norm of its residual, applying the data covariance to it
         self.dataobs.eval_likelihood(prediction=predictions, likelihood=likelihood,
                                      residual=False, whitened=False, batch=batch)
+        # the samples whose integration failed are as unlikely as can be, but finite, so that
+        # the annealing weights stay well defined
+        llk = numpy.asarray(likelihood)
+        failed = numpy.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)
+        if failed.any():
+            llk[:failed.size][failed] = numpy.finfo(llk.dtype).min
+            self.info.log(f"{failed.sum()} of {failed.size} samples failed to integrate, "
+                          f"and are rejected")
         # all done
         return self
 

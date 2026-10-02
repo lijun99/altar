@@ -497,8 +497,22 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # copy likelihood to global
             llk[system_start:system_start + batch_size_run] = \
                 np.asarray(llk_batch)[:batch_size_run]
+            # the samples whose integration failed are as unlikely as can be
+            self.reject_failed(llk[system_start:system_start + batch_size_run])
 
         # all done
+        return self
+
+    def reject_failed(self, llk):
+        """
+        Give the samples of the last batch whose integration failed the lowest likelihood,
+        finite so that the annealing weights stay well defined
+        """
+        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:llk.size]
+        if failed.any():
+            llk[failed] = np.finfo(llk.dtype).min
+            self.info.log(f"Device {self.device.id}: {failed.sum()} of {failed.size} samples "
+                          f"failed to integrate, and are rejected")
         return self
 
 
