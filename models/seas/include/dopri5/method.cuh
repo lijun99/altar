@@ -37,6 +37,7 @@ struct StepStatistics {
     int rejected; // rejected steps
     int stiff; // accepted steps whose size was limited by stability rather than accuracy
     int cycles; // spin-up cycles, zero without spin up
+    bool failed; // whether the integration was given up on
     double hmin; // the smallest accepted step
     double hmax; // the largest accepted step
 };

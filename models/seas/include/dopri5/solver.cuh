@@ -270,6 +270,9 @@ __device__ void solve_device( const cg::thread_block & cta,
                 controller.t0_increment();
             cta.sync();
         } // end of t steps iteration
+        // stop at a failed system; every thread reads the flag after the loop's last sync
+        if (controller.failed)
+            break;
     } // end of events iteration
     // all done
 }
@@ -342,7 +345,7 @@ auto Solver<real_type, ode_system_type, event_type, method_type>::statistics(con
     auto stats = ::std::vector<StepStatistics>(systems);
     for (auto i = 0; i < systems; i++) {
         const auto & c = controller_holder->controllers[i];
-        stats[i] = StepStatistics{ c.accepted, c.rejected, c.stiff, c.cycles,
+        stats[i] = StepStatistics{ c.accepted, c.rejected, c.stiff, c.cycles, c.failed,
                                    static_cast<double>(c.hmin), static_cast<double>(c.hmax) };
     }
     return stats;

@@ -18,12 +18,14 @@ namespace altar::cuda::py::seas {
         -> py::dict
     {
         std::vector<int> accepted, rejected, stiff, cycles;
+        std::vector<bool> failed;
         std::vector<double> hmin, hmax;
         for (const auto & s : stats) {
             accepted.push_back(s.accepted);
             rejected.push_back(s.rejected);
             stiff.push_back(s.stiff);
             cycles.push_back(s.cycles);
+            failed.push_back(s.failed);
             hmin.push_back(s.hmin);
             hmax.push_back(s.hmax);
         }
@@ -32,6 +34,7 @@ namespace altar::cuda::py::seas {
         d["rejected"] = rejected;
         d["stiff"] = stiff;
         d["cycles"] = cycles;
+        d["failed"] = failed;
         d["hmin"] = hmin;
         d["hmax"] = hmax;
         return d;

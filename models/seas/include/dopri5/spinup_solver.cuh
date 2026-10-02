@@ -117,7 +117,7 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     // repeat cycles until convergence or max_cycles reached
     bool converged = false;
     int icycle = 0;
-    while (!converged && icycle<max_cycles)
+    while (!converged && !controller.failed && icycle<max_cycles)
     {
         if (verbose && (cta.thread_rank() == 0))
            printf("%i %i", system_id, icycle);
@@ -147,12 +147,12 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
         controller.cycles = icycle;
         if (converged && verbose)
             printf("%i %i>", system_id, icycle);
-        else if (!converged)
+        else if (!converged && !controller.failed)
             printf("%i[WARNING: maximum iterations reached for system %i]", icycle, system_id);
     }
 
     //converged, last run for dense_out
-    if (dense_out)
+    if (dense_out && !controller.failed)
     {
         if (cta.thread_rank() == 0)
         {

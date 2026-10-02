@@ -43,6 +43,12 @@ struct __ALIGNED__ Controller
     int rejected; // rejected steps
     int stiff; // accepted steps limited by stability rather than accuracy
     int cycles; // spin-up cycles
+    bool failed; // whether the system was given up on
+    // the most steps, accepted or rejected, in one solve
+    static constexpr int MAX_STEPS = 1000000;
+    // the most rejections in a row; each shrinks the step by half or more
+    static constexpr int MAX_REJECTIONS = 50;
+    int consecutive_rejections;
     T hmin; // the smallest accepted step
     T hmax; // the largest accepted step
 
@@ -57,6 +63,8 @@ struct __ALIGNED__ Controller
         rejected = 0;
         stiff = 0;
         cycles = 0;
+        failed = false;
+        consecutive_rejections = 0;
         hmin = cuda::std::numeric_limits<T>::max();
         hmax = static_cast<T>(0);
     }
@@ -298,6 +306,7 @@ __device__ void Controller<T>::check_convergence(
             errold=max(err,static_cast<T>(1.0e-4));
             // keep track of the accepted steps
             accepted++;
+            consecutive_rejections = 0;
             hmin = min(hmin, hrun);
             hmax = max(hmax, hrun);
         }
@@ -312,6 +321,16 @@ __device__ void Controller<T>::check_convergence(
             // a shorter step no longer reaches t1
             t1reached = false;
             rejected++;
+            consecutive_rejections++;
+        }
+
+        // give up on a system whose steps keep being rejected, e.g., after its state
+        // overflowed, or that needs more steps than any sensible solve
+        if (!isfinite(hnext) || (t0 < t1 && hnext < cuda::std::numeric_limits<T>::min())
+            || consecutive_rejections >= MAX_REJECTIONS || accepted + rejected >= MAX_STEPS) {
+            failed = true;
+            converged = true;
+            t1reached = true;
         }
         // printf("test controller err h scale hnext %d %d %g %g %g %g %g %g \n",
         //        blockIdx.x, counter, t0, t1, err, hrun, scale, hnext);
