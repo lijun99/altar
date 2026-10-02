@@ -238,11 +238,14 @@ class MPILangevin(LangevinMethod):
         # the prior
         posterior = altar.vector.collect(
             vector=step.posterior, communicator=communicator, destination=manager)
-        # the gradients, so the archived state reflects the last sweep, not zeros
-        grad_prior = altar.matrix.collect(
-            matrix=step.grad_prior, communicator=communicator, destination=manager)
-        grad_data = altar.matrix.collect(
-            matrix=step.grad_data, communicator=communicator, destination=manager)
+        # the gradients, so the archived state reflects the last sweep, not zeros; a cuda
+        # worker's host copy of its state has none
+        grad_prior = grad_data = None
+        if hasattr(step, "grad_prior"):
+            grad_prior = altar.matrix.collect(
+                matrix=step.grad_prior, communicator=communicator, destination=manager)
+            grad_data = altar.matrix.collect(
+                matrix=step.grad_data, communicator=communicator, destination=manager)
 
         # if I am not the manager task
         if self.rank != self.manager:
@@ -251,8 +254,8 @@ class MPILangevin(LangevinMethod):
 
         # the manager packs the state of the problem and returns it
         return self.LangevinStep(
-            beta=β, theta=θ,
-            likelihoods=(prior,data,posterior), gradients=(grad_prior,grad_data))
+            beta=β, theta=θ, likelihoods=(prior,data,posterior),
+            gradients=None if grad_prior is None else (grad_prior,grad_data))
 
 
     def partition(self):

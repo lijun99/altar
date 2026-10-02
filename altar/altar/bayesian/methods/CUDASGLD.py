@@ -125,6 +125,12 @@ class CUDASGLD:
             # update theta_sampling
             step.updateTheta()
 
+        # keep the cpu copy current, in physical space, for the mpi layer to collect
+        if step.has_reparametrization:
+            step.theta.copy(step.theta_sampling)
+            model.to_physical(theta=step.theta, batch=step.samples)
+        step.copy_to_cpu(step=self.step)
+
         # all done
         return self
 
