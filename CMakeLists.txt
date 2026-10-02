@@ -100,8 +100,9 @@ endif()
 # build the models
 add_subdirectory(models/emhp)
 add_subdirectory(models/gaussian)
-add_subdirectory(models/mogi)
-add_subdirectory(models/cdm)
+# mogi and cdm still include pyre's removed gsl capsules header; left out until they're ported
+# add_subdirectory(models/mogi)
+# add_subdirectory(models/cdm)
 add_subdirectory(models/linear)
 add_subdirectory(models/seismic)
 add_subdirectory(models/seas)
