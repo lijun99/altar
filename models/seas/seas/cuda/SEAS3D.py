@@ -33,6 +33,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     cuda_batch_size.doc = \
         "max system/sample size to be processed by cuda in a batch, as limited by gpu memory"
     cuda_threads = altar.properties.int(default=0)
+    cuda_threads.doc = "threads per block for the integrator; 0 picks them from the number of " \
+                       "patches; either way, capped by what the integrator's registers allow"
     integrator = altar.properties.str(default="dopri5")
     integrator.validators = altar.constraints.isMember("dopri5", "radau5")
     integrator.doc = "the ode integrator: dopri5 (explicit Runge-Kutta 5(4)), or radau5 " \

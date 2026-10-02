@@ -18,6 +18,7 @@
 #include "events.cuh"
 #include <assert.h>
 #include <vector>
+#include <algorithm>
 
 
 // enclosed in namespace
@@ -82,6 +83,15 @@ struct Solver
     void solve_ivp(const bool dense_out) { solve_ivp(dense_out, systems_batch, 0); };
     // the step statistics of the first {systems} systems of the last solve
     auto statistics(const int systems) const -> ::std::vector<StepStatistics>;
+
+    // the threads per block for {kernel}: mine, capped by what its registers allow
+    template <class kernel_type>
+    auto launch_threads(kernel_type kernel) const -> int
+    {
+        cudaFuncAttributes attributes;
+        cudaSafeCall(cudaFuncGetAttributes(&attributes, kernel));
+        return ::std::min(threads, attributes.maxThreadsPerBlock / 32 * 32);
+    }
 };
 
 
@@ -97,28 +107,18 @@ Solver<real_type, ode_system_type, event_type, method_type>::Solver(ode_system_t
     stepper_holder = new stepper_holder_type(ode, systems_batch);
     controller_holder = new controller_holder_type(systems_batch, atol, rtol);
 
-    // set number of patches
-    if (threads_ <= 0 || threads_ > 1024) // keep default values based on number of patches
+    // set the threads per block
+    if (threads_ <= 0 || threads_ > 1024)
     {
-        auto patches = ode.patches;
-        if (patches < 64)
-            threads = 32;
-        else if (patches < 128)
-            threads = 64;
-        else if (patches < 256)
-            threads =128;
-        else if (patches < 512)
-            threads = 256;
-        else if (patches < 1024 )
-            threads = 512;
-        else
-            threads = 1024;
-        // printf("Solver initialized with %i threads based on %i patches\n", threads, patches);
+        // enough for about two elements each in the vector operations over a system; the
+        // launches cap it further, by what each kernel's registers allow
+        threads = 32;
+        while (threads < 1024 && 2*threads < system_size)
+            threads *= 2;
     }
     else
     {
         threads = threads_;
-        // printf("Solver initialized with user-defined %i threads\n", threads);
     }
 }
 
@@ -161,11 +161,13 @@ void Solver<real_type, ode_system_type, event_type, method_type>::set_init_value
 
     int blocks = systems;
 
-    int sMemSize = threads*sizeof(real_type);
+    auto kernel = set_init_values_kernel<real_type, ode_system_type, event_type, method_type>;
+    auto block = launch_threads(kernel);
+    int sMemSize = block*sizeof(real_type);
 
     // printf("      blocks=%i\n", blocks);
     // printf("      system_offset=%i\n", system_offset);
-    set_init_values_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, threads, sMemSize>>>(
+    kernel<<<blocks, block, sMemSize>>>(
         system_offset,
         ode,
         events,
@@ -305,9 +307,11 @@ void Solver<real_type, ode_system_type, event_type, method_type>::solve_ivp(cons
 {
     int blocks = systems;
     // the block reductions need one cell of shared memory per thread
-    int sMemSize = threads*sizeof(real_type);
+    auto kernel = solve_ivp_kernel<real_type, ode_system_type, event_type, method_type>;
+    auto block = launch_threads(kernel);
+    int sMemSize = block*sizeof(real_type);
 
-    solve_ivp_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, threads, sMemSize>>>(
+    kernel<<<blocks, block, sMemSize>>>(
         system_offset, dense_out,
         ode,
         events,

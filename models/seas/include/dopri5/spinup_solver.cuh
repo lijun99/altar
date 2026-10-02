@@ -179,12 +179,14 @@ void SpinupSolver<real_type, ode_system_type, event_type, method_type>::solve_iv
 {
     int blocks = systems;
 
-    int sMemSize = this->threads*sizeof(real_type);
+    auto kernel = solve_ivp_cycles_kernel<real_type, ode_system_type, event_type, method_type>;
+    auto block = this->launch_threads(kernel);
+    int sMemSize = block*sizeof(real_type);
 
     // printf("    inside spinup_solver.cuh:solve_ivp_cycles (patches=%i, threads=%i, blocks=%i)\n",
     //        patches, threads, blocks);
 
-    solve_ivp_cycles_kernel<real_type, ode_system_type, event_type, method_type><<<blocks, this->threads, sMemSize>>>(
+    kernel<<<blocks, block, sMemSize>>>(
         system_offset,
         dense_out,
         this->ode,
