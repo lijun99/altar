@@ -60,7 +60,8 @@ seas:
     job.chains = 2**10 ; number of chains per task
     job.steps = 100 ; the length of each chain
 
-    ; the archiver
+    ; anneal with catmip, and keep its output
+    controller = altar.bayesian.catmip
     controller.archiver.output_dir = results
 
 ; end of file
