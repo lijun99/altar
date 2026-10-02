@@ -50,6 +50,7 @@ namespace cov {
         gsl_vector * w; // the vector of weights
         gsl_vector * llk; // the vector of data log-likelihoods
         double llkMedian; // the median value of the log-likelihoods
+        double llkMax; // the largest one, the offset of the weights so they can't overflow
         double target; // the COV value we are aiming for; should be 1
     };
 }
@@ -99,6 +100,7 @@ dbeta_brent(vector_t *llk, double llkMedian, vector_t *w)
     covargs.target = _target;
     // initialize the median of the log-likelihoods
     covargs.llkMedian = llkMedian;
+    covargs.llkMax = gsl_vector_max(llk);
 
     // search bounds and initial guess
     double f_beta_high = cov::cov(beta_high, &covargs);
@@ -119,6 +121,12 @@ dbeta_brent(vector_t *llk, double llkMedian, vector_t *w)
     double f_beta_low = cov::cov(beta_low, &covargs);
     // do this last so our first printout reflects the values at out guess
     double f_beta_guess = cov::cov(beta_guess, &covargs);
+    // the minimizer needs the guess to bracket the minimum, below both ends; for very peaked
+    // likelihoods the guess starts too large, so shrink it until it does
+    for (auto i = 0; i < 300 && f_beta_guess >= f_beta_low; i++) {
+        beta_guess /= 10;
+        f_beta_guess = cov::cov(beta_guess, &covargs);
+    }
 
     // lie to the minimizer, if necessary
     // if (f_beta_low < f_beta_guess) f_beta_low = 1.01 * f_beta_guess;
@@ -251,6 +259,7 @@ dbeta_grid(vector_t *llk, double llkMedian, vector_t *w)
     covargs.target = _target;
     // initialize the median of the log-likelihoods
     covargs.llkMedian = llkMedian;
+    covargs.llkMax = gsl_vector_max(llk);
 
     // search bounds and initial guess
     double f_beta_high = cov::cov(beta_high, &covargs);
@@ -342,7 +351,9 @@ double cov::cov(double dbeta, void * parameters)
 
     // initialize {w}
     for (size_t i = 0; i < p.w->size; i++) {
-        gsl_vector_set(p.w, i, std::exp(dbeta * (gsl_vector_get(p.llk, i)  - p.llkMedian)));
+        // offset by the largest log-likelihood, which leaves the normalized weights and the
+        // COV unchanged, but keeps exp from overflowing for very peaked likelihoods
+        gsl_vector_set(p.w, i, std::exp(dbeta * (gsl_vector_get(p.llk, i)  - p.llkMax)));
     }
     // normalize
     double wsum = p.w->size * gsl_stats_mean(p.w->data, p.w->stride, p.w->size);
