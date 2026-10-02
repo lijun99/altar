@@ -2,6 +2,9 @@
  *  Traction-dependent events (identical to ratedependent)
  */
 
+
+#include "wright_omega.cuh"
+
 #ifndef __td_event_cuh__
 #define __td_event_cuh__
 
@@ -22,7 +25,14 @@ struct __ALIGNED__ SEASEvents {
     const int* delta_tau_ix;
     const int* delta_tau_ix_final;
     bool* spun_up;
-    const T v_ratio_max; // maximum relative velocity [-], zero if no maximum
+    const T v_ratio_max; // maximum velocity [-] ratio relative to v_0, zero if no maximum
+    const T* alpha_h; // [systems * patches]
+    const T mu_over_2vs;
+    const T v_0;
+    const T rho;
+    T v_max = v_ratio_max * v_0;
+    T eta_v_max = mu_over_2vs * v_max;
+    T rho_log_v_max_v_0 = rho + log(v_max / v_0);
 
     // constructor
     SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,
@@ -30,7 +40,8 @@ struct __ALIGNED__ SEASEvents {
                 const int systems_, const int patches_, const int units_, const T v_ratio_max_)
         : num_slips(num_slips_), num_eq(num_eq_), systems(systems_), patches(patches_), units(units_),
           tevents(tevents_), delta_tau_ix(delta_tau_ix_), delta_tau_ix_final(delta_tau_ix_final_),
-          ychange(delta_tau_div_alpha_h_), v_ratio_max(v_ratio_max_)
+          ychange(delta_tau_div_alpha_h_), v_ratio_max(v_ratio_max_),
+          alpha_h(alpha_h_), mu_over_2vs(mu_over_2vs_), v_0(v_0_), rho(rho_)
     {
         system_size = patches * units;
         nevents = num_slips + 2;
@@ -75,25 +86,35 @@ struct __ALIGNED__ SEASEvents {
             auto yevent = ychange + system_id * num_eq * patches * 2 + eq_id * patches * 2;
             for (int id = cta.thread_rank(); id < patches; id += cta.size())
             {
-                auto zeta1 = yn[id + patches * 2] + yevent[id];
-                auto zeta2 = yn[id + patches * 3] + yevent[id + patches];
+                // apply simple coseismic traction change
+                auto tau1 = yn[id + patches * 2] + yevent[id];
+                auto tau2 = yn[id + patches * 3] + yevent[id + patches];
                 if (v_ratio_max > 0)
                 {
-                    assert (false); // not updated to work with traction yet
-                    auto vr1 = exp(zeta1);
-                    auto vr2 = exp(zeta2);
-                    auto vrmag = sqrt(vr1 * vr1 + vr2 * vr2);
-                    if (vrmag > v_ratio_max)
+                    // compute traction magnitude
+                    auto tau_mag = sqrt(pow(tau1, 2) + pow(tau2, 2));
+                    // compute velocity magnitude
+                    auto minusc = mu_over_2vs / alpha_h[system_id * patches + id];
+                    auto zprime = (
+                        tau_mag / alpha_h[system_id * patches + id]
+                        - rho + log(v_0 * minusc)
+                    );
+                    auto v_mag = wright_omega(zprime) / minusc;
+                    // check magnitude
+                    if (v_mag > v_max)
                     {
-                        auto ratio = min(vrmag, v_ratio_max) / vrmag;
-                        vr1 *= ratio;
-                        vr2 *= ratio;
-                        zeta1 = log(vr1);
-                        zeta2 = log(vr2);
+                        // direction of traction
+                        auto tauhat_1 = tau1 / tau_mag;
+                        auto tauhat_2 = tau2 / tau_mag;
+                        // get traction but with v_max instead
+                        auto tau_mag_new = rho_log_v_max_v_0 * alpha_h[system_id * patches + id] + eta_v_max;
+                        // get traction vector
+                        tau1 = tauhat_1 * tau_mag_new;
+                        tau2 = tauhat_2 * tau_mag_new;
                     }
                 }
-                yn[id + patches * 2] = zeta1;
-                yn[id + patches * 3] = zeta2;
+                yn[id + patches * 2] = tau1;
+                yn[id + patches * 3] = tau2;
             }
         }
     };

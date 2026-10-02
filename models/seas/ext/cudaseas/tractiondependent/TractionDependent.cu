@@ -120,7 +120,7 @@ void TractionDependent<T, MethodType>::forward_model_batch(
                            delta_tau_bounded_indices,
                            delta_tau_bounded_indices_final,
                            num_forward_batch, num_inner_patches, UNITS,
-                           v_ratio_max};
+                           v_ratio_max, alpha_h_vec, mu_over_2vs, v_0, rho};
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol,

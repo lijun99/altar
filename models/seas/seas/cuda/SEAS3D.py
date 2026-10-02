@@ -51,10 +51,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "(implicit Radau IIA, for stiff systems)"
     )
     verbose = altar.properties.bool(default=False)
-    tau_0 = altar.properties.float(default=None)
-    tau_0.doc = (
-        "the reference traction [Pa]; if set, integrate the traction instead of "
-        "the logarithmic velocity"
+    forward_ode = altar.properties.str(default="tractiondependent")
+    forward_ode.validators = altar.constraints.isMember(
+        "ratedependent", "tractiondependent"
+    )
+    forward_ode.doc = (
+        "which forward ODE to use, the simpler 'ratedependent' tracking logarithmic "
+        "velocity or the 'tractiondependent' one which tracks the elastic traction"
     )
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
@@ -130,9 +133,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             0 if self.sim.v_max is None else self.sim.v_max / self.rheo.v_0
         )
         # the traction integrator doesn't cap the velocity yet
-        if self.tau_0 is not None and self.v_ratio_max > 0:
+        if (self.forward_ode == "tractiondependent") and (self.v_ratio_max > 0):
             self.error.log(
-                "the traction-dependent integrator (tau_0) does not support v_max; "
+                "the traction-dependent integrator does not support v_max; "
                 "remove v_max from the simulation configuration"
             )
             raise SystemExit(1)
@@ -302,10 +305,11 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
         # create CUDA model for all samples (need to reduce to batch size)
         ticks.append(self.sync_and_time())
-        ode = "ratedependent" if self.tau_0 is None else "tractiondependent"
         precision = {"float64": "double", "float32": "float"}[self.gpuprec]
         method = "" if self.integrator == "dopri5" else f"_{self.integrator}"
-        self.cmodel = getattr(getattr(libcudaseas, ode), f"model_{precision}{method}")()
+        self.cmodel = getattr(
+            getattr(libcudaseas, self.forward_ode), f"model_{precision}{method}"
+        )()
         channel.log(
             f"Device {self.device.id}: Running {ode} model with {self.integrator} "
             f"in {self.gpuprec} precision"
@@ -338,10 +342,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             n_stat_ref=self.n_stat_ref,
             ref_vel_index=self.velocity_reference_index,
         )
-        if self.tau_0 is None:
+        if self.forward_ode == "ratedependent":
             self.cmodel.initialize(**args, state_init=self.state_init.grid)
-        else:
-            self.cmodel.initialize(**args, tau_0=float(self.tau_0))
+        else:  # self.forward_ode == "tractiondependent"
+            self.cmodel.initialize(**args, rho=self.sim.rho)
 
         # remove precomputed farfield effects on observations
         ticks.append(self.sync_and_time())
@@ -475,12 +479,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             ]
         delta_tau_bounded_compressed_stacked = np.stack(dtau_bound_comp_list)
         # the traction integrator takes the stress changes as they are
-        if self.tau_0 is None:
+        if self.forward_ode == "ratedependent":
             delta_tau_bound_comp_div_alpha = (
                 delta_tau_bounded_compressed_stacked
                 / alpha_h_vec_stacked[:, None, :, None]
             )
-        else:
+        else:  # self.forward_ode == "tractiondependent"
             delta_tau_bound_comp_div_alpha = delta_tau_bounded_compressed_stacked
         delta_tau_bound_comp_div_alpha = np.concatenate(
             [
@@ -529,13 +533,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             verbose=self.verbose,
         )
 
-        if self.tau_0 is None:
+        if self.forward_ode == "ratedependent":
 
             # call CUDA forward model
             ticks.append(self.sync_and_time())
             self.cmodel.forward_model_batch(**args)
 
-        else:
+        else:  # self.forward_ode == "tractiondependent"
 
             # create state_init if integrating traction
             # initial patch state, (cuda_batch_size, 4 * num_inner_patches) [m|m|Pa|Pa]
@@ -544,10 +548,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # alpha_h_vec_stacked is [batch_size_run, patches]
             v_init_norm = np.linalg.norm(self.sim.v_init, axis=1)  # is [patches]
             tau_init_norm = (
-                self.tau_0
-                + alpha_h_vec_stacked * np.log(v_init_norm[None, :] / self.rheo.v_0)
-                + self.fault.mu_over_2vs * v_init_norm[None, :]
-            )  # is also now [batch_size_run, patches]
+                self.sim.rho + np.log(v_init_norm[None, :] / self.rheo.v_0)
+            ) * alpha_h_vec_stacked + self.fault.mu_over_2vs * v_init_norm[None, :]
+            # tau_init_norm  is also now [batch_size_run, patches]
             tau_init = self.sim.v_init[None, :, :] * (
                 tau_init_norm[:, :, None] / v_init_norm[None, :, None]
             )  # is now [batch_size_run, patches, 2]

@@ -36,9 +36,9 @@ struct __ALIGNED__ TractionDependentODE {
     const T* K_int; // [patches, 2, patches, 2]
     const T* K_ext; // [patches * 2]
     const T* v_p; // [patches * 2]
-    T mu_over_2vs;
-    T v_0;
-    T rho; // <--- NEW: dimensionless fricitonal parameter
+    const T mu_over_2vs;
+    const T v_0;
+    const T rho; // <--- NEW: dimensionless fricitonal parameter
 
     // ode function called when solving a system with a thread block
     //
