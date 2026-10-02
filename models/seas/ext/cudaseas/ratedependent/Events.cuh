@@ -127,20 +127,17 @@ struct __ALIGNED__ SEASEvents {
                 // check for maximum velocity if set
                 if (v_ratio_max > 0)
                 {
-                    // convert to linear relative velocity
-                    auto vr1 = exp(zeta1);
-                    auto vr2 = exp(zeta2);
-                    // get magnitude
-                    auto vrmag = sqrt(vr1 * vr1 + vr2 * vr2);
-                    // if maximum velocity exceeded, scale 
-                    if (vrmag > v_ratio_max)
+                    // the log of the relative velocity magnitude, without forming exp(zeta),
+                    // which overflows for large jumps
+                    auto m = max(zeta1, zeta2);
+                    auto log_vrmag = m + log(sqrt(exp(static_cast<T>(2)*(zeta1 - m))
+                                                  + exp(static_cast<T>(2)*(zeta2 - m))));
+                    // if maximum velocity exceeded, scale both components down to it
+                    auto excess = log_vrmag - log(v_ratio_max);
+                    if (excess > 0)
                     {
-                        auto ratio = min(vrmag, v_ratio_max) / vrmag;
-                        vr1 *= ratio;
-                        vr2 *= ratio;
-                        // convert back to logarithmic velocity
-                        zeta1 = log(vr1);
-                        zeta2 = log(vr2);
+                        zeta1 -= excess;
+                        zeta2 -= excess;
                     }
                 }
                 // save to array
