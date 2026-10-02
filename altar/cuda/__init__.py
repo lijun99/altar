@@ -44,10 +44,11 @@ from .ext import cudaaltar as libcudaaltar
 
 def get_current_device():
     """
-    Return the device this process runs on; altar assumes one gpu per process (or per rank,
-    under mpi), so this is always the first one pyre.cuda found
+    Return the device this process runs on: the current cuda device, which each worker picks
+    from {job.gpuids}, so that several ranks on one host each get their own
     """
-    return manager.devices[0]
+    import cuda.core
+    return manager.devices[cuda.core.Device().device_id]
 
 
 def curand_generator():
