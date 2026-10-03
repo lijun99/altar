@@ -33,7 +33,7 @@ void TractionDependent<T, MethodType>::initialize(
         int n_slips_obs_,
         T v_0_,
         T mu_over_2vs_,
-        T tau_0_,
+        T rho_,
         int num_inner_patches_,
         T* K_inner_inner_onfault_,
         T* K_inner_asperities_v_plate_,
@@ -63,7 +63,7 @@ void TractionDependent<T, MethodType>::initialize(
 
     v_0 = v_0_;
     mu_over_2vs = mu_over_2vs_;
-    tau_0 = tau_0_; // <--- NEW
+    rho = rho_;
 
     num_inner_patches = num_inner_patches_;
     system_size = num_inner_patches * UNITS;
@@ -107,9 +107,9 @@ void TractionDependent<T, MethodType>::forward_model_batch(
 
     assert(num_forward_batch <= cuda_batch_size);
 
-    // create an instance of odefunc — pass tau_0
+    // create an instance of odefunc
     odefunc = new OdeType{num_inner_patches, UNITS, num_forward_batch,
-                          alpha_h_vec, mu_over_2vs, v_0, tau_0,
+                          alpha_h_vec, mu_over_2vs, v_0, rho,
                           K_inner_inner_onfault,
                           K_inner_asperities_v_plate,
                           v_plate_ddcs_proj_eff_inner};
@@ -120,7 +120,7 @@ void TractionDependent<T, MethodType>::forward_model_batch(
                            delta_tau_bounded_indices,
                            delta_tau_bounded_indices_final,
                            num_forward_batch, num_inner_patches, UNITS,
-                           v_ratio_max};
+                           v_ratio_max, alpha_h_vec, mu_over_2vs, v_0, rho};
 
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol,
@@ -142,7 +142,7 @@ void TractionDependent<T, MethodType>::forward_model_batch(
 
     // convert traction to velocity
     convert_traction<T>(sim_state, num_forward_batch, num_t_obs,
-                         num_inner_patches, v_0, mu_over_2vs, tau_0, alpha_h_vec, solver->threads);
+                         num_inner_patches, v_0, mu_over_2vs, rho, alpha_h_vec, solver->threads);
 
     // compute displacement
     compute_displacement_impl1<T>(

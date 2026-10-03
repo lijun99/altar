@@ -1,6 +1,6 @@
 /*
  *  Traction-dependent ODE function
- *  Same as RateDependentODE but with an additional constant tau_0
+ *  Same as RateDependentODE but with an additional constant rho
  */
 
 #include <cmath>
@@ -16,7 +16,7 @@
 
 
 // traction-dependent ode function
-// identical to RateDependentODE with the addition of a constant tau_0
+// identical to RateDependentODE with the addition of a constant rho
 template <class T>
 struct __ALIGNED__ TractionDependentODE {
     // required parameters, keep their names
@@ -36,18 +36,11 @@ struct __ALIGNED__ TractionDependentODE {
     const T* K_int; // [patches, 2, patches, 2]
     const T* K_ext; // [patches * 2]
     const T* v_p; // [patches * 2]
-    T mu_over_2vs;
-    T v_0;
-    T tau_0; // <--- NEW: constant reference traction [Pa]
+    const T mu_over_2vs;
+    const T v_0;
+    const T rho; // <--- NEW: dimensionless fricitonal parameter
 
     // ode function called when solving a system with a thread block
-    // y0, f [2(quantity: displacement, stress), 2(component: dip,strike), patches]
-    // f[0, :, :] = v = v0 exp(y0[1, :, :])
-    // f[1, :, :] = (tau - tau_0) = [K_ext (v-vp) - K_int] / (mu_over_2vs * v + alpha_h)
-    //
-    // The traction-dependent modification: tau_0 is subtracted from the
-    // computed stress before dividing by the denominator, so the ODE
-    // evolves the *deviation* from the reference traction.
     //
     __device__ __forceinline__  void dydt_block(const cg::thread_block& cta, const int system_id, const T t, const T* y0, T* f)
     {
@@ -63,8 +56,8 @@ struct __ALIGNED__ TractionDependentODE {
             // (temporarily)
             auto minusc = mu_over_2vs / alpha_h[system_id * patches + patch_id];
             auto zprime = (
-                (f[patch_id + 2 * patches] - tau_0) / alpha_h[system_id * patches + patch_id] +
-                log(v_0 * minusc)
+                f[patch_id + 2 * patches] / alpha_h[system_id * patches + patch_id]
+                - rho + log(v_0 * minusc)
             );
             f[patch_id + 3 * patches] = wright_omega(zprime) / minusc;
 
@@ -102,7 +95,7 @@ struct __ALIGNED__ TractionDependentODE {
         printf("TractionDependentODE\n");
         printf("patches = %i, units = %i, system_size = %i, systems = %i\n",
                patches, units, system_size, systems);
-        printf("mu_over_2vs = %g, v_0 = %g, tau_0 = %g\n", mu_over_2vs, v_0, tau_0);
+        printf("mu_over_2vs = %g, v_0 = %g, rho = %g\n", mu_over_2vs, v_0, rho);
         printf("alpha_h = %g ... %g\n", alpha_h[0], alpha_h[systems * patches - 1]);
         printf("K_int = %g ... %g\n", K_int[0], K_int[patches * patches * 4 - 1]);
         printf("K_ext = %g ... %g\n", K_ext[0], K_ext[2 * patches - 1]);
@@ -112,11 +105,11 @@ struct __ALIGNED__ TractionDependentODE {
 
     // constructor
     TractionDependentODE(const int p, const int u, const int sys,
-              const T* alpha_h_vec_, const T mu_over_2vs_, const T v_0_, const T tau_0_,
+              const T* alpha_h_vec_, const T mu_over_2vs_, const T v_0_, const T rho_,
               const T* K_inner_inner_onfault_, const T* K_inner_asperities_v_plate_,
               const T* v_plate_ddcs_proj_eff_inner_)
         : patches(p), units(u), systems(sys), system_size(p*u),
-          mu_over_2vs(mu_over_2vs_), v_0(v_0_), tau_0(tau_0_),
+          mu_over_2vs(mu_over_2vs_), v_0(v_0_), rho(rho_),
           alpha_h(alpha_h_vec_), K_int(K_inner_inner_onfault_),
           K_ext(K_inner_asperities_v_plate_), v_p(v_plate_ddcs_proj_eff_inner_)
         {

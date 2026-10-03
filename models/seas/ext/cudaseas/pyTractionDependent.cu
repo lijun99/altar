@@ -33,7 +33,7 @@ public:
     // the step statistics of the last batch
     py::dict step_statistics() { return statistics_dict(_cmodel->statistics); }
 
-    // initialize — note the additional tau_0 parameter
+    // initialize
     void initialize(
         int cuda_batch_size,
         int max_cycles,
@@ -46,7 +46,7 @@ public:
         int n_slips_obs,
         T v_0,
         T mu_over_2vs,
-        T tau_0,              // <--- NEW: constant traction parameter
+        T rho,
         int num_inner_patches,
         grid_t & K_inner_inner_onfault,
         grid_t & K_inner_asperities_v_plate,
@@ -75,7 +75,7 @@ public:
             n_slips_obs,
             v_0,
             mu_over_2vs,
-            tau_0,            // <--- NEW
+            rho,
             num_inner_patches,
             cells<T>(K_inner_inner_onfault),
             cells<T>(K_inner_asperities_v_plate),
@@ -149,7 +149,7 @@ bind(py::module & m, const char * name)
         .def("initialize", &P::initialize,
              py::arg("cuda_batch_size"), py::arg("max_cycles"), py::arg("num_t_obs"), py::arg("t_obs_sec"),
              py::arg("num_ix_eq"), py::arg("num_eq"), py::arg("t_events"), py::arg("i_slips_obs"),
-             py::arg("n_slips_obs"), py::arg("v_0"), py::arg("mu_over_2vs"), py::arg("tau_0"),
+             py::arg("n_slips_obs"), py::arg("v_0"), py::arg("mu_over_2vs"), py::arg("rho"),
              py::arg("num_inner_patches"), py::arg("K_inner_inner_onfault"),
              py::arg("K_inner_asperities_v_plate"), py::arg("v_plate_ddcs_proj_eff_inner"),
              py::arg("sim_state"), py::arg("atol"), py::arg("rtol"), py::arg("spinup_atol"),

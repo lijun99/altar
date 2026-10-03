@@ -46,7 +46,7 @@ class TractionDependent {
             int n_slips_obs,
             T v_0_,
             T mu_over_2vs_,
-            T tau_0_,          // <--- NEW: constant traction parameter
+            T rho_,
             int num_inner_patches_,
             T* K_inner_inner_onfault_,
             T* K_inner_asperities_v_plate_,
@@ -117,7 +117,7 @@ class TractionDependent {
         const int components = 2;
         T v_0;
         T mu_over_2vs;
-        T tau_0; // <--- NEW: constant traction parameter [Pa]
+        T rho;
 
         // fault
         int num_inner_patches;

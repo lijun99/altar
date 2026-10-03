@@ -146,7 +146,7 @@ __global__ void convert_traction_kernel(
     const int patches,
     const T v_0,
     const T mu_over_2vs,
-    const T tau_0,
+    const T rho,
     const T* alpha_h)
 {
     // thread blocks along x - systems*slip_size
@@ -169,8 +169,7 @@ __global__ void convert_traction_kernel(
         // convert tau magnitude to velocity magnitude
         auto minusc = mu_over_2vs / alpha_h[alpha_h_index + patch];
         auto zprime = (
-            (tau_mag - tau_0) / alpha_h[alpha_h_index + patch] +
-            log(v_0 * minusc)
+            tau_mag / alpha_h[alpha_h_index + patch] - rho + log(v_0 * minusc)
         );
         auto v_mag = wright_omega(zprime) / minusc;
 
@@ -192,7 +191,7 @@ void convert_traction(
     const int patches,
     const T v_0,
     const T mu_over_2vs,
-    const T tau_0,
+    const T rho,
     const T* alpha_h,
     const int threads)
 {
@@ -202,7 +201,7 @@ void convert_traction(
     // total threads = blocks * threads
 
     // call the kernel
-    convert_traction_kernel<T><<<blocks, threads>>>(sim_state, t_steps, patches, v_0, mu_over_2vs, tau_0, alpha_h);
+    convert_traction_kernel<T><<<blocks, threads>>>(sim_state, t_steps, patches, v_0, mu_over_2vs, rho, alpha_h);
     cudaCheckError("convert_traction_kernel error");
     // all done
 }
