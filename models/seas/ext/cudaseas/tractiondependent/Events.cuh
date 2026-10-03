@@ -2,11 +2,10 @@
  *  Traction-dependent events (identical to ratedependent)
  */
 
-
-#include "wright_omega.cuh"
-
 #ifndef __td_event_cuh__
 #define __td_event_cuh__
+
+#include "wright_omega.cuh"
 
 template <typename T>
 struct __ALIGNED__ SEASEvents {
@@ -37,7 +36,8 @@ struct __ALIGNED__ SEASEvents {
     // constructor
     SEASEvents (const int num_slips_, const int num_eq_, const T* tevents_, const T* delta_tau_div_alpha_h_,
                 const int* delta_tau_ix_, const int* delta_tau_ix_final_,
-                const int systems_, const int patches_, const int units_, const T v_ratio_max_)
+                const int systems_, const int patches_, const int units_, const T v_ratio_max_,
+                const T* alpha_h_, const T mu_over_2vs_, const T v_0_, const T rho_)
         : num_slips(num_slips_), num_eq(num_eq_), systems(systems_), patches(patches_), units(units_),
           tevents(tevents_), delta_tau_ix(delta_tau_ix_), delta_tau_ix_final(delta_tau_ix_final_),
           ychange(delta_tau_div_alpha_h_), v_ratio_max(v_ratio_max_),

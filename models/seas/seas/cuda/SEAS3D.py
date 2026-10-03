@@ -56,7 +56,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "in the units of the parameters"
     )
     verbose = altar.properties.bool(default=False)
-    forward_ode = altar.properties.str(default="tractiondependent")
+    forward_ode = altar.properties.str(default="ratedependent")
     forward_ode.validators = altar.constraints.isMember(
         "ratedependent", "tractiondependent"
     )
@@ -137,11 +137,11 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         self.v_ratio_max = (
             0 if self.sim.v_max is None else self.sim.v_max / self.rheo.v_0
         )
-        # the traction integrator doesn't cap the velocity yet
-        if (self.forward_ode == "tractiondependent") and (self.v_ratio_max > 0):
+        # the traction integrator needs rho
+        if (self.forward_ode == "tractiondependent") and (self.sim.rho is None):
             self.error.log(
-                "the traction-dependent integrator does not support v_max; "
-                "remove v_max from the simulation configuration"
+                "the traction-dependent integrator needs rho; "
+                "set it in the simulation configuration"
             )
             raise SystemExit(1)
 
@@ -316,7 +316,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             getattr(libcudaseas, self.forward_ode), f"model_{precision}{method}"
         )()
         channel.log(
-            f"Device {self.device.id}: Running {ode} model with {self.integrator} "
+            f"Device {self.device.id}: Running {self.forward_ode} model with {self.integrator} "
             f"in {self.gpuprec} precision"
         )
         # the arguments the two integrators share
