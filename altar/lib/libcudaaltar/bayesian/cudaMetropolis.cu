@@ -90,6 +90,31 @@ namespace cudaMetropolis_kernels {
         }
     }
 
+    // one thread per valid sample: if it was accepted, copy its sampling-space row and
+    // log-jacobian into {theta_sampling}/{jacobian}, at the row {valid_sample_indices} names
+    template <typename realtype_t>
+    __global__ void
+    _updateSampling(matrix_view_t<realtype_t, false> theta_sampling,
+        vector_view_t<realtype_t, false> jacobian,
+        matrix_view_t<realtype_t, true> theta_sampling_candidate,
+        vector_view_t<realtype_t, true> jacobian_candidate,
+        vector_view_t<int, true> acceptance_flag,
+        vector_view_t<int, true> valid_sample_indices,
+        const size_t batch)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        if (sample >= batch || !acceptance_flag[{ sample }]) return;
+
+        auto parameters = theta_sampling.packing().shape()[1];
+        int sample_index = valid_sample_indices[{ sample }];
+
+        for (int parameter = 0; parameter < parameters; ++parameter) {
+            theta_sampling[{ sample_index, parameter }] =
+                theta_sampling_candidate[{ sample, parameter }];
+        }
+        jacobian[{ sample_index }] = jacobian_candidate[{ sample }];
+    }
+
 } // of namespace cudaMetropolis_kernels
 
 // launch {cudaMetropolis_kernels::_setValidSampleIndices}
@@ -171,5 +196,36 @@ template void altar::cuda::bayesian::cudaMetropolis::metropolisUpdate<double>(
     matrix_view_t<double, false>, vector_view_t<double, false>, vector_view_t<double, false>, vector_view_t<double, false>,
     matrix_view_t<double, true>, vector_view_t<double, true>, vector_view_t<double, true>, vector_view_t<double, true>,
     vector_view_t<double, true>, vector_view_t<int>, vector_view_t<int, true>, const size_t, cudaStream_t);
+
+
+// launch {cudaMetropolis_kernels::_updateSampling}
+template <typename realtype_t>
+void altar::cuda::bayesian::cudaMetropolis::
+updateSampling(matrix_view_t<realtype_t, false> theta_sampling,
+    vector_view_t<realtype_t, false> jacobian,
+    matrix_view_t<realtype_t, true> theta_sampling_candidate,
+    vector_view_t<realtype_t, true> jacobian_candidate,
+    vector_view_t<int, true> acceptance_flag,
+    vector_view_t<int, true> valid_sample_indices,
+    const size_t batch,
+    cudaStream_t stream)
+{
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(batch, blockSize);
+
+    cudaMetropolis_kernels::_updateSampling<realtype_t><<<gridSize, blockSize, 0, stream>>>(
+        theta_sampling, jacobian, theta_sampling_candidate, jacobian_candidate,
+        acceptance_flag, valid_sample_indices, batch);
+    cudaCheckError("cudaMetropolis::updateSampling error");
+}
+
+template void altar::cuda::bayesian::cudaMetropolis::updateSampling<float>(
+    matrix_view_t<float, false>, vector_view_t<float, false>, matrix_view_t<float, true>,
+    vector_view_t<float, true>, vector_view_t<int, true>, vector_view_t<int, true>, const size_t,
+    cudaStream_t);
+template void altar::cuda::bayesian::cudaMetropolis::updateSampling<double>(
+    matrix_view_t<double, false>, vector_view_t<double, false>, matrix_view_t<double, true>,
+    vector_view_t<double, true>, vector_view_t<int, true>, vector_view_t<int, true>, const size_t,
+    cudaStream_t);
 
 // end of file

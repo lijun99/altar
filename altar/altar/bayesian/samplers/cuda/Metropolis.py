@@ -78,8 +78,6 @@ class Metropolis:
 
         # walk the chains
         statistics = self.walk_chains(annealer=annealer, step=self.gstep)
-        # the walk is in physical space; bring the sampling space along
-        self.gstep.refresh_sampling(model=annealer.model)
 
         # finish the sampling pdf, copy gpu step back
         self.finish_sampling_pdf(step=step)
@@ -118,7 +116,8 @@ class Metropolis:
         # allocate local gpu data if not allocated
         self.gstep = annealer.worker.gstep
         if self.ginit is not True:
-            self.allocate_gpu_data(step.samples, step.parameters)
+            self.allocate_gpu_data(step.samples, step.parameters,
+                reparameterized=step.has_reparametrization)
 
         # copy cpu step state
         self.gstep.copy_from_cpu(step=step)
@@ -130,8 +129,15 @@ class Metropolis:
         # decomposing on the gpu below and scaling the *factor* by {self.scaling} (not
         # squared) is mathematically identical to scaling Σ by scaling^2 before decomposing,
         # since (c·U)^T(c·U) = c^2 · U^T U
+        # a reparameterized model walks in sampling space, so Σ comes from those samples
+        walker = step
+        if step.has_reparametrization:
+            from altar.bayesian.states.CoolingStep import CoolingStep
+            walker = CoolingStep(beta=step.beta, theta=step.theta_sampling,
+                likelihoods=(step.prior, step.data, step.posterior))
+            walker.weights = getattr(step, "weights", None)
         self.proposal.new_walk()
-        self.proposal._prepare(sampler=self, step=step, annealer=annealer)
+        self.proposal._prepare(sampler=self, step=walker, annealer=annealer)
         self.gsigma_chol.copy_from_host(source=self.proposal._sigma)
 
         # compute its Cholesky decomposition: self = U^T U, U left in the row-major upper
@@ -215,6 +221,19 @@ class Metropolis:
         # copy the beta over
         candidate.beta = step.beta
 
+        # a reparameterized model walks in sampling space, where every proposal is in the
+        # support; the target there is the posterior plus the log-jacobian of the map, which
+        # {posterior} carries for the length of the walk
+        reparameterized = step.has_reparametrization
+        if reparameterized:
+            θs = step.theta_sampling
+            jacobian = step.jacobian
+            model.eval_prior_with_physical(step=step, likelihood=jacobian.zero(), batch=samples)
+            posterior += jacobian
+            θphysical = self.gproposal_physical
+            cθs = self.gcandidate_sampling
+            cjacobian = self.gcandidate_jacobian
+
         # the step count regulator decides how many MC steps to run, in blocks, before
         # checking whether this β step is done ({FixedSteps}: one block, the fixed count;
         # {DecorrelatingSteps}: repeated blocks until decorrelated)
@@ -235,12 +254,18 @@ class Metropolis:
                 # support of the model, so we must give it an opportunity to reject them;
                 # initialize the candidate sample by randomly displacing the current one
                 self.displace(displacement=θproposal)
-                θproposal += θ
+                θproposal += θs if reparameterized else θ
+                # in sampling space, map a copy of the proposal to physical
+                if reparameterized:
+                    θphysical.copy(θproposal)
+                    model.to_physical(theta=θphysical, batch=samples)
+                else:
+                    θphysical = θproposal
 
                 # reset the mask and ask the model to verify the sample validity
                 # note that I have redefined model.verify to use theta as input
 
-                model.verify_theta(theta=θproposal, mask=invalid_flags.zero(), batch=samples)
+                model.verify_theta(theta=θphysical, mask=invalid_flags.zero(), batch=samples)
 
                 invalid_step = invalid_flags.sum()
                 valid = samples - invalid_step
@@ -259,7 +284,10 @@ class Metropolis:
 
                 # queue valid samples to first rows of cθ
                 metropolis.cudaMetropolis_queueValidSamples(
-                    cθ.grid, θproposal.grid, valid_indices.grid, valid)
+                    cθ.grid, θphysical.grid, valid_indices.grid, valid)
+                if reparameterized:
+                    metropolis.cudaMetropolis_queueValidSamples(
+                        cθs.grid, θproposal.grid, valid_indices.grid, valid)
 
                 # notify that the verification process is finished
                 dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
@@ -269,6 +297,11 @@ class Metropolis:
 
                 # compute the probabilities/likelihoods
                 model.likelihoods(annealer=annealer, step=candidate, batch=valid)
+                # in sampling space, add the log-jacobian of the candidates
+                if reparameterized:
+                    model.eval_prior_with_physical(
+                        step=candidate, likelihood=cjacobian.zero(), batch=valid)
+                    cpost += cjacobian
 
                 # randomize the Metropolis acceptance vector
                 curand.uniform(out=dice, generator=self.curng)
@@ -281,6 +314,11 @@ class Metropolis:
                     θ.grid, prior.grid, data.grid, posterior.grid,      # original
                     cθ.grid, cprior.grid, cdata.grid, cpost.grid,       # candidate
                     dice.grid, acceptance_flags.zero().grid, valid_indices.grid, valid)
+                # and bring the sampling space of the accepted candidates along
+                if reparameterized:
+                    metropolis.cudaMetropolis_updateSampling(
+                        θs.grid, jacobian.grid, cθs.grid, cjacobian.grid,
+                        acceptance_flags.grid, valid_indices.grid, valid)
 
                 # counting the acceptance/rejection
                 accepted_step = acceptance_flags.sum()
@@ -294,6 +332,9 @@ class Metropolis:
                 dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
             mcsteps += block
+        # leave the posterior itself in {posterior}
+        if reparameterized:
+            posterior -= jacobian
         # all done
         return accepted, invalid, rejected
 
@@ -330,7 +371,7 @@ class Metropolis:
         return displacement
 
 
-    def allocate_gpu_data(self, samples, parameters):
+    def allocate_gpu_data(self, samples, parameters, reparameterized=False):
         """
         initialize gpu work data
         """
@@ -338,6 +379,12 @@ class Metropolis:
         # allocate a CoolingStep
         self.gcandidate = self.CoolingStep.alloc(samples, parameters, dtype=precision)
         self.gproposal = altar.cuda.matrix(shape=(samples, parameters), dtype=precision)
+        # a walk in sampling space keeps the proposals in physical space, and the candidates'
+        # sampling space and log-jacobian, apart
+        if reparameterized:
+            self.gproposal_physical = altar.cuda.matrix(shape=(samples, parameters), dtype=precision)
+            self.gcandidate_sampling = altar.cuda.matrix(shape=(samples, parameters), dtype=precision)
+            self.gcandidate_jacobian = altar.cuda.vector(shape=samples, dtype=precision)
 
         # allocate sigma_chol
         self.gsigma_chol = altar.cuda.matrix(shape=(parameters, parameters), dtype=precision)
@@ -366,6 +413,9 @@ class Metropolis:
     gstep = None # cuda/gpu step for keeping sampling states
     gcandidate = None # cuda/gpu candidate state
     gproposal = None # save theta jumps
+    gproposal_physical = None # the jumps in physical space, when walking in sampling space
+    gcandidate_sampling = None # the candidates in sampling space
+    gcandidate_jacobian = None # the log-jacobian of the candidates
     gsigma_chol = None  # placeholder for the scaled and decomposed parameter covariance matrix
     gvalid_indices = None
     gvalid_samples = None

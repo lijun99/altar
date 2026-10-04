@@ -130,8 +130,9 @@ $$
 
 where $\boldsymbol\Sigma$ is the weighted covariance of the samples, and $\alpha$ a scaling
 factor; it accepts or rejects the proposals with the Metropolis–Hastings rule. Proposals that fall
-outside the support of a bounded prior are rejected as *invalid*. After each $\beta$ step, the
-acceptance rate adjusts $\alpha$.
+outside the support of a bounded prior are rejected as *invalid*; a reparameterized prior avoids
+them, with the walk in its sampling space (see {ref}`reparameterization`). After each $\beta$ step,
+the acceptance rate adjusts $\alpha$.
 
 `scaling`
 : the initial scaling factor $\alpha$; default 0.1.
@@ -468,10 +469,8 @@ linear:
     job:
         tasks = 8
     shell = mpi.shells.mpirun
-
-; more options for mpirun, if needed
-mpi.shells.mpirun # altar.plexus.shell:
-    extra = -mca btl self,tcp
+    ; more options for mpirun, if needed
+    shell.extra = -mca btl self,tcp
 ```
 
 or, on the command line,
@@ -480,7 +479,8 @@ or, on the command line,
 altar-linear --config=linear_catmip.pfg --job.tasks=8 --shell=mpi.shells.mpirun
 ```
 
-The application launches `mpirun` itself. If there is more than one MPI on the machine, tell pyre
+The application launches `mpirun` itself, so don't start it with `mpirun` yourself. Without the MPI
+shell, a job with more than one task stops with an error. If there is more than one MPI on the machine, tell pyre
 which one to use (see {doc}`Installation`). Choose the number of tasks by the physical cores:
 hyperthreads rarely help compute-heavy models.
 

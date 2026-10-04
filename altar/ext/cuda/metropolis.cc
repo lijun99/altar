@@ -100,6 +100,40 @@ altar::cuda::extensions::metropolis::__init__(py::module & m) -> void
         "dices"_a, "acceptance_flag"_a, "valid_sample_indices"_a, "batch"_a,
         "accept/reject each of the first {batch} candidates; on acceptance, overwrite the "
         "corresponding row (indexed by valid_sample_indices) in place");
+
+    // after {cudaMetropolis_metropolisUpdate}, for a walk in sampling space: copy the
+    // sampling-space row and log-jacobian of each accepted candidate
+    metropolis.def(
+        "cudaMetropolis_updateSampling",
+        [](grid_t & theta_sampling, grid_t & jacobian, grid_t & theta_sampling_candidate,
+           grid_t & jacobian_candidate, grid_t & acceptance_flag, grid_t & valid_sample_indices,
+           std::size_t batch) -> void {
+            auto format = theta_sampling.view().format;
+            if (format.size() == 1 && format[0] == 'd') {
+                altar::cuda::bayesian::cudaMetropolis::updateSampling<double>(
+                    regrid<double, 2>(theta_sampling), regrid<double, 1>(jacobian),
+                    regrid<const double, 2>(theta_sampling_candidate),
+                    regrid<const double, 1>(jacobian_candidate),
+                    regrid<const int, 1>(acceptance_flag),
+                    regrid<const int, 1>(valid_sample_indices), batch);
+            } else if (format.size() == 1 && format[0] == 'f') {
+                altar::cuda::bayesian::cudaMetropolis::updateSampling<float>(
+                    regrid<float, 2>(theta_sampling), regrid<float, 1>(jacobian),
+                    regrid<const float, 2>(theta_sampling_candidate),
+                    regrid<const float, 1>(jacobian_candidate),
+                    regrid<const int, 1>(acceptance_flag),
+                    regrid<const int, 1>(valid_sample_indices), batch);
+            } else {
+                throw py::value_error(
+                    "cudaMetropolis_updateSampling: unsupported grid cell type '" + format + "'");
+            }
+            cudaCheckError("cudaMetropolis_updateSampling");
+            synchronize("cudaMetropolis_updateSampling");
+        },
+        "theta_sampling"_a, "jacobian"_a, "theta_sampling_candidate"_a, "jacobian_candidate"_a,
+        "acceptance_flag"_a, "valid_sample_indices"_a, "batch"_a,
+        "copy the sampling-space row and log-jacobian of each of the first {batch} candidates "
+        "that was accepted into the row valid_sample_indices names");
 }
 
 

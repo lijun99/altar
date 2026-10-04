@@ -12,7 +12,8 @@ Check the samplers against the exact posterior of the linear example, patch-9: i
 linear in the parameters with gaussian noise, so under a gaussian prior the posterior is the
 gaussian N(μ, A⁻¹), A = Gᵀ C_d⁻¹ G + I/σ², μ = A⁻¹ Gᵀ C_d⁻¹ d. The cases with a wide uniform
 prior, reparameterized, compare against the same posterior without the prior term, the
-truncation being negligible there.
+truncation being negligible there; the cases with a tight uniform prior, which cuts into that
+posterior, compare against its moments within the support, from rejection sampling.
 
 Each case runs {altar-linear} in a scratch directory and compares the mean, the standard
 deviations and the correlations of its final samples with the exact ones.
@@ -38,9 +39,10 @@ import numpy
 # the example, relative to me
 EXAMPLES = pathlib.Path(__file__).resolve().parent.parent / "examples"
 CASE = "patch-9"
-# the prior of the gaussian cases, and the support of the uniform ones
+# the prior of the gaussian cases, and the supports of the wide and the tight uniform ones
 SIGMA = 0.5
 SUPPORT = (-5, 5)
+TIGHT = (0, 1.2)
 
 # the configuration every case starts from
 BASE = f"""
@@ -68,23 +70,41 @@ linear:
     job.chains = 2**8
 """
 
-UNIFORM = [
-    "--model.psets.all.prior=uniform",
-    f"--model.psets.all.prior.support=({SUPPORT[0]},{SUPPORT[1]})",
-    "--model.psets.all.prior.reparameterize=True",
-]
+def uniform(support, reparameterize=True):
+    """
+    The settings of a uniform prior on {support}; a tight one also starts the chains from it
+    """
+    settings = [
+        "--model.psets.all.prior=uniform",
+        f"--model.psets.all.prior.support=({support[0]},{support[1]})",
+        f"--model.psets.all.prior.reparameterize={reparameterize}",
+    ]
+    if support == TIGHT:
+        settings += [
+            "--model.psets.all.prep=uniform",
+            f"--model.psets.all.prep.support=({support[0]},{support[1]})",
+        ]
+    return settings
 
-# name: (the controller and sampler settings, whether the prior is the wide uniform one)
+# the prior of each case: the gaussian, the wide uniform or the tight uniform one
+GAUSSIAN, WIDE, TIGHTLY = "gaussian", "wide", "tight"
+
+# name: (the controller and sampler settings, the prior)
 CASES = {
-    "catmip": (["--controller=altar.bayesian.catmip", "--job.steps=256"], False),
-    "mcmc": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256"], False),
-    "catmip_hmc": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20"], False),
-    "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], False),
-    "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], False),
-    "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], False),
-    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256"], True),
-    "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200"], True),
-    "mala-uniform": (["--controller=altar.bayesian.mala", "--job.steps=4000"], True),
+    "catmip": (["--controller=altar.bayesian.catmip", "--job.steps=256"], GAUSSIAN),
+    "mcmc": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256"], GAUSSIAN),
+    "catmip_hmc": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20"], GAUSSIAN),
+    "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], GAUSSIAN),
+    "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], GAUSSIAN),
+    "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], GAUSSIAN),
+    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
+    "mcmc-uniform": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256",
+                      *uniform(SUPPORT)], WIDE),
+    "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200", *uniform(SUPPORT)], WIDE),
+    "mala-uniform": (["--controller=altar.bayesian.mala", "--job.steps=4000", *uniform(SUPPORT)], WIDE),
+    "catmip-tight": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(TIGHT)], TIGHTLY),
+    "catmip-tight-physical": (["--controller=altar.bayesian.catmip", "--job.steps=256",
+                               *uniform(TIGHT, reparameterize=False)], TIGHTLY),
 }
 
 # the tolerances, for 256 chains: the mean within this many posterior standard deviations,
@@ -97,7 +117,8 @@ CORRELATION = 0.3
 
 def exact(prior):
     """
-    The mean and the covariance of the posterior, with the gaussian prior or without a prior
+    The mean and the covariance of the posterior, with the gaussian prior, without a prior, or
+    with the tight uniform one
     """
     folder = EXAMPLES / CASE
     G = numpy.loadtxt(folder / "green.txt")
@@ -105,10 +126,16 @@ def exact(prior):
     Cd = numpy.loadtxt(folder / "cd.txt")
     W = numpy.linalg.inv(Cd)
     A = G.T @ W @ G
-    if prior:
+    if prior == GAUSSIAN:
         A += numpy.eye(A.shape[0]) / SIGMA**2
     cov = numpy.linalg.inv(A)
-    return cov @ (G.T @ W @ d), cov
+    mean = cov @ (G.T @ W @ d)
+    if prior != TIGHTLY:
+        return mean, cov
+    # the draws of the posterior without a prior that land in the support
+    draws = numpy.random.default_rng(1).multivariate_normal(mean, cov, size=2_000_000)
+    draws = draws[((draws > TIGHT[0]) & (draws < TIGHT[1])).all(axis=1)]
+    return draws.mean(axis=0), numpy.cov(draws, rowvar=False)
 
 
 def samples(results):
@@ -137,7 +164,7 @@ def run(name, gpu, precision, keep):
     """
     Run one case and compare it with the exact posterior
     """
-    settings, uniform = CASES[name]
+    settings, prior = CASES[name]
     scratch = pathlib.Path(tempfile.mkdtemp(prefix=f"altar-posterior-{name}-"))
     try:
         shutil.copytree(EXAMPLES / CASE, scratch / CASE)
@@ -145,19 +172,17 @@ def run(name, gpu, precision, keep):
         command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}", *settings]
         if gpu:
             command.append(f"--job.gpuprecision={precision}")
-        if uniform:
-            command += UNIFORM
         start = time.perf_counter()
         status = subprocess.run(command, cwd=scratch, capture_output=True, text=True, errors="replace")
         elapsed = time.perf_counter() - start
         if status.returncode != 0:
             (scratch / "run.log").write_text(status.stdout + status.stderr)
             keep = True
-            return False, f"{name:18s} FAILED to run ({status.returncode}); see {scratch}/run.log"
-        mean, cov = exact(prior=not uniform)
+            return False, f"{name:22s} FAILED to run ({status.returncode}); see {scratch}/run.log"
+        mean, cov = exact(prior=prior)
         good, shift, low, high, drift = compare(samples(scratch / "results"), mean, cov)
         verdict = "ok" if good else "FAIL"
-        return good, (f"{name:18s} {verdict:4s} {elapsed:6.0f}s  mean {shift:.2f} sd  "
+        return good, (f"{name:22s} {verdict:4s} {elapsed:6.0f}s  mean {shift:.2f} sd  "
                       f"sd ratio [{low:.2f}, {high:.2f}]  correlation {drift:.2f}")
     finally:
         if keep:
@@ -176,8 +201,8 @@ def main():
     options = parser.parse_args()
 
     if options.list:
-        for name, (settings, uniform) in CASES.items():
-            print(f"{name:18s} {' '.join(settings)}{' (wide uniform prior)' if uniform else ''}")
+        for name, (settings, prior) in CASES.items():
+            print(f"{name:22s} {' '.join(settings)} ({prior} prior)")
         return 0
     if shutil.which("altar-linear") is None:
         print("altar-linear is not on the PATH")
