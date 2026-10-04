@@ -149,9 +149,8 @@ class Langevin(altar.component, family="altar.controllers.langevin", implements=
         # ask the factory for a worker instance
         worker = worker()
 
-        # if we are running under mpi, wrap it in the mpi-aware method; N.B.: unlike
-        # {Annealer}, there is no threaded Langevin method yet, so multiple {tasks}/{gpus}
-        # per host without mpi are not supported here
+        # if we are running under mpi, wrap it in the mpi-aware method; {job} has already
+        # rejected several tasks per host without mpi, and several gpus per task
         if mode == "mpi":
             worker = self.mpi(worker=worker)
 
