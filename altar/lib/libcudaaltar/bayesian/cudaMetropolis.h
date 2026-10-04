@@ -54,6 +54,19 @@ namespace altar { namespace cuda {
                 const size_t batch,
                 cudaStream_t stream=0);
 
+            // after {metropolisUpdate}, for a walk in sampling space: copy the sampling-space
+            // row and log-jacobian of each accepted candidate ({acceptance_flag[s]} set) into
+            // {theta_sampling}/{jacobian}, at the row {valid_sample_indices[s]}
+            template <typename realtype_t>
+            void updateSampling(matrix_view_t<realtype_t, false> theta_sampling,
+                vector_view_t<realtype_t, false> jacobian,
+                matrix_view_t<realtype_t, true> theta_sampling_candidate,
+                vector_view_t<realtype_t, true> jacobian_candidate,
+                vector_view_t<int, true> acceptance_flag,
+                vector_view_t<int, true> valid_sample_indices,
+                const size_t batch,
+                cudaStream_t stream=0);
+
         } // of namespace cudaMetropolis
     } // of namespace bayesian
 } }// of namespace altar::cuda
