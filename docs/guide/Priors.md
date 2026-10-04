@@ -175,11 +175,13 @@ $\log |\mathrm{d}x/\mathrm{d}s|$, which the posterior of the sampling-space valu
 apart. The archived steps then hold, for each such parameter set, both `<pset>_physical` and
 `<pset>_sampling` samples, and the log-Jacobian of each sample in `jacobian`.
 
-`uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized. Reparameterization is
-for the gradient-based samplers, HMC, MALA and SGLD, on the cpu and the GPU; they refuse bounded priors
-that aren't reparameterized, and name them. Metropolis ignores it: it walks the
-physical values, rejects the proposals outside the support, and keeps the sampling-space values in
-step, so its results are the same either way.
+`uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized, on the cpu and the
+GPU. The gradient-based samplers, HMC, MALA and SGLD, need it: they refuse bounded priors that aren't
+reparameterized, and name them. Metropolis (and so CATMIP) takes it as an option. Without it,
+Metropolis walks the physical values and rejects the proposals outside the support, which slows
+the chains down when the posterior presses against a bound. With it, Metropolis walks the
+sampling-space values, so that every proposal is in the support, and accepts on the posterior plus
+the log-Jacobian. The posterior of the physical values is the same either way.
 
 `transform`
 : the transform, `altar.distributions.logittransform` by default, the only one for now.

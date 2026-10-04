@@ -130,8 +130,9 @@ $$
 
 where $\boldsymbol\Sigma$ is the weighted covariance of the samples, and $\alpha$ a scaling
 factor; it accepts or rejects the proposals with the Metropolis–Hastings rule. Proposals that fall
-outside the support of a bounded prior are rejected as *invalid*. After each $\beta$ step, the
-acceptance rate adjusts $\alpha$.
+outside the support of a bounded prior are rejected as *invalid*; a reparameterized prior avoids
+them, with the walk in its sampling space (see {ref}`reparameterization`). After each $\beta$ step,
+the acceptance rate adjusts $\alpha$.
 
 `scaling`
 : the initial scaling factor $\alpha$; default 0.1.

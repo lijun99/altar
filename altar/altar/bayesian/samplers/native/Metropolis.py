@@ -74,8 +74,6 @@ class Metropolis:
         self.proposal.new_walk()
         # walk the chains; statistics stored on self
         self.walk_chains(annealer=annealer, step=step)
-        # the walk is in physical space; bring the sampling space along
-        step.refresh_sampling(model=annealer.model)
         # notify we are done sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
         # all done
@@ -114,6 +112,20 @@ class Metropolis:
         # the sample geometry
         samples = step.samples
         parameters = step.parameters
+        # a reparameterized model walks in sampling space, where every proposal is in the
+        # support; the target there is the posterior plus the log-jacobian of the map
+        reparameterized = step.has_reparametrization
+        if reparameterized:
+            θs = step.theta_sampling
+            jacobian = step.jacobian
+            jacobian.zero()
+            model.eval_prior_with_physical(step=step, likelihood=jacobian)
+            cjacobian = altar.vector(shape=samples)
+            # the proposal moves the sampling-space chains
+            walker = self.CoolingStep(beta=β, theta=θs, likelihoods=(prior, data, posterior))
+            walker.weights = getattr(step, "weights", None)
+        else:
+            walker = step
         # a couple of functions from the math module
         exp = math.exp
         log = math.log
@@ -146,7 +158,12 @@ class Metropolis:
                 dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
 
                 # initialize the candidate sample by randomly displacing the current one
-                cθ = self.proposal.propose(sampler=self, step=step, annealer=annealer)
+                cθ = self.proposal.propose(sampler=self, step=walker, annealer=annealer)
+                # in sampling space, keep the candidate there and map a copy to physical
+                if reparameterized:
+                    cθs = cθ
+                    cθ = cθs.clone()
+                    model.to_physical(theta=cθ)
                 # initialize the likelihoods
                 likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
                 # build a candidate state
@@ -165,6 +182,8 @@ class Metropolis:
                     if flag:
                         # copy the corresponding row from {θ} into {candidate}
                         cθ.setRow(index, θ.getRow(index))
+                        if reparameterized:
+                            cθs.setRow(index, θs.getRow(index))
                 # notify that the verification process is finished
                 dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
@@ -175,6 +194,11 @@ class Metropolis:
                 diff = cpost.clone()
                 # subtract the previous posterior
                 diff -= posterior
+                # and, in sampling space, add the difference of the log-jacobians
+                if reparameterized:
+                    model.eval_prior_with_physical(step=candidate, likelihood=cjacobian.zero())
+                    diff += cjacobian
+                    diff -= jacobian
                 # randomize the Metropolis acceptance vector
                 dice.random(self.uniform)
 
@@ -203,6 +227,9 @@ class Metropolis:
                     accepted += 1
                     # copy the candidate sample
                     θ.setRow(sample, cθ.getRow(sample))
+                    if reparameterized:
+                        θs.setRow(sample, cθs.getRow(sample))
+                        jacobian[sample] = cjacobian[sample]
                     # and its likelihoods
                     prior[sample] = cprior[sample]
                     data[sample] = cdata[sample]
