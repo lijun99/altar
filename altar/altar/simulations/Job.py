@@ -99,7 +99,32 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
             # complain
             channel.line(f"an MPI runtime is required to run on {self.hosts} hosts")
             channel.line(f" -- please launch using an MPI compatible shell")
-            channel.line(f" -- e.g., use '--shell=mpi.mpirun' on the command line")
+            channel.line(f" -- e.g., use '--shell=mpi.shells.mpirun' on the command line")
+            channel.log()
+            # and exit
+            raise SystemExit(1)
+
+        # several tasks per host are several processes, which only mpi launches
+        if self.tasks > 1 and self.mode != 'mpi':
+            # grab a channel
+            channel = application.error
+            # complain
+            channel.line(f"an MPI runtime is required to run {self.tasks} tasks per host")
+            channel.line(f" -- set 'shell = mpi.shells.mpirun' in the configuration file,")
+            channel.line(f"    or use '--shell=mpi.shells.mpirun' on the command line")
+            channel.line(f" -- and don't launch with mpirun yourself: the shell does")
+            channel.log()
+            # and exit
+            raise SystemExit(1)
+
+        # each task drives one gpu; more gpus take more tasks
+        if self.gpus > 1:
+            # grab a channel
+            channel = application.error
+            # complain
+            channel.line(f"each task uses at most one GPU, not {self.gpus}")
+            channel.line(f" -- to use {self.gpus} GPUs, set 'gpus = 1' and 'tasks = {self.gpus}',")
+            channel.line(f"    with 'shell = mpi.shells.mpirun'")
             channel.log()
             # and exit
             raise SystemExit(1)
