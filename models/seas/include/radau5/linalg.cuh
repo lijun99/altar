@@ -82,8 +82,21 @@ __device__ int pivot_row(const cg::thread_block & cta, const S * A, const int n,
     return result;
 }
 
+// the panel width and the tile size of the blocked factorization
+constexpr int LU_PANEL = 32;
+constexpr int LU_TILE = 32;
+
+// the shared memory the trailing updates stage their tiles in, one buffer for the real and the
+// complex factorizations alike, sized for the complex ones
+__device__ __forceinline__ unsigned char * lu_tiles()
+{
+    __shared__ alignas(16) unsigned char tiles[2*LU_TILE*(LU_PANEL + 1)*2*sizeof(double)];
+    return tiles;
+}
+
 // factor A = P L U in place, LAPACK style: L (unit diagonal) below, U on and above the diagonal,
-// {piv[k]} the row swapped with row k; returns whether A is singular
+// {piv[k]} the row swapped with row k; returns whether A is singular; blocked, right looking: a
+// panel of LU_PANEL columns at a time, whose trailing update goes through shared memory in tiles
 template <class T, class S>
 __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const int n)
 {
@@ -91,42 +104,94 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
     if (cta.thread_rank() == 0)
         singular = false;
     cta.sync();
-
-    for (auto k = 0; k < n; k++) {
-        // pick the pivot, and swap it into row k
-        auto p = pivot_row<T, S>(cta, A, n, k);
-        if (cta.thread_rank() == 0)
-            piv[k] = p;
-        if (p != k) {
-            for (auto j = static_cast<int>(cta.thread_rank()); j < n; j += cta.size()) {
-                auto a = A[k*n + j];
-                A[k*n + j] = A[p*n + j];
-                A[p*n + j] = a;
+    auto tid = static_cast<int>(cta.thread_rank());
+    auto threads = static_cast<int>(cta.size());
+    // the tiles of L and U, padded against bank conflicts
+    auto Lt = reinterpret_cast<S *>(lu_tiles());
+    auto Ut = Lt + LU_TILE*(LU_PANEL + 1);
+    for (auto k0 = 0; k0 < n; k0 += LU_PANEL) {
+        auto kend = min(k0 + LU_PANEL, n);
+        // factor the panel, column by column
+        for (auto k = k0; k < kend; k++) {
+            // pick the pivot, and swap it into row k, across the whole row
+            auto p = pivot_row<T, S>(cta, A, n, k);
+            if (tid == 0)
+                piv[k] = p;
+            if (p != k) {
+                for (auto j = tid; j < n; j += threads) {
+                    auto a = A[k*n + j];
+                    A[k*n + j] = A[p*n + j];
+                    A[p*n + j] = a;
+                }
+            }
+            cta.sync();
+            auto akk = A[k*n + k];
+            if (magnitude(akk) == static_cast<T>(0)) {
+                if (tid == 0)
+                    singular = true;
+                cta.sync();
+                continue;
+            }
+            // the multipliers
+            for (auto i = k + 1 + tid; i < n; i += threads)
+                A[i*n + k] /= akk;
+            cta.sync();
+            // and the update of the rest of the panel
+            auto w = kend - k - 1;
+            auto m = n - k - 1;
+            for (auto idx = tid; idx < m*w; idx += threads) {
+                auto i = k + 1 + idx / w;
+                auto j = k + 1 + idx % w;
+                A[i*n + j] -= A[i*n + k]*A[k*n + j];
+            }
+            cta.sync();
+        }
+        // nothing left to the right of the last panel
+        if (kend == n)
+            break;
+        // the rows of U to the right of the panel: each thread solves for its own columns with
+        // the unit lower triangle of the panel
+        for (auto j = kend + tid; j < n; j += threads) {
+            for (auto r = k0 + 1; r < kend; r++) {
+                auto acc = A[r*n + j];
+                for (auto q = k0; q < r; q++)
+                    acc -= A[r*n + q]*A[q*n + j];
+                A[r*n + j] = acc;
             }
         }
         cta.sync();
-
-        auto akk = A[k*n + k];
-        if (magnitude(akk) == static_cast<T>(0)) {
-            if (cta.thread_rank() == 0)
-                singular = true;
+        // the trailing update A22 -= L21 U12, a tile at a time
+        auto nb = kend - k0;
+        auto m = n - kend;
+        auto tiles = (m + LU_TILE - 1) / LU_TILE;
+        for (auto tile = 0; tile < tiles*tiles; tile++) {
+            auto i0 = kend + (tile / tiles)*LU_TILE;
+            auto j0 = kend + (tile % tiles)*LU_TILE;
+            // stage the tiles of L21 and U12
+            for (auto e = tid; e < LU_TILE*nb; e += threads) {
+                auto r = e / nb;
+                auto q = e % nb;
+                Lt[r*(LU_PANEL + 1) + q] = (i0 + r < n) ? A[(i0 + r)*n + k0 + q] : S(0);
+            }
+            for (auto e = tid; e < nb*LU_TILE; e += threads) {
+                auto q = e / LU_TILE;
+                auto c = e % LU_TILE;
+                Ut[q*(LU_TILE + 1) + c] = (j0 + c < n) ? A[(k0 + q)*n + j0 + c] : S(0);
+            }
             cta.sync();
-            continue;
+            // and update the tile of A22
+            for (auto e = tid; e < LU_TILE*LU_TILE; e += threads) {
+                auto r = e / LU_TILE;
+                auto c = e % LU_TILE;
+                if (i0 + r < n && j0 + c < n) {
+                    auto acc = S(0);
+                    for (auto q = 0; q < nb; q++)
+                        acc += Lt[r*(LU_PANEL + 1) + q]*Ut[q*(LU_TILE + 1) + c];
+                    A[(i0 + r)*n + j0 + c] -= acc;
+                }
+            }
+            cta.sync();
         }
-
-        // the multipliers
-        for (auto i = k + 1 + static_cast<int>(cta.thread_rank()); i < n; i += cta.size())
-            A[i*n + k] /= akk;
-        cta.sync();
-
-        // and the update of the trailing block
-        auto m = n - k - 1;
-        for (auto idx = static_cast<int>(cta.thread_rank()); idx < m*m; idx += cta.size()) {
-            auto i = k + 1 + idx / m;
-            auto j = k + 1 + idx % m;
-            A[i*n + j] -= A[i*n + k]*A[k*n + j];
-        }
-        cta.sync();
     }
     return singular;
 }
