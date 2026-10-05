@@ -26,9 +26,9 @@ design (see the class docstring). The whitened-space check here mirrors that con
 
 def check(precision):
     import numpy
-    import pyre.cuda
+    import altar.cuda
     from altar.norms.cuda.L2 import L2
-    from altar.data.cuda.DataL2 import DataL2, pyre_grid_managed
+    from altar.data.cuda.DataL2 import DataL2
 
     dtype = precision
     tol = 1e-9 if precision == "float64" else 2e-5
@@ -56,7 +56,7 @@ def check(precision):
     d.info = _Channel()
     d.norm = L2()
 
-    d._dataobs_batch = pyre_grid_managed(shape=(samples, n), cell=precision)
+    d._dataobs_batch = altar.cuda.managed(shape=(samples, n), cell=precision)
     d.update_covariance()
 
     # reference: Cd_inv = L L^T (numpy, lower L); the class stores U = L^T in cd_inv's
@@ -83,10 +83,10 @@ def check(precision):
     theta_whitened = (theta_raw @ U.T).astype(dtype)
     theta_whitened[0] = batch[0]  # sample 0: an exact match, residual 0
 
-    prediction = pyre_grid_managed(shape=(samples, n), cell=precision)
+    prediction = altar.cuda.managed(shape=(samples, n), cell=precision)
     numpy.asarray(prediction)[:, :] = theta_whitened
 
-    likelihood = pyre_grid_managed(shape=(samples,), cell=precision)
+    likelihood = altar.cuda.managed(shape=(samples,), cell=precision)
     d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False, batch=samples)
 
     lik = numpy.asarray(likelihood)

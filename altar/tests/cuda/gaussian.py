@@ -24,9 +24,8 @@ accumulation into a single (samples,) vector).
 
 def test():
     import numpy
-    import pyre.cuda
-    import altar
     import altar.cuda
+    import altar
 
     distributions = altar.cuda.libcudaaltar.distributions
 
@@ -35,7 +34,7 @@ def test():
     idx_begin, idx_end = 1, 3
     mean, sigma = 2.0, 1.5
 
-    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
+    theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
 
     distributions.cudaGaussian_sample(theta, idx_begin, idx_end, mean, sigma)
@@ -49,7 +48,7 @@ def test():
     assert abs(sampled.std() - sigma) < 0.05
 
     # logpdf: an accumulation into a (samples,) vector
-    probability = pyre.cuda.managed(shape=(samples,), cell="float64")
+    probability = altar.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(probability)[:] = 0.0
     distributions.cudaGaussian_logpdf(theta, probability, idx_begin, idx_end, mean, sigma)
     got = numpy.asarray(probability)
@@ -60,7 +59,7 @@ def test():
     assert numpy.allclose(got, expected, atol=1e-9)
 
     # logpdfgradient_i: single-parameter gradient, accumulated
-    probability = pyre.cuda.managed(shape=(samples,), cell="float64")
+    probability = altar.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(probability)[:] = 0.0
     distributions.cudaGaussian_logpdfgradient_i(theta, probability, idx_begin, idx_end, 1, mean, sigma)
     got = numpy.asarray(probability)
@@ -68,14 +67,14 @@ def test():
     assert numpy.allclose(got, expected, atol=1e-9)
 
     # a no-op when {index} falls outside [idx_begin, idx_end)
-    probability = pyre.cuda.managed(shape=(samples,), cell="float64")
+    probability = altar.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(probability)[:] = 0.0
     distributions.cudaGaussian_logpdfgradient_i(theta, probability, idx_begin, idx_end, 3, mean, sigma)
     assert numpy.all(numpy.asarray(probability) == 0.0)
 
     # logpdfgradient: the full gradient matrix, a plain assignment restricted to
     # [idx_begin, idx_end); columns outside it are left untouched
-    gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
+    gradient = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(gradient)[:, :] = -999.0
     distributions.cudaGaussian_logpdfgradient(theta, gradient, idx_begin, idx_end, mean, sigma)
     gp = numpy.asarray(gradient)

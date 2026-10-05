@@ -21,16 +21,15 @@ this specifically guards a real bug found while porting: the pre-port code compu
 
 def test():
     import numpy
-    import pyre.cuda
-    import altar
     import altar.cuda
+    import altar
 
     distributions = altar.cuda.libcudaaltar.distributions
 
     samples, parameters = 20000, 3
     idx_begin, idx_end = 0, 2
 
-    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
+    theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     distributions.cudaLogistic_sample(theta, idx_begin, idx_end)
     arr = numpy.asarray(theta)
@@ -40,7 +39,7 @@ def test():
     assert abs(sub.mean()) < 0.05
     assert abs(sub.std() - numpy.pi / numpy.sqrt(3)) < 0.05
 
-    probability = pyre.cuda.managed(shape=(samples,), cell="float64")
+    probability = altar.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(probability)[:] = 0.0
     distributions.cudaLogistic_logpdf(theta, probability, idx_begin, idx_end)
     got = numpy.asarray(probability)
@@ -51,7 +50,7 @@ def test():
     assert numpy.allclose(got, expected, atol=1e-8)
 
     # the gradient, checked against a central finite difference of log_pdf itself
-    gradient = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
+    gradient = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(gradient)[:, :] = -999.0
     distributions.cudaLogistic_logpdfgradient(theta, gradient, idx_begin, idx_end)
     gp = numpy.asarray(gradient)

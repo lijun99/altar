@@ -20,9 +20,8 @@ through the extension -- lands inside the requested normalized [low, high) suppo
 def test():
     import math
     import numpy
-    import pyre.cuda
-    import altar
     import altar.cuda
+    import altar
 
     erf = numpy.vectorize(math.erf)
     distributions = altar.cuda.libcudaaltar.distributions
@@ -32,7 +31,7 @@ def test():
     mean, sigma = 1.0, 2.0
     low, high = 0.1, 0.9  # normalized (Phi-space) support
 
-    theta = pyre.cuda.managed(shape=(samples, parameters), cell="float64")
+    theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     distributions.cudaTGaussian_sample(theta, idx_begin, idx_end, mean, sigma, low, high)
     arr = numpy.asarray(theta)
@@ -42,7 +41,7 @@ def test():
     phi = 0.5 * (1 + erf((sub - mean) / (sigma * numpy.sqrt(2))))
     assert phi.min() >= low - 1e-6 and phi.max() < high + 1e-6
 
-    probability = pyre.cuda.managed(shape=(samples,), cell="float64")
+    probability = altar.cuda.managed(shape=(samples,), cell="float64")
     numpy.asarray(probability)[:] = 0.0
     distributions.cudaTGaussian_logpdf(theta, probability, idx_begin, idx_end, mean, sigma, low, high)
     got = numpy.asarray(probability)
