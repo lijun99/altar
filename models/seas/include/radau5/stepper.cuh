@@ -190,6 +190,9 @@ struct __ALIGNED__ Stepper {
 
     template <class ode_system_type>
     __device__ void jacobian(const cg::thread_block& cta, const int system_id, const T t0, ode_system_type& ode);
+    template <class ode_system_type>
+    __device__ void jacobian_differences(const cg::thread_block& cta, const int system_id, const T t0,
+                                         ode_system_type& ode);
     __device__ void factor(const cg::thread_block& cta, const T h);
     __device__ void solve_real(const cg::thread_block& cta, T* x, const T gamma);
     __device__ void solve_complex(const cg::thread_block& cta, complex_type* x, const complex_type gamma);
@@ -198,11 +201,32 @@ struct __ALIGNED__ Stepper {
 };
 
 
-// the Jacobian columns of the non inert components at (t0, y0), by forward differences
+// the Jacobian columns of the non inert components at (t0, y0), from the ode if it knows them,
+// else by forward differences
 template <class T>
 template <class ode_system_type>
 __device__ void Stepper<T>::jacobian(const cg::thread_block& cta, const int system_id, const T t0,
                                      ode_system_type& ode)
+{
+    // an ode that knows its Jacobian provides it, from f0 = f(t0, y0), with fs as its work space
+    if constexpr (requires { ode.jacobian_block(cta, system_id, t0, y0, f0, J, fs); })
+        ode.jacobian_block(cta, system_id, t0, y0, f0, J, fs);
+    else
+        jacobian_differences(cta, system_id, t0, ode);
+
+    if (cta.thread_rank() == 0) {
+        jac_valid = true;
+        jac_current = true;
+        lu_valid = false;
+    }
+    cta.sync();
+}
+
+// the Jacobian columns of the non inert components at (t0, y0), by forward differences
+template <class T>
+template <class ode_system_type>
+__device__ void Stepper<T>::jacobian_differences(const cg::thread_block& cta, const int system_id, const T t0,
+                                                 ode_system_type& ode)
 {
     auto N = system_size;
     auto M = newton_size;
@@ -227,12 +251,6 @@ __device__ void Stepper<T>::jacobian(const cg::thread_block& cta, const int syst
             ys[j] = yj;
         cta.sync();
     }
-    if (cta.thread_rank() == 0) {
-        jac_valid = true;
-        jac_current = true;
-        lu_valid = false;
-    }
-    cta.sync();
 }
 
 // factor the Newton matrices gamma I - J22 for step h, with gamma = MU/h
