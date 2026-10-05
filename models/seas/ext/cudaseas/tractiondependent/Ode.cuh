@@ -88,6 +88,54 @@ struct __ALIGNED__ TractionDependentODE {
 
     };
 
+    // the Jacobian of my derivatives f = dydt(t, y) with respect to the traction, for implicit
+    // methods: J[i*M + c] = df_i / dy_(2P + c), for all 4P components i and the M = 2P tractions c,
+    // with {work} holding the 2x2 blocks dv/dtau of the patches, 4P reals
+    __device__ __forceinline__ void jacobian_block(const cg::thread_block& cta, const int system_id, const T t,
+                                                   const T* y, const T* f, T* J, T* work)
+    {
+        auto M = 2 * patches;
+        // the blocks dv_a/dtau_b of each patch, from the slip rates in f
+        for (int p = cta.thread_rank(); p < patches; p += cta.size()) {
+            auto t1 = y[p + 2 * patches];
+            auto t2 = y[p + 3 * patches];
+            auto m = sqrt(t1 * t1 + t2 * t2);
+            auto a = alpha_h[system_id * patches + p];
+            // the slip rate magnitude, and omega = v mu/(2 vs alpha_h), the value of the wright omega
+            auto v = sqrt(f[p] * f[p] + f[p + patches] * f[p + patches]);
+            auto omega = v * mu_over_2vs / a;
+            // dv/dm, and v/m
+            auto dv = v / ((1 + omega) * a);
+            auto r = v / m;
+            auto q = (dv - r) / (m * m);
+            work[4 * p + 0] = r + t1 * t1 * q;
+            work[4 * p + 1] = t1 * t2 * q;
+            work[4 * p + 2] = t2 * t1 * q;
+            work[4 * p + 3] = r + t2 * t2 * q;
+        }
+        cta.sync();
+        // the slip rows are the blocks themselves, the traction rows the elastic interactions of them
+        for (int idx = cta.thread_rank(); idx < 2 * M * M; idx += cta.size()) {
+            auto i = idx / M;
+            auto c = idx % M;
+            auto b = c / patches;
+            auto j = c % patches;
+            T value;
+            if (i < M) {
+                auto component = i / patches;
+                value = (i % patches == j) ? work[4 * j + 2 * component + b] : static_cast<T>(0);
+            }
+            else {
+                auto component = (i - M) / patches;
+                auto patch = (i - M) % patches;
+                value = K_int[i_Kii(patch, component, j, 0, patches)] * work[4 * j + b]
+                      + K_int[i_Kii(patch, component, j, 1, patches)] * work[4 * j + 2 + b];
+            }
+            J[(size_t)i * M + c] = value;
+        }
+        cta.sync();
+    }
+
     // debugging descriptor
     void describe() {
 

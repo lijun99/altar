@@ -177,6 +177,38 @@ struct __ALIGNED__ RateDependentODE {
 
     };
 
+    // the Jacobian of my derivatives f = dydt(t, y) with respect to the log slip rates, for implicit
+    // methods: J[i*M + c] = df_i / dy_(2P + c), for all 4P components i and the M = 2P log slip
+    // rates c; {work} is unused
+    __device__ __forceinline__ void jacobian_block(const cg::thread_block& cta, const int system_id, const T t,
+                                                   const T* y, const T* f, T* J, T* work)
+    {
+        auto M = 2 * patches;
+        for (int idx = cta.thread_rank(); idx < 2 * M * M; idx += cta.size()) {
+            auto i = idx / M;
+            auto c = idx % M;
+            auto b = c / patches;
+            auto j = c % patches;
+            T value;
+            // the slip rates v = v_0 exp(zeta) depend on their own log slip rate only
+            if (i < M)
+                value = (i == c) ? f[c] : static_cast<T>(0);
+            // and the log slip rates on all of them, through the elastic interactions, and on their
+            // own through the radiation damping
+            else {
+                auto component = (i - M) / patches;
+                auto patch = (i - M) % patches;
+                auto v = f[component * patches + patch];
+                auto den = mu_over_2vs * v + alpha_h[system_id * patches + patch];
+                value = K_int[i_Kii(patch, component, j, b, patches)] * f[c] / den;
+                if (c == i - M)
+                    value -= f[i] * mu_over_2vs * v / den;
+            }
+            J[(size_t)i * M + c] = value;
+        }
+        cta.sync();
+    }
+
     // debugging descriptor
     void describe() {
 
