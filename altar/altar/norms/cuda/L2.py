@@ -35,7 +35,7 @@ class L2:
 
         samples = v.shape[0]
         batch = batch or samples
-        out = out if out is not None else pyre_grid_managed(shape=(samples,), cell=self._cell(v))
+        out = out if out is not None else altar.cuda.managed(shape=(samples,), cell=self._cell(v))
 
         # if a covariance matrix is given, apply it to {v} first, in place
         if sigma_inv is not None:
@@ -58,7 +58,7 @@ class L2:
 
         samples = v.shape[0]
         batch = batch or samples
-        out = out if out is not None else pyre_grid_managed(shape=(samples,), cell=self._cell(v))
+        out = out if out is not None else altar.cuda.managed(shape=(samples,), cell=self._cell(v))
 
         if sigma_inv is not None:
             self._apply_covariance(v=v, sigma_inv=self._grid(sigma_inv))
@@ -122,15 +122,6 @@ class L2:
         """
         format = memoryview(grid).format
         return "float64" if format == "d" else "float32"
-
-
-def pyre_grid_managed(shape, cell):
-    """
-    Allocate a fresh grid of cuda managed memory; a thin indirection so this module doesn't
-    need a hard import of {pyre.cuda} at module-load time before cuda is known to be active
-    """
-    import pyre.cuda
-    return pyre.cuda.managed(shape=shape, cell=cell)
 
 
 # end of file

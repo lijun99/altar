@@ -107,7 +107,7 @@ class DataL2:
         it can be large
         """
         if self._dataobs_batch is None:
-            self._dataobs_batch = pyre_grid_managed(
+            self._dataobs_batch = altar.cuda.managed(
                 shape=(self.samples, self.observations), cell=self.precision)
             numpy.asarray(self._dataobs_batch)[:, :] = numpy.asarray(self._dataobs_merged)[None, :]
         return self._dataobs_batch
@@ -186,11 +186,11 @@ class DataL2:
         observations = self.observations
 
         # the raw observed data, for raw predictions
-        self._dataobs_raw = pyre_grid_managed(shape=(observations,), cell=self.precision)
+        self._dataobs_raw = altar.cuda.managed(shape=(observations,), cell=self.precision)
         numpy.asarray(self._dataobs_raw)[:] = self.dataobs
         # the weight of each observation, the mask of valid ones
         if self.mask is not None:
-            self._weight = pyre_grid_managed(shape=(observations,), cell=self.precision)
+            self._weight = altar.cuda.managed(shape=(observations,), cell=self.precision)
             numpy.asarray(self._weight)[:] = self.mask
 
         self.update_covariance()
@@ -227,7 +227,7 @@ class DataL2:
         potri = cusolver.dpotri if double else cusolver.spotri
         potri_buffer_size = cusolver.dpotri_buffer_size if double else cusolver.spotri_buffer_size
 
-        gCchi = pyre_grid_managed(shape=(observations, observations), cell=self.cd_dtype)
+        gCchi = altar.cuda.managed(shape=(observations, observations), cell=self.cd_dtype)
         if self.cd is None:
             numpy.asarray(gCchi)[:, :] = 0
             numpy.fill_diagonal(numpy.asarray(gCchi), self.cd_std ** 2)
@@ -239,7 +239,7 @@ class DataL2:
             numpy.asarray(gCchi)[:, :] += cp_arr
             self._chi_variance = numpy.diag(numpy.asarray(gCchi)).astype(float)
 
-        devInfo = pyre_grid_managed(shape=(1,), cell="int32")
+        devInfo = altar.cuda.managed(shape=(1,), cell="int32")
 
         # {potrf}/{potri} are column-major; passing {uplo=LOWER} throughout and reading the
         # buffer back row-major (numpy's own convention) gives, at each stage, the *upper*
@@ -251,7 +251,7 @@ class DataL2:
         # cpu {DataL2.initialize_covariance} (`Cd_inv.upperTriangular`) both expect.
         def _factor(A):
             lwork = potrf_buffer_size(handle, cublas.FillMode.LOWER, observations, A, observations)
-            workspace = pyre_grid_managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
+            workspace = altar.cuda.managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
             potrf(handle, cublas.FillMode.LOWER, observations, A, observations, workspace, lwork, devInfo)
 
         # factor Cchi = U^T U (U in the row-major upper triangle); the factorization fails,
@@ -265,7 +265,7 @@ class DataL2:
         # invert it in place, from that factor: gCchi now holds Cd_inv's row-major upper
         # triangle (Cd_inv is symmetric, so only one triangle is meaningful)
         lwork = potri_buffer_size(handle, cublas.FillMode.LOWER, observations, gCchi, observations)
-        workspace = pyre_grid_managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
+        workspace = altar.cuda.managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
         potri(handle, cublas.FillMode.LOWER, observations, gCchi, observations, workspace, lwork, devInfo)
         # re-factor: gCchi now holds Cd_inv = U^T U, U (Cholesky factor of Cd_inv) in the
         # row-major upper triangle
@@ -281,11 +281,11 @@ class DataL2:
         if self.cd_dtype == self.precision:
             self.cd_inv = gCchi
         else:
-            self.cd_inv = pyre_grid_managed(shape=(observations, observations), cell=self.precision)
+            self.cd_inv = altar.cuda.managed(shape=(observations, observations), cell=self.precision)
             numpy.asarray(self.cd_inv)[:, :] = numpy.asarray(gCchi)
 
         # load the observed data and merge the covariance into it
-        gDataVec = pyre_grid_managed(shape=(observations,), cell=self.precision)
+        gDataVec = altar.cuda.managed(shape=(observations,), cell=self.precision)
         numpy.asarray(gDataVec)[:] = self.dataobs
         self._dataobs_merged = self.merge_cdto_data(cd_inv=self.cd_inv, data=gDataVec)
         # and rebuild the batch from it, when next asked for
@@ -327,11 +327,11 @@ class DataL2:
         self._chi_variance = None
         self.cd_inv = 1.0 / self.cd_std
         self.normalization = -0.5 * log(2 * π) * observations - observations * log(self.cd_std)
-        self._dataobs_merged = pyre_grid_managed(shape=(self.observations,), cell=self.precision)
+        self._dataobs_merged = altar.cuda.managed(shape=(self.observations,), cell=self.precision)
         numpy.asarray(self._dataobs_merged)[:] = numpy.asarray(self.dataobs) * self.cd_inv
         self._dataobs_batch = None
         # the weight of a raw residual, with cd_inv^2 folded in
-        self._weight_scaled = pyre_grid_managed(shape=(self.observations,), cell=self.precision)
+        self._weight_scaled = altar.cuda.managed(shape=(self.observations,), cell=self.precision)
         numpy.asarray(self._weight_scaled)[:] = self.cd_inv ** 2
         if self.mask is not None:
             numpy.asarray(self._weight_scaled)[:] *= self.mask
@@ -381,7 +381,7 @@ class DataL2:
         trmv = cublas.dtrmv if double else cublas.strmv
 
         n = data.shape[0]
-        gDataVec = pyre_grid_managed(shape=(n,), cell=self._cell(data))
+        gDataVec = altar.cuda.managed(shape=(n,), cell=self._cell(data))
         numpy.asarray(gDataVec)[:] = numpy.asarray(data)
 
         # {cd_inv}'s factor U lives in the row-major upper triangle; cublas is column-major,
@@ -408,7 +408,7 @@ class DataL2:
         observations = self.observations
         # a row of ones, one per sample
         if self._ones is None or self._ones.shape[0] < batch:
-            self._ones = pyre_grid_managed(shape=(max(batch, self.samples),), cell=self.precision)
+            self._ones = altar.cuda.managed(shape=(max(batch, self.samples),), cell=self.precision)
             numpy.asarray(self._ones)[:] = 1
         # read column-major, {prediction} is (observations x samples): add -data ⊗ ones to it
         gemm(
@@ -495,15 +495,6 @@ class DataL2:
     _weight = None # the mask, as a grid of 0/1 weights
     _weight_scaled = None # the weight of a raw residual, with a constant cd_inv^2 folded in
     _ones = None # a vector of ones, for subtracting the data from a batch
-
-
-def pyre_grid_managed(shape, cell):
-    """
-    Allocate a fresh grid of cuda managed memory; a thin indirection so this module doesn't
-    need a hard import of {pyre.cuda} at module-load time before cuda is known to be active
-    """
-    import pyre.cuda
-    return pyre.cuda.managed(shape=shape, cell=cell)
 
 
 # end of file
