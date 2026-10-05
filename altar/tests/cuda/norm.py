@@ -12,7 +12,7 @@ Sanity check: the pybind11+AnyGrid cudaL2 norm bindings (altar.cuda.libcudaaltar
 against a real GPU, at both float64 and float32.
 
 This is the first piece of altar.cuda.ext.cudaaltar ported from the old raw-cpython,
-capsule-based bindings to pybind11, operating on pyre.cuda.managed() directly. The rest of
+capsule-based bindings to pybind11, operating on altar.cuda.managed() directly. The rest of
 the old extension (distributions, metropolis, leapfrog, langevin) is not yet ported -- see
 the note in altar/ext/cuda/cudaaltar.cc.
 """
@@ -20,7 +20,6 @@ the note in altar/ext/cuda/cudaaltar.cc.
 
 def check(precision):
     import numpy
-    import pyre.cuda
     import altar.cuda
 
     norms = altar.cuda.libcudaaltar.norms
@@ -29,8 +28,8 @@ def check(precision):
     rng = numpy.random.default_rng(1)
     data_np = rng.random((samples, observations))
 
-    data = pyre.cuda.managed(shape=(samples, observations), cell=precision)
-    result = pyre.cuda.managed(shape=(samples,), cell=precision)
+    data = altar.cuda.managed(shape=(samples, observations), cell=precision)
+    result = altar.cuda.managed(shape=(samples,), cell=precision)
     numpy.asarray(data)[:, :] = data_np
 
     tol = 1e-8 if precision == "float64" else 1e-5
@@ -41,7 +40,7 @@ def check(precision):
     assert numpy.allclose(numpy.asarray(result), expected, atol=tol)
 
     # constant - 0.5 ||data||^2
-    result2 = pyre.cuda.managed(shape=(samples,), cell=precision)
+    result2 = altar.cuda.managed(shape=(samples,), cell=precision)
     constant = 3.0
     norms.cudaL2_normllk(data, result2, samples, constant)
     expected2 = constant - 0.5 * expected**2
@@ -49,7 +48,7 @@ def check(precision):
 
     # a partial batch: only the first {batch} rows get touched
     batch = 3
-    result3 = pyre.cuda.managed(shape=(samples,), cell=precision)
+    result3 = altar.cuda.managed(shape=(samples,), cell=precision)
     numpy.asarray(result3)[:] = -1.0
     norms.cudaL2_norm(data, result3, batch)
     got3 = numpy.asarray(result3)

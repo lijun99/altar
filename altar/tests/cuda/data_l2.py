@@ -26,9 +26,9 @@ design (see the class docstring). The whitened-space check here mirrors that con
 
 def check(precision):
     import numpy
-    import pyre.cuda
+    import altar.cuda
     from altar.norms.cuda.L2 import L2
-    from altar.data.cuda.DataL2 import DataL2, pyre_grid_managed
+    from altar.data.cuda.DataL2 import DataL2
 
     dtype = precision
     tol = 1e-9 if precision == "float64" else 2e-5
@@ -82,10 +82,10 @@ def check(precision):
     theta_whitened = (theta_raw @ U.T).astype(dtype)
     theta_whitened[0] = batch[0]  # sample 0: an exact match, residual 0
 
-    prediction = pyre_grid_managed(shape=(samples, n), cell=precision)
+    prediction = altar.cuda.managed(shape=(samples, n), cell=precision)
     numpy.asarray(prediction)[:, :] = theta_whitened
 
-    likelihood = pyre_grid_managed(shape=(samples,), cell=precision)
+    likelihood = altar.cuda.managed(shape=(samples,), cell=precision)
     d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False, batch=samples)
 
     lik = numpy.asarray(likelihood)
@@ -116,8 +116,9 @@ def check_masked(precision):
     A constant covariance and a mask: the masked observations drop out of the likelihood
     """
     import numpy
+    import altar.cuda
     from altar.norms.cuda.L2 import L2
-    from altar.data.cuda.DataL2 import DataL2, pyre_grid_managed
+    from altar.data.cuda.DataL2 import DataL2
 
     tol = 1e-9 if precision == "float64" else 2e-5
     n, samples, sigma = 7, 4, 0.3
@@ -154,8 +155,8 @@ def check_masked(precision):
     resid = (pred_raw.astype("float64") - numpy.nan_to_num(dataobs).astype("float64")) / sigma
     expected = norm_expected - 0.5 * numpy.sum((resid * mask)**2, axis=1)
 
-    prediction = pyre_grid_managed(shape=(samples, n), cell=precision)
-    likelihood = pyre_grid_managed(shape=(samples,), cell=precision)
+    prediction = altar.cuda.managed(shape=(samples, n), cell=precision)
+    likelihood = altar.cuda.managed(shape=(samples,), cell=precision)
     # raw predictions
     numpy.asarray(prediction)[:, :] = pred_raw
     d.eval_likelihood(prediction=prediction, likelihood=likelihood, residual=False,

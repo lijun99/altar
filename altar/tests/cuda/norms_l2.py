@@ -24,7 +24,7 @@ behavior, confirmed once by comparing against the real GPU (see the session note
 
 def test():
     import numpy
-    import pyre.cuda
+    import altar.cuda
     from altar.norms.cuda.L2 import L2
 
     rng = numpy.random.default_rng(3)
@@ -38,12 +38,12 @@ def test():
 
     v_np = rng.random((samples, observations))
 
-    v = pyre.cuda.managed(shape=(samples, observations), cell="float64")
+    v = altar.cuda.managed(shape=(samples, observations), cell="float64")
     numpy.asarray(v)[:, :] = v_np
 
     # store L.T in the row-major upper triangle (row <= col); the lower triangle is never
-    # read, so it's left at whatever pyre.cuda.managed() happened to give it
-    sigma_inv = pyre.cuda.managed(shape=(observations, observations), cell="float64")
+    # read, so it's left at whatever altar.cuda.managed() happened to give it
+    sigma_inv = altar.cuda.managed(shape=(observations, observations), cell="float64")
     sig = numpy.asarray(sigma_inv)
     for a in range(observations):
         for b in range(a, observations):
@@ -56,14 +56,14 @@ def test():
     assert numpy.allclose(numpy.asarray(out), numpy.linalg.norm(v_np, axis=1))
 
     # covariance-weighted norm: v_new = v @ L.T, then the row-wise l2 norm
-    v2 = pyre.cuda.managed(shape=(samples, observations), cell="float64")
+    v2 = altar.cuda.managed(shape=(samples, observations), cell="float64")
     numpy.asarray(v2)[:, :] = v_np
     out2 = l2.eval(v=v2, sigma_inv=sigma_inv)
     expected2 = numpy.linalg.norm(v_np @ L.T, axis=1)
     assert numpy.allclose(numpy.asarray(out2), expected2)
 
     # eval_likelihood: constant - 0.5 * norm^2
-    v3 = pyre.cuda.managed(shape=(samples, observations), cell="float64")
+    v3 = altar.cuda.managed(shape=(samples, observations), cell="float64")
     numpy.asarray(v3)[:, :] = v_np
     constant = 2.0
     out3 = l2.eval_likelihood(v=v3, constant=constant, sigma_inv=sigma_inv)
