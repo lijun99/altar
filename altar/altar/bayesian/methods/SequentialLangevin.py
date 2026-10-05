@@ -8,6 +8,8 @@
 # all rights reserved
 #
 
+# externals
+import numpy
 # the package
 import altar
 # superclass
@@ -78,6 +80,19 @@ class SequentialLangevin(LangevinMethod):
 
         # all done
         return self
+
+
+    def rate_statistics(self, controller):
+        """
+        The statistics {estimate_rate} needs from my chains, in sampling space
+        """
+        step = self.step
+        # the gradients, in sampling space
+        step.compute_gradients(controller=controller)
+        gradient = step.grad_prior.ndarray() + step.grad_data.ndarray()
+        θ = step.theta_sampling.ndarray()
+        # all done
+        return θ.shape[0], θ.sum(axis=0), (θ * θ).sum(axis=0), numpy.abs(gradient).max()
 
 
     # private data
