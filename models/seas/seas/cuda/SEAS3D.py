@@ -9,7 +9,6 @@ from time import perf_counter
 from copy import copy, deepcopy
 from contextlib import redirect_stdout
 import numpy as np
-import pyre.cuda
 
 # import altar
 import altar
@@ -75,7 +74,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
     # helper function to time
     def sync_and_time(self):
-        pyre.cuda.synchronize()
+        altar.cuda.synchronize()
         return perf_counter()
 
     @altar.export

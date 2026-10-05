@@ -8,7 +8,6 @@
 
 # externals
 import numpy
-import pyre.cuda
 # the package
 import altar
 import altar.cuda
@@ -214,7 +213,7 @@ class LinearViscous(BayesianL2, family="altar.models.seas.linearviscous"):
         parameters = theta.shape[1]
         self.cmodel.forward_model(theta.grid, prediction.grid, parameters, batch)
         # wait for it, before the host reads managed memory again
-        pyre.cuda.synchronize()
+        altar.cuda.synchronize()
 
         # all done
         return prediction
