@@ -60,10 +60,8 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaGaussian.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaRanged.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniform.cu
-    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniformLogit.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogistic.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogitTransform.cu
-    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaTGaussianLogit.cu
     )
 
   # copy the altar headers; note the trickery with the terminating slash in the source
