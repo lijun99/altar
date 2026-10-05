@@ -138,7 +138,7 @@ class DataL2:
         observations = self.observations
         samples = self.samples
 
-        self._dataobs_batch = pyre_grid_managed(shape=(samples, observations), cell=self.precision)
+        self._dataobs_batch = altar.cuda.managed(shape=(samples, observations), cell=self.precision)
 
         self.update_covariance()
         # all done
@@ -170,7 +170,7 @@ class DataL2:
         potri = cusolver.dpotri if double else cusolver.spotri
         potri_buffer_size = cusolver.dpotri_buffer_size if double else cusolver.spotri_buffer_size
 
-        gCchi = pyre_grid_managed(shape=(observations, observations), cell=self.cd_dtype)
+        gCchi = altar.cuda.managed(shape=(observations, observations), cell=self.cd_dtype)
         if self.cd is None:
             numpy.asarray(gCchi)[:, :] = 0
             numpy.fill_diagonal(numpy.asarray(gCchi), self.cd_std ** 2)
@@ -182,7 +182,7 @@ class DataL2:
             numpy.asarray(gCchi)[:, :] += cp_arr
             self._chi_variance = numpy.diag(numpy.asarray(gCchi)).astype(float)
 
-        devInfo = pyre_grid_managed(shape=(1,), cell="int32")
+        devInfo = altar.cuda.managed(shape=(1,), cell="int32")
 
         # {potrf}/{potri} are column-major; passing {uplo=LOWER} throughout and reading the
         # buffer back row-major (numpy's own convention) gives, at each stage, the *upper*
@@ -194,7 +194,7 @@ class DataL2:
         # cpu {DataL2.initialize_covariance} (`Cd_inv.upperTriangular`) both expect.
         def _factor(A):
             lwork = potrf_buffer_size(handle, cublas.FillMode.LOWER, observations, A, observations)
-            workspace = pyre_grid_managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
+            workspace = altar.cuda.managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
             potrf(handle, cublas.FillMode.LOWER, observations, A, observations, workspace, lwork, devInfo)
 
         # factor Cchi = U^T U (U in the row-major upper triangle); the factorization fails,
@@ -208,7 +208,7 @@ class DataL2:
         # invert it in place, from that factor: gCchi now holds Cd_inv's row-major upper
         # triangle (Cd_inv is symmetric, so only one triangle is meaningful)
         lwork = potri_buffer_size(handle, cublas.FillMode.LOWER, observations, gCchi, observations)
-        workspace = pyre_grid_managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
+        workspace = altar.cuda.managed(shape=(max(lwork, 1),), cell=self.cd_dtype)
         potri(handle, cublas.FillMode.LOWER, observations, gCchi, observations, workspace, lwork, devInfo)
         # re-factor: gCchi now holds Cd_inv = U^T U, U (Cholesky factor of Cd_inv) in the
         # row-major upper triangle
@@ -224,11 +224,11 @@ class DataL2:
         if self.cd_dtype == self.precision:
             self.cd_inv = gCchi
         else:
-            self.cd_inv = pyre_grid_managed(shape=(observations, observations), cell=self.precision)
+            self.cd_inv = altar.cuda.managed(shape=(observations, observations), cell=self.precision)
             numpy.asarray(self.cd_inv)[:, :] = numpy.asarray(gCchi)
 
         # load the observed data and merge the covariance into it
-        gDataVec = pyre_grid_managed(shape=(observations,), cell=self.precision)
+        gDataVec = altar.cuda.managed(shape=(observations,), cell=self.precision)
         numpy.asarray(gDataVec)[:] = self.dataobs
         gDataVec = self.merge_cdto_data(cd_inv=self.cd_inv, data=gDataVec)
 
@@ -317,7 +317,7 @@ class DataL2:
         trmv = cublas.dtrmv if double else cublas.strmv
 
         n = data.shape[0]
-        gDataVec = pyre_grid_managed(shape=(n,), cell=self._cell(data))
+        gDataVec = altar.cuda.managed(shape=(n,), cell=self._cell(data))
         numpy.asarray(gDataVec)[:] = numpy.asarray(data)
 
         # {cd_inv}'s factor U lives in the row-major upper triangle; cublas is column-major,
@@ -364,15 +364,6 @@ class DataL2:
     cd = None
     cd_inv = None
     _dataobs_batch = None
-
-
-def pyre_grid_managed(shape, cell):
-    """
-    Allocate a fresh grid of cuda managed memory; a thin indirection so this module doesn't
-    need a hard import of {pyre.cuda} at module-load time before cuda is known to be active
-    """
-    import pyre.cuda
-    return pyre.cuda.managed(shape=shape, cell=cell)
 
 
 # end of file
