@@ -82,21 +82,42 @@ __device__ int pivot_row(const cg::thread_block & cta, const S * A, const int n,
     return result;
 }
 
-// the panel width and the tile size of the blocked factorization
-constexpr int LU_PANEL = 32;
-constexpr int LU_TILE = 32;
+// acc + a*b; for complex numbers written out, without the special value handling of operator*,
+// which costs the factorization more than the arithmetic does
+template <class T>
+__device__ __forceinline__ T mul_add(const T acc, const T a, const T b) { return acc + a*b; }
+
+template <class T>
+__device__ __forceinline__ cuda::std::complex<T> mul_add(const cuda::std::complex<T> acc,
+    const cuda::std::complex<T> a, const cuda::std::complex<T> b)
+{
+    return cuda::std::complex<T>(acc.real() + a.real()*b.real() - a.imag()*b.imag(),
+                                 acc.imag() + a.real()*b.imag() + a.imag()*b.real());
+}
+
+// the output tile of the trailing update, and the side of the micro tiles a thread keeps in
+// registers
+constexpr int LU_TILE = 64;
+constexpr int LU_MICRO = 4;
+
+// the panel width; complex panels are narrower, so that their tiles fit the same shared memory
+template <class S>
+__host__ __device__ constexpr int lu_panel() { return sizeof(S) > 8 ? 16 : 32; }
 
 // the shared memory the trailing updates stage their tiles in, one buffer for the real and the
-// complex factorizations alike, sized for the complex ones
+// complex factorizations alike, sized for the larger of the two
 __device__ __forceinline__ unsigned char * lu_tiles()
 {
-    __shared__ alignas(16) unsigned char tiles[2*LU_TILE*(LU_PANEL + 1)*2*sizeof(double)];
+    constexpr auto real = (LU_TILE*(32 + 1) + 32*(LU_TILE + 1))*sizeof(double);
+    constexpr auto complex = (LU_TILE*(16 + 1) + 16*(LU_TILE + 1))*2*sizeof(double);
+    __shared__ alignas(16) unsigned char tiles[real > complex ? real : complex];
     return tiles;
 }
 
 // factor A = P L U in place, LAPACK style: L (unit diagonal) below, U on and above the diagonal,
 // {piv[k]} the row swapped with row k; returns whether A is singular; blocked, right looking: a
-// panel of LU_PANEL columns at a time, whose trailing update goes through shared memory in tiles
+// panel of columns at a time, whose trailing update goes through shared memory in tiles, with
+// each thread accumulating micro tiles in registers
 template <class T, class S>
 __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const int n)
 {
@@ -106,11 +127,12 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
     cta.sync();
     auto tid = static_cast<int>(cta.thread_rank());
     auto threads = static_cast<int>(cta.size());
-    // the tiles of L and U, padded against bank conflicts
+    // the panel width, and the tiles of L and U, padded against bank conflicts
+    constexpr auto NB = lu_panel<S>();
     auto Lt = reinterpret_cast<S *>(lu_tiles());
-    auto Ut = Lt + LU_TILE*(LU_PANEL + 1);
-    for (auto k0 = 0; k0 < n; k0 += LU_PANEL) {
-        auto kend = min(k0 + LU_PANEL, n);
+    auto Ut = Lt + LU_TILE*(NB + 1);
+    for (auto k0 = 0; k0 < n; k0 += NB) {
+        auto kend = min(k0 + NB, n);
         // factor the panel, column by column
         for (auto k = k0; k < kend; k++) {
             // pick the pivot, and swap it into row k, across the whole row
@@ -142,7 +164,7 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
             for (auto idx = tid; idx < m*w; idx += threads) {
                 auto i = k + 1 + idx / w;
                 auto j = k + 1 + idx % w;
-                A[i*n + j] -= A[i*n + k]*A[k*n + j];
+                A[i*n + j] = mul_add(A[i*n + j], -A[i*n + k], A[k*n + j]);
             }
             cta.sync();
         }
@@ -155,7 +177,7 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
             for (auto r = k0 + 1; r < kend; r++) {
                 auto acc = A[r*n + j];
                 for (auto q = k0; q < r; q++)
-                    acc -= A[r*n + q]*A[q*n + j];
+                    acc = mul_add(acc, -A[r*n + q], A[q*n + j]);
                 A[r*n + j] = acc;
             }
         }
@@ -164,6 +186,8 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
         auto nb = kend - k0;
         auto m = n - kend;
         auto tiles = (m + LU_TILE - 1) / LU_TILE;
+        // the micro tiles along a side of a tile, strided through it
+        constexpr auto MT = LU_TILE / LU_MICRO;
         for (auto tile = 0; tile < tiles*tiles; tile++) {
             auto i0 = kend + (tile / tiles)*LU_TILE;
             auto j0 = kend + (tile % tiles)*LU_TILE;
@@ -171,7 +195,7 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
             for (auto e = tid; e < LU_TILE*nb; e += threads) {
                 auto r = e / nb;
                 auto q = e % nb;
-                Lt[r*(LU_PANEL + 1) + q] = (i0 + r < n) ? A[(i0 + r)*n + k0 + q] : S(0);
+                Lt[r*(NB + 1) + q] = (i0 + r < n) ? A[(i0 + r)*n + k0 + q] : S(0);
             }
             for (auto e = tid; e < nb*LU_TILE; e += threads) {
                 auto q = e / LU_TILE;
@@ -179,15 +203,40 @@ __device__ bool lu_factor(const cg::thread_block & cta, S * A, int * piv, const 
                 Ut[q*(LU_TILE + 1) + c] = (j0 + c < n) ? A[(k0 + q)*n + j0 + c] : S(0);
             }
             cta.sync();
-            // and update the tile of A22
-            for (auto e = tid; e < LU_TILE*LU_TILE; e += threads) {
-                auto r = e / LU_TILE;
-                auto c = e % LU_TILE;
-                if (i0 + r < n && j0 + c < n) {
-                    auto acc = S(0);
-                    for (auto q = 0; q < nb; q++)
-                        acc += Lt[r*(LU_PANEL + 1) + q]*Ut[q*(LU_TILE + 1) + c];
-                    A[(i0 + r)*n + j0 + c] -= acc;
+            // and update the tile, a micro tile per thread at a time
+            for (auto mt = tid; mt < MT*MT; mt += threads) {
+                auto mi = mt / MT;
+                auto mj = mt % MT;
+                S acc[LU_MICRO][LU_MICRO];
+                #pragma unroll
+                for (auto a = 0; a < LU_MICRO; a++)
+                    #pragma unroll
+                    for (auto b = 0; b < LU_MICRO; b++)
+                        acc[a][b] = S(0);
+                for (auto q = 0; q < nb; q++) {
+                    // a column of L and a row of U, each reused across the micro tile
+                    S l[LU_MICRO], u[LU_MICRO];
+                    #pragma unroll
+                    for (auto a = 0; a < LU_MICRO; a++)
+                        l[a] = Lt[(mi + a*MT)*(NB + 1) + q];
+                    #pragma unroll
+                    for (auto b = 0; b < LU_MICRO; b++)
+                        u[b] = Ut[q*(LU_TILE + 1) + mj + b*MT];
+                    #pragma unroll
+                    for (auto a = 0; a < LU_MICRO; a++)
+                        #pragma unroll
+                        for (auto b = 0; b < LU_MICRO; b++)
+                            acc[a][b] = mul_add(acc[a][b], l[a], u[b]);
+                }
+                #pragma unroll
+                for (auto a = 0; a < LU_MICRO; a++) {
+                    auto i = i0 + mi + a*MT;
+                    #pragma unroll
+                    for (auto b = 0; b < LU_MICRO; b++) {
+                        auto j = j0 + mj + b*MT;
+                        if (i < n && j < n)
+                            A[i*n + j] -= acc[a][b];
+                    }
                 }
             }
             cta.sync();
@@ -217,7 +266,7 @@ __device__ void lu_solve(const cg::thread_block & cta, const S * LU, const int *
     for (auto k = 0; k < n - 1; k++) {
         auto bk = b[k];
         for (auto i = k + 1 + static_cast<int>(cta.thread_rank()); i < n; i += cta.size())
-            b[i] -= LU[i*n + k]*bk;
+            b[i] = mul_add(b[i], -LU[i*n + k], bk);
         cta.sync();
     }
 
@@ -228,7 +277,7 @@ __device__ void lu_solve(const cg::thread_block & cta, const S * LU, const int *
         cta.sync();
         auto bk = b[k];
         for (auto i = static_cast<int>(cta.thread_rank()); i < k; i += cta.size())
-            b[i] -= LU[i*n + k]*bk;
+            b[i] = mul_add(b[i], -LU[i*n + k], bk);
         cta.sync();
     }
 }
