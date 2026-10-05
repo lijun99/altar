@@ -12,6 +12,7 @@
 # externals
 import mpi
 import journal
+import numpy
 # the framework
 import altar
 # superclass
@@ -108,6 +109,23 @@ class MPILangevin(LangevinMethod):
         self.step = self.collect()
         # return the statistics
         return stats
+
+
+    def rate_statistics(self, controller):
+        """
+        The statistics {estimate_rate} needs, pooled over the chains of every task, so that
+        all tasks agree on the sampling rate
+        """
+        comm = self.communicator
+        # my worker's own
+        n, sum_x, sum_x2, max_gradient = self.worker.rate_statistics(controller=controller)
+        # add them up across the tasks
+        n = int(comm.sum(int(n)))
+        sum_x = numpy.array([comm.sum(float(v)) for v in sum_x])
+        sum_x2 = numpy.array([comm.sum(float(v)) for v in sum_x2])
+        max_gradient = comm.max(float(max_gradient))
+        # all done
+        return n, sum_x, sum_x2, max_gradient
 
 
     def resample(self, controller, statistics):

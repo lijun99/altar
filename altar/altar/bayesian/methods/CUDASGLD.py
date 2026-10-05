@@ -13,6 +13,8 @@ from altar.cuda import libcudaaltar
 # externals
 import math
 import numpy
+# for its {estimate_rate}
+from .LangevinMethod import LangevinMethod
 
 # declaration
 class CUDASGLD:
@@ -31,6 +33,9 @@ class CUDASGLD:
     wid = 0     # my worker id
     workers = 1 # i don't manage anybody else
     device = None
+
+    # the shared estimate, from my own {rate_statistics}
+    estimate_rate = LangevinMethod.estimate_rate
 
     def initialize(self, application):
         """
@@ -134,9 +139,9 @@ class CUDASGLD:
         # all done
         return self
 
-    def estimate_rate(self, controller, scale=1.0):
+    def rate_statistics(self, controller):
         """
-        Estimate the sampling rate from std and gradient
+        The statistics {estimate_rate} needs from my chains, in sampling space
         """
 
         # grab the state
@@ -152,24 +157,20 @@ class CUDASGLD:
 
         # compute the gradient
         model.gradient(controller=controller, step=step, batch=step.samples)
-
-        # scale {data_gradient} by the chain rule, same as {walk}
         if step.has_reparametrization:
             model.eval_jacobian(step=step, batch=step.samples)
-            numpy.asarray(step.data_gradient)[:] *= numpy.asarray(step.Jacobian)
+        # let the kernels finish before reading their output on the host
+        altar.cuda.synchronize()
 
-        gradient = step.data_gradient
-        gradient += step.prior_gradient
-
-        max_gradient = max(gradient.amax(), abs(gradient.amin()))
-
-        mean, std = step.theta_sampling.mean_sd()
-        max_std = std.amax()
-
-        rate = scale*min(4*max_std/max_gradient, max_std*max_std)
+        # the posterior gradient, in sampling space: the data one needs the chain rule
+        gradient = numpy.asarray(step.data_gradient, dtype=numpy.float64)
+        if step.has_reparametrization:
+            gradient = gradient * numpy.asarray(step.Jacobian)
+        gradient = gradient + numpy.asarray(step.prior_gradient)
+        θ = numpy.asarray(step.theta_sampling, dtype=numpy.float64)
 
         # all done
-        return rate
+        return θ.shape[0], θ.sum(axis=0), (θ * θ).sum(axis=0), numpy.abs(gradient).max()
 
 
     def bottom(self, controller):

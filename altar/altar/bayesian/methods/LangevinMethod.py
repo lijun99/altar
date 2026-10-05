@@ -8,7 +8,10 @@
 # all rights reserved
 #
 
+import math
 from datetime import datetime
+# externals
+import numpy
 
 # declaration
 class LangevinMethod:
@@ -53,6 +56,31 @@ class LangevinMethod:
         self.iteration = 0
         # all done
         return self
+
+
+    def estimate_rate(self, controller, scale=1.0):
+        """
+        Estimate the initial sampling rate from the spread of the samples and the size of the
+        posterior gradient, both in sampling space: {scale} * min(4 sd/|g|, sd^2), with sd
+        the largest per-parameter standard deviation and |g| the largest gradient component
+        """
+        # the sample statistics, pooled over every chain i (and my peers) hold
+        n, sum_x, sum_x2, max_gradient = self.rate_statistics(controller=controller)
+        # the largest per-parameter standard deviation
+        mean = sum_x / n
+        max_std = math.sqrt(max(numpy.max(sum_x2 / n - mean * mean), 0.0))
+        # all done
+        return scale * min(4 * max_std / max_gradient, max_std * max_std)
+
+
+    def rate_statistics(self, controller):
+        """
+        The statistics {estimate_rate} needs from my chains, in sampling space: their count,
+        the per-parameter sums of the samples and of their squares, and the largest
+        component of the posterior gradient
+        """
+        raise NotImplementedError(
+            f"class '{type(self).__name__}' must implement 'rate_statistics'")
 
 
     def restart(self, controller):

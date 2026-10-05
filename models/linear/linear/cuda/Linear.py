@@ -155,7 +155,7 @@ class Linear:
         prior and log data likelihood with respect to {step.theta}, for use by gradient-based
         samplers (e.g. SGLD, HMC) -- the naming cuda state objects use (see
         {altar.bayesian.states.cuda.HMCState}/{LangevinState}/{LangevinStep} and
-        {CUDASGLD.estimate_rate}'s own {step.data_gradient}/{step.prior_gradient} reads),
+        {CUDASGLD.rate_statistics}'s own {step.data_gradient}/{step.prior_gradient} reads),
         unlike their cpu counterparts' {grad_prior}/{grad_data}.
 
         grad_data = -G'^T @ w, where w is the (already-whitened) residual from

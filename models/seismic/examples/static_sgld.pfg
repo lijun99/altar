@@ -4,40 +4,30 @@
 ; all rights reserved
 ;
 
-; the static uoᴉsɹǝʌuᴉ example
+; the static inversion example with SGLD: bounded dip slips are sampled in an unbounded
+; logit space ({reparameterize}), as gradient-based samplers require
 ;
-; for Bayesian simulations, run
-;        slipmodel --config=static.pfg
-;   or   slipmodel.plexus sample --config=static.pfg
-; for forward problem only (with an input set of parameters), run
-;        slipmodel.plexus forward --config=static.pfg
+; sample with
+;        slipmodel.plexus sample --config=static_sgld.pfg
 
-
-; my shell application
-slipmodel = altar.shells.altar
 slipmodel:
 
-    ; model to be sampled
-    model = altar.models.seismic.cuda.static
+    ; the static model is the linear model d = G theta
+    model = altar.models.seismic.static
     model:
-
-        ; settings for running forward problem only
-        ; forward theta input
-        theta_input = static_mean_model.txt
-        ; forward output file
-        forward_output = forward_prediction.h5
 
         ; the name of the test case, also as directory for input files
         case = 9patch
 
         ; number of patches
         patches = 9
+        ; strike and dip slip for each patch
+        parameters = 2*{slipmodel.model.patches}
 
         ; green's function (observations, parameters)
         green = static.gf.h5
 
         ; data observations - use L2 norm for likelihood
-        dataobs = altar.cuda.data.datal2
         dataobs:
             observations = 108
             data_file = static.data.h5
@@ -51,24 +41,25 @@ slipmodel:
 
         ; define parametersets
         psets:
-            strikeslip = altar.cuda.models.parameterset
-            dipslip = altar.cuda.models.parameterset
+            strikeslip = contiguous
+            dipslip = contiguous
 
             strikeslip:
                 count = {slipmodel.model.patches}
-                prior = altar.cuda.distributions.gaussian
+                prior = gaussian
                 prior.mean = 0
                 prior.sigma = 0.5
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prior = altar.models.seismic.cuda.momentlogit
+                prior = altar.models.seismic.moment
                 prior:
                     support = (-0.5, 20) ; slip range
                     Mw_mean = 7.3
                     Mw_sigma = 0.2
                     Mu = [30] ; in GPa
                     area = [400] ; patch area in km^2
+                    reparameterize = True ; sample logit(slip) instead of slip
 
     controller = altar.bayesian.langevin
     controller:
@@ -88,7 +79,6 @@ slipmodel:
         ;     a = 0.01/{slipmodel.model.dataobs.observations}
         ;     b = 0.01
 
-
     ; run configuration
     job:
         tasks = 1 ; number of tasks per host
@@ -96,7 +86,6 @@ slipmodel:
         gpuprecision = float32 ; double(float64) or single(float32) precision for gpu computations
         ;gpuids = [0] ; a list gpu device ids for tasks on each host, default range(job.gpus)
         chains = 2**10 ; number of chains per task
-        steps = 1000 ; MC burn-in steps for each beta step
 
     ; shell
     ; shell = mpi.shells.mpirun ; for running with mpi
