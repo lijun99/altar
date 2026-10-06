@@ -8,7 +8,7 @@
 #
 
 # check the kinematic gradient against jax: a port of the cuda slip history Mb, differentiated
-# exactly, against {Kinematic.gradient}; needs jax (the cpu build will do) and float64; from
+# exactly, against {Kinematic.gradient}; needs jax (the cpu build will do); from
 # models/seismic/examples, with the 9patch green's functions in place, run
 #     python ../tests/kinematic_jax.py --config=kinematic.pfg \
 #         --job.gpuprecision=float64 --job.chains=8
@@ -213,9 +213,6 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         self.rng.initialize()
         self.controller.initialize(application=self)
         m = self.model = self.model.initialize(application=self)
-        if m.precision != "float64":
-            self.error.log("the check needs job.gpuprecision = float64")
-            return 1
         n = m.samples
         Np = m.Nas * m.Ndd
         idx = numpy.asarray(m.gidx_map)
@@ -223,12 +220,14 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
 
         # altar: the slip histories, the likelihoods, the gradient
         θ = altar.cuda.matrix(source=theta, dtype=m.precision)
+        # jax at the thetas altar sees, rounded to its precision
+        theta = numpy.asarray(θ).astype(float)
         gMb = altar.cuda.matrix(shape=(n, m.NGbparameters), dtype=m.precision)
         m.cmodel.cast_mb(theta=θ.grid, mb=gMb.grid, batch=n)
-        Mb = numpy.asarray(gMb).copy()
+        Mb = numpy.asarray(gMb).astype(float)
         llk = altar.cuda.vector(shape=n, dtype=m.precision)
         m.eval_data_likelihood(theta=θ, likelihood=llk, batch=n)
-        llk = numpy.asarray(llk) - m.dataobs.normalization
+        llk = numpy.asarray(llk).astype(float) - m.dataobs.normalization
         step = types.SimpleNamespace(
             theta=θ,
             prior_gradient=altar.cuda.matrix(shape=theta.shape, dtype=m.precision).zero(),
@@ -239,35 +238,25 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         start = time.perf_counter()
         m.gradient(controller=self.controller, step=step, batch=n)
         altar_time = time.perf_counter() - start
-        gradient = numpy.asarray(step.data_gradient).copy()
+        gradient = numpy.asarray(step.data_gradient).astype(float)
 
         # jax: the same, exactly
         history = SlipHistory(
             Nas=m.Nas, Ndd=m.Ndd, Nmesh=m.Nmesh, dsp=m.dsp, Nt=m.Nt, Npt=m.Npt, dt=m.dt,
             t0s=numpy.asarray(m.gt0s), idx=idx)
-        GT = jnp.asarray(numpy.asarray(m.gGF))
-        data = jnp.asarray(numpy.asarray(m.dataobs.dataobs_batch)[0])
+        GT = jnp.asarray(numpy.asarray(m.gGF).astype(float))
+        data = jnp.asarray(numpy.asarray(m.dataobs.dataobs_batch)[0].astype(float))
         def loglikelihood(Mb):
             w = Mb @ GT - data
             return -0.5 * jnp.dot(w, w)
         Mb_jax = jax.jit(jax.vmap(history))
         value_and_grad = jax.jit(jax.vmap(jax.value_and_grad(lambda t: loglikelihood(history(t)))))
-        dMb = jax.jit(jax.vmap(jax.grad(loglikelihood)))
         Θ = jnp.asarray(theta)
         jax.block_until_ready(value_and_grad(Θ))
         start = time.perf_counter()
         llk_jax, gradient_jax = jax.block_until_ready(value_and_grad(Θ))
         jax_time = time.perf_counter() - start
         mb_jax = numpy.asarray(Mb_jax(Θ))
-
-        # altar's one-sided differences of Mb, on the jax port, to tell the port from the scheme
-        base, dllk = mb_jax, numpy.asarray(dMb(jnp.asarray(mb_jax)))
-        fd_jax = numpy.asarray(gradient_jax).copy()
-        for col in idx[2 * Np:]:
-            h = m.fd_step * numpy.maximum(1.0, numpy.abs(theta[:, col]))
-            shifted = theta.copy()
-            shifted[:, col] += h
-            fd_jax[:, col] = (dllk * (numpy.asarray(Mb_jax(jnp.asarray(shifted))) - base)).sum(axis=1) / h
 
         # report
         print(f"fast sweeping coverage: {', '.join(f'{c:.1%}' for c in history.coverage())}")
@@ -278,15 +267,12 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         groups = {"strike slips": idx[:Np], "dip slips": idx[Np:2 * Np],
                   "rise times": idx[2 * Np:3 * Np], "rupture velocities": idx[3 * Np:4 * Np],
                   "hypocenter": idx[4 * Np:]}
-        print("max over samples of |a - b|_inf / |jax|_inf, per parameter group")
-        print(f"{'':20s}{'altar vs jax':>16s}{'jax fd vs jax':>16s}{'altar vs jax fd':>18s}")
+        print(f"the gradient in {m.precision}, max over samples of |altar - jax|_inf / |jax|_inf:")
         exact = numpy.asarray(gradient_jax)
         for name, cols in groups.items():
             norm = numpy.abs(exact[:, cols]).max(axis=1)
-            def error(a, b):
-                return (numpy.abs(a[:, cols] - b[:, cols]).max(axis=1) / norm).max()
-            print(f"{name:20s}{error(gradient, exact):16.2e}{error(fd_jax, exact):16.2e}"
-                  f"{error(gradient, fd_jax):18.2e}")
+            error = (numpy.abs(gradient[:, cols] - exact[:, cols]).max(axis=1) / norm).max()
+            print(f"  {name:20s}{error:10.2e}")
         print("hypocenter gradient per sample: altar | jax")
         for k in range(n):
             print(f"  {k}: {gradient[k, groups['hypocenter']]} | {exact[k, groups['hypocenter']]}")
@@ -294,8 +280,7 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
 
         if self.output:
             numpy.savez(self.output, theta=theta, llk=llk, llk_jax=numpy.asarray(llk_jax),
-                        Mb=Mb, Mb_jax=mb_jax, gradient=gradient, gradient_jax=exact,
-                        fd_jax=fd_jax)
+                        Mb=Mb, Mb_jax=mb_jax, gradient=gradient, gradient_jax=exact)
         return 0
 
 

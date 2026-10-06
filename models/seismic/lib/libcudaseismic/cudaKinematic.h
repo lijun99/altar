@@ -59,6 +59,10 @@ protected:
     TYPE * _gpu_Mb; ///< the big-M matrix ((2*<c>_Nt</c>*Npatch)*Ns where Ns is the leading index) on GPU
     TYPE * _gpu_T0; ///< the T0 values for each patch ( ((Nas+2)*(Ndd+2)*Nmesh*Nmesh) * Ns where Ns is the leading index) on GPU
     TYPE * _gpu_TI0; ///< the T0 values for each interpolated points ((Np*Npt*Npt)*Ns where Ns is the leading index) on GPU
+    // the gradient's, made on its first use
+    mutable TYPE * _gpu_T0_snapshots = nullptr; ///< T0 before the first sweep and after each one, for the adjoint sweeps
+    mutable TYPE * _gpu_dT0 = nullptr; ///< the gradient with respect to T0
+    mutable TYPE * _gpu_dTI0 = nullptr; ///< the gradient with respect to TI0
     // with leading dimension on the right
     // Mb[samples][Nt][2(strike,dip slips)][Nas][Ndd]
     // gT0 [samples][(Nas+2)*Nmesh][(Ndd+2)*Nmesh]
@@ -96,12 +100,18 @@ public:
         const size_t parameters, const size_t batch, bool return_residual=true, cudaStream_t stream=0) const;
     /// calculate and return the bigM only
     void calculateBigM(const TYPE * const theta, TYPE * const gMb, const size_t parameters, const size_t batch, cudaStream_t stream=0) const;
+    /// the gradient of the log likelihood with respect to my columns of theta, from that with respect to Mb
+    void gradient(const TYPE * const theta, const TYPE * const gdMb, TYPE * const gGrad, const size_t parameters,
+        const size_t batch, cudaStream_t stream=0) const;
 
     // local methods
     /// Seed the T0 data around the hypocenter
     void _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
     /// wrapper for Fast Sweeping kernel
-    void _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
+    void _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0,
+        TYPE *const gSnapshots=nullptr) const;
+    /// the threads of a block of the sweeps
+    int _sweepBlock() const;
     /// wrapper for interpolation of T0 to TI0 kernel
     void _interpolateT0(const size_t Ns_good, cudaStream_t stream=0) const;
     /// wrapper for casting M_candidate to BigM kernel
