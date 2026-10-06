@@ -54,7 +54,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "the step of the central differences of the data likelihood gradient, "
         "in the units of the parameters"
     )
-    verbose = altar.properties.bool(default=False)
+    verbose = altar.properties.int(default=0)
+    verbose.doc = (
+        "verbosity level (0: minimal, 1: outputs from seqeas, 2: integrator progress)"
+    )
     forward_ode = altar.properties.str(default="ratedependent")
     forward_ode.validators = altar.constraints.isMember(
         "ratedependent", "tractiondependent"
@@ -534,7 +537,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             batches=batch_size_run,
             v_ratio_max=self.v_ratio_max,
             num_threads=self.cuda_threads,
-            verbose=self.verbose,
+            verbose=self.verbose > 1,
         )
 
         if self.forward_ode == "ratedependent":
@@ -660,8 +663,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         theta = self.restrict(theta=step.theta)
         batch = theta.shape[0] if batch is None else batch
         grad_prior = self.restrict(theta=step.prior_gradient)
-        for name in ([] if self.embedded else self.psets_list):
-            self.psets[name].prior_gradient(theta=theta, gradient=grad_prior, batch=batch)
+        for name in [] if self.embedded else self.psets_list:
+            self.psets[name].prior_gradient(
+                theta=theta, gradient=grad_prior, batch=batch
+            )
 
         # each sample, shifted by +h and -h along each parameter
         x = np.array(np.asarray(theta)[:batch], dtype=float)
@@ -672,7 +677,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             shifted[:, 2 * j, j] += h
             shifted[:, 2 * j + 1, j] -= h
         n = batch * 2 * parameters
-        theta_fd = altar.cuda.matrix(source=shifted.reshape(n, parameters), dtype=self.precision)
+        theta_fd = altar.cuda.matrix(
+            source=shifted.reshape(n, parameters), dtype=self.precision
+        )
         llk_fd = altar.cuda.vector(shape=n, dtype=self.precision)
         self.eval_data_likelihood(theta=theta_fd, likelihood=llk_fd, batch=n)
 
