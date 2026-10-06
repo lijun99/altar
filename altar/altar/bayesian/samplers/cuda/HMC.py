@@ -104,6 +104,8 @@ class HMC:
 
         self._set_step_size(self._clamp_step_size(self.step_size))
 
+        # the mass matrix, from the population
+        self._set_mass(step)
         # the chains, and their potential and its gradient, at the start of the walk
         self._copy_state_from_step(step)
         self._potential_and_gradients(annealer)
@@ -119,6 +121,9 @@ class HMC:
         for _ in range(self.steps):
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
+            # p ~ N(0, M), M = diag(1/var)
+            if self._sd is not None:
+                state.momentum *= self._inv_sd
             accepted = self._trajectory(annealer, self.leapfrog_steps)
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
@@ -197,7 +202,7 @@ class HMC:
 
         # the energy at the start
         kinetic_old = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_old.grid)
+        self._kinetic(kinetic_old)
         h_old = state.U.clone()
         cublas.axpy(alpha=1.0, x=kinetic_old, y=h_old, batch=state.samples)
 
@@ -214,7 +219,7 @@ class HMC:
 
         # the energy at the proposal
         kinetic_new = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_new.grid)
+        self._kinetic(kinetic_new)
         h_new = state.U.clone()
         cublas.axpy(alpha=1.0, x=kinetic_new, y=h_new, batch=state.samples)
 
@@ -248,25 +253,72 @@ class HMC:
                 state.log_jacobian.grid, old_state.log_jacobian.grid, mask_dev.grid)
 
         # the total energy of the final state
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, state.H.grid)
+        self._kinetic(state.H)
         cublas.axpy(alpha=1.0, x=state.U, y=state.H, batch=state.samples)
 
         return accepted
 
     def _update_position(self, annealer):
+        # the velocity, M^-1 p
+        velocity = self._scale(self._var)
         if self.proposal_state.reparameterization:
             libcudaaltar.leapfrog.cudaLeapfrog_updatePosition(
                 self.proposal_state.phi.grid,
-                self.proposal_state.momentum.grid,
+                velocity.grid,
                 self.proposal_state.eta
             )
             self._transform_phi_to_theta(annealer)
             return
         libcudaaltar.leapfrog.cudaLeapfrog_updatePosition(
             self.proposal_state.theta.grid,
-            self.proposal_state.momentum.grid,
+            velocity.grid,
             self.proposal_state.eta
         )
+
+    def _kinetic(self, energy):
+        """
+        Fill {energy} with p^T M^-1 p / 2 of each chain
+        """
+        libcudaaltar.leapfrog.cudaLeapfrog_kineticEnergy(self._scale(self._sd).grid, energy.grid)
+
+    def _scale(self, factor):
+        """
+        The momenta, scaled cell by cell by {factor}, or themselves for a unit mass
+        """
+        momentum = self.proposal_state.momentum
+        if factor is None:
+            return momentum
+        self._scaled.copy(momentum)
+        self._scaled *= factor
+        return self._scaled
+
+    def _set_mass(self, step):
+        """
+        The diagonal mass matrix of the walk, M = diag(1/var), from the variance of each
+        parameter in sampling space over the population: its weighted samples before
+        resampling, when the scheduler kept them; a unit mass unless {adapt_mass_matrix}
+        """
+        self._sd = self._var = self._inv_sd = None
+        if not self.adapt_mass_matrix:
+            return
+        state = self.proposal_state
+        weighted = getattr(step, "weighted_theta", None)
+        weights = getattr(step, "weights", None)
+        if weighted is not None and weights is not None:
+            θ, w = numpy.asarray(weighted), numpy.asarray(weights, dtype=float)
+        else:
+            θ = numpy.asarray(step.theta_sampling if state.reparameterization else step.theta)
+            w = numpy.ones(θ.shape[0])
+        w = w / w.sum()
+        mean = w @ θ
+        var = numpy.clip(w @ (θ - mean) ** 2, self.min_variance, self.max_variance)
+        # broadcast to the chains, for the cell by cell products on the device
+        def rows(v):
+            return altar.cuda.matrix(source=numpy.tile(v, (state.samples, 1)), dtype=self.dtype)
+        self._var, self._sd, self._inv_sd = rows(var), rows(numpy.sqrt(var)), rows(1 / numpy.sqrt(var))
+        if self._scaled is None:
+            self._scaled = altar.cuda.matrix(shape=state.momentum.shape, dtype=self.dtype)
+        return
 
     def _transform_phi_to_theta(self, annealer):
         model = annealer.model
@@ -341,6 +393,13 @@ class HMC:
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
+    adapt_mass_matrix = True # whether to scale the momenta by the population's variances
+    min_variance = 1e-8     # the bounds of the variances of the mass matrix
+    max_variance = 1e8
+    _var = None             # the variances of the mass matrix, and their square roots and
+    _sd = None              # inverses, broadcast to the chains; none for a unit mass
+    _inv_sd = None
+    _scaled = None          # scratch, for the scaled momenta
     samples = None          # the number of chains, for {_allocate}
     dtype = None            # the gpu precision, for {_allocate}
     info = None             # the application info channel
