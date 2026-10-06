@@ -15,6 +15,7 @@ import itertools
 import altar
 # my protocol
 from .Scheduler import Scheduler as scheduler
+from ..statistics import weighted_covariance
 
 
 # declaration
@@ -159,32 +160,13 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         samples = step.samples
         parameters = step.parameters
 
-        # initialize the covariance matrix
-        Σ = altar.matrix(shape=(parameters, parameters)).zero()
-
         # check the geometries
         assert w.shape == samples
         assert θ.shape == (samples, parameters)
-        assert Σ.shape == (parameters, parameters)
 
-        # calculate the weighted mean of every parameter across all samples
-        θbar = altar.vector(shape=parameters)
-        # for each parameter
-        for j in range(parameters):
-            # the jth column in θ has the value of this parameter in the various samples
-            θbar[j] = θ.getColumn(j).mean(weights=w)
-        # start filling out Σ
-        for i in range(samples):
-            # get the sample
-            sample = θ.getRow(i)
-            # form Σ += w[i] sample sample^T
-            altar.blas.dsyr(Σ.lowerTriangular, w[i], sample, Σ)
-        # subtract θbar θbar^T
-        altar.blas.dsyr(Σ.lowerTriangular, -1, θbar, Σ)
-        # fill the upper triangle
-        for i in range(parameters):
-            for j in range(i):
-                Σ[j,i] = Σ[i,j]
+        # the weighted outer products about the weighted mean, in one matrix product
+        Σ = altar.matrix(shape=(parameters, parameters))
+        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
 
         # condition the covariance matrix
         if self.check_positive_definiteness:

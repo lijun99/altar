@@ -17,6 +17,7 @@ import altar.cuda
 from altar.cuda import cublas, libcudaaltar
 
 from altar.bayesian.states.cuda.HMCState import HMCState
+from altar.bayesian.statistics import weighted_variance
 
 # acceptance statistics container, the same shape {Metropolis}/{HMC} (cpu) use; hmc has no
 # notion of an invalid (out of support) candidate, so the middle field is always 0
@@ -305,13 +306,11 @@ class HMC:
         weighted = getattr(step, "weighted_theta", None)
         weights = getattr(step, "weights", None)
         if weighted is not None and weights is not None:
-            θ, w = numpy.asarray(weighted), numpy.asarray(weights, dtype=float)
+            θ, w = numpy.asarray(weighted), numpy.asarray(weights)
         else:
             θ = numpy.asarray(step.theta_sampling if state.reparameterization else step.theta)
             w = numpy.ones(θ.shape[0])
-        w = w / w.sum()
-        mean = w @ θ
-        var = numpy.clip(w @ (θ - mean) ** 2, self.min_variance, self.max_variance)
+        var = numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance)
         # broadcast to the chains, for the cell by cell products on the device
         def rows(v):
             return altar.cuda.matrix(source=numpy.tile(v, (state.samples, 1)), dtype=self.dtype)
