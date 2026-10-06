@@ -12,6 +12,7 @@
 import altar
 # my protocol
 from .Proposal import Proposal as proposal
+from ..statistics import weighted_covariance
 
 # declaration
 class GaussianProposal(altar.component, family="altar.proposals.gaussian", implements=proposal):
@@ -227,22 +228,9 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         assert w.shape == samples
         assert θ.shape == (samples, parameters)
 
-        # weighted mean of each parameter
-        θbar = altar.vector(shape=parameters)
-        for j in range(parameters):
-            θbar[j] = θ.getColumn(j).mean(weights=w)
-
-        # weighted outer-product sum: Σ += w_i θ_i θ_i^T
-        Σ = altar.matrix(shape=(parameters, parameters)).zero()
-        for i in range(samples):
-            altar.blas.dsyr(Σ.lowerTriangular, w[i], θ.getRow(i), Σ)
-        # subtract θ̄ θ̄^T
-        altar.blas.dsyr(Σ.lowerTriangular, -1, θbar, Σ)
-
-        # fill the upper triangle
-        for i in range(parameters):
-            for j in range(i):
-                Σ[j, i] = Σ[i, j]
+        # the weighted outer products about the weighted mean, in one matrix product
+        Σ = altar.matrix(shape=(parameters, parameters))
+        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
 
         # condition the covariance matrix if requested
         if self.check_positive_definiteness:
