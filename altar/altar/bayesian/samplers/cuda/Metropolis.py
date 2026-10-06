@@ -76,11 +76,13 @@ class Metropolis:
         # prepare the sampling pdf, copy step to gpu step
         self.prepare_sampling_pdf(annealer=annealer, step=step)
 
-        # walk the chains
+        # walk the chains, which keep their states in {step} as they go, when pooling
+        self._population = step
         statistics = self.walk_chains(annealer=annealer, step=self.gstep)
 
-        # finish the sampling pdf, copy gpu step back
-        self.finish_sampling_pdf(step=step)
+        # finish the sampling pdf, copy gpu step back, unless the walk kept its states already
+        if getattr(annealer.worker, "pool", None) is None:
+            self.finish_sampling_pdf(step=step)
 
         # notify we are done sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_finish, controller=annealer)
@@ -116,7 +118,7 @@ class Metropolis:
         # allocate local gpu data if not allocated
         self.gstep = annealer.worker.gstep
         if self.ginit is not True:
-            self.allocate_gpu_data(step.samples, step.parameters,
+            self.allocate_gpu_data(self.gstep.samples, step.parameters,
                 reparameterized=step.has_reparametrization)
 
         # copy cpu step state
@@ -241,6 +243,19 @@ class Metropolis:
         self.stepcounter.start(theta=θ, beta=β)
         mcsteps = 0
 
+        # the states the chains keep as they walk, into the population, when pooling
+        pool = getattr(annealer.worker, "pool", None)
+        population = self._population
+        def keep(offset):
+            # with the physical posterior, not the one with the log-jacobian the walk carries
+            if reparameterized:
+                step.posterior -= jacobian
+            step.copy_to_cpu(step=population, offset=offset)
+            if reparameterized:
+                step.posterior += jacobian
+        if pool is not None:
+            pool.begin()
+
         while not self.stepcounter.done(mcsteps=mcsteps, theta=θ, annealer=annealer):
             block = self.stepcounter.block_size()
             for ihop in range(block):
@@ -273,6 +288,8 @@ class Metropolis:
                 # if valid = 0, continue to next MC step
                 if valid == 0 :
                     invalid += invalid_step
+                    if pool is not None:
+                        pool.advance(keep)
                     continue
 
                 # if valid > 0, proceed to Metropolis accept-reject
@@ -331,8 +348,13 @@ class Metropolis:
 
                 # notify we are done advancing the chains
                 dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
+                if pool is not None:
+                    pool.advance(keep)
 
             mcsteps += block
+        # keep the final states
+        if pool is not None:
+            pool.end(keep)
         # leave the posterior itself in {posterior}
         if reparameterized:
             posterior -= jacobian
@@ -412,6 +434,7 @@ class Metropolis:
     dispatcher = None  # a reference to the event dispatcher
     ginit = False     # whether gpu data are allocated
     gstep = None # cuda/gpu step for keeping sampling states
+    _population = None # the cpu step the chains keep their states in, when pooling
     gcandidate = None # cuda/gpu candidate state
     gproposal = None # save theta jumps
     gproposal_physical = None # the jumps in physical space, when walking in sampling space

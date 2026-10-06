@@ -8,6 +8,7 @@
 
 
 # the package
+import numpy
 import altar
 import altar.cuda
 
@@ -143,32 +144,34 @@ class CoolingStep:
         return self
 
 
-    def copy_from_cpu(self, step):
+    def copy_from_cpu(self, step, offset=0):
         """
-        Copy cpu step to gpu step
+        Copy cpu step to gpu step: my rows from its rows {offset} on
         """
+        rows = slice(offset, offset + self.samples)
         self.beta = step.beta
-        self.theta_sampling.copy_from_host(source=step.theta_sampling)
+        self.theta_sampling.copy_from_host(source=numpy.asarray(step.theta_sampling)[rows])
         if self.has_reparametrization:
-            self.theta.copy_from_host(source=step.theta)
-            self.jacobian.copy_from_host(source=step.jacobian)
-        self.prior.copy_from_host(source=step.prior)
-        self.data.copy_from_host(source=step.data)
-        self.posterior.copy_from_host(source=step.posterior)
+            self.theta.copy_from_host(source=numpy.asarray(step.theta)[rows])
+            self.jacobian.copy_from_host(source=numpy.asarray(step.jacobian)[rows])
+        self.prior.copy_from_host(source=numpy.asarray(step.prior)[rows])
+        self.data.copy_from_host(source=numpy.asarray(step.data)[rows])
+        self.posterior.copy_from_host(source=numpy.asarray(step.posterior)[rows])
         return self
 
-    def copy_to_cpu(self, step):
+    def copy_to_cpu(self, step, offset=0):
         """
-        copy gpu step to cpu step
+        copy gpu step to cpu step: my rows to its rows {offset} on
         """
+        rows = slice(offset, offset + self.samples)
         step.beta = self.beta
-        self.theta_sampling.copy_to_host(target=step.theta_sampling)
+        self.theta_sampling.copy_to_host(target=numpy.asarray(step.theta_sampling)[rows])
         if self.has_reparametrization:
-            self.theta.copy_to_host(target=step.theta)
-            self.jacobian.copy_to_host(target=step.jacobian)
-        self.prior.copy_to_host(target=step.prior)
-        self.data.copy_to_host(target=step.data)
-        self.posterior.copy_to_host(target=step.posterior)
+            self.theta.copy_to_host(target=numpy.asarray(step.theta)[rows])
+            self.jacobian.copy_to_host(target=numpy.asarray(step.jacobian)[rows])
+        self.prior.copy_to_host(target=numpy.asarray(step.prior)[rows])
+        self.data.copy_to_host(target=numpy.asarray(step.data)[rows])
+        self.posterior.copy_to_host(target=numpy.asarray(step.posterior)[rows])
 
         return self
 

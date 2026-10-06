@@ -39,6 +39,14 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
     archiver = altar.simulations.archiver(default=Recorder)
     archiver.doc = "the archiver of simulation state"
 
+    pool = altar.properties.int(default=1)
+    pool.doc = "the states each chain keeps from a β step, its last ones, {pool_interval} " \
+               "steps apart: the population the scheduler, the resampling and the proposal " \
+               "work on, and that the archiver records (gpu only)"
+
+    pool_interval = altar.properties.int(default=1)
+    pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps"
+
 
     # protocol obligations
     @altar.export

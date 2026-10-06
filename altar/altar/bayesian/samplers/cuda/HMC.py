@@ -108,6 +108,12 @@ class HMC:
         self._copy_state_from_step(step)
         self._potential_and_gradients(annealer)
 
+        # the states the chains keep as they walk, into {step}, when pooling
+        pool = getattr(annealer.worker, "pool", None)
+        keep = lambda offset: self._copy_accepted_to_step(step, offset=offset)
+        if pool is not None:
+            pool.begin()
+
         accepted_total = 0
         dispatcher = annealer.dispatcher
         for _ in range(self.steps):
@@ -117,7 +123,12 @@ class HMC:
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
-        self._copy_accepted_to_step(step)
+            if pool is not None:
+                pool.advance(keep)
+        if pool is not None:
+            pool.end(keep)
+        else:
+            self._copy_accepted_to_step(step)
 
         attempts = state.samples * self.steps
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
@@ -289,30 +300,36 @@ class HMC:
         return self._set_step_size(self._clamp_step_size(eta))
 
     def _copy_state_from_step(self, step):
-        self.proposal_state.theta.copy_from_host(source=step.theta)
+        # the chains start from the first rows of the population
+        rows = slice(0, self.proposal_state.samples)
+        self.proposal_state.theta.copy_from_host(source=numpy.asarray(step.theta)[rows])
         # {Jacobian}/{log_jacobian} are recomputed at the start of the walk; no copy in
         if self.proposal_state.reparameterization:
             if getattr(step, 'theta_sampling', None) is not None:
-                self.proposal_state.phi.copy_from_host(source=step.theta_sampling)
+                self.proposal_state.phi.copy_from_host(source=numpy.asarray(step.theta_sampling)[rows])
 
-    def _copy_accepted_to_step(self, step):
-        self.proposal_state.theta.copy_to_host(target=step.theta)
+    def _copy_accepted_to_step(self, step, offset=0):
+        # into the rows of the population from {offset} on
+        rows = slice(offset, offset + self.proposal_state.samples)
+        def put(source, target):
+            source.copy_to_host(target=numpy.asarray(target)[rows])
+        put(self.proposal_state.theta, step.theta)
         if getattr(step, "momentum", None) is not None:
-            self.proposal_state.momentum.copy_to_host(target=step.momentum)
+            put(self.proposal_state.momentum, step.momentum)
         if self.proposal_state.reparameterization and getattr(step, 'theta_sampling', None) is not None:
-            self.proposal_state.phi.copy_to_host(target=step.theta_sampling)
+            put(self.proposal_state.phi, step.theta_sampling)
             if getattr(step, 'jacobian', None) is not None:
-                self.proposal_state.log_jacobian.copy_to_host(target=step.jacobian)
+                put(self.proposal_state.log_jacobian, step.jacobian)
         for attr in ("prior", "data", "posterior", "U", "H"):
             target = getattr(step, attr, None)
             source = getattr(self.proposal_state, attr, None)
             if target is not None and source is not None:
-                source.copy_to_host(target=target)
+                put(source, target)
         for grad_attr in ("prior_gradient", "data_gradient", "U_gradient"):
             target = getattr(step, grad_attr, None)
             source = getattr(self.proposal_state, grad_attr, None)
             if target is not None and source is not None:
-                source.copy_to_host(target=target)
+                put(source, target)
 
 
     # private data; the component-typed attributes and scalar traits are set by the shim's
