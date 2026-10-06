@@ -132,16 +132,12 @@ class SlipHistory:
 
     def _sweeps(self):
         """
-        The cells each thread of {fastSweeping_batched} updates, half-step by half-step: the
-        block is the next power of two of the mesh, but the threads past the mesh return early;
-        idle threads update a dump cell past the end of the mesh
+        The cells each thread of {fastSweeping_batched} updates, half-step by half-step; idle
+        threads update a dump cell past the end of the mesh
         """
         Nasf, Nddf = self.Nasf, self.Nddf
-        M = max(Nasf, Nddf)
-        Nf = 64
-        while Nf < M:
-            Nf *= 2
-        ids = numpy.arange(M)
+        Nf = max(Nasf, Nddf)
+        ids = numpy.arange(Nf)
         half = Nf // 2
         dump = Nasf * Nddf
         starts = [(half - ids, ids - half, 1, 1), (ids + half, ids - half, -1, 1),
