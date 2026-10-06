@@ -45,6 +45,8 @@ class Application(altar.application, family="altar.shells.application"):
         # N.B.: the initialization phase must be respectful of the interdependencies of these
         # components; e.g., both {controller} and {model} expect an initialized {rng}
 
+        # say which configuration files were read, so that stray ones don't go unnoticed
+        self.report_configuration()
         # initialize the job parameters
         self.job.initialize(application=self)
         # activate the appropriate backend (cpu/cuda)
@@ -58,6 +60,34 @@ class Application(altar.application, family="altar.shells.application"):
         self.model = self.model.initialize(application=self)
         # sample the posterior distribution
         return self.model.posterior(application=self)
+
+
+    def report_configuration(self):
+        """
+        Log the configuration files that were read, in the order they were read: the ones named
+        by {--config}, and the ones found by name, e.g. a {<app>.pfg} in the startup directory
+        """
+        # under mpi, one report is enough
+        shell = self.shell
+        if shell.model == "mpi" and shell.world is not None and shell.world.rank != 0:
+            return self
+        # the places pyre searches, as the user knows them
+        places = {"vfs:/__pyre/startup/": "./", "vfs:/__pyre/user/": "~/.config/pyre/"}
+        # pick a channel
+        channel = self.info
+        channel.line("configuration files, in the order they were read:")
+        for uri, priority in self.pyre_executive.configurator.sources:
+            name = str(uri)
+            # skip the defaults pyre ships with its packages
+            if name.startswith("vfs:/__pyre/packages/"):
+                continue
+            for place, alias in places.items():
+                name = name.replace(place, alias)
+            how = "--config" if priority.__name__ == "Command" else "found automatically"
+            channel.line(f"    {name} ({how})")
+        channel.log()
+        # all done
+        return self
 
 
     # pyre framework hooks
