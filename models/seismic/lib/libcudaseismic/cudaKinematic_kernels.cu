@@ -314,8 +314,8 @@ fastSweeping_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
     const int id = threadIdx.x;
     if (id>=max(Nasf,Nddf)) return;
 
-    // get the dimension of the "expanded" diagonal mesh
-    const int Nf = blockDim.x;
+    // get the dimension of the "expanded" diagonal mesh; not blockDim.x, whose extra threads have returned
+    const int Nf = max(Nasf, Nddf);
 
     // some local variables
     int i;
