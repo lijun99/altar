@@ -90,13 +90,8 @@ function(altar_seismic_cuda_buildLibrary)
     lib/libcudaseismic/version.cc
     )
 
-  # copy the seismic headers; unlike file(COPY), configure_file reconfigures when one changes
-  file(GLOB SEISMIC_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic
-    ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic/*.h ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic/*.icc)
-  foreach(header ${SEISMIC_HEADERS})
-    configure_file(lib/libcudaseismic/${header}
-      ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda/${header} COPYONLY)
-  endforeach()
+  # stage the seismic headers
+  altar_stageHeaders(lib/libcudaseismic altar/models/seismic/cuda)
 
   # install the library
   install(

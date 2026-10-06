@@ -64,46 +64,8 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogitTransform.cu
     )
 
-  # copy the altar headers; note the trickery with the terminating slash in the source
-  # directory that let's us place the files in the correct destination
-  # Find all .h and .icc files recursively
-  file(GLOB_RECURSE CUDA_ALTAR_HEADERS
-    "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/*.h"
-    "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/*.icc"
-  )
-
-  # If no files are found, trigger a fatal error
-  if(NOT CUDA_ALTAR_HEADERS)
-    message(FATAL_ERROR "No CUDA altar header files found in ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/")
-  endif()
-
-  # Ensure the destination directory exists
-  file(MAKE_DIRECTORY ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda)
-
-  # Custom target to copy each file while preserving directory structure
-  set(CUDA_ALTAR_HEADER_OUTPUTS)
-
-  foreach(FILE ${CUDA_ALTAR_HEADERS})
-    # Get the relative path of the file inside libcudaaltar
-    file(RELATIVE_PATH REL_PATH "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar" "${FILE}")
-
-    # Compute the full destination path (preserving structure)
-    set(DEST_PATH "${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/cuda/${REL_PATH}")
-
-    # Ensure the destination directory exists
-    get_filename_component(DEST_DIR "${DEST_PATH}" DIRECTORY)
-
-    # Add a command to copy the file
-    add_custom_command(
-        OUTPUT "${DEST_PATH}"
-        COMMAND ${CMAKE_COMMAND} -E make_directory "${DEST_DIR}"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "${FILE}" "${DEST_PATH}"
-        DEPENDS "${FILE}"
-    )
-    list(APPEND CUDA_ALTAR_HEADER_OUTPUTS "${DEST_PATH}")
-  endforeach()
-
-  add_custom_target(copy_cuda_headers ALL DEPENDS ${CUDA_ALTAR_HEADER_OUTPUTS})
+  # stage the altar cuda headers
+  altar_stageHeaders(${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar altar/cuda)
 
   # Install headers while preserving directory structure
   install(DIRECTORY "${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/"
