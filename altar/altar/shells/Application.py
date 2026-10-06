@@ -64,8 +64,9 @@ class Application(altar.application, family="altar.shells.application"):
 
     def report_configuration(self):
         """
-        Log the configuration files that were read, in the order they were read: the ones named
-        by {--config}, and the ones found by name, e.g. a {<app>.pfg} in the startup directory
+        Log the configuration files that were read, highest precedence first, so that the first
+        one to set a value is the one that counts: the ones named by {--config}, then the ones
+        found by name, e.g. a {<app>.pfg} in the startup directory
         """
         # under mpi, one report is enough
         shell = self.shell
@@ -75,8 +76,11 @@ class Application(altar.application, family="altar.shells.application"):
         places = {"vfs:/__pyre/startup/": "./", "vfs:/__pyre/user/": "~/.config/pyre/"}
         # pick a channel
         channel = self.info
-        channel.line("configuration files, in the order they were read:")
-        for uri, priority in self.pyre_executive.configurator.sources:
+        channel.line("configuration files, highest precedence first:")
+        # by the kind of source, then the later reads of the same kind first
+        sources = list(enumerate(self.pyre_executive.configurator.sources))
+        sources.sort(key=lambda entry: (entry[1][1].category, entry[0]), reverse=True)
+        for _, (uri, priority) in sources:
             name = str(uri)
             # skip the defaults pyre ships with its packages
             if name.startswith("vfs:/__pyre/packages/"):
