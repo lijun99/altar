@@ -82,6 +82,8 @@ protected:
 
     const TYPE _it0 = 1.e6; ///< large arrival time for fastsweep
     const size_t _sweep_iter = 1; ///< number of iterations for fastsweeping
+    const TYPE _seed_radius = 1.0; ///< the straight ray seeding radius around the hypocenter, in mesh cells
+    const TYPE _seed_steepness = 10.0; ///< how fast the seeds rise past the radius
 
     cublasHandle_t _cublas_handle;
 
@@ -96,10 +98,8 @@ public:
     void calculateBigM(const TYPE * const theta, TYPE * const gMb, const size_t parameters, const size_t batch, cudaStream_t stream=0) const;
 
     // local methods
-    /// Initialize the T0 data
+    /// Seed the T0 data around the hypocenter
     void _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
-    /// Set t0 for the 4 patches closest to hypo center
-    void _setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
     /// wrapper for Fast Sweeping kernel
     void _fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream=0) const;
     /// wrapper for interpolation of T0 to TI0 kernel

@@ -11,199 +11,51 @@
 #include "cudaKinematic_kernels.h"
 
 /// @par Main functionality
-/// Initialize T0 to be Distances!!!
+/// Seed the arrival times with straight ray times from the hypocenter within @b radius mesh cells,
+/// rising steeply past it so the sweeps take over; continuous in the hypocenter
 /// @param [in] gIdx the model index map that maps the indices in @b M matrix to the indices used in the codes (Dimension: parameters)
-/// @param [in] gM the @b M matrix on GPU (Dimension: parameters*samples, samples is the leading index)
-/// @param [in] Ns number of samples
-/// @param [in] Ns_good number of good samples (pass the "verify" function test)
-/// @param [in] Nas number of patches along strike
-/// @param [in] Ndd number of patches down dip
-/// @param [in] Nmesh number of mesh points per patch dimension used for fast sweeping
-/// @param [in] dsp the length of each patch dimension
-/// @param [in, out] gT0 the T0 values for each patch mesh point (Dimension: ((Nas+2)*(Ndd+2)*Nmesh*Nmesh) * samples, samples is the leading index)
-/// @param [in] it0 a large value to initialize t0 (1.e6 as used in Sarah's code)
-
-
-// set T0 for each sample
-template<typename TYPE>
-__device__ void
-cudaKinematic_kernels::
-initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf, TYPE dspf, TYPE hypo_dip, TYPE hypo_strike, TYPE it0)
-{
-    // index of dip meshgrid
-    int id_dip = threadIdx.y + blockIdx.y * blockDim.y;
-    // index of strike meshgrid
-    int id_strike = threadIdx.z + blockIdx.z * blockDim.z;
-    // check the meshgrid is within range
-    if(id_dip >= Nddf || id_strike >= Nasf) return;
-    // meshgrid index in 2d strike(Nasf)xdip (Nddf) grids
-    int id_mesh = id_strike*Nddf + id_dip;
-    // find the meshgrid of hypocenter
-    int id_hypo_strike = int(hypo_strike/dspf);
-    int id_hypo_dip = int(hypo_dip/dspf);
-    // if meshgrid is not among the nearest 2x2 grids close to hypocenter
-    if (id_strike>id_hypo_strike-2 && id_strike<id_hypo_strike+2
-        && id_dip > id_hypo_dip-2 && id_dip<id_hypo_dip+2) {
-       // distance to hypocenter
-       TYPE distance_strike =  (id_strike+0.5)*dspf- hypo_strike;
-       TYPE distance_dip = (id_dip+0.5)*dspf - hypo_dip;
-       // set the distance to time
-       gT0[id_mesh] = sqrt(distance_strike*distance_strike+distance_dip*distance_dip);
-    }
-    else { // set a large number for nearest 4 grids
-        gT0[id_mesh] = it0;
-    }
-}
-
+/// @param [in] gM the @b M matrix on GPU (Dimension: samples*parameters)
+/// @param [in, out] gT0 the T0 values for each patch mesh point (Dimension: samples*((Nas+2)*Nmesh)*((Ndd+2)*Nmesh))
+/// @param [in] radius the radius of the straight ray seeding, in mesh cells
+/// @param [in] steepness how fast the seeds rise past {radius}
+/// @param [in] it0 a large value to cap t0 (1.e6 as used in Sarah's code)
+/// @note IT ALSO ASSUMES THE HYPO CENTER COORDINATES ORIGINATE FROM THE LEFT/BOTTOM PATCH CENTER OF THE FAULT PLANE
 template <typename TYPE>
 __global__ void
 cudaKinematic_kernels::
 initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0, const size_t Nparam,
-    const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
+    const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp,
+    const TYPE radius, const TYPE steepness, const TYPE it0)
 {
     // sample index
     int sample = blockIdx.x;
+    // index of dip meshgrid
+    int id_dip = threadIdx.y + blockIdx.y * blockDim.y;
+    // index of strike meshgrid
+    int id_strike = threadIdx.z + blockIdx.z * blockDim.z;
+    // get dimension and sizes of mesh grids
+    const int Nddf = (Ndd+2)*Nmesh;
+    const int Nasf = (Nas+2)*Nmesh;
+    if (id_dip >= Nddf || id_strike >= Nasf) return;
+    const int Npatch = Nas*Ndd;
     // get the pointer for this sample, gM[samples, parameters]
     const TYPE * gM_sample = gM + sample*Nparam;
-    // get the hypocenter from M/theta
-    TYPE hypo_strike = gM_sample[gIdx[4*Nas*Ndd]] + dsp*1.5; //shifted due to the extra padded edges
-    TYPE hypo_dip = gM_sample[gIdx[4*Nas*Ndd+1]] + dsp*1.5;
-    // get dimension and sizes of mesh grids
-    int Nddf = (Ndd+2)*Nmesh; // x
-    int Nasf = (Nas+2)*Nmesh; // y
-    TYPE dspf = dsp/Nmesh; // size of meshgrid
-    // get the gT0 pointer for this sample gT0[samples, Nasf, Nddf]
-    TYPE * gT0_sample = gT0 + sample*Nddf*Nasf;
-    // call routine for one sample
-    initT0(gT0_sample, Nddf, Nasf, dspf, hypo_dip, hypo_strike, it0);
-    // all done
-}
-
-/// @par Main functionality
-/// device function used for cudaSetT0 to set the 4 closest points from hypo center
-/// @note see @c cudaSetT0 function for detailed parameter description
-
-// setT0 for one sample
-template <typename TYPE>
-__device__ void
-cudaKinematic_kernels::
-setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
-    const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
-{
-
-    // find the hypo cenceter meshgrid
-    TYPE hypo_strike = gM[gIdx[4*Nas*Ndd]] + dsp*1.5; // shift coordinate the the left/bottom corner of the EXPANDED fault surf
-    TYPE hypo_dip = gM[gIdx[4*Nas*Ndd+1]] + dsp*1.5; // shift coordinate the the left/bottom corner of the EXPANED fault surf
+    // get the hypocenter from M/theta, shifted due to the extra padded edges
+    TYPE hypo_strike = gM_sample[gIdx[4*Npatch]] + dsp*1.5;
+    TYPE hypo_dip = gM_sample[gIdx[4*Npatch+1]] + dsp*1.5;
+    // the distance of the mesh point from the hypocenter, and how far past the radius it is
     TYPE dspf = dsp/Nmesh;
-    int id_hypo_strike = int(hypo_strike/dspf);
-    int id_hypo_dip = int(hypo_dip/dspf);
-
-    int Nddf = (Ndd+2)*Nmesh;
-    int Nasf = (Nas+2)*Nmesh;
-
-    // search the 2x2 window near the hypocenter for nearest 4 points
-    TYPE previous_min_distance, min_distance = 0.0, current_distance;
-    int iD[4]; // recording the meshgrid index of nearest 4 points
-    for (int n=0; n<4; ++n)
-    {
-        previous_min_distance = min_distance;
-        min_distance = it0;
-        for (int i = max(0, id_hypo_strike-2); i<=min(id_hypo_strike+2, Nasf-1); ++i)
-        {
-            for (int j = max(0, id_hypo_dip-2); j<=min(id_hypo_dip+2, Nddf-1); ++j)
-            {
-                // get the grid index
-                int id_mesh = i*Nddf + j;
-                // get the distance to hypocenter
-                current_distance = gT0[id_mesh];
-                // use '>=' in current_distance>=previous_min_distance
-                // to allow some points to have the same distance
-                if (current_distance>=previous_min_distance && current_distance<min_distance)
-                {
-                    // make sure the
-                    bool previously_found = false;
-                    for(int m=0; m<n; ++m)
-                        if(id_mesh == iD[m]) previously_found = true;
-                    // record the new grid with shorter distance
-                    if(!previously_found) {
-                        min_distance = current_distance;
-                        iD[n] = id_mesh;
-                    }
-                }
-            }
-        }
-    }
-
-    // (re)set the arrival time for these 4x4 grids
-    bool match;
-    for (int i = 0; i< Nasf; ++i)
-    {
-        for (int j = 0; j< Nddf; ++j)
-        {
-            // get the grid index
-            int id_mesh = i*Nddf + j;
-            match = false;
-            // search the record of nearest 4 points for a match
-            for (int n=0; n<4; ++n) {
-                if(iD[n]==id_mesh) { // a match
-                    // find the patch (not mesh grid) index for rupture velocity
-                    int id_strike_patch = i/Nmesh -1;
-                    int id_dip_patch = j/Nmesh -1;
-                    // reset index if out of boundaries; not likely
-                    if(id_strike_patch <0) id_strike_patch =0;
-                    else if (id_strike_patch >= Nas) id_strike_patch = Nas-1;
-                    if(id_dip_patch <0) id_dip_patch =0;
-                    else if (id_dip_patch >= Ndd) id_dip_patch = Ndd-1;
-                    // get the patch index in flattened notation
-                    int id_patch = id_strike_patch*Ndd + id_dip_patch;
-                    // get the rupture velocity
-                    TYPE vr = gM[gIdx[3*Nas*Ndd+id_patch]];
-                    // set the time: distance/vr
-                    gT0[id_mesh] /= vr;
-                    match = true;
-                }
-            }
-            // not the nearest 4 points, set time to a large number
-            if(!match) gT0[id_mesh] = it0;
-        }
-    }
-    // all done
+    TYPE distance_strike = (id_strike+0.5)*dspf - hypo_strike;
+    TYPE distance_dip = (id_dip+0.5)*dspf - hypo_dip;
+    TYPE distance = sqrt(distance_strike*distance_strike + distance_dip*distance_dip);
+    TYPE far = max(TYPE(0), distance - radius*dspf);
+    // the rupture velocity of the patch of the mesh point, clamped to the fault
+    int id_strike_patch = min(max(id_strike/(int)Nmesh - 1, 0), (int)Nas - 1);
+    int id_dip_patch = min(max(id_dip/(int)Nmesh - 1, 0), (int)Ndd - 1);
+    TYPE vr = gM_sample[gIdx[3*Npatch + id_strike_patch*Ndd + id_dip_patch]];
+    // the seed, gT0[samples, Nasf, Nddf]
+    gT0[sample*Nddf*Nasf + id_strike*Nddf + id_dip] = min((distance + steepness*far*far/dspf)/vr, it0);
 }
-
-
-/// @par Main functionality
-/// Set t0 for the 4 patches closest to hypo center<br>
-/// Set all other T0s to be a large number (it0)<br>
-/// @param [in] gIdx the model index map that maps the indices in @b M matrix to the indices used in the codes (Dimension: parameters)
-/// @param [in] gM the @b M matrix on GPU (Dimension: parameters*samples, samples is the leading index)
-/// @param [in, out] gT0 the T0 values for each patch mesh point (Dimension: ((Nas+2)*(Ndd+2)*Nmesh*Nmesh) * samples, samples is the leading index)
-/// @param [in] Ns number of samples
-/// @param [in] Ns_good number of good samples (pass the "verify" function test)
-/// @param [in] Np number of patches
-/// @param [in] Nas number of patches along strike
-/// @param [in] Ndd number of patches down dip
-/// @param [in] dsp the length of each patch dimension
-/// @param [in] Nmesh number of mesh points per patch dimension used for fast sweeping
-/// @param [in] it0 a large value to initialize t0 (1.e6 as used in Sarah's code)
-/// @note IT ASSUMES NDD AS THE LEADING INDEX OF PARAMETERS<br>
-/// IT ALSO ASSUMES THE HYPO CENTER COORINATES ORIGINATEF FROM THE LEFT/BOTTOM PATCH CENTER OF THE FAULT PLANE
-template <typename TYPE>
-__global__ void
-cudaKinematic_kernels::
-setT0_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0, const size_t Nparam,
-    const size_t Ns_good, const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0)
-{
-    int sample = threadIdx.x + blockIdx.x * blockDim.x;
-    if (sample>=Ns_good) return;
-
-    // get the pointer of M/theta for current sample
-    const TYPE * gM_sample = gM + sample*Nparam;
-    // get the pointer of gT0 for current sample
-    TYPE * gT0_sample = gT0 + sample*(Nas+2)*Nmesh*(Ndd+2)*Nmesh;
-    // set arrival time (for 4 nearest points/mesh grids close to hypocenter)for each sample
-    setT0hypo(gIdx, gM_sample, gT0_sample, Nas, Ndd, Nmesh, dsp, it0);
-}
-
 
 /// @par Main functionality
 /// Upwind device function used for cudaFastSweeping

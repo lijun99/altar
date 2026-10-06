@@ -17,25 +17,12 @@
 
 /// @brief home of cuda kernel for kinematic model with big-G implementation
 namespace cudaKinematic_kernels {
-    /// Initialize T0 to be distances!!!
-    //single sample
-    template<typename TYPE>
-    __device__ void initT0(TYPE * const gT0, const size_t Nddf, const size_t Nasf,
-        TYPE dspf, TYPE hypo_dip, TYPE hypo_strike, TYPE it0);
+    /// Seed T0 with straight ray times near the hypocenter, continuously in the hypocenter
     // batched samples
     template <typename TYPE>
     __global__ void initT0_batched(const size_t * const gIdx, const TYPE *const gM, TYPE * const gT0, const size_t Nparam,
-        const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0);
-    
-    /// Set t0 for the 4 patches closest to hypo center; Set all other T0s to be a large number (it0)
-    // single sample
-    template <typename TYPE>
-    __device__ void setT0hypo(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0,
-        const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0);
-    // batched samples
-    template <typename TYPE>
-    __global__ void setT0_batched(const size_t * gIdx, const TYPE *const gM, TYPE *const gT0, const size_t Nparam,
-        const size_t Ns_good, const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp, const TYPE it0);
+        const size_t Nas, const size_t Ndd, const size_t Nmesh, const TYPE dsp,
+        const TYPE radius, const TYPE steepness, const TYPE it0);
 
     /// Upwind on the device code
     // one sweep

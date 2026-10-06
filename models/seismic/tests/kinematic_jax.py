@@ -35,9 +35,11 @@ class SlipHistory:
     source points, and the triangular source time functions
     """
 
-    def __init__(self, Nas, Ndd, Nmesh, dsp, Nt, Npt, dt, t0s, idx, it0=1.0e6, iterations=1):
+    def __init__(self, Nas, Ndd, Nmesh, dsp, Nt, Npt, dt, t0s, idx, it0=1.0e6, iterations=1,
+                 radius=1.0, steepness=10.0):
         self.Nas, self.Ndd, self.Nmesh, self.dsp = Nas, Ndd, Nmesh, dsp
         self.Nt, self.Npt, self.dt, self.it0 = Nt, Npt, dt, it0
+        self.radius, self.steepness = radius, steepness
         self.Np = Nas * Ndd
         self.Nasf, self.Nddf = (Nas + 2) * Nmesh, (Ndd + 2) * Nmesh
         self.dspf = dsp / Nmesh
@@ -93,24 +95,20 @@ class SlipHistory:
 
     def _seed(self, θ, vr):
         """
-        The arrival times at the four mesh points nearest the hypocenter, {it0} elsewhere
+        The straight ray times from the hypocenter within {radius} mesh cells, rising steeply past
+        it, capped at {it0}
         """
-        dsp, dspf, Nddf, Nmesh = self.dsp, self.dspf, self.Nddf, self.Nmesh
+        dsp, dspf, Nddf = self.dsp, self.dspf, self.Nddf
         hs = θ[4 * self.Np] + dsp * 1.5
         hd = θ[4 * self.Np + 1] + dsp * 1.5
-        # the 3x3 window around the hypocenter's mesh point, in the kernel's scan order
-        i = jnp.floor(jax.lax.stop_gradient(hs) / dspf).astype(int) + jnp.repeat(jnp.arange(-1, 2), 3)
-        j = jnp.floor(jax.lax.stop_gradient(hd) / dspf).astype(int) + jnp.tile(jnp.arange(-1, 2), 3)
+        i, j = numpy.divmod(numpy.arange(self.Nasf * Nddf), Nddf)
         ds = (i + 0.5) * dspf - hs
         dd = (j + 0.5) * dspf - hd
         distance = jnp.sqrt(ds * ds + dd * dd)
-        # ties go to the first in scan order, as in the kernel
-        nearest = jnp.argsort(jax.lax.stop_gradient(distance), stable=True)[:4]
-        i, j = i[nearest], j[nearest]
-        patch = jnp.clip(i // Nmesh - 1, 0, self.Nas - 1) * self.Ndd \
-            + jnp.clip(j // Nmesh - 1, 0, self.Ndd - 1)
-        T = jnp.full(self.Nasf * Nddf + 1, self.it0)
-        return T.at[i * Nddf + j].set(distance[nearest] / vr[patch])
+        far = jnp.maximum(0.0, distance - self.radius * dspf)
+        T = jnp.minimum((distance + self.steepness * far * far / dspf) / vr[self._patch(i, j)], self.it0)
+        # and the dump cell
+        return jnp.append(T, self.it0)
 
 
     def _upwind(self, T, step, vr):

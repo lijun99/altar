@@ -56,7 +56,6 @@ calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters
     // set distance/time for 2x2 mesh grids around hypocenter
     _initT0(gM_candidate_queued, parameters, good_samples, stream);
     // find 4 nearest mesh grids close to hypocenter, set their arrival time
-    _setT0(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival times for all mesh grids
     _fastSweeping(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival time for patches (average over mesh grids, but fine-tuned on time intervals Npt)
@@ -146,7 +145,7 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.y), IDIVUP(_Nasf, dim_block.z));
     /// @note: BLOCKDIM is increased here to accommodate more threads
     cudaKinematic_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
-        gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);
+        gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _seed_radius, _seed_steepness, _it0);
     cudaSafeCall(cudaGetLastError());
 
     /*
@@ -168,37 +167,6 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
 ///- the total number of threads are the total number of good samples (pass the "verify" function test)
 ///- one thread corresponds to one good sample
 ///- the number of threads per block is BLOCKDIM (defined in @c altar/utils/common.h)
-/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
-template <typename TYPE>
-void
-altar::models::seismic::cudaKinematic<TYPE>::
-_setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
-{
-    // set the CUDA block dimenstions
-    dim3 dim_grid(IDIVUP(Ns_good, BLOCKDIM)), dim_block(BLOCKDIM);
-    cudaKinematic_kernels::setT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(
-        _gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, _dsp, _it0);
-    cudaSafeCall(cudaGetLastError());
-
-    /*
-    TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));
-    cudaMemcpy(hT0, _gpu_T0, _Nddf*_Nasf*Ns_good*sizeof(TYPE), cudaMemcpyDeviceToHost);
-    for(int i=0; i< _Nasf; ++i)
-    {
-        for(int j =0; j< _Nddf; ++j)
-           std::cout << hT0[i*_Nddf+j] << " ";
-        std::cout << "\n";
-    }
-    free(hT0);
-    */
-}
-
-/// @par Main functionality
-/// wrap the cudaFastSweeping function by a C++ interface for the kinematic model
-/// @par CUDA threads layout
-///- the total number of threads are the number of good samples (pass the "verify" function test) times the larger number of the (expanded) mesh points along the two fault dimensions;<br> the later is the leading dimension in the CUDA thread layout
-///- one thread corresponds to one (expanded) mesh point of one good sample
-///- the number of threads per block is the larger number of the (expanded) mesh points along the two fault dimensions
 /// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
