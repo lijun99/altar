@@ -103,17 +103,19 @@ class Array:
     # mutators
     def zero(self):
         """
-        Fill me with zeroes, in place
+        Fill me with zeroes, in place, on the device
         """
-        numpy.asarray(self._grid)[...] = 0
+        _grids().zero(self._grid)
         return self
 
 
     def fill(self, value):
         """
-        Fill me with {value}, in place
+        Fill me with {value}, in place, on the device
         """
-        numpy.asarray(self._grid)[...] = value
+        _grids().zero(self._grid)
+        if value != 0:
+            self._grid += value
         return self
 
 
@@ -121,15 +123,21 @@ class Array:
         """
         Make a new array with a duplicate of my cells
         """
-        return type(self)._wrap(numpy.asarray(self._grid))
+        clone = type(self)._allocate(shape=self.shape, dtype=self.dtype)
+        _grids().copy(clone._grid, self._grid)
+        return clone
 
 
     def copy(self, other):
         """
         Overwrite my cells with {other}'s, in place; {other} may be another {Array} or
         anything {numpy.asarray} accepts (e.g. a cpu {altar.matrix}/{altar.vector}, which
-        supports the buffer protocol directly)
+        supports the buffer protocol directly); on the device when it is a managed grid like me
         """
+        source = self._peer(other)
+        if source is not None:
+            _grids().copy(self._grid, source)
+            return self
         source = other._grid if isinstance(other, Array) else other
         numpy.asarray(self._grid)[...] = numpy.asarray(source)
         return self
@@ -210,21 +218,44 @@ class Array:
 
     # in place arithmetic, for the handful of call sites that scale/accumulate directly
     # (e.g. {sigma_chol *= scaling}, {posterior += beta*data})
+    # (on the device, by pyre's grid arithmetic, for a number or a managed grid like me)
     def __imul__(self, scalar):
-        numpy.asarray(self._grid)[...] *= scalar
+        self._grid *= scalar
         return self
 
 
     def __iadd__(self, other):
+        source = self._peer(other)
+        if source is not None:
+            self._grid += source
+            return self
         source = other._grid if isinstance(other, Array) else other
         numpy.asarray(self._grid)[...] += numpy.asarray(source)
         return self
 
 
     def __isub__(self, other):
+        source = self._peer(other)
+        if source is not None:
+            self._grid -= source
+            return self
         source = other._grid if isinstance(other, Array) else other
         numpy.asarray(self._grid)[...] -= numpy.asarray(source)
         return self
+
+
+    # implementation details
+    def _peer(self, other):
+        """
+        The grid of {other}, if it is a managed grid with my shape and cell type, so the device
+        can combine it with mine; {None} otherwise
+        """
+        grid = other._grid if isinstance(other, Array) else other
+        if getattr(grid, "strategy", None) != "managed" or tuple(grid.shape) != self.shape:
+            return None
+        if numpy.asarray(grid).dtype != numpy.asarray(self._grid).dtype:
+            return None
+        return grid
 
 
     # buffer protocol support
@@ -248,6 +279,14 @@ class Array:
 
 # the cell type {pyre.cuda.managed} wants, from whatever spelling a caller used (a plain
 # string like "float64", a numpy dtype, or a numpy scalar type)
+def _grids():
+    """
+    The device copies and fills of {altar.cuda}'s extension, which loads after me
+    """
+    from .ext import cudaaltar
+    return cudaaltar.grids
+
+
 def _cell(dtype):
     return numpy.dtype(dtype).name
 

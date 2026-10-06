@@ -321,14 +321,17 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # This method assumes that there is a forward_model_batched defined
         # Otherwise, please define your own version of this method
 
-        # create a matrix for the prediction (samples, observations)
-        if altar.backends.active() == "cuda":
-            # {altar.cuda} is already imported by {altar.backends.activate_cuda}; referencing
-            # it here (rather than a fresh `import altar.cuda`) avoids shadowing the
-            # module-level {altar} name as a local variable in this function
-            prediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
-        else:
-            prediction = altar.matrix(shape=(self.samples, self.observations))
+        # a matrix for the prediction (samples, observations), made once and reused
+        prediction = self._prediction
+        if prediction is None:
+            if altar.backends.active() == "cuda":
+                # {altar.cuda} is already imported by {altar.backends.activate_cuda}; referencing
+                # it here (rather than a fresh `import altar.cuda`) avoids shadowing the
+                # module-level {altar} name as a local variable in this function
+                prediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
+            else:
+                prediction = altar.matrix(shape=(self.samples, self.observations))
+            self._prediction = prediction
         # survey forward model whether it computes residual or not
         returnResidual = self.return_residual
         # call forward_model to calculate the data prediction or its difference between dataobs
@@ -464,6 +467,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     ifs = None # the filesystem with the input files
     io = None # my file reader/writer
     checked_unbounded_priors = False # whether {gradient} has already verified all priors are unbounded
+    _prediction = None # the scratch prediction of {eval_data_likelihood}
 
 
 # end of file
