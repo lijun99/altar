@@ -90,12 +90,13 @@ function(altar_seismic_cuda_buildLibrary)
     lib/libcudaseismic/version.cc
     )
 
-  # copy the seismic headers (the trailing slash matters: it copies contents, not the dir)
-  file(
-    COPY lib/libcudaseismic/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # copy the seismic headers; unlike file(COPY), configure_file reconfigures when one changes
+  file(GLOB SEISMIC_HEADERS RELATIVE ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic/*.h ${CMAKE_CURRENT_SOURCE_DIR}/lib/libcudaseismic/*.icc)
+  foreach(header ${SEISMIC_HEADERS})
+    configure_file(lib/libcudaseismic/${header}
+      ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda/${header} COPYONLY)
+  endforeach()
 
   # install the library
   install(
