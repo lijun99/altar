@@ -174,6 +174,7 @@ function(altar_cuda_buildModule)
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/langevin.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/grids.cc
     )
 
   # install the altar extension

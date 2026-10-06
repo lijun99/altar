@@ -16,6 +16,7 @@
 #include "metropolis.h"
 #include "leapfrog.h"
 #include "langevin.h"
+#include "grids.h"
 
 // the module entry point
 PYBIND11_MODULE(cudaaltar, m)
@@ -35,6 +36,8 @@ PYBIND11_MODULE(cudaaltar, m)
     altar::cuda::extensions::leapfrog::__init__(m);
     // stochastic gradient langevin dynamics (SGLD)
     altar::cuda::extensions::langevin::__init__(m);
+    // whole-grid copies and fills on the device
+    altar::cuda::extensions::grids::__init__(m);
 }
 
 
