@@ -128,11 +128,21 @@ class Linear:
         # r = Gθ^T - d, shape (observations x samples)
         r = self.residuals.clone()
         r = altar.blas.dgemm(G.opNoTrans, θ.opTrans, 1.0, G, θ, -1.0, r)
-        # Cd_inv r = L L^T r: w = L^T r, then wt = L w (both in place)
-        w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
-                             Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, r)
-        wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
-                              Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, w)
+        if isinstance(Cd_inv, float):
+            # a constant covariance, {Cd_inv} = 1/sigma: Cd_inv r = r/sigma^2, over the valid
+            # observations only
+            wt = r
+            v = wt.ndarray()
+            v *= Cd_inv * Cd_inv
+            mask = model.dataobs.mask
+            if mask is not None:
+                v[~mask, :] = 0
+        else:
+            # Cd_inv r = L L^T r: w = L^T r, then wt = L w (both in place)
+            w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
+                                 Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, r)
+            wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
+                                  Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, w)
 
         # grad_T = -G^T wt, shape (parameters x samples)
         grad_data_T = altar.matrix(shape=(model.parameters, samples)).zero()

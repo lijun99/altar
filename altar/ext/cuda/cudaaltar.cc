@@ -17,10 +17,6 @@
 #include "leapfrog.h"
 #include "langevin.h"
 
-// {distributions}: gaussian/uniform/ranged/tgaussian/logistic are ported; tgaussianlogit/
-// uniformlogit are not (reparameterization work, deferred)
-
-
 // the module entry point
 PYBIND11_MODULE(cudaaltar, m)
 {

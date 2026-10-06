@@ -113,6 +113,8 @@ class CUDASGLD:
             # dynamics actually evolve, exactly as cuda {HMC} refreshes its own physical
             # snapshot after every leapfrog position update
             if step.has_reparametrization:
+                # the host copy below reads what the last sweep's kernels wrote
+                altar.cuda.synchronize()
                 step.theta.copy(step.theta_sampling)
                 model.to_physical(theta=step.theta, batch=step.samples)
 
@@ -125,12 +127,14 @@ class CUDASGLD:
             # {transform.jacobian_gradient}) already computes it directly in sampling space
             if step.has_reparametrization:
                 model.eval_jacobian(step=step, batch=step.samples)
+                altar.cuda.synchronize()
                 numpy.asarray(step.data_gradient)[:] *= numpy.asarray(step.Jacobian)
 
             # update theta_sampling
             step.updateTheta()
 
         # keep the cpu copy current, in physical space, for the mpi layer to collect
+        altar.cuda.synchronize()
         if step.has_reparametrization:
             step.theta.copy(step.theta_sampling)
             model.to_physical(theta=step.theta, batch=step.samples)
