@@ -136,6 +136,7 @@ class Metropolis:
             walker = CoolingStep(beta=step.beta, theta=step.theta_sampling,
                 likelihoods=(step.prior, step.data, step.posterior))
             walker.weights = getattr(step, "weights", None)
+            walker.weighted_theta = getattr(step, "weighted_theta", None)
         self.proposal.new_walk()
         self.proposal._prepare(sampler=self, step=walker, annealer=annealer)
         self.gsigma_chol.copy_from_host(source=self.proposal._sigma)

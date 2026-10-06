@@ -124,6 +124,7 @@ class Metropolis:
             # the proposal moves the sampling-space chains
             walker = self.CoolingStep(beta=β, theta=θs, likelihoods=(prior, data, posterior))
             walker.weights = getattr(step, "weights", None)
+            walker.weighted_theta = getattr(step, "weighted_theta", None)
         else:
             walker = step
         # a couple of functions from the math module
