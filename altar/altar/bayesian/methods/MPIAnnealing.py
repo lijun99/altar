@@ -201,6 +201,15 @@ class MPIAnnealing(AnnealingMethod):
     def gstep(self) -> typing.Any:
         return self.worker.gstep
 
+    # my worker's pool, which the samplers reach through me; each rank pools its own chains
+    @property
+    def pool(self) -> typing.Any:
+        return getattr(self.worker, "pool", None)
+
+    @property
+    def pools(self) -> bool:
+        return getattr(self.worker, "pools", False)
+
 
     # meta-methods
     def __init__(self, annealer: Annealer, worker: AnnealingMethod,
