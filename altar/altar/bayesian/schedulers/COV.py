@@ -11,6 +11,7 @@
 
 # externals
 import itertools
+import numpy
 # the package
 import altar
 # my protocol
@@ -260,46 +261,26 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
-        # unique samples count
-        unique_samples = 0
-        # sample count
-        index = 0
-        # indices for kept samples
+        counts = multi.ndarray().astype(int)
+        unique_samples = int(numpy.count_nonzero(counts))
+        # the index of the old sample behind each new one, duplicated by its count
         indices = altar.vector(shape=multi.shape)
-
-        # record kept sample indices
-        for i in range(multi.shape):
-            count = int(multi[i])
-            # if count is zero, skip
-            if count == 0: continue
-            # add the unique samples count
-            unique_samples += 1
-            # duplicate indices
-            for ic in range(count):
-                indices[index] = i
-                index += 1
+        indices.ndarray()[:] = numpy.repeat(numpy.arange(counts.size), counts)
         # shuffle the indices
         indices.shuffle(rng=self.rng)
+        rows = indices.ndarray().astype(int)
 
         self.info.log(f"resampling: unique samples {unique_samples} out of {multi.shape}")
-        # print("     kept sample indices: {}".format(tuple(indices[i] for i in range(indices.shape))))
 
-        # copy theta, (prior, data, posterior) over according to the indices
-        for i in range(indices.shape):
-            # get the index for old samples
-            old = int(indices[i])
-            # duplicate theta
-            for param in range(step.parameters):
-                θ[i, param] = θOld[old, param]
-            prior[i] = priorOld[old]
-            data[i] = dataOld[old]
-            posterior[i] = postOld[old]
-            # the same indices, for theta_sampling/jacobian, when reparameterized
-            if has_reparametrization:
-                for param in range(step.parameters):
-                    θSampling[i, param] = θSamplingOld[old, param]
-                if jacobian is not None:
-                    jacobian[i] = jacobianOld[old]
+        # copy theta, (prior, data, posterior) over according to the indices, and
+        # theta_sampling/jacobian, when reparameterized
+        pairs = [(θ, θOld), (prior, priorOld), (data, dataOld), (posterior, postOld)]
+        if has_reparametrization:
+            pairs.append((θSampling, θSamplingOld))
+            if jacobian is not None:
+                pairs.append((jacobian, jacobianOld))
+        for new, old in pairs:
+            new.ndarray()[:] = old.ndarray()[rows]
 
         # return the shuffled data
         return θ, (prior, data, posterior), θSampling, jacobian
