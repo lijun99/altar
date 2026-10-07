@@ -90,12 +90,8 @@ function(altar_seismic_cuda_buildLibrary)
     lib/libcudaseismic/version.cc
     )
 
-  # copy the seismic headers (the trailing slash matters: it copies contents, not the dir)
-  file(
-    COPY lib/libcudaseismic/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/seismic/cuda
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # stage the seismic headers
+  altar_stageHeaders(lib/libcudaseismic altar/models/seismic/cuda)
 
   # install the library
   install(

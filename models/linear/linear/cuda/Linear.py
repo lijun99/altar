@@ -175,7 +175,11 @@ class Linear:
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior, batch=batch)
 
         samples = batch if batch is not None else θ.shape[0]
-        w = altar.cuda.matrix(shape=(samples, self.observations), dtype=self.precision)
+        # the residuals, in a buffer kept across calls, since managed allocations are slow
+        shape = (θ.shape[0], self.observations)
+        if self._residual is None or self._residual.shape != shape:
+            self._residual = altar.cuda.matrix(shape=shape, dtype=self.precision)
+        w = self._residual
         self.forward_model_batched(model=model, theta=θ, prediction=w, batch=batch)
 
         cublas = altar.cuda.cublas
@@ -198,6 +202,7 @@ class Linear:
     # private data
     G = None # the (premerged) Green functions
     G_host = None # the raw Green functions, on the host, for {forward_problem}
+    _residual = None # the residuals of {gradient}, reused
     observations = None
     parameters = None
     precision = None

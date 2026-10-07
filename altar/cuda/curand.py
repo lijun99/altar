@@ -14,7 +14,7 @@ cell count; these dispatch on the output's own cell type and fill it completely)
 module rather than monkey-patching {pyre.cuda.curand} itself, matching {altar.cuda.cublas}.
 """
 
-import numpy
+import math
 import pyre.cuda
 
 
@@ -31,9 +31,9 @@ def uniform(out, generator=None):
 
     generator = generator if generator is not None else altar.cuda.curand_generator()
     grid = out.grid if hasattr(out, "grid") else out
-    n = numpy.asarray(grid).size
-
-    cell = numpy.asarray(grid).dtype.name
+    # the size and cell type from the grid itself, since its buffer would wait for the device
+    n = math.prod(grid.shape)
+    cell = altar.cuda.array.cell(grid)
     fn = _curand.generate_uniform_double if cell == "float64" else _curand.generate_uniform
     fn(generator, grid, n)
     return out
@@ -50,9 +50,9 @@ def gaussian(out, mean=0.0, stddev=1.0, generator=None):
 
     generator = generator if generator is not None else altar.cuda.curand_generator()
     grid = out.grid if hasattr(out, "grid") else out
-    n = numpy.asarray(grid).size
-
-    cell = numpy.asarray(grid).dtype.name
+    # the size and cell type from the grid itself, since its buffer would wait for the device
+    n = math.prod(grid.shape)
+    cell = altar.cuda.array.cell(grid)
     fn = _curand.generate_normal_double if cell == "float64" else _curand.generate_normal
     fn(generator, grid, n, mean, stddev)
     return out

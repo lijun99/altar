@@ -56,7 +56,6 @@ calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters
     // set distance/time for 2x2 mesh grids around hypocenter
     _initT0(gM_candidate_queued, parameters, good_samples, stream);
     // find 4 nearest mesh grids close to hypocenter, set their arrival time
-    _setT0(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival times for all mesh grids
     _fastSweeping(gM_candidate_queued, parameters, good_samples, stream);
     // set arrival time for patches (average over mesh grids, but fine-tuned on time intervals Npt)
@@ -64,6 +63,48 @@ calculateBigM(const TYPE * const theta, TYPE *const gMb, const size_t parameters
     // cast to time dependent slips for patches; gMb[samples][Nt][2(strike,dip slips)][Nas][Ndd]
     _castBigM(gM_candidate_queued, gMb, parameters, good_samples, stream); // where idx_map comes to play
     // all done
+}
+
+// the gradient of the log likelihood with respect to my columns of theta, from {gdMb}, that with
+// respect to Mb: the forward model again, keeping the arrival times between sweeps, then the
+// adjoints of the source time functions, the interpolation, and the sweeps and the seeding
+template <typename TYPE>
+void
+altar::models::seismic::cudaKinematic<TYPE>::
+gradient(const TYPE * const theta, const TYPE * const gdMb, TYPE * const gGrad, const size_t parameters,
+    const size_t batch, cudaStream_t stream) const
+{
+    const size_t cells = _Nddf*_Nasf;
+    const size_t points = _Npatch*_Npt*_Npt;
+    // the buffers of the gradient, on its first use
+    if (_gpu_T0_snapshots == nullptr) {
+        cudaSafeCall(cudaMalloc((void**)&_gpu_T0_snapshots, (4*_sweep_iter+1)*cells*_samples*sizeof(TYPE)));
+        cudaSafeCall(cudaMalloc((void**)&_gpu_dT0, cells*_samples*sizeof(TYPE)));
+        cudaSafeCall(cudaMalloc((void**)&_gpu_dTI0, points*_samples*sizeof(TYPE)));
+    }
+    // the forward model up to the arrival times at the source points
+    _initT0(theta, parameters, batch, stream);
+    _fastSweeping(theta, parameters, batch, stream, _gpu_T0_snapshots);
+    _interpolateT0(batch, stream);
+    // the source time functions: the slips and rise times, and the arrival times at the source points
+    dim3 cast_block(1, BLOCKDIM, 1);
+    dim3 cast_grid(batch, IDIVUP(_Npatch, cast_block.y), 1);
+    cudaKinematic_kernels::castBigM_adjoint_batched<TYPE><<<cast_grid, cast_block, 0, stream>>>
+        (_gidx_map, theta, _gpu_TI0, gdMb, _gt0s, _dt, parameters, _Nt, _Nas, _Ndd, _Npt, gGrad, _gpu_dTI0);
+    cudaSafeCall(cudaGetLastError());
+    // the interpolation: the arrival times on the mesh
+    cudaSafeCall(cudaMemsetAsync(_gpu_dT0, 0, cells*batch*sizeof(TYPE), stream));
+    dim3 interp_grid(IDIVUP(batch, BLOCKDIM)), interp_block(BLOCKDIM);
+    cudaKinematic_kernels::interpolateT0_adjoint_batched<TYPE><<<interp_grid, interp_block, 0, stream>>>
+        (_gpu_dTI0, _gpu_dT0, batch, _Nas, _Ndd, _Nmesh, _Npt);
+    cudaSafeCall(cudaGetLastError());
+    // the sweeps and the seeding: the rupture velocities and the hypocenter
+    dim3 sweep_grid(batch), sweep_block(_sweepBlock());
+    cudaKinematic_kernels::fastSweeping_adjoint_batched<TYPE>
+        <<<sweep_grid, sweep_block, (_Npatch+2)*sizeof(TYPE), stream>>>
+        (_gidx_map, theta, _gpu_T0_snapshots, _gpu_dT0, parameters, _Nas, _Ndd, _Nmesh, _dsp,
+         _seed_radius, _seed_steepness, _it0, _sweep_iter, gGrad);
+    cudaSafeCall(cudaGetLastError());
 }
 
 // constructor
@@ -119,6 +160,11 @@ altar::models::seismic::cudaKinematic<TYPE>::
 {
     // deallocate GPU
     cudaSafeCall(cudaFree((void*)_gpu_Mb));
+    if (_gpu_T0_snapshots) {
+        cudaSafeCall(cudaFree((void*)_gpu_T0_snapshots));
+        cudaSafeCall(cudaFree((void*)_gpu_dT0));
+        cudaSafeCall(cudaFree((void*)_gpu_dTI0));
+    }
     cudaSafeCall(cudaFree((void*)_gpu_T0));
     cudaSafeCall(cudaFree((void*)_gpu_TI0));
 
@@ -146,7 +192,7 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
     dim3 dim_grid(Ns_good, IDIVUP(_Nddf, dim_block.y), IDIVUP(_Nasf, dim_block.z));
     /// @note: BLOCKDIM is increased here to accommodate more threads
     cudaKinematic_kernels::initT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(_gidx_map,
-        gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _it0);
+        gM, _gpu_T0, Nparam, _Nas, _Ndd, _Nmesh, _dsp, _seed_radius, _seed_steepness, _it0);
     cudaSafeCall(cudaGetLastError());
 
     /*
@@ -169,57 +215,32 @@ _initT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStr
 ///- one thread corresponds to one good sample
 ///- the number of threads per block is BLOCKDIM (defined in @c altar/utils/common.h)
 /// @note see @c cudaKinematic_kernels.cu for detailed parameter description
+// the threads of a block of the sweeps: the next power of two of the mesh, at least 64
 template <typename TYPE>
-void
+int
 altar::models::seismic::cudaKinematic<TYPE>::
-_setT0(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
+_sweepBlock() const
 {
-    // set the CUDA block dimenstions
-    dim3 dim_grid(IDIVUP(Ns_good, BLOCKDIM)), dim_block(BLOCKDIM);
-    cudaKinematic_kernels::setT0_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>(
-        _gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, _dsp, _it0);
-    cudaSafeCall(cudaGetLastError());
-
-    /*
-    TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));
-    cudaMemcpy(hT0, _gpu_T0, _Nddf*_Nasf*Ns_good*sizeof(TYPE), cudaMemcpyDeviceToHost);
-    for(int i=0; i< _Nasf; ++i)
-    {
-        for(int j =0; j< _Nddf; ++j)
-           std::cout << hT0[i*_Nddf+j] << " ";
-        std::cout << "\n";
-    }
-    free(hT0);
-    */
+    int meshsize = std::max((_Nas+2)*_Nmesh, (_Ndd+2)*_Nmesh);
+    if (meshsize > 1024) fprintf(stderr, "Current fastsweeping cannot support mesh grids large than 1024\n");
+    int blockSize = 64;
+    while (blockSize < meshsize && blockSize < 1024) blockSize *= 2;
+    return blockSize;
 }
 
-/// @par Main functionality
-/// wrap the cudaFastSweeping function by a C++ interface for the kinematic model
-/// @par CUDA threads layout
-///- the total number of threads are the number of good samples (pass the "verify" function test) times the larger number of the (expanded) mesh points along the two fault dimensions;<br> the later is the leading dimension in the CUDA thread layout
-///- one thread corresponds to one (expanded) mesh point of one good sample
-///- the number of threads per block is the larger number of the (expanded) mesh points along the two fault dimensions
-/// @note see @c cudaKinematic_kernels.cu for detailed parameter description
 template <typename TYPE>
 void
 altar::models::seismic::cudaKinematic<TYPE>::
-_fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream) const
+_fastSweeping(const TYPE *const gM, const size_t Nparam, const size_t Ns_good, cudaStream_t stream,
+    TYPE *const gSnapshots) const
 {
     // set the CUDA block dimenstions
 
-    int meshsize = std::max((_Nas+2)*_Nmesh, (_Ndd+2)*_Nmesh);
-    int blockSize;
-    if (meshsize >1024) fprintf(stderr, "Current fastsweeping cannot support mesh grids large than 1024\n");
-    else if(meshsize > 512) blockSize = 1024;
-    else if (meshsize > 256) blockSize = 512;
-    else if (meshsize > 128) blockSize = 256;
-    else if (meshsize > 64) blockSize = 128;
-    else blockSize =64;
-    dim3 dim_grid(Ns_good), dim_block(blockSize);
+    dim3 dim_grid(Ns_good), dim_block(_sweepBlock());
 
     TYPE dspf = _dsp/_Nmesh;
     cudaKinematic_kernels::fastSweeping_batched<TYPE><<<dim_grid, dim_block, 0, stream>>>
-        (_gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, dspf, _sweep_iter);
+        (_gidx_map, gM, _gpu_T0, Nparam, Ns_good, _Nas, _Ndd, _Nmesh, dspf, _sweep_iter, gSnapshots);
     cudaSafeCall(cudaGetLastError());
     /*
         TYPE * hT0 = (TYPE *)malloc(_Nddf*_Nasf*Ns_good*sizeof(TYPE));

@@ -31,9 +31,12 @@ class Array:
     """
 
 
-    def __init__(self, grid):
+    def __init__(self, grid, dtype=None):
         # the grid i wrap
         self._grid = grid
+        # its shape and cell type, kept so that asking doesn't wait for the device
+        self._shape = tuple(grid.shape)
+        self._dtype = _cell(dtype) if dtype is not None else cell(grid)
 
 
     # construction
@@ -44,7 +47,7 @@ class Array:
         """
         if isinstance(shape, int):
             shape = (shape,)
-        return cls(pyre.cuda.managed(shape=tuple(shape), cell=_cell(dtype)))
+        return cls(pyre.cuda.managed(shape=tuple(shape), cell=_cell(dtype)), dtype=dtype)
 
 
     @classmethod
@@ -64,7 +67,7 @@ class Array:
         """
         My shape, as a plain tuple
         """
-        return tuple(self._grid.shape)
+        return self._shape
 
 
     @property
@@ -89,7 +92,7 @@ class Array:
         My cell type, as the same string spelling ({matrix}/{vector}'s own {dtype}
         parameter accepts it right back, e.g. to build a same-typed buffer elsewhere)
         """
-        return numpy.asarray(self._grid).dtype.name
+        return self._dtype
 
 
     @property
@@ -177,9 +180,9 @@ class Array:
     def sum(self):
         """
         The sum of all my cells, as a plain python scalar (e.g. counting how many cells of an
-        int32 flag vector are set)
+        int32 flag vector are set), computed on the device
         """
-        return numpy.asarray(self._grid).sum().item()
+        return _grids().sum(self._grid)
 
 
     def cholesky(self, uplo=None):
@@ -219,8 +222,16 @@ class Array:
     # in place arithmetic, for the handful of call sites that scale/accumulate directly
     # (e.g. {sigma_chol *= scaling}, {posterior += beta*data})
     # (on the device, by pyre's grid arithmetic, for a number or a managed grid like me)
-    def __imul__(self, scalar):
-        self._grid *= scalar
+    def __imul__(self, other):
+        source = self._peer(other)
+        if source is not None:
+            self._grid *= source
+            return self
+        if numpy.isscalar(other):
+            self._grid *= other
+            return self
+        source = other._grid if isinstance(other, Array) else other
+        numpy.asarray(self._grid)[...] *= numpy.asarray(source)
         return self
 
 
@@ -250,12 +261,12 @@ class Array:
         The grid of {other}, if it is a managed grid with my shape and cell type, so the device
         can combine it with mine; {None} otherwise
         """
-        grid = other._grid if isinstance(other, Array) else other
-        if getattr(grid, "strategy", None) != "managed" or tuple(grid.shape) != self.shape:
+        if isinstance(other, Array):
+            same = other._shape == self._shape and other._dtype == self._dtype
+            return other._grid if same else None
+        if getattr(other, "strategy", None) != "managed" or tuple(other.shape) != self._shape:
             return None
-        if numpy.asarray(grid).dtype != numpy.asarray(self._grid).dtype:
-            return None
-        return grid
+        return other if cell(other) == self._dtype else None
 
 
     # buffer protocol support
@@ -289,6 +300,15 @@ def _grids():
 
 def _cell(dtype):
     return numpy.dtype(dtype).name
+
+
+def cell(grid):
+    """
+    The cell type name of {grid}, an {Array} or a bare managed grid, without waiting for the device
+    """
+    if isinstance(grid, Array):
+        return grid._dtype
+    return numpy.dtype(_grids().format(grid)).name
 
 
 # the module-level factories: the "alias" for the old {altar.cuda.matrix}/{altar.cuda.vector}

@@ -117,6 +117,21 @@ class HMCState:
                           reparameterization=self.reparameterization, phi=phi, jacobian=jacobian,
                           log_jacobian=log_jacobian)
 
+    def assign(self, other):
+        """
+        Overwrite my arrays with those of {other}, a state of my shape, on the device
+        """
+        self.beta, self.eta = other.beta, other.eta
+        for name in ("theta", "momentum", "prior", "data", "posterior",
+                     "prior_gradient", "data_gradient", "U_gradient", "U", "H"):
+            getattr(self, name).copy(getattr(other, name))
+        if self.reparameterization:
+            self.phi.copy(other.phi)
+        for name in ("Jacobian", "log_jacobian"):
+            if getattr(self, name) is not None:
+                getattr(self, name).copy(getattr(other, name))
+        return self
+
     def compute_posterior(self):
         self.posterior.copy(self.prior)
         altar.cuda.cublas.axpy(alpha=self.beta, x=self.data, y=self.posterior, batch=self.samples)

@@ -22,8 +22,7 @@ altar::cuda::extensions::metropolis::__init__(py::module & m) -> void
 
     // compact the indices of the samples not flagged in {invalid} into the front of
     // {valid_sample_indices}, and leave the resulting count in {valid_samples[0]} (a device
-    // scalar the caller reads back after this call returns -- {synchronize} below already
-    // waits for the launch, so the value is ready as soon as this function returns)
+    // scalar; reading it through the grid's buffer waits for the launch)
     metropolis.def(
         "cudaMetropolis_setValidSampleIndices",
         [](grid_t & valid_sample_indices, grid_t & invalid, grid_t & valid_samples) -> void {

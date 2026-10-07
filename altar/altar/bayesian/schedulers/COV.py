@@ -11,10 +11,12 @@
 
 # externals
 import itertools
+import numpy
 # the package
 import altar
 # my protocol
 from .Scheduler import Scheduler as scheduler
+from ..statistics import weighted_covariance
 
 
 # declaration
@@ -89,8 +91,11 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
         # get the new temperature and store it
         β = self.update_temperature(step=step)
+        # the samples the weights belong to, for the proposal covariance: those before resampling
+        step.weighted_theta = None
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
+            step.weighted_theta = getattr(step, "theta_sampling", step.theta).clone()
             θ, (prior, data, posterior), θ_sampling, jacobian = self.resampling(step=step)
             # update the step after the resampling
             step.prior.copy(prior)
@@ -156,32 +161,13 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         samples = step.samples
         parameters = step.parameters
 
-        # initialize the covariance matrix
-        Σ = altar.matrix(shape=(parameters, parameters)).zero()
-
         # check the geometries
         assert w.shape == samples
         assert θ.shape == (samples, parameters)
-        assert Σ.shape == (parameters, parameters)
 
-        # calculate the weighted mean of every parameter across all samples
-        θbar = altar.vector(shape=parameters)
-        # for each parameter
-        for j in range(parameters):
-            # the jth column in θ has the value of this parameter in the various samples
-            θbar[j] = θ.getColumn(j).mean(weights=w)
-        # start filling out Σ
-        for i in range(samples):
-            # get the sample
-            sample = θ.getRow(i)
-            # form Σ += w[i] sample sample^T
-            altar.blas.dsyr(Σ.lowerTriangular, w[i], sample, Σ)
-        # subtract θbar θbar^T
-        altar.blas.dsyr(Σ.lowerTriangular, -1, θbar, Σ)
-        # fill the upper triangle
-        for i in range(parameters):
-            for j in range(i):
-                Σ[j,i] = Σ[i,j]
+        # the weighted outer products about the weighted mean, in one matrix product
+        Σ = altar.matrix(shape=(parameters, parameters))
+        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
 
         # condition the covariance matrix
         if self.check_positive_definiteness:
@@ -275,46 +261,26 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # print("      histogram as vector:")
         # print("        counts: {}".format(tuple(multi)))
 
-        # unique samples count
-        unique_samples = 0
-        # sample count
-        index = 0
-        # indices for kept samples
+        counts = multi.ndarray().astype(int)
+        unique_samples = int(numpy.count_nonzero(counts))
+        # the index of the old sample behind each new one, duplicated by its count
         indices = altar.vector(shape=multi.shape)
-
-        # record kept sample indices
-        for i in range(multi.shape):
-            count = int(multi[i])
-            # if count is zero, skip
-            if count == 0: continue
-            # add the unique samples count
-            unique_samples += 1
-            # duplicate indices
-            for ic in range(count):
-                indices[index] = i
-                index += 1
+        indices.ndarray()[:] = numpy.repeat(numpy.arange(counts.size), counts)
         # shuffle the indices
         indices.shuffle(rng=self.rng)
+        rows = indices.ndarray().astype(int)
 
         self.info.log(f"resampling: unique samples {unique_samples} out of {multi.shape}")
-        # print("     kept sample indices: {}".format(tuple(indices[i] for i in range(indices.shape))))
 
-        # copy theta, (prior, data, posterior) over according to the indices
-        for i in range(indices.shape):
-            # get the index for old samples
-            old = int(indices[i])
-            # duplicate theta
-            for param in range(step.parameters):
-                θ[i, param] = θOld[old, param]
-            prior[i] = priorOld[old]
-            data[i] = dataOld[old]
-            posterior[i] = postOld[old]
-            # the same indices, for theta_sampling/jacobian, when reparameterized
-            if has_reparametrization:
-                for param in range(step.parameters):
-                    θSampling[i, param] = θSamplingOld[old, param]
-                if jacobian is not None:
-                    jacobian[i] = jacobianOld[old]
+        # copy theta, (prior, data, posterior) over according to the indices, and
+        # theta_sampling/jacobian, when reparameterized
+        pairs = [(θ, θOld), (prior, priorOld), (data, dataOld), (posterior, postOld)]
+        if has_reparametrization:
+            pairs.append((θSampling, θSamplingOld))
+            if jacobian is not None:
+                pairs.append((jacobian, jacobianOld))
+        for new, old in pairs:
+            new.ndarray()[:] = old.ndarray()[rows]
 
         # return the shuffled data
         return θ, (prior, data, posterior), θSampling, jacobian

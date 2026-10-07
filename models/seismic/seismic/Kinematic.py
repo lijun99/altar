@@ -61,10 +61,6 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     kmu_file = altar.properties.path(default="kinematicG.kernel.h5")
     kmu_file.doc = "the sensitivity kernels dGb/dmu_i, one (2*Nas*Ndd*Nt, observations) dataset each"
 
-    fd_step = altar.properties.float(default=1.0e-4)
-    fd_step.doc = "the relative step of the finite differences for the gradient with respect to " \
-                  "the rise times, rupture velocities and hypocenter; they need double precision"
-
     idx_map = altar.properties.list(schema=altar.properties.int())
     idx_map.default = None
     idx_map.doc = "the columns of theta holding my parameters; default all, in order"
@@ -162,10 +158,9 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
 
     def gradient(self, controller, step, batch=None):
         """
-        Fill {step.prior_gradient} and {step.data_gradient} for the gradient-based samplers, by
-        the chain rule through the slip history Mb, d(log L)/d(Mb) = -Gb'^T w: the slips
-        analytically, the rise times, rupture velocities and hypocenter by one-sided finite
-        differences of Mb alone
+        Fill {step.prior_gradient} and {step.data_gradient} for the gradient-based samplers: by the
+        chain rule through the slip history Mb, d(log L)/d(Mb) = -Gb'^T w, then back through the
+        source time functions, the arrival times and their fast sweeping, on the device
         """
         # in an ensemble, the ensemble owns the parameter sets and their priors
         if not self.embedded:
@@ -177,53 +172,21 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         θ = step.theta
         rows = θ.shape[0]
         samples = rows if batch is None else batch
-        patches = self.Nas * self.Ndd
-        cols = numpy.asarray(self.gidx_map)
-        slips, risetimes, others = cols[:2 * patches], cols[2 * patches:3 * patches], cols[3 * patches:]
-        gradient = numpy.asarray(step.data_gradient)
-        gradient[:samples, :] = 0
-
-        # the whitened residual w at {θ}, and d(log L)/d(Mb) = -Gb'^T w
-        w = altar.cuda.matrix(shape=(rows, self.observations), dtype=self.precision)
+        # the whitened residual w at {θ}, and d(log L)/d(Mb) = -Gb'^T w, in buffers made once
+        if self._residual is None:
+            self._residual = altar.cuda.matrix(shape=(rows, self.observations), dtype=self.precision)
+            self._dmb = altar.cuda.matrix(shape=(rows, self.NGbparameters), dtype=self.precision)
+        w, gdMb = self._residual, self._dmb
         self.forward_model_batched(theta=θ, prediction=w, batch=samples)
-        gdMb = altar.cuda.matrix(shape=(rows, self.NGbparameters), dtype=self.precision)
         cublas = altar.cuda.cublas
         gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
         gemm(altar.cuda.cublas_handle(), cublas.Operation.T, cublas.Operation.N,
              self.NGbparameters, samples, self.observations, -1.0,
              self.gGF.grid, self.observations, w.grid, self.observations,
              0.0, gdMb.grid, self.NGbparameters)
-        dMb = numpy.asarray(gdMb)[:samples]
-
-        # Mb[samples][Nt][2][patches] at a (shifted) copy of {θ}
-        shifted = altar.cuda.matrix(source=numpy.asarray(θ), dtype=self.precision)
-        Mb = altar.cuda.matrix(shape=(rows, self.NGbparameters), dtype=self.precision)
-        def history():
-            self.cmodel.cast_mb(theta=shifted.grid, mb=Mb.grid, batch=samples)
-            return numpy.asarray(Mb)[:samples].copy()
-
-        # the slips: Mb is linear in them, with the slip history of unit slips as the slope
-        numpy.asarray(shifted)[:samples, slips] = 1
-        stf = history()
-        gradient[:samples, slips] = (dMb * stf).reshape(samples, self.Nt, 2 * patches).sum(axis=1)
-        numpy.asarray(shifted)[:samples] = numpy.asarray(θ)[:samples]
-        base = history()
-
-        # the rise times: each one shapes only its own patch, so all of them at once
-        x = numpy.asarray(θ)[:samples, risetimes]
-        h = self.fd_step * numpy.maximum(1.0, numpy.abs(x))
-        numpy.asarray(shifted)[:samples, risetimes] = x + h
-        change = (dMb * (history() - base)).reshape(samples, self.Nt, 2, patches).sum(axis=(1, 2))
-        gradient[:samples, risetimes] = change / h
-        numpy.asarray(shifted)[:samples, risetimes] = x
-
-        # the rupture velocities and the hypocenter move the rupture front everywhere, one at a time
-        for col in others:
-            x = numpy.asarray(θ)[:samples, col]
-            h = self.fd_step * numpy.maximum(1.0, numpy.abs(x))
-            numpy.asarray(shifted)[:samples, col] = x + h
-            gradient[:samples, col] = (dMb * (history() - base)).sum(axis=1) / h
-            numpy.asarray(shifted)[:samples, col] = x
+        # and back to my columns of theta
+        step.data_gradient.zero()
+        self.cmodel.gradient(theta=θ.grid, dmb=gdMb.grid, gradient=step.data_gradient.grid, batch=samples)
         return self
 
 
@@ -269,6 +232,8 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     gGF = None # the covariance-premerged green's functions
     gt0s = None
     gidx_map = None
+    _residual = None # the whitened residual of {gradient}
+    _dmb = None # d(log L)/d(Mb) of {gradient}
     cmodel = None
     NGbparameters = None
 

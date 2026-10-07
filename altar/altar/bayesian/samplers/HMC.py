@@ -49,6 +49,17 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         "whether to precondition the leapfrog dynamics with a diagonal mass matrix estimated " \
         "from the current population, instead of a fixed unit mass"
 
+    mass_matrix = altar.properties.str(default="diagonal")
+    mass_matrix.validators = altar.constraints.isMember("diagonal", "dense")
+    mass_matrix.doc = \
+        "the shape of the mass matrix: diagonal, or dense, from the population's covariance " \
+        "(cuda only; needs at least twice as many chains as parameters, else diagonal)"
+
+    mass_shrinkage = altar.properties.float(default=0)
+    mass_shrinkage.doc = \
+        "the shrinkage of the correlation of a dense mass matrix toward the identity, " \
+        "from 0 (none) to 1 (a diagonal mass); none for the intensity of Schafer & Strimmer"
+
     mass_update_interval = altar.properties.int(default=20)
     mass_update_interval.doc = "how often, in trajectories, to re-estimate the mass matrix"
 
@@ -73,6 +84,8 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         self._impl.step_size = self.step_size
         self._impl.stepsizer = self.stepsizer
         self._impl.adapt_mass_matrix = self.adapt_mass_matrix
+        self._impl.mass_matrix = self.mass_matrix
+        self._impl.mass_shrinkage = self.mass_shrinkage
         self._impl.mass_update_interval = self.mass_update_interval
         self._impl.min_variance = self.min_variance
         self._impl.max_variance = self.max_variance

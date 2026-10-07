@@ -64,13 +64,8 @@ function(altar_mogi_buildLibrary)
     lib/libmogi/Source.cc
     )
 
-  # copy the mogi headers; note the trickery with the terminating slash in the source
-  # directory that lets us place the files in the correct destination
-  file(
-    COPY lib/libmogi/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/mogi
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # stage the mogi headers
+  altar_stageHeaders(lib/libmogi altar/models/mogi)
 
   # install the library
   install(

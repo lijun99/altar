@@ -10,6 +10,8 @@
 #include "external.h"
 // my declarations
 #include "grids.h"
+// the device reductions
+#include <altar/cuda/grids/cudaGrids.h>
 
 
 namespace {
@@ -48,9 +50,9 @@ altar::cuda::extensions::grids::__init__(py::module & m) -> void
             if (bytes(source, "grids.copy") != size) {
                 throw py::value_error("grids.copy: the grids hold different numbers of cells");
             }
-            cudaSafeCall(cudaMemcpy(
+            cudaSafeCall(cudaMemcpyAsync(
                 reinterpret_cast<void *>(target.address()),
-                reinterpret_cast<const void *>(source.address()), size, cudaMemcpyDefault));
+                reinterpret_cast<const void *>(source.address()), size, cudaMemcpyDefault, 0));
             synchronize("grids.copy");
         },
         "target"_a, "source"_a, "overwrite the cells of {target} with those of {source}");
@@ -59,11 +61,44 @@ altar::cuda::extensions::grids::__init__(py::module & m) -> void
     grids.def(
         "zero",
         [](grid_t & target) -> void {
-            cudaSafeCall(cudaMemset(
-                reinterpret_cast<void *>(target.address()), 0, bytes(target, "grids.zero")));
+            cudaSafeCall(cudaMemsetAsync(
+                reinterpret_cast<void *>(target.address()), 0, bytes(target, "grids.zero"), 0));
             synchronize("grids.zero");
         },
         "target"_a, "fill the cells of {target} with zeroes");
+
+    // the buffer format of the cells of {grid}, without waiting for the device
+    grids.def(
+        "format",
+        [](grid_t & grid) -> std::string { return grid.view().format; },
+        "grid"_a, "the buffer format of the cells of {grid}, e.g. 'd' or 'i'");
+
+    // the sum of the cells, on the device; the result comes back to the host once it's ready
+    grids.def(
+        "sum",
+        [](grid_t & grid) -> py::object {
+            bytes(grid, "grids.sum");
+            const auto info = grid.view();
+            const auto size = static_cast<std::size_t>(info.size);
+            const auto format = info.format;
+            const auto address = grid.address();
+            namespace device = ::altar::cuda::grids;
+            if (format == "i") {
+                return py::int_(device::sum<int, long long>(reinterpret_cast<const int *>(address), size));
+            }
+            if ((format == "l" || format == "q") && static_cast<std::size_t>(info.itemsize) == sizeof(long long)) {
+                return py::int_(device::sum<long long, long long>(
+                    reinterpret_cast<const long long *>(address), size));
+            }
+            if (format == "f") {
+                return py::float_(device::sum<float, double>(reinterpret_cast<const float *>(address), size));
+            }
+            if (format == "d") {
+                return py::float_(device::sum<double, double>(reinterpret_cast<const double *>(address), size));
+            }
+            throw py::value_error("grids.sum: unsupported cell type '" + format + "'");
+        },
+        "grid"_a, "the sum of the cells of {grid}, computed on the device");
 }
 
 // end of file

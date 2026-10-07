@@ -49,6 +49,9 @@ class HMC:
         """
         # grab the info channel
         self.info = application.info
+        # a dense mass matrix needs a pool of states, which only the cuda annealing keeps
+        if self.mass_matrix == "dense":
+            raise NotImplementedError("hmc: a dense mass matrix is supported on the gpu only")
         # pull the chain length (number of trajectories per outer step) from the job spec
         self.steps = application.job.steps
         # get the capsule of the random number generator
@@ -330,6 +333,7 @@ class HMC:
     leapfrog_steps = 10    # the number of leapfrog substeps per trajectory
     step_size = 0.01       # the leapfrog step size epsilon; adapted after each trajectory
     adapt_mass_matrix = True
+    mass_matrix = "diagonal"
     mass_update_interval = 20
     min_variance = 1e-8
     max_variance = 1e8

@@ -58,13 +58,8 @@ function(altar_reverso_buildLibrary)
     lib/libreverso/Source.cc
     )
 
-  # copy the reverso headers; note the trickery with the terminating slash in the source
-  # directory that lets us place the files in the correct destination
-  file(
-    COPY lib/libreverso/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/reverso
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # stage the reverso headers
+  altar_stageHeaders(lib/libreverso altar/models/reverso)
 
   # install the library
   install(

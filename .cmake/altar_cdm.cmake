@@ -66,13 +66,8 @@ function(altar_cdm_buildLibrary)
     lib/libcdm/Source.cc
     )
 
-  # copy the cdm headers; note the trickery with the terminating slash in the source
-  # directory that lets us place the files in the correct destination
-  file(
-    COPY lib/libcdm/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar/models/cdm
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # stage the cdm headers
+  altar_stageHeaders(lib/libcdm altar/models/cdm)
 
   # install the library
   install(

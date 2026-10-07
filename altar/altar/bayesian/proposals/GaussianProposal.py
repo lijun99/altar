@@ -8,10 +8,13 @@
 # all rights reserved
 #
 
+# externals
+import types
 # the package
 import altar
 # my protocol
 from .Proposal import Proposal as proposal
+from ..statistics import weighted_covariance
 
 # declaration
 class GaussianProposal(altar.component, family="altar.proposals.gaussian", implements=proposal):
@@ -166,6 +169,11 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         Compute Σ from the importance-weighted auto-correlation of {step.theta}
         """
         weights = self._get_weights(step=step, annealer=annealer)
+        # the weights belong to the samples before resampling, when the scheduler kept them
+        weighted = getattr(step, "weighted_theta", None)
+        if weighted is not None:
+            samples, parameters = weighted.shape
+            step = types.SimpleNamespace(theta=weighted, samples=samples, parameters=parameters)
         return self.compute_covariance(step=step, w=weights)
 
 
@@ -227,22 +235,9 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         assert w.shape == samples
         assert θ.shape == (samples, parameters)
 
-        # weighted mean of each parameter
-        θbar = altar.vector(shape=parameters)
-        for j in range(parameters):
-            θbar[j] = θ.getColumn(j).mean(weights=w)
-
-        # weighted outer-product sum: Σ += w_i θ_i θ_i^T
-        Σ = altar.matrix(shape=(parameters, parameters)).zero()
-        for i in range(samples):
-            altar.blas.dsyr(Σ.lowerTriangular, w[i], θ.getRow(i), Σ)
-        # subtract θ̄ θ̄^T
-        altar.blas.dsyr(Σ.lowerTriangular, -1, θbar, Σ)
-
-        # fill the upper triangle
-        for i in range(parameters):
-            for j in range(i):
-                Σ[j, i] = Σ[i, j]
+        # the weighted outer products about the weighted mean, in one matrix product
+        Σ = altar.matrix(shape=(parameters, parameters))
+        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
 
         # condition the covariance matrix if requested
         if self.check_positive_definiteness:

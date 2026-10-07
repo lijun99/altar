@@ -10,6 +10,7 @@
 #pragma once
 
 // STL
+#include <cstdlib>
 #include <string>
 #include <stdexcept>
 
@@ -50,15 +51,13 @@ namespace altar::cuda::extensions {
     // the type-erased grid the bindings hand cell data through
     using grid_t = pyre::py::grid::AnyGrid;
 
-    // every kernel launch here is asynchronous, and a binding hands cuda managed memory
-    // straight back to python once it returns; without this, a caller who reads the result
-    // immediately races the kernel and reads whatever was there before it ran (typically
-    // zeros, since managed memory is zero-filled on first touch) -- {cudaCheckError} in
-    // {support.h} only checks that the launch itself was valid, it doesn't wait for it
+    // launches stay asynchronous, since pyre's managed grids wait for the device before the host
+    // reads them; set ALTAR_CUDA_SYNC to wait after every binding, to locate a failing kernel
     inline auto
     synchronize(const char * routine) -> void
     {
-        auto status = cudaDeviceSynchronize();
+        static const bool eager = std::getenv("ALTAR_CUDA_SYNC") != nullptr;
+        auto status = eager ? cudaDeviceSynchronize() : cudaPeekAtLastError();
         if (status != cudaSuccess) {
             throw std::runtime_error(std::string(routine) + ": " + cudaGetErrorString(status));
         }
