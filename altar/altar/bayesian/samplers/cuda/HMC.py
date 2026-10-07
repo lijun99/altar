@@ -10,8 +10,6 @@
 
 from collections import namedtuple
 
-import numpy
-
 import altar
 import altar.cuda
 from altar.cuda import cublas, libcudaaltar
@@ -60,6 +58,8 @@ class HMC:
             samples=self.samples, parameters=model.parameters, dtype=self.dtype,
             reparameterization=getattr(model, 'reparameterization', False)
         )
+        # the buffers of a trajectory follow the new state
+        self._backup = self._scratch = self._mask = None
         self.step_size = self.stepsizer.initialize(self.proposal_state.eta)
         self._set_step_size(self.step_size)
         return self
@@ -181,13 +181,20 @@ class HMC:
         state back, so the potential and gradient stay up to date for the next trajectory
         """
         state = self.proposal_state
-        old_state = state.clone()
         leapfrog = libcudaaltar.leapfrog
+        # the starting state and the energies, in buffers kept across trajectories, since
+        # managed allocations are slow
+        if self._backup is None:
+            self._backup = state.clone()
+            self._scratch = [altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype)
+                             for _ in range(5)]
+        old_state = self._backup.assign(state)
+        kinetic_old, kinetic_new, h_old, h_new, delta_h = self._scratch
 
         # the energy at the start
-        kinetic_old = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
+        kinetic_old.zero()
         leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_old.grid)
-        h_old = state.U.clone()
+        h_old.copy(state.U)
         cublas.axpy(alpha=1.0, x=kinetic_old, y=h_old, batch=state.samples)
 
         # leapfrog updates; the last one leaves the potential and gradient at the proposal
@@ -202,18 +209,21 @@ class HMC:
         self._update_momentum(half_step)
 
         # the energy at the proposal
-        kinetic_new = altar.cuda.vector(shape=state.samples, dtype=state.theta.dtype).zero()
+        kinetic_new.zero()
         leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_new.grid)
-        h_new = state.U.clone()
+        h_new.copy(state.U)
         cublas.axpy(alpha=1.0, x=kinetic_new, y=h_new, batch=state.samples)
 
-        delta_h = h_new.clone()
+        delta_h.copy(h_new)
         cublas.axpy(alpha=-1.0, x=h_old, y=delta_h, batch=state.samples)
 
         # Metropolis-Hastings decision
-        mask_dev = altar.cuda.vector(shape=state.samples, dtype='int32').zero()
+        if self._mask is None:
+            self._mask = altar.cuda.vector(shape=state.samples, dtype='int32')
+        mask_dev = self._mask.zero()
         leapfrog.cudaLeapfrog_metropolis(delta_h.grid, mask_dev.grid)
-        accepted = int(numpy.count_nonzero(mask_dev.copy_to_host(type="numpy")))
+        # the mask is 0 or 1, so its sum, on the device, counts the accepted chains
+        accepted = mask_dev.sum()
 
         # restore the rejected chains
         leapfrog.cudaLeapfrog_restoreRejected(
@@ -324,6 +334,9 @@ class HMC:
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
+    _backup = None          # the state at the start of a trajectory, for the rejected chains
+    _scratch = None         # the energies of a trajectory
+    _mask = None            # the accepted chains of a trajectory
     samples = None          # the number of chains, for {_allocate}
     dtype = None            # the gpu precision, for {_allocate}
     info = None             # the application info channel
