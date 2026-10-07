@@ -6,12 +6,25 @@
 // all rights reserved
 //
 
+// externals
+#include <cuda/std/limits>
 // declarations
 #include "cudaLogitTransform.h"
 
 // cuda kernels; defined here, ahead of the launcher functions below that instantiate and
 // launch them
 namespace cudaLogitTransform_kernels {
+
+    // the position of {v} within (low, low + range), kept off the bounds, so that a sample on
+    // a bound (e.g. curand's uniform draws of 1) has a finite logit and log-jacobian
+    template <typename real_type>
+    __device__ inline real_type
+    _unit(real_type v, real_type low, real_type range)
+    {
+        const real_type eps = ::cuda::std::numeric_limits<real_type>::epsilon();
+        const real_type u = (v - low) / range;
+        return u < eps ? eps : (u > 1 - eps ? 1 - eps : u);
+    }
 
     // one thread per sample: theta[idx_begin:idx_end] <- low + (high-low)*sigmoid(theta)
     template <typename real_type>
@@ -45,7 +58,7 @@ namespace cudaLogitTransform_kernels {
         auto range = high - low;
         for (auto i = idx_begin; i < idx_end; ++i) {
             auto & v = theta[{ sample, static_cast<int>(i) }];
-            auto u = (v - low) / range;
+            auto u = _unit(v, low, range);
             v = log(u / (1 - u));
         }
     }
@@ -63,7 +76,7 @@ namespace cudaLogitTransform_kernels {
 
         auto range = high - low;
         for (auto i = idx_begin; i < idx_end; ++i) {
-            auto sig = (theta[{ sample, static_cast<int>(i) }] - low) / range;
+            auto sig = _unit(theta[{ sample, static_cast<int>(i) }], low, range);
             jacobian[{ sample, static_cast<int>(i) }] = range * sig * (1 - sig);
         }
     }
@@ -81,7 +94,7 @@ namespace cudaLogitTransform_kernels {
 
         auto range = high - low;
         for (auto i = idx_begin; i < idx_end; ++i) {
-            auto sig = (theta[{ sample, static_cast<int>(i) }] - low) / range;
+            auto sig = _unit(theta[{ sample, static_cast<int>(i) }], low, range);
             gradient[{ sample, static_cast<int>(i) }] = 1 - 2*sig;
         }
     }
@@ -100,7 +113,7 @@ namespace cudaLogitTransform_kernels {
         auto range = high - low;
         auto contribution = real_type{0};
         for (auto i = idx_begin; i < idx_end; ++i) {
-            auto sig = (theta[{ sample, static_cast<int>(i) }] - low) / range;
+            auto sig = _unit(theta[{ sample, static_cast<int>(i) }], low, range);
             contribution += log(sig) + log(1 - sig);
         }
         likelihood[{ sample }] += contribution;
@@ -119,7 +132,7 @@ namespace cudaLogitTransform_kernels {
 
         auto range = high - low;
         for (auto i = idx_begin; i < idx_end; ++i) {
-            auto sig = (theta[{ sample, static_cast<int>(i) }] - low) / range;
+            auto sig = _unit(theta[{ sample, static_cast<int>(i) }], low, range);
             auto & g = gradient[{ sample, static_cast<int>(i) }];
             g = g * range * sig * (1 - sig) + 1 - 2*sig;
         }
