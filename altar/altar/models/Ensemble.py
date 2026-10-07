@@ -135,7 +135,8 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         """
         The prior gradient from my parameter sets, plus the data gradient of each cascaded model;
         the data gradient of the others; each model's on its own columns, scattered back to
-        theta's (gpu only)
+        theta's (gpu only). The samplers chain only {data_gradient} into sampling space, so when
+        {step} is reparameterized the cascaded data gradients get its Jacobian here
         """
         if altar.backends.active() != "cuda":
             raise NotImplementedError("ensemble gradients need the gpu (job.gpus = 1)")
@@ -147,6 +148,14 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         for name in self.psets_list:
             self.psets[name].prior_gradient(theta=θ, gradient=step.prior_gradient, batch=batch)
         step.data_gradient.zero()
+        # the cascaded data gradients, gathered apart when they need the Jacobian
+        jacobian = getattr(step, "Jacobian", None)
+        cascade = None
+        if jacobian is not None and any(member.cascaded for member in self.models.values()):
+            self.eval_jacobian(step=step, batch=batch)
+            if self._cascade is None or self._cascade.shape != θ.shape:
+                self._cascade = altar.cuda.matrix(shape=θ.shape, dtype=self.precision)
+            cascade = self._cascade.zero()
         for name, member in self.models.items():
             cols = self._columns[name]
             view = _Gradients(
@@ -154,8 +163,13 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
                 prior_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero(),
                 data_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero())
             member.gradient(controller=controller, step=view, batch=batch)
-            target = step.prior_gradient if member.cascaded else step.data_gradient
+            target = step.data_gradient if not member.cascaded else (
+                cascade if cascade is not None else step.prior_gradient)
             self._scatter(name=name, gradient=view.data_gradient, target=target, batch=samples)
+        # d(physical)/d(sampling) on the cascaded data gradients, into the prior gradient
+        if cascade is not None:
+            cascade *= jacobian
+            step.prior_gradient += cascade
         return self
 
 
@@ -246,6 +260,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
     # private data
     _columns = None # the columns of theta each of my models works on
     _gather = None # per model, the cuda selection matrix and scratch theta
+    _cascade = None # the cascaded data gradients, before their Jacobian
 
 
 class _Gradients:

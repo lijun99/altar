@@ -48,9 +48,9 @@ $\mathbf d^{pred} = \mathcal G_b \mathbf M_b$.
 
 ```{note}
 The kinematic model runs only on the GPU (`job.gpus = 1`): its fast sweeping is too expensive for
-the cpu. It provides the gradient of its data likelihood for HMC and MALA, in double precision: exact for
-the slips, by finite differences of $\mathbf M_b$ (step `fd_step`) for the others. For the
-9-patch example, Metropolis is still the faster sampler.
+the cpu. It provides the exact gradient of its data likelihood for HMC and MALA, by the adjoint of
+its forward model: back through the source time functions, the interpolation of the arrival times,
+and their fast sweeping and seeding.
 ```
 
 ## Joint static and kinematic inversion

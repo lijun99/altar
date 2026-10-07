@@ -80,6 +80,19 @@ function(altar_destinationInit)
 endfunction(altar_destinationInit)
 
 
+# stage the headers under {source} in {destination}, both relative to the include root of the
+# install prefix; unlike file(COPY), configure_file reconfigures whenever one of them changes
+function(altar_stageHeaders source destination)
+  get_filename_component(source ${source} ABSOLUTE BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
+  file(GLOB_RECURSE headers CONFIGURE_DEPENDS RELATIVE ${source} ${source}/*.h ${source}/*.icc)
+  foreach(header ${headers})
+    configure_file(${source}/${header}
+      ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/${destination}/${header} COPYONLY)
+  endforeach()
+  # all done
+endfunction(altar_stageHeaders)
+
+
 # ask git for the most recent tag and use it to build the version
 function(altar_getVersion)
   # git

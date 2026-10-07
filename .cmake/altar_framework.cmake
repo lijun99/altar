@@ -61,13 +61,8 @@ function(altar_buildLibrary)
     lib/libaltar/bayesian/COV.cc
     )
 
-  # copy the altar headers; note the trickery with the terminating slash in the source
-  # directory that lets us place the files in the correct destination
-  file(
-    COPY lib/libaltar/
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/altar
-    FILES_MATCHING PATTERN *.h PATTERN *.icc
-    )
+  # stage the altar headers
+  altar_stageHeaders(lib/libaltar altar)
 
   # install the library
   install(

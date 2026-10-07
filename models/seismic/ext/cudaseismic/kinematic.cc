@@ -101,6 +101,23 @@ namespace {
             done("cudaKinematic.linear_gm");
         }
 
+        // gradient <- d(log L)/d(theta) on my columns, from dmb = d(log L)/d(Mb), by the adjoints
+        // of the source time functions, the interpolation, the sweeps and the seeding
+        auto gradient(grid_t & theta, grid_t & dmb, grid_t & gradient, std::size_t batch) -> void
+        {
+            check(theta, dmb, gradient);
+            if (gradient.shape() != theta.shape()) {
+                throw py::value_error("cudaKinematic.gradient: the gradient must be shaped like theta");
+            }
+            auto parameters = theta.shape()[1];
+            if (_cell == 'd') {
+                _double->gradient(ptr<double>(theta), ptr<double>(dmb), ptr<double>(gradient), parameters, batch);
+            } else {
+                _float->gradient(ptr<float>(theta), ptr<float>(dmb), ptr<float>(gradient), parameters, batch);
+            }
+            done("cudaKinematic.gradient");
+        }
+
     private:
         template <typename T>
         static auto ptr(grid_t & g) -> T * { return reinterpret_cast<T *>(g.address()); }
@@ -140,6 +157,8 @@ altar::models::seismic::extensions::kinematic::__init__(py::module & m) -> void
              "prediction <- Gb Mb(theta), or Gb Mb(theta) - prediction when {residual}")
         .def("cast_mb", &Kinematic::cast_mb, "theta"_a, "mb"_a, "batch"_a,
              "mb <- the slips of each patch over time, from {theta}")
+        .def("gradient", &Kinematic::gradient, "theta"_a, "dmb"_a, "gradient"_a, "batch"_a,
+             "gradient <- d(log L)/d(theta) on my columns, from dmb = d(log L)/d(Mb)")
         .def("linear_gm", &Kinematic::linear_gm,
              "green"_a, "mb"_a, "prediction"_a, "batch"_a, "residual"_a,
              "prediction <- Gb mb, or Gb mb - prediction when {residual}");
