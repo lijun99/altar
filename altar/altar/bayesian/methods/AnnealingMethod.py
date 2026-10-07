@@ -62,8 +62,7 @@ class AnnealingMethod:
         # a pool of the states the chains keep needs a method that keeps them
         if getattr(annealer, "pool", 1) > 1 and not self.pools:
             raise NotImplementedError(
-                f"controller.pool = {annealer.pool} needs the gpu and a single task "
-                f"(job.gpus = 1, job.tasks = 1, job.hosts = 1)")
+                f"controller.pool = {annealer.pool} needs the gpu (job.gpus = 1)")
         # all done
         return self
 

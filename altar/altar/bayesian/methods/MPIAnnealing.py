@@ -177,14 +177,14 @@ class MPIAnnealing(AnnealingMethod):
     def gstep(self):
         return self.worker.gstep
 
-    # for cuda worker
+    # my worker's pool, which the samplers reach through me; each rank pools its own chains
     @property
-    def device(self):
-        return self.worker.device
+    def pool(self):
+        return getattr(self.worker, "pool", None)
 
     @property
-    def gstep(self):
-        return self.worker.gstep
+    def pools(self):
+        return getattr(self.worker, "pools", False)
 
 
     # meta-methods
