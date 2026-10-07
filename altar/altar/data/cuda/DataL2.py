@@ -461,8 +461,7 @@ class DataL2:
         """
         The cell type name (e.g. "float64") a pyre.grid.Grid was built with
         """
-        format = memoryview(grid).format
-        return "float64" if format == "d" else "float32"
+        return altar.cuda.array.cell(grid)
 
 
     # configuration, copied down from the shim by {_makeImpl}

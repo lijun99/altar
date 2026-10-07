@@ -13,7 +13,6 @@ one level-1 convenience wrapper the bayesian state layer's {compute_posterior} n
 {pyre.cuda.cublas} itself, so pyre's own namespace stays exactly what pyre published.
 """
 
-import numpy
 import pyre.cuda
 
 
@@ -36,7 +35,8 @@ def axpy(alpha, x, y, batch=None, handle=None):
     yg = y.grid if hasattr(y, "grid") else y
     n = batch if batch is not None else xg.shape[0]
 
-    cell = numpy.asarray(xg).dtype.name
+    # the cell type from the grid itself, since its buffer would wait for the device
+    cell = altar.cuda.array.cell(xg)
     fn = _cublas.daxpy if cell == "float64" else _cublas.saxpy
     fn(handle, n, alpha, xg, 1, yg, 1)
     return y

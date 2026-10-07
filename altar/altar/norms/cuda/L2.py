@@ -117,11 +117,10 @@ class L2:
     @staticmethod
     def _cell(grid):
         """
-        The cell type name (e.g. "float64") a pyre.grid.Grid was built with; grids support
-        the buffer protocol, so a memoryview is the cheapest way to ask from python
+        The cell type name (e.g. "float64") a pyre.grid.Grid was built with, without waiting
+        for the device
         """
-        format = memoryview(grid).format
-        return "float64" if format == "d" else "float32"
+        return altar.cuda.array.cell(grid)
 
 
 # end of file

@@ -193,9 +193,12 @@ and the binding hands the python grids to it, dispatching on their precision:
 :end-before: "    // gradient[:, idx_begin:idx_end] <- d/dtheta"
 ```
 
-`regrid` views a python grid as a pyre grid of the given cell type and rank; `synchronize` waits
-for the kernel, so that python reads its results. See `models/seismic` for the whole of it: the
-library, the module, and their build.
+`regrid` views a python grid as a pyre grid of the given cell type and rank. The kernel runs
+asynchronously: pyre's managed grids wait for the device whenever python reads their cells, so a
+binding returns as soon as it has launched. `synchronize` only checks the launch, or waits for the
+kernel when the environment variable `ALTAR_CUDA_SYNC` is set, which pins an error on the kernel
+that caused it. See `models/seismic` for the whole of it: the library, the module, and their
+build.
 
 ## Ensembles of models
 

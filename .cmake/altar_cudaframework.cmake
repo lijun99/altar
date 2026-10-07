@@ -56,6 +56,7 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/bayesian/cudaLeapfrog.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/bayesian/cudaLangevin.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/norm/cudaL2.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/grids/cudaGrids.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaTGaussian.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaGaussian.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaRanged.cu
