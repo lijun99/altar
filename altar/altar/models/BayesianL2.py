@@ -336,9 +336,10 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         returnResidual = self.return_residual
         # call forward_model to calculate the data prediction or its difference between dataobs
         self.forward_model_batched(theta=theta, prediction=prediction, batch=batch)
-        # call data to calculate the l2 norm
+        # call data to calculate the l2 norm; a raw prediction never has the covariance merged in
         self.dataobs.eval_likelihood(
-            prediction=prediction, likelihood=likelihood, residual=returnResidual, batch=batch)
+            prediction=prediction, likelihood=likelihood, residual=returnResidual, batch=batch,
+            whitened=returnResidual)
 
         # all done
         return self
