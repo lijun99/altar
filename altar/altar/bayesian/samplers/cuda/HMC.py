@@ -10,6 +10,7 @@
 
 from collections import namedtuple
 
+import journal
 import numpy
 
 import altar
@@ -359,13 +360,20 @@ class HMC:
     def _estimate_dense_mass(self, θ, w):
         """
         The dense mass matrix from the covariance of the rows of {θ}, with weights {w}, its
-        correlation shrunk toward the identity; diagonal, if the population is too small for it
+        correlation shrunk toward the identity; diagonal, with fewer than {dense_mass_chains}
+        chains per parameter: the kept states of a pool add rows but not independent chains,
+        and a covariance from too few chains biases the walks
         """
         samples, parameters = θ.shape
+        chains = self.proposal_state.samples
         size = effective_size(w)
-        if size <= parameters:
-            self.info.log(f"hmc: {size:.0f} effective samples are too few for a dense mass "
-                          f"matrix of {parameters} parameters; using a diagonal one")
+        if chains < self.dense_mass_chains * parameters or size <= parameters:
+            if not self._dense_refused:
+                journal.warning("altar.hmc").log(
+                    f"{chains} chains are too few for a dense mass matrix of {parameters} "
+                    f"parameters, which needs {self.dense_mass_chains * parameters}; "
+                    f"using a diagonal one")
+                self._dense_refused = True
             return self._estimate_mass(θ, w)
         sd = numpy.sqrt(numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance))
         r, λ = shrunk_correlation(θ, w, self.mass_shrinkage)
@@ -468,6 +476,8 @@ class HMC:
     _factor = None          # mass, (parameters x parameters) for a dense one; none for a unit
     _inverse_factor = None  # mass
     _dense = False          # whether the mass matrix is dense
+    _dense_refused = False  # whether i warned that the chains are too few for a dense mass
+    dense_mass_chains = 2   # the chains per parameter a dense mass needs
     _scaled = None          # scratch, for the scaled momenta
     samples = None          # the number of chains, for {_allocate}
     dtype = None            # the gpu precision, for {_allocate}

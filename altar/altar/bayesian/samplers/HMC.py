@@ -53,7 +53,7 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
     mass_matrix.validators = altar.constraints.isMember("diagonal", "dense")
     mass_matrix.doc = \
         "the shape of the mass matrix: diagonal, or dense, from the population's covariance " \
-        "(cuda only; needs more effective samples than parameters, e.g. from a pool)"
+        "(cuda only; needs at least twice as many chains as parameters, else diagonal)"
 
     mass_shrinkage = altar.properties.float(default=0)
     mass_shrinkage.doc = \

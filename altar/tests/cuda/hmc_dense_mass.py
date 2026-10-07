@@ -140,6 +140,13 @@ def test():
     assert not diagonal._dense
     assert stats.accepted / (stats.accepted + stats.rejected) < 0.2
 
+    # too few chains per parameter: a diagonal mass, however many rows the population has
+    few = sampler("dense")
+    few.dense_mass_chains = 1000
+    few._set_mass(_Step(draw()))
+    assert not few._dense
+    assert few._factor.shape == few.proposal_state.momentum.shape
+
     # all done
     return
 
