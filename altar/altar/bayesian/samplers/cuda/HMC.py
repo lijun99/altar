@@ -119,8 +119,9 @@ class HMC:
 
         accepted_total = 0
         dispatcher = annealer.dispatcher
-        for _ in range(self.steps):
+        for trajectory in range(self.steps):
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+            self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
             # p ~ N(0, M), M = diag(1/var)
             if self._sd is not None:
@@ -295,20 +296,40 @@ class HMC:
 
     def _set_mass(self, step):
         """
-        The diagonal mass matrix of the walk, M = diag(1/var), from the variance of each
-        parameter in sampling space over the population: its weighted samples before
+        The diagonal mass matrix at the start of the walk, M = diag(1/var), from the variance of
+        each parameter in sampling space over the population: its weighted samples before
         resampling, when the scheduler kept them; a unit mass unless {adapt_mass_matrix}
         """
         self._sd = self._var = self._inv_sd = None
         if not self.adapt_mass_matrix:
             return
-        state = self.proposal_state
         weighted = getattr(step, "weighted_theta", None)
         weights = getattr(step, "weights", None)
         if weighted is not None and weights is not None:
-            θ, w = numpy.asarray(weighted), numpy.asarray(weights)
-        else:
-            θ = numpy.asarray(step.theta_sampling if state.reparameterization else step.theta)
+            self._estimate_mass(numpy.asarray(weighted), numpy.asarray(weights))
+            return
+        θ = step.theta_sampling if self.proposal_state.reparameterization else step.theta
+        self._estimate_mass(numpy.asarray(θ))
+        return
+
+    def _update_mass(self, trajectory):
+        """
+        Re-estimate the mass matrix from the chains themselves, every {mass_update_interval}
+        trajectories of the walk, as {altar.bayesian.samplers.native.HMC} does
+        """
+        interval = self.mass_update_interval
+        if self._sd is None or not interval or trajectory == 0 or trajectory % interval:
+            return
+        state = self.proposal_state
+        self._estimate_mass(numpy.asarray(state.phi if state.reparameterization else state.theta))
+        return
+
+    def _estimate_mass(self, θ, w=None):
+        """
+        The mass matrix from the variance of the rows of {θ}, with weights {w}
+        """
+        state = self.proposal_state
+        if w is None:
             w = numpy.ones(θ.shape[0])
         var = numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance)
         # broadcast to the chains, for the cell by cell products on the device
@@ -393,6 +414,7 @@ class HMC:
                             # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
     adapt_mass_matrix = True # whether to scale the momenta by the population's variances
+    mass_update_interval = 20 # trajectories between estimates of the mass matrix in a walk
     min_variance = 1e-8     # the bounds of the variances of the mass matrix
     max_variance = 1e8
     _var = None             # the variances of the mass matrix, and their square roots and
