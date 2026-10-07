@@ -41,7 +41,8 @@ class LogitTransform:
         """
         a, b = self.support
         arr = numpy.asarray(theta)
-        arr[:] = numpy.log((arr - a) / (b - arr))
+        u = _unit(arr, a, b)
+        arr[:] = numpy.log(u / (1 - u))
         return self
 
 
@@ -52,7 +53,7 @@ class LogitTransform:
         """
         a, b = self.support
         x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
+        sig = _unit(x, a, b)
         # log(sig) + log(1-sig); dropping the constant log(b-a) term this omits changes
         # nothing downstream -- it cancels exactly in any delta-H/acceptance decision
         contribution = numpy.log(sig) + numpy.log(1.0 - sig)
@@ -66,7 +67,7 @@ class LogitTransform:
         """
         a, b = self.support
         x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
+        sig = _unit(x, a, b)
         numpy.asarray(jacobian)[:] = (b - a) * sig * (1.0 - sig)
         return self
 
@@ -77,7 +78,7 @@ class LogitTransform:
         """
         a, b = self.support
         x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
+        sig = _unit(x, a, b)
         numpy.asarray(gradient)[:] = 1.0 - 2.0 * sig
         return self
 
@@ -87,7 +88,7 @@ class LogitTransform:
         gradient <- gradient*(b-a)*sig*(1-sig) + (1 - 2*sig), in place
         """
         a, b = self.support
-        sig = (numpy.asarray(theta) - a) / (b - a)
+        sig = _unit(numpy.asarray(theta), a, b)
         g = numpy.asarray(gradient)
         g[:] = g * (b - a) * sig * (1.0 - sig) + 1.0 - 2.0 * sig
         return self
@@ -97,6 +98,13 @@ class LogitTransform:
     support = None
     idx_begin = None  # unused on cpu; native's caller already hands me a pre-sliced view
     idx_end = None
+
+
+# the position of {x} within (a, b), kept off the bounds, so that a sample on a bound has a
+# finite logit and log-jacobian
+def _unit(x, a, b):
+    eps = numpy.finfo(numpy.asarray(x).dtype).eps
+    return numpy.clip((x - a) / (b - a), eps, 1 - eps)
 
 
 # end of file
