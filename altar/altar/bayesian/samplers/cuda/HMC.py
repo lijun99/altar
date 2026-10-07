@@ -112,7 +112,7 @@ class HMC:
         self._potential_and_gradients(annealer)
 
         # the states the chains keep as they walk, into {step}, when pooling
-        pool = getattr(annealer.worker, "pool", None)
+        pool = getattr(getattr(annealer, "worker", None), "pool", None)
         keep = lambda offset: self._copy_accepted_to_step(step, offset=offset)
         if pool is not None:
             pool.begin()
