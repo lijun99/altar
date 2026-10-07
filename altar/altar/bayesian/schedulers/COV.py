@@ -91,8 +91,11 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
         # get the new temperature and store it
         β = self.update_temperature(step=step)
+        # the samples the weights belong to, for the proposal covariance: those before resampling
+        step.weighted_theta = None
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
+            step.weighted_theta = getattr(step, "theta_sampling", step.theta).clone()
             θ, (prior, data, posterior), θ_sampling, jacobian = self.resampling(step=step)
             # update the step after the resampling
             step.prior.copy(prior)

@@ -59,6 +59,11 @@ class AnnealingMethod:
         """
         # reset my iteration count
         self.iteration = 0
+        # a pool of the states the chains keep needs a method that keeps them
+        if getattr(annealer, "pool", 1) > 1 and not self.pools:
+            raise NotImplementedError(
+                f"controller.pool = {annealer.pool} needs the gpu and a single task "
+                f"(job.gpus = 1, job.tasks = 1, job.hosts = 1)")
         # all done
         return self
 
@@ -186,6 +191,10 @@ class AnnealingMethod:
         annealer.archiver.final(step=step, iteration=None, psets=annealer.model.psets)
         # all done
         return self
+
+
+    # whether i keep a pool of the states of the chains
+    pools = False
 
 
     # meta-methods

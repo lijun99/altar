@@ -10,11 +10,15 @@
 
 from collections import namedtuple
 
+import journal
+import numpy
+
 import altar
 import altar.cuda
 from altar.cuda import cublas, libcudaaltar
 
 from altar.bayesian.states.cuda.HMCState import HMCState
+from altar.bayesian.statistics import effective_size, shrunk_correlation, weighted_variance
 
 # acceptance statistics container, the same shape {Metropolis}/{HMC} (cpu) use; hmc has no
 # notion of an invalid (out of support) candidate, so the middle field is always 0
@@ -104,20 +108,37 @@ class HMC:
 
         self._set_step_size(self._clamp_step_size(self.step_size))
 
+        # the mass matrix, from the population
+        self._set_mass(step)
         # the chains, and their potential and its gradient, at the start of the walk
         self._copy_state_from_step(step)
         self._potential_and_gradients(annealer)
 
+        # the states the chains keep as they walk, into {step}, when pooling
+        pool = getattr(getattr(annealer, "worker", None), "pool", None)
+        keep = lambda offset: self._copy_accepted_to_step(step, offset=offset)
+        if pool is not None:
+            pool.begin()
+
         accepted_total = 0
         dispatcher = annealer.dispatcher
-        for _ in range(self.steps):
+        for trajectory in range(self.steps):
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+            self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
+            # p ~ N(0, M): p = L^-T z, for M^-1 = L L^T
+            if self._factor is not None:
+                state.momentum.copy(self._scale(self._inverse_factor))
             accepted = self._trajectory(annealer, self.leapfrog_steps)
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
-        self._copy_accepted_to_step(step)
+            if pool is not None:
+                pool.advance(keep)
+        if pool is not None:
+            pool.end(keep)
+        else:
+            self._copy_accepted_to_step(step)
 
         attempts = state.samples * self.steps
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
@@ -193,7 +214,7 @@ class HMC:
 
         # the energy at the start
         kinetic_old.zero()
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_old.grid)
+        self._kinetic(kinetic_old)
         h_old.copy(state.U)
         cublas.axpy(alpha=1.0, x=kinetic_old, y=h_old, batch=state.samples)
 
@@ -210,7 +231,7 @@ class HMC:
 
         # the energy at the proposal
         kinetic_new.zero()
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, kinetic_new.grid)
+        self._kinetic(kinetic_new)
         h_new.copy(state.U)
         cublas.axpy(alpha=1.0, x=kinetic_new, y=h_new, batch=state.samples)
 
@@ -247,25 +268,142 @@ class HMC:
                 state.log_jacobian.grid, old_state.log_jacobian.grid, mask_dev.grid)
 
         # the total energy of the final state
-        leapfrog.cudaLeapfrog_kineticEnergy(state.momentum.grid, state.H.grid)
+        self._kinetic(state.H)
         cublas.axpy(alpha=1.0, x=state.U, y=state.H, batch=state.samples)
 
         return accepted
 
     def _update_position(self, annealer):
+        # the velocity, M^-1 p
+        velocity = self._scale(self._inverse_mass)
         if self.proposal_state.reparameterization:
             libcudaaltar.leapfrog.cudaLeapfrog_updatePosition(
                 self.proposal_state.phi.grid,
-                self.proposal_state.momentum.grid,
+                velocity.grid,
                 self.proposal_state.eta
             )
             self._transform_phi_to_theta(annealer)
             return
         libcudaaltar.leapfrog.cudaLeapfrog_updatePosition(
             self.proposal_state.theta.grid,
-            self.proposal_state.momentum.grid,
+            velocity.grid,
             self.proposal_state.eta
         )
+
+    def _kinetic(self, energy):
+        """
+        Fill {energy} with p^T M^-1 p / 2 = |L^T p|^2 / 2 of each chain
+        """
+        libcudaaltar.leapfrog.cudaLeapfrog_kineticEnergy(self._scale(self._factor).grid, energy.grid)
+
+    def _scale(self, factor):
+        """
+        The momenta times {factor}: cell by cell for a diagonal mass, whose factors are
+        broadcast to the chains; as rows, p^T {factor}, for a dense one; themselves for a unit mass
+        """
+        momentum = self.proposal_state.momentum
+        if factor is None:
+            return momentum
+        if factor.shape == momentum.shape:
+            self._scaled.copy(momentum)
+            self._scaled *= factor
+            return self._scaled
+        # column-major: scaled^T = factor^T momentum^T; the row-major factor read column-major
+        # is its transpose already
+        samples, parameters = momentum.shape
+        gemm = cublas.dgemm if self.dtype == "float64" else cublas.sgemm
+        gemm(altar.cuda.cublas_handle(), cublas.Operation.N, cublas.Operation.N,
+             parameters, samples, parameters, 1.0,
+             factor.grid, parameters, momentum.grid, parameters, 0.0, self._scaled.grid, parameters)
+        return self._scaled
+
+    def _set_mass(self, step):
+        """
+        The mass matrix at the start of the walk, M^-1 = L L^T, from the population in sampling
+        space: its weighted samples before resampling, when the scheduler kept them; diagonal,
+        from the variance of each parameter, or dense, from their covariance; a unit mass
+        unless {adapt_mass_matrix}
+        """
+        self._inverse_mass = self._factor = self._inverse_factor = None
+        if not self.adapt_mass_matrix:
+            return
+        weighted = getattr(step, "weighted_theta", None)
+        weights = getattr(step, "weights", None)
+        if weighted is not None and weights is not None:
+            θ, w = numpy.asarray(weighted), numpy.asarray(weights)
+        else:
+            θ = numpy.asarray(step.theta_sampling if self.proposal_state.reparameterization else step.theta)
+            w = numpy.ones(θ.shape[0])
+        if self.mass_matrix == "dense":
+            self._estimate_dense_mass(θ, w)
+            return
+        self._estimate_mass(θ, w)
+        return
+
+    def _update_mass(self, trajectory):
+        """
+        Re-estimate a diagonal mass matrix from the chains themselves, every
+        {mass_update_interval} trajectories of the walk, as {altar.bayesian.samplers.native.HMC}
+        does; a dense one stays, since the chains are usually fewer than the parameters
+        """
+        interval = self.mass_update_interval
+        if self._factor is None or self._dense or not interval or trajectory == 0 or trajectory % interval:
+            return
+        state = self.proposal_state
+        θ = numpy.asarray(state.phi if state.reparameterization else state.theta)
+        self._estimate_mass(θ, numpy.ones(θ.shape[0]))
+        return
+
+    def _estimate_mass(self, θ, w):
+        """
+        The diagonal mass matrix from the variance of the rows of {θ}, with weights {w}
+        """
+        state = self.proposal_state
+        var = numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance)
+        # broadcast to the chains, for the cell by cell products on the device
+        def rows(v):
+            return altar.cuda.matrix(source=numpy.tile(v, (state.samples, 1)), dtype=self.dtype)
+        self._inverse_mass, self._factor, self._inverse_factor = \
+            rows(var), rows(numpy.sqrt(var)), rows(1 / numpy.sqrt(var))
+        self._dense = False
+        self._allocate_scaled()
+        return
+
+    def _estimate_dense_mass(self, θ, w):
+        """
+        The dense mass matrix from the covariance of the rows of {θ}, with weights {w}, its
+        correlation shrunk toward the identity; diagonal, with fewer than {dense_mass_chains}
+        chains per parameter: the kept states of a pool add rows but not independent chains,
+        and a covariance from too few chains biases the walks
+        """
+        samples, parameters = θ.shape
+        chains = self.proposal_state.samples
+        size = effective_size(w)
+        if chains < self.dense_mass_chains * parameters or size <= parameters:
+            if not self._dense_refused:
+                journal.warning("altar.hmc").log(
+                    f"{chains} chains are too few for a dense mass matrix of {parameters} "
+                    f"parameters, which needs {self.dense_mass_chains * parameters}; "
+                    f"using a diagonal one")
+                self._dense_refused = True
+            return self._estimate_mass(θ, w)
+        sd = numpy.sqrt(numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance))
+        r, λ = shrunk_correlation(θ, w, self.mass_shrinkage)
+        covariance = r * numpy.outer(sd, sd)
+        factor = numpy.linalg.cholesky(covariance)
+        def dense(m):
+            return altar.cuda.matrix(source=numpy.ascontiguousarray(m), dtype=self.dtype)
+        self._inverse_mass, self._factor, self._inverse_factor = \
+            dense(covariance), dense(factor), dense(numpy.linalg.inv(factor))
+        self._dense = True
+        self._allocate_scaled()
+        self.info.log(f"hmc: dense mass matrix from {size:.0f} effective samples, shrinkage {λ:.3f}")
+        return
+
+    def _allocate_scaled(self):
+        if self._scaled is None:
+            self._scaled = altar.cuda.matrix(shape=self.proposal_state.momentum.shape, dtype=self.dtype)
+        return
 
     def _transform_phi_to_theta(self, annealer):
         model = annealer.model
@@ -299,30 +437,36 @@ class HMC:
         return self._set_step_size(self._clamp_step_size(eta))
 
     def _copy_state_from_step(self, step):
-        self.proposal_state.theta.copy_from_host(source=step.theta)
+        # the chains start from the first rows of the population
+        rows = slice(0, self.proposal_state.samples)
+        self.proposal_state.theta.copy_from_host(source=numpy.asarray(step.theta)[rows])
         # {Jacobian}/{log_jacobian} are recomputed at the start of the walk; no copy in
         if self.proposal_state.reparameterization:
             if getattr(step, 'theta_sampling', None) is not None:
-                self.proposal_state.phi.copy_from_host(source=step.theta_sampling)
+                self.proposal_state.phi.copy_from_host(source=numpy.asarray(step.theta_sampling)[rows])
 
-    def _copy_accepted_to_step(self, step):
-        self.proposal_state.theta.copy_to_host(target=step.theta)
+    def _copy_accepted_to_step(self, step, offset=0):
+        # into the rows of the population from {offset} on
+        rows = slice(offset, offset + self.proposal_state.samples)
+        def put(source, target):
+            source.copy_to_host(target=numpy.asarray(target)[rows])
+        put(self.proposal_state.theta, step.theta)
         if getattr(step, "momentum", None) is not None:
-            self.proposal_state.momentum.copy_to_host(target=step.momentum)
+            put(self.proposal_state.momentum, step.momentum)
         if self.proposal_state.reparameterization and getattr(step, 'theta_sampling', None) is not None:
-            self.proposal_state.phi.copy_to_host(target=step.theta_sampling)
+            put(self.proposal_state.phi, step.theta_sampling)
             if getattr(step, 'jacobian', None) is not None:
-                self.proposal_state.log_jacobian.copy_to_host(target=step.jacobian)
+                put(self.proposal_state.log_jacobian, step.jacobian)
         for attr in ("prior", "data", "posterior", "U", "H"):
             target = getattr(step, attr, None)
             source = getattr(self.proposal_state, attr, None)
             if target is not None and source is not None:
-                source.copy_to_host(target=target)
+                put(source, target)
         for grad_attr in ("prior_gradient", "data_gradient", "U_gradient"):
             target = getattr(step, grad_attr, None)
             source = getattr(self.proposal_state, grad_attr, None)
             if target is not None and source is not None:
-                source.copy_to_host(target=target)
+                put(source, target)
 
 
     # private data; the component-typed attributes and scalar traits are set by the shim's
@@ -337,6 +481,19 @@ class HMC:
     _backup = None          # the state at the start of a trajectory, for the rejected chains
     _scratch = None         # the energies of a trajectory
     _mask = None            # the accepted chains of a trajectory
+    adapt_mass_matrix = True # whether to estimate a mass matrix from the population
+    mass_matrix = "diagonal" # or "dense"
+    mass_shrinkage = 0      # of a dense mass toward its diagonal; none for automatic
+    mass_update_interval = 20 # trajectories between estimates of the mass matrix in a walk
+    min_variance = 1e-8     # the bounds of the variances of the mass matrix
+    max_variance = 1e8
+    _inverse_mass = None    # M^-1 = L L^T, L and L^-1: broadcast to the chains for a diagonal
+    _factor = None          # mass, (parameters x parameters) for a dense one; none for a unit
+    _inverse_factor = None  # mass
+    _dense = False          # whether the mass matrix is dense
+    _dense_refused = False  # whether i warned that the chains are too few for a dense mass
+    dense_mass_chains = 2   # the chains per parameter a dense mass needs
+    _scaled = None          # scratch, for the scaled momenta
     samples = None          # the number of chains, for {_allocate}
     dtype = None            # the gpu precision, for {_allocate}
     info = None             # the application info channel

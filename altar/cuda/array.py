@@ -222,8 +222,16 @@ class Array:
     # in place arithmetic, for the handful of call sites that scale/accumulate directly
     # (e.g. {sigma_chol *= scaling}, {posterior += beta*data})
     # (on the device, by pyre's grid arithmetic, for a number or a managed grid like me)
-    def __imul__(self, scalar):
-        self._grid *= scalar
+    def __imul__(self, other):
+        source = self._peer(other)
+        if source is not None:
+            self._grid *= source
+            return self
+        if numpy.isscalar(other):
+            self._grid *= other
+            return self
+        source = other._grid if isinstance(other, Array) else other
+        numpy.asarray(self._grid)[...] *= numpy.asarray(source)
         return self
 
 

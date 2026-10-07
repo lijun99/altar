@@ -8,6 +8,8 @@
 # all rights reserved
 #
 
+# externals
+import types
 # the package
 import altar
 # my protocol
@@ -167,6 +169,11 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         Compute Σ from the importance-weighted auto-correlation of {step.theta}
         """
         weights = self._get_weights(step=step, annealer=annealer)
+        # the weights belong to the samples before resampling, when the scheduler kept them
+        weighted = getattr(step, "weighted_theta", None)
+        if weighted is not None:
+            samples, parameters = weighted.shape
+            step = types.SimpleNamespace(theta=weighted, samples=samples, parameters=parameters)
         return self.compute_covariance(step=step, w=weights)
 
 
