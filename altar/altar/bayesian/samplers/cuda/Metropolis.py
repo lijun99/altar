@@ -81,7 +81,7 @@ class Metropolis:
         statistics = self.walk_chains(annealer=annealer, step=self.gstep)
 
         # finish the sampling pdf, copy gpu step back, unless the walk kept its states already
-        if getattr(annealer.worker, "pool", None) is None:
+        if getattr(getattr(annealer, "worker", None), "pool", None) is None:
             self.finish_sampling_pdf(step=step)
 
         # notify we are done sampling the posterior
@@ -244,7 +244,7 @@ class Metropolis:
         mcsteps = 0
 
         # the states the chains keep as they walk, into the population, when pooling
-        pool = getattr(annealer.worker, "pool", None)
+        pool = getattr(getattr(annealer, "worker", None), "pool", None)
         population = self._population
         def keep(offset):
             # with the physical posterior, not the one with the log-jacobian the walk carries
