@@ -443,7 +443,7 @@ class cudaBayesian(Bayesian, family="altar.models.cudabayesian"):
         try:
             # get the path to the file
             file = ifs[filename]
-        except not ifs.NotFoundError:
+        except ifs.NotFoundError:
             channel.log(f"no file '{filename}' found in '{ifs.path()}'")
             raise
         else:

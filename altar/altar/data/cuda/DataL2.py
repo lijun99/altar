@@ -159,7 +159,7 @@ class DataL2:
         channel = self.error
         try:
             file = ifs[filename]
-        except not ifs.NotFoundError:
+        except ifs.NotFoundError:
             channel.log(f"no file '{filename}' found in '{ifs.path()}'")
             raise
         else:
