@@ -368,7 +368,7 @@ class HMC:
                           f"matrix of {parameters} parameters; using a diagonal one")
             return self._estimate_mass(θ, w)
         sd = numpy.sqrt(numpy.clip(weighted_variance(θ, w), self.min_variance, self.max_variance))
-        r, λ = shrunk_correlation(θ, w)
+        r, λ = shrunk_correlation(θ, w, self.mass_shrinkage)
         covariance = r * numpy.outer(sd, sd)
         factor = numpy.linalg.cholesky(covariance)
         def dense(m):
@@ -460,6 +460,7 @@ class HMC:
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
     adapt_mass_matrix = True # whether to estimate a mass matrix from the population
     mass_matrix = "diagonal" # or "dense"
+    mass_shrinkage = None   # of a dense mass toward its diagonal; none for automatic
     mass_update_interval = 20 # trajectories between estimates of the mass matrix in a walk
     min_variance = 1e-8     # the bounds of the variances of the mass matrix
     max_variance = 1e8

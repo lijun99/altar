@@ -55,6 +55,11 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         "the shape of the mass matrix: diagonal, or dense, from the population's covariance " \
         "(cuda only; needs more effective samples than parameters, e.g. from a pool)"
 
+    mass_shrinkage = altar.properties.float(default=None)
+    mass_shrinkage.doc = \
+        "the shrinkage of the correlation of a dense mass matrix toward the identity; " \
+        "none for the intensity of Schafer & Strimmer"
+
     mass_update_interval = altar.properties.int(default=20)
     mass_update_interval.doc = "how often, in trajectories, to re-estimate the mass matrix"
 
@@ -80,6 +85,7 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         self._impl.stepsizer = self.stepsizer
         self._impl.adapt_mass_matrix = self.adapt_mass_matrix
         self._impl.mass_matrix = self.mass_matrix
+        self._impl.mass_shrinkage = self.mass_shrinkage
         self._impl.mass_update_interval = self.mass_update_interval
         self._impl.min_variance = self.min_variance
         self._impl.max_variance = self.max_variance
