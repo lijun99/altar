@@ -460,7 +460,7 @@ class HMC:
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
     adapt_mass_matrix = True # whether to estimate a mass matrix from the population
     mass_matrix = "diagonal" # or "dense"
-    mass_shrinkage = None   # of a dense mass toward its diagonal; none for automatic
+    mass_shrinkage = 0      # of a dense mass toward its diagonal; none for automatic
     mass_update_interval = 20 # trajectories between estimates of the mass matrix in a walk
     min_variance = 1e-8     # the bounds of the variances of the mass matrix
     max_variance = 1e8
