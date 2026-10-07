@@ -77,15 +77,17 @@ class CUDAAnnealing(AnnealingMethod):
         # population, the states each chain keeps, the gpu one the chains
         model = annealer.model
         chains = model.job.chains
-        self.pool = Pool(size=annealer.pool, interval=annealer.pool_interval, chains=chains)
+        # no pool keeps the chains' final states only, as without pooling
+        size = annealer.pool
+        self.pool = Pool(size=size, interval=annealer.pool_interval, chains=chains) if size > 1 else None
         reparameterized = getattr(model, 'has_reparametrization', False)
-        self.step = self.CoolingStep.alloc(samples=chains * self.pool.size,
+        self.step = self.CoolingStep.alloc(samples=chains * size,
             parameters=model.parameters, has_reparametrization=reparameterized)
         self.gstep = self.cudaCoolingStep.start(annealer=annealer)
 
         # draw the initial population at once, so that preset samples don't repeat
         gstep = self.gstep
-        population = gstep if self.pool.size == 1 else self.cudaCoolingStep.alloc(
+        population = gstep if self.pool is None else self.cudaCoolingStep.alloc(
             samples=self.step.samples, parameters=model.parameters,
             dtype=model.job.gpuprecision, has_reparametrization=reparameterized)
         model.initialize_sample(step=population, batch=population.samples)
@@ -108,6 +110,6 @@ class CUDAAnnealing(AnnealingMethod):
 
     device = None
     gstep = None
-    pool = None # the states the chains keep while they walk
+    pool = None # the states the chains keep while they walk; none without pooling
 
 # end of file
