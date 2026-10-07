@@ -11,9 +11,9 @@
 # the package
 import altar
 
-# access to the CDM source
-from .Source import Source as source
-# and the layout of the input file
+# the pure python CDM source
+from .libcdm import CDM as source
+# and the layout of the observation geometry file
 from .Data import Data as data
 
 # model foundry

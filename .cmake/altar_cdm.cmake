@@ -30,56 +30,7 @@ function(altar_cdm_buildPackage)
 endfunction(altar_cdm_buildPackage)
 
 
-# buld the cdm libraries
-function(altar_cdm_buildLibrary)
-  # the libcdm target
-  add_library(libcdm SHARED)
-  # adjust the name
-  set_target_properties(
-    libcdm PROPERTIES
-    LIBRARY_OUTPUT_NAME cdm
-    )
-  # set the include directories
-  target_include_directories(
-    libcdm PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
-    ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRE_INCLUDE_DIRS}
-    )
-  # set the link directories
-  target_link_directories(
-    libcdm PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
-  # add the dependencies
-  target_link_libraries(
-    libcdm PRIVATE
-    ${GSL_LIBRARIES} journal
-    )
-  # add the sources
-  target_sources(
-    libcdm PRIVATE
-    lib/libcdm/cdm.cc
-    lib/libcdm/version.cc
-    lib/libcdm/Source.cc
-    )
-
-  # stage the cdm headers
-  altar_stageHeaders(lib/libcdm altar/models/cdm)
-
-  # install the library
-  install(
-    TARGETS libcdm
-    LIBRARY DESTINATION lib
-    )
-
-  # all done
-endfunction(altar_cdm_buildLibrary)
-
-
-# build the cdm extension module
+# build the cdm extension module, with the forward model compiled in
 function(altar_cdm_buildModule)
   # cdm
   Python_add_library(cdmmodule MODULE)
@@ -94,29 +45,14 @@ function(altar_cdm_buildModule)
     cdmmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
     ${GSL_INCLUDE_DIRS}
-    ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
-  # set the link directories
-  target_link_directories(
-    cdmmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
   # set the libraries to link against
-  target_link_libraries(cdmmodule PUBLIC libcdm libaltar journal)
+  target_link_libraries(cdmmodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
   # add the sources
   target_sources(cdmmodule PRIVATE
+    lib/libcdm/cdm.cc
     ext/cdm/cdm.cc
-    ext/cdm/metadata.cc
-    ext/cdm/exceptions.cc
-    ext/cdm/source.cc
-    )
-
-  # install the capsule
-  install(
-    FILES ext/cdm/capsules.h
-    DESTINATION ${ALTAR_DEST_INCLUDE}/altar/models/cdm
     )
 
   # install the cdm extension

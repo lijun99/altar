@@ -3,114 +3,86 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 #
 
 
+# externals
+import numpy
+# the package
+import altar
 # the pure python implementation of the CDM source
-from .Source import Source as source
+from .libcdm import CDM
+
+
+# the names of the source parameters, in the order of {CDM.layout}
+NAMES = ("X0", "Y0", "depth", "opening", "ax", "ay", "az", "omegaX", "omegaY", "omegaZ")
 
 
 # declaration
 class Native:
     """
-    A strategy for computing the data log likelihood that is written in pure python
+    The pure python strategy: one sample at a time, through {libcdm}; slow, but a reference
     """
 
-    # interface
-    def initialize(self, **kwds):
+
+    def initialize(self, model):
         """
-        Initialize the strategy
+        Unpack the observation geometry
         """
-        # nothing to do
-        return self
-
-
-    def data_likelihood(self, model, step):
-        """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
-        """
-        # get the norm
-        norm = model.norm
-        # grab the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # the observed displacements
-        displacements = model.d
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the storage for the data likelihoods
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # get the parameter sets
-        psets = model.psets
-
-        # get the offsets of the various parameter sets
-        xIdx = model.xIdx
-        yIdx = model.yIdx
-        dIdx = model.dIdx
-        openingIdx = model.openingIdx
-        aXIdx = model.aXIdx
-        aYIdx = model.aYIdx
-        aZIdx = model.aZIdx
-        omegaXIdx = model.omegaXIdx
-        omegaYIdx = model.omegaYIdx
-        omegaZIdx = model.omegaZIdx
-        offsetIdx = model.offsetIdx
-
-        # get the observations
-        los = model.los
-        oid = model.oid
-        locations = model.points
-        observations = model.observations
-
-        # for each sample in the sample set
-        for sample in range(samples):
-            # extract the parameters
-            parameters = θ.getRow(sample)
-            # get the location of the source
-            x = parameters[xIdx]
-            y = parameters[yIdx]
-            # its depth
-            d = parameters[dIdx]
-            # and its opening
-            opening = parameters[openingIdx]
-
-            # get the semi-axis information
-            aX = parameters[aXIdx]
-            aY = parameters[aYIdx]
-            aZ = parameters[aZIdx]
-            omegaX = parameters[omegaXIdx]
-            omegaY = parameters[omegaYIdx]
-            omegaZ = parameters[omegaZIdx]
-
-            # make a source using the sample parameters
-            cdm = source(x=x, y=y, d=d, opening=opening,
-                         ax=aX, ay=aY, az=aZ, omegaX=omegaX, omegaY=omegaY, omegaZ=omegaZ,
-                         v=model.nu)
-            # compute the expected displacement
-            u = cdm.displacements(locations=locations, los=los)
-
-            # subtract the observed displacements
-            u -= displacements
-            # adjust using the offset
-            for obs in range(observations):
-                # appropriate for the corresponding dataset
-                u[obs] -= parameters[offsetIdx + oid[obs]]
-
-            # compute the norm of the displacements
-            nrm = norm.eval(v=u, sigma_inv=cd_inv)
-            # normalize and store it as the data log likelihood
-            dataLLK[sample] = normalization - nrm**2 /2
-
+        self.model = model
+        self.stations = model.stations
         # all done
         return self
+
+
+    def forward_model_batched(self, theta, prediction, batch):
+        """
+        Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
+        """
+        stations = self.stations
+        for sample in range(batch):
+            parameters = numpy.asarray(theta.getRow(sample).ndarray())
+            ue, un, uv = CDM(X=stations[:, 0], Y=stations[:, 1], nu=self.model.nu,
+                             **self.source(parameters))
+            u = ue*stations[:, 2] + un*stations[:, 3] + uv*stations[:, 4]
+            # less the dataset offsets
+            shifted = stations[:, 5] >= 0
+            u[shifted] -= parameters[stations[shifted, 5].astype(int)]
+            prediction.setRow(sample, self.model.io.toGsl(u))
+        # all done
+        return self
+
+
+    def verify(self, theta, mask, batch):
+        """
+        Flag in {mask} the first {batch} samples of {theta} whose source reaches above the free
+        surface
+        """
+        for sample in range(batch):
+            parameters = numpy.asarray(theta.getRow(sample).ndarray())
+            try:
+                CDM(X=numpy.zeros(1), Y=numpy.zeros(1), nu=self.model.nu,
+                    **self.source(parameters))
+            except ValueError:
+                mask[sample] = 1
+        # all done
+        return self
+
+
+    # implementation details
+    def source(self, parameters):
+        """
+        The source parameters of a sample, by name
+        """
+        return dict(zip(NAMES, (parameters[column] for column in self.model.layout)))
+
+
+    # private data
+    model = None
+    stations = None
 
 
 # end of file

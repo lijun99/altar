@@ -1,38 +1,48 @@
 ;
 ; michael a.g. aïvázis
-; orthologue
-; (c) 1998-2021 all rights reserved
 ;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; generate the input files first, in {synthetic}:
+;     cd synthetic && python3 cdm.py
+; then sample with
+;     cdm --config=cdm.pfg
 
 cdm:
-    ; for running with MPI
-    ; shell = mpi.mpirun
+    ; shell
+    ; shell = mpi.shells.mpirun ; for running with mpi
 
-    controller:
-        ; saving the results of the calculation
-        archiver:
-            theta = theta.asc
-            sigma = sigma.asc
-            llk = posterior.asc
+    controller = altar.bayesian.catmip
+    controller.archiver = altar.bayesian.h5recorder
+    controller.archiver.output_dir = results
+    ; no covariance conditioning: its eigenvalue floor swamps the small-scale parameters
+    ; (offsets) with the spread of the large-scale ones (locations, axes)
+    controller.scheduler.check_positive_definiteness = False
+    controller.sampler.proposal.check_positive_definiteness = False
 
     ; job layout
     job:
-        hosts = 1       ; number of MPI hosts
         tasks = 1       ; number of tasks per host
-        gpus = 0        ; number of gpus per task
+        gpus = 1        ; number of gpus per task
         chains = 2**12  ; number of chains per task
         steps = 20      ; the length of each chain
 
-    ; event handlers
-    monitors:
-       prof = altar.bayesian.profiler
-
     ; model configuration
     model:
-        ; the cdm engine: native or fast
+        case = synthetic
+        ; the cpu engine: native (python) or fast (c++)
         mode = fast
 
+        ; the observed LOS displacements, from two tracks
+        dataobs:
+            observations = 338
+            data_file = data.txt
+            cd_file = cd.txt
+
         ; parameter sets
+        psets_list = [location, depth, opening, a, omega, offsets]
         psets:
             location = contiguous
             depth = contiguous
@@ -43,57 +53,35 @@ cdm:
 
             location:
                 count = 2
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (-5000, 5000)
-                prior:
-                    support = (-5000, 5000)
+                prior.support = (-3000, 3000)
             depth:
                 count = 1
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (2000, 4000)
-                prior:
-                    support = (2000, 4000)
+                prior.support = (1000, 6000)
+            ; in m
             opening:
                 count = 1
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (0, 1)
-                prior:
-                    support = (0, 1)
+                prior.support = (0, 10)
+            ; the semi-axes, in m
             a:
                 count = 3
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (0, 1)
-                prior:
-                    support = (0, 1)
+                prior.support = (0, 2000)
+            ; the rotations about the x, y, z axes, in degrees
             omega:
                 count = 3
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (0, 45)
-                prior:
-                    support = (0, 45)
+                prior.support = (-45, 45)
             offsets:
                 count = 2
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (-0.1, 0.1)
-                prior:
-                    support = (-0.1, 0.1)
+                prior.support = (-0.1, 0.1)
 
 
 ; for parallel runs
-mpi.shells.mpirun # cdm.shell:
-    hostfile = localhost
+mpi.shells.mpirun # altar.plexus.shell:
     extra = -mca btl self,tcp
 
 ; end of file

@@ -45,50 +45,47 @@ mdv = numpy.array([ 1.799845e-06,  1.844885e-06,  1.854042e-06,  1.863249e-06,
                     1.872507e-06,  1.881815e-06,  7.624726e-06,  7.706569e-06,
                     7.578237e-06,  2.489978e-06,  1.996341e-06,  1.909694e-06])
 
-def main(X, Y, X0, Y0, depth, omegaX, omegaY, omegaZ, ax, ay, az, opening, nu, verbose=False):
+def compare(name, de, dn, dv, tolerance=1e-6):
     """
-    Test CDM with test input parameters
+    Compare the displacements against the matlab reference; return the number of mismatches
+    """
+    failures = 0
+    for m, u, label in ((mde, de, "de"), (mdn, dn, "dn"), (mdv, dv, "dv")):
+        error = numpy.abs((numpy.asarray(u) - m) / m)
+        if error.max() > tolerance:
+            print(f"{name}: {label} differs from matlab by up to {error.max():.2e}")
+            failures += 1
+    return failures
+
+
+def main(X0, Y0, depth, omegaX, omegaY, omegaZ, ax, ay, az, opening, nu, verbose=False):
+    """
+    Test the python and c++ implementations of CDM against the matlab output
     X0, Y0, depth: define the position of the dislocation
     omegaX, omegaY, omegaZ: define the orientation (clockwise rotations) of the dislocation
     ax, ay, az: define the semi-axes  of the dislocation in the "body fixed" coordinates
-    length of the tensile component of the Burgers Vector (length of the dislocation)
+    opening: the tensile component of the Burgers vector
     """
+    # the python implementation
+    de, dn, dv = CDM(X=X, Y=Y, X0=X0, Y0=Y0, depth=depth,
+                     omegaX=omegaX, omegaY=omegaY, omegaZ=omegaZ,
+                     ax=ax, ay=ay, az=az, opening=opening, nu=nu)
+    failures = compare("libcdm.py", de, dn, dv)
 
-    if verbose:
-        print("X = ", X)
-        print("Y = ", Y)
-        print("X0, Y0, depth = ", X0, Y0, depth)
-        print("omegaX, omegaY, omegaZ = ", omegaX, omegaY, omegaZ)
-        print("ax, ay, az = ", ax, ay, az)
-        print("opening = ", opening)
-        print("nu = ", nu)
+    # the c++ implementation, if it was built
+    try:
+        from altar.models.cdm.ext import libcdm
+    except ImportError:
+        libcdm = None
+    if libcdm is not None:
+        u = numpy.array(libcdm.enu(
+            (X0, Y0, depth, opening, ax, ay, az, omegaX, omegaY, omegaZ), list(X), list(Y), nu))
+        failures += compare("libcdm", u[:, 0], u[:, 1], u[:, 2])
+    elif verbose:
+        print("the c++ extension is not available")
 
-    # Call CDM with test parameters; return displacements (de, dn, dv) and error status for
-    de, dn, dv, ierr = CDM(X, Y, X0, Y0, depth, omegaX, omegaY, omegaZ, ax, ay, az, opening, nu)
+    return 1 if failures else 0
 
-    # compare output against the matlab generated output
-    # open the matlab generated file
-    if verbose:
-        print("Differences from reference")
-        print(" X      Y     de            dn            dv")
-
-    for idx in range(len(X)):
-        m = [mde[idx], mdn[idx], mdv[idx]]
-        if verbose:
-            print("{0: 5.2f}  {1: 5.2f}  {2:12.6e}  {3:12.6e}  {4:12.6e}".format(
-                X[idx], Y[idx], abs((m[0]-de[idx])/m[0]), abs((m[1]-dn[idx])/m[1]),
-                abs((m[2]-dv[idx])/m[2])
-            ))
-
-        if( (abs((m[0] - de[idx])/m[0]) > 1.e-6) or
-            (abs((m[1] - dn[idx])/m[1]) > 1.e-6) or
-            (abs((m[2] - dv[idx])/m[2]) > 1.e-6)
-          ):
-            # if there are any differences print them otherwise be silent
-            print(idx, X[idx], Y[idx], m[0]-de[idx], m[1]-dn[idx], m[2]-dv[idx])
-            break
-
-    return 0
 
 if __name__ == "__main__":
 
@@ -117,7 +114,7 @@ if __name__ == "__main__":
     nu = 0.25
 
     # run the test
-    status = main(X, Y, X0, Y0, depth, omegaX, omegaY, omegaZ, ax, ay, az, opening, nu,
+    status = main(X0, Y0, depth, omegaX, omegaY, omegaZ, ax, ay, az, opening, nu,
                   verbose=verbose)
 
     # communicate status
