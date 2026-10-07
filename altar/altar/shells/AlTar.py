@@ -76,6 +76,23 @@ class AlTar(altar.plexus, family="altar.shells.altar", namespace="altar"):
         return self
 
     # pyre framework hooks
+    # machine layout adjustments for MPI runs
+    def pyre_mpi(self):
+        """
+        Transfer my {job} settings to the MPI shell
+        """
+        # get my shell
+        shell = self.shell
+        # if the programming model is not {MPI}
+        if shell.model != "mpi":
+            # something really bad has happened
+            self.firewall.log(f"the pyre_mpi hook with model={shell.model}")
+        # transfer the job settings
+        shell.hosts = self.job.hosts
+        shell.tasks = self.job.tasks
+        # all done
+        return self
+
     # support for the help system
     def pyre_banner(self):
         """

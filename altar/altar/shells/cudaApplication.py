@@ -47,7 +47,7 @@ class cudaApplication(Application, family="altar.shells.cudaapplication"):
         # if the programming model is not {MPI}
         if shell.model != "mpi":
             # something really bad has happened
-            self.firewall.log(f"the {pyre_mpi} hook with model={shell.model}")
+            self.firewall.log(f"the pyre_mpi hook with model={shell.model}")
 
         # get my job parameters
         job = self.job
