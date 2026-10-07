@@ -9,7 +9,7 @@
 #include <gsl/gsl_matrix.h>
 #include <pybind11/pybind11.h>
 
-#include <altar/models/mogi/mogi.h>
+#include "../../lib/libmogi/mogi.h"
 
 namespace py = pybind11;
 using namespace py::literals;

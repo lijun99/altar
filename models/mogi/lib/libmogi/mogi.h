@@ -13,13 +13,6 @@
 #include <cstddef>
 #include <gsl/gsl_matrix.h>
 
-// the point source formula is shared by the cpu and cuda builds
-#if defined(__CUDACC__)
-#define ALTAR_MOGI_HD __host__ __device__
-#else
-#define ALTAR_MOGI_HD
-#endif
-
 namespace altar::models::mogi {
 
     // the columns of a {stations} matrix: location, LOS unit vector (east, north, up), and the
@@ -29,7 +22,7 @@ namespace altar::models::mogi {
     // the displacement along the LOS unit vector (nE, nN, nU) at (xObs, yObs) on the surface of
     // an elastic half space, of a point source at (xSrc, ySrc, depth) with volume change {dV}
     template <typename real_t>
-    ALTAR_MOGI_HD inline auto
+    inline auto
     los(real_t xSrc, real_t ySrc, real_t depth, real_t dV, real_t nu,
         real_t xObs, real_t yObs, real_t nE, real_t nN, real_t nU) -> real_t
     {
