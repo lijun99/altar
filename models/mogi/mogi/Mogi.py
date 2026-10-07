@@ -10,442 +10,185 @@
 
 
 # externals
-import csv
+import numpy
 # the package
 import altar
-# the encapsulation of the layout of the data in a file
+# my base class, for its {psets}/{psets_list} and {dataobs} support
+from altar.models.BayesianL2 import BayesianL2
+# the layout of the observation geometry file
 from .Data import Data as datasheet
 
 
 # declaration
-class Mogi(altar.models.bayesian, family="altar.models.mogi"):
+class Mogi(BayesianL2, family="altar.models.mogi"):
     """
     An implementation of Mogi[1958]
 
     The surface displacement calculation for a pressure point source in an elastic half space.
 
-    Currently, {mogi} is implemented as a four parameter model: x,y,depth locate the point
-    source, and {dV} provides the point source strength as the volume change. It can easily
-    become a five parameter model by including the Poisson ratio of the elastic material to the
-    list of free parameters.
+    The parameter sets are {location} (x, y), {depth}, and {source}, the volume change dV, or
+    log10(dV) with {log10_dV}; an optional {offsets} holds one shift per dataset, subtracted
+    from the predicted LOS displacements of its observations. The observed LOS displacements
+    and their covariance are read by {dataobs}; {geometry} lists, in the same order, where and
+    along which LOS they were observed.
     """
 
 
     # user configurable state
-    # parameters
-    psets = altar.properties.dict(schema=altar.models.parameters())
-    psets.doc = "the model parameter meta-data"
-
-    # data
-    observations = altar.properties.int()
-    observations.doc = "the number of model degrees of freedom"
-
-    # the norm to use for computing the data log likelihood
-    norm = altar.norms.norm()
-    norm.default = altar.norms.l2()
-    norm.doc = "the norm to use when computing the data log likelihood"
-
     # the name of the test case
     case = altar.properties.path(default="synthetic")
     case.doc = "the directory with the input files"
 
-    # the file based inputs
-    displacements = altar.properties.path(default="displacements.csv")
-    displacements.doc = "the name of the file with the displacements"
-
-    covariance = altar.properties.path(default="cd.txt")
-    covariance.doc = "the name of the file with the data covariance"
+    geometry = altar.properties.path(default="geometry.csv")
+    geometry.doc = "the csv file with the oid, x, y, theta, phi of each observation"
 
     # the material properties
     nu = altar.properties.float(default=.25)
     nu.doc = "the Poisson ratio"
 
+    log10_dV = altar.properties.bool(default=False)
+    log10_dV.doc = "whether the {source} parameter is log10(dV) rather than dV, in m^3"
+
     # operating strategies
     mode = altar.properties.str(default="fast")
-    mode.doc = "the implementation strategy"
+    mode.doc = "the cpu implementation strategy: native (python) or fast (c++)"
     mode.validators = altar.constraints.isMember("native", "fast")
 
-    # public data
-    parameters = 0 # adjusted during model initialization
-    strategy = None # the strategy for computing the data log likelihood
+    return_residual = altar.properties.bool(default=False)
+    return_residual.doc = "the forward model returns residual(True) or prediction(False)"
 
 
     # protocol obligations
     @altar.export
     def initialize(self, application):
         """
-        Initialize the state of the model given a {problem} specification
+        Initialize the state of the model given an {application} context
         """
-        # externals
-        from math import sin, cos
-
-        # chain up
+        # chain up; mounts my input dataspace, loads the observations and lays out my psets
         super().initialize(application=application)
-
-        # initialize my parameter sets
-        self.initialize_parameter_sets()
-        # mount the directory with my input data
-        self.ifs = self.mount_input_dataspace(pfs=application.pfs)
-
-        # load the data from the inputs into memory
-        displacements, self.cd = self.load_inputs()
-
-        # compute the normalization
-        self.normalization = self.compute_normalization()
-        # compute the inverse of the covariance matrix
-        self.cd_inv = self.compute_covariance_inverse()
-
-        # build the local representations
-        self.points = []
-        self.d = altar.vector(shape=self.observations)
-        self.los = altar.matrix(shape=(self.observations,3))
-        self.oid = []
-        # populate them
-        for obs, record in enumerate(displacements):
-            # extract the observation id
-            self.oid.append( record.oid )
-            # extract the (x,y) coordinate of the observation point
-            self.points.append( (record.x, record.y) )
-            # extract the observed displacement
-            self.d[obs] = record.d
-            # get the LOS angles
-            theta = record.theta
-            phi = record.phi
-            # form the projection vectors and store them
-            self.los[obs, 0] = sin(theta) * cos(phi)
-            self.los[obs, 1] = sin(theta) * sin(phi)
-            self.los[obs, 2] = cos(theta)
-
-        # save the parameter meta data
-        self.meta()
-
-        # pick an implementation strategy
-        # if the user has asked for CUDA support
-        if application.job.gpus > 0:
-            # attempt to
-            try:
-                # use the CUDA implementation
-                from .CUDA import CUDA as strategy
-            # if this fails
-            except ImportError:
-                # make a channel
-                channel = application.error
-                # complain
-                raise channel.log("unable to find CUDA support")
-        # if the user specified {fast} mode
-        elif self.mode == "fast":
-            # attempt to
-            try:
-                # get the fast strategy that involves a Mogi source implemented in C++
-                from .Fast import Fast as strategy
-            # if this fails
-            except ImportError:
-                # make channel
-                channel = application.error
-                # complain
-                raise channel.log("unable to find support for <fast> mode")
-        # otherwise
-        else:
-            # get the strategy implemented in pure python
-            from .Native import Native as strategy
-        # initialize it and save it
-        self.strategy = strategy().initialize(application=application, model=self)
-
-        # show me
-        # self.show(job=application.job, channel=self.info)
-
+        # load the observation geometry and find my parameters in the sample vector
+        self.stations = self.load_geometry()
+        self.layout()
+        # pick my implementation strategy
+        self._impl = self._makeImpl()
+        self._impl.initialize(model=self)
         # all done
         return self
 
 
-    @altar.export
-    def initialize_sample(self, step):
+    def forward_model_batched(self, theta, prediction, batch=None):
         """
-        Fill {step.θ} with an initial random sample from my prior distribution.
+        Fill {prediction}, shape (samples x observations), with the predicted LOS displacements
+        of each sample in {theta}
         """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # go through each parameter set
-        for pset in self.psets.values():
-            # and ask each one to {prep} the sample
-            pset.initialize_sample(theta=θ)
-        # and return
-        return self
+        batch = theta.shape[0] if batch is None else batch
+        return self._impl.forward_model_batched(theta=theta, prediction=prediction, batch=batch)
 
 
     @altar.export
-    def eval_prior(self, step):
+    def forward_problem(self, application, theta):
         """
-        Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
-        distribution
+        The predicted LOS displacements for each row of {theta}; see {altar.models.Model}
         """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # and the storage for the prior likelihoods
-        likelihood = step.prior
-        # go through each parameter set
-        for pset in self.psets.values():
-            # and ask each one to {prep} the sample
-            pset.eval_prior(theta=θ, prior=likelihood)
-        # all done
-        return self
-
-
-    @altar.export
-    def data_likelihood(self, step):
-        """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data. This is what is usually referred to as the "forward model"
-        """
-        # get my strategy
-        strategy = self.strategy
-        # deploy
-        strategy.data_likelihood(model=self, step=step)
-        # all done
-        return self
-
-
-    @altar.export
-    def verify(self, step, mask):
-        """
-        Check whether the samples in {step.theta} are consistent with the model requirements and
-        update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
-        """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # go through each parameter set
-        for pset in self.psets.values():
-            # and ask each one to verify the sample
-            pset.verify(theta=θ, mask=mask)
-        # all done; return the rejection map
-        return mask
+        θ = numpy.atleast_2d(numpy.asarray(theta, dtype=float))
+        stations = self.stations
+        dV = 10**θ[:, self.sIdx] if self.log10_dV else θ[:, self.sIdx]
+        # (samples, observations) offsets from the source
+        x = stations[None, :, 0] - θ[:, self.xIdx, None]
+        y = stations[None, :, 1] - θ[:, self.yIdx, None]
+        d = θ[:, self.dIdx, None]
+        R2 = x*x + y*y + d*d
+        C = (1 - self.nu) * dV[:, None] / (numpy.pi * R2 * numpy.sqrt(R2))
+        u = C * (x*stations[:, 2] + y*stations[:, 3] + d*stations[:, 4])
+        # less the dataset offsets
+        shifted = stations[:, 5] >= 0
+        u[:, shifted] -= θ[:, stations[shifted, 5].astype(int)]
+        return {"data": u}
 
 
     # implementation details
-    def initialize_parameter_sets(self):
+    def load_geometry(self):
         """
-        Initialize my parameter sets
+        Read the observation geometry into a (observations x 6) array of the location, the LOS
+        unit vector (east, north, up) and the column of the dataset offset (-1 for none)
         """
-        # compile the parameter layout
-        # get the parameter sets
-        psets = self.psets
-        # initialize the offset
-        offset = 0
-        # go through my parameter sets
-        for name, pset in psets.items():
-            # initialize the parameter set
-            offset += pset.initialize(model=self, offset=offset)
-        # the total number of parameters is now known, so record it
-        self.parameters = offset
+        # get the file
+        try:
+            node = self.ifs[self.geometry]
+        except self.ifs.NotFoundError:
+            channel = self.error
+            channel.log(f"missing observation geometry: no '{self.geometry}' in '{self.case}'")
+            raise
+        # read it
+        sheet = datasheet(name="geometry")
+        sheet.read(uri=node.uri)
+        records = list(sheet)
+        # it must match the observations
+        if len(records) != self.observations:
+            channel = self.error
+            channel.log(f"'{self.geometry}' has {len(records)} observations, "
+                        f"but dataobs.observations is {self.observations}")
+            raise SystemExit(1)
 
-        # record the layout of the sample vector
+        stations = numpy.empty((len(records), 6))
+        self.oid = numpy.array([record.oid for record in records], dtype=int)
+        for obs, record in enumerate(records):
+            # the LOS unit vector from the ground to the observing craft
+            stations[obs, :5] = (record.x, record.y,
+                                 numpy.sin(record.theta) * numpy.cos(record.phi),
+                                 numpy.sin(record.theta) * numpy.sin(record.phi),
+                                 numpy.cos(record.theta))
+        # filled in by {layout}, once the offsets are known
+        stations[:, 5] = -1
+        return stations
+
+
+    def layout(self):
+        """
+        Record where my parameters live in the sample vector
+        """
+        psets = self.psets
+        names = self.psets_list
+        # check the required parameter sets
+        for name, count in (("location", 2), ("depth", 1), ("source", 1)):
+            if name not in names or psets[name].count != count:
+                channel = self.error
+                channel.log(f"the mogi model needs a parameter set '{name}' with count={count}")
+                raise SystemExit(1)
         self.xIdx = psets["location"].offset
         self.yIdx = self.xIdx + 1
         self.dIdx = psets["depth"].offset
         self.sIdx = psets["source"].offset
-        self.offsetIdx = psets["offsets"].offset
-
+        # the dataset offsets are optional
+        if "offsets" in names:
+            offsets = psets["offsets"]
+            if self.oid.min() < 0 or self.oid.max() >= offsets.count:
+                channel = self.error
+                channel.log(f"oids in '{self.geometry}' must lie in [0, {offsets.count}), "
+                            f"the count of the 'offsets' parameter set")
+                raise SystemExit(1)
+            self.stations[:, 5] = offsets.offset + self.oid
         # all done
         return
 
 
-    def mount_input_dataspace(self, pfs):
+    def _makeImpl(self):
         """
-        Mount the directory with my input files
+        Build my implementation: cuda for the cuda backend, python or c++ on the cpu
         """
-        # attempt to
-        try:
-            # mount the directory with my input data
-            ifs = altar.filesystem.local(root=self.case)
-        # if it fails
-        except altar.filesystem.MountPointError as error:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"bad case name: '{self.case}'")
-            channel.log(str(error))
-            # and bail
-            raise SystemExit(1)
-
-        # if all goes well, explore it and mount it
-        pfs["inputs"] = ifs.discover()
-        # all done
-        return ifs
-
-
-    def load_inputs(self):
-        """
-        Load the data in the input files into memory
-        """
-        # grab the input dataspace
-        ifs = self.ifs
-
-        # get the displacement data
-        try:
-            # get the path to the file
-            df = ifs[self.displacements]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing displacements: no '{self.displacements}' in '{self.case}'")
-            # and raise the exception again
-            raise
-
-        # if all goes well, create a data sheet
-        data = datasheet(name="displacements")
-        # and populate it
-        data.read(uri=df.uri)
-
-        # adjust the number of observations
-        self.observations = len(data)
-
-        # finally, try to
-        try:
-            # get the file node with the data covariance
-            node = ifs[self.covariance]
-        # if the file doesn't exist
-        except ifs.NotFoundError:
-            # grab my error channel
-            channel = self.error
-            # complain
-            channel.log(f"missing data covariance matrix: no '{self.covariance}' in '{self.case}'")
-            # and re-raise the exception
-            raise
-        # if all goes well
+        if altar.backends.active() == "cuda":
+            from .CUDA import CUDA as strategy
+        elif self.mode == "native":
+            from .Native import Native as strategy
         else:
-            # allocate the matrix
-            covariance = altar.matrix(shape=[self.observations]*2)
-            # and load the contents into memory
-            covariance.load(node.uri)
-
-        # all done
-        return data, covariance
-
-
-    def compute_normalization(self):
-        """
-        Compute the normalization of the L2 norm
-        """
-        # support
-        from math import log, pi as π
-        # make a copy of my data covariance
-        cd = self.cd.clone()
-        # perform an LU decomposition
-        lu = altar.lapack.LU_decomposition(cd)
-        # use it to compute the log of its determinant
-        lndet = altar.lapack.LU_lndet(*lu)
-        # compute and return
-        return - 0.5 * (log(2*π)*self.observations + lndet);
-
-
-    def compute_covariance_inverse(self):
-        """
-        Compute the inverse of my data covariance
-        """
-        # make a copy of the covariance matrix
-        cd = self.cd.clone()
-        # perform an LU decomposition
-        lu = altar.lapack.LU_decomposition(cd)
-        # invert it
-        inverse = altar.lapack.LU_invert(*lu)
-        # and compute the Cholesky decomposition of the inverse
-        chol = altar.lapack.cholesky_decomposition(inverse)
-        # all done
-        return chol
-
-
-    def meta(self):
-        """
-        Persist the sample layout by recording the parameter set metadata
-        """
-        # open the output file
-        with open("parameters.csv", mode="w", newline='') as stream:
-            # make a csv writer
-            writer = csv.writer(stream)
-
-            # the headers
-            headers = ["name", "count", "offset"]
-            # save them
-            writer.writerow(headers)
-
-            # go through the parameter sets
-            for name, pset in self.psets.items():
-                # unpack
-                meta = name, pset.count, pset.offset
-                # record
-                writer.writerow(meta)
-
-        # all done
-        return self
-
-
-    def show(self, job, channel):
-        """
-        Place model information in the supplied {channel}
-        """
-        # show me
-        channel.line("run info:")
-        # job
-        channel.line(f" -- job: {job}")
-        channel.line(f"    hosts: {job.hosts}")
-        channel.line(f"    tasks: {job.tasks}")
-        channel.line(f"    gpus: {job.gpus}")
-        channel.line(f"    chains: {job.chains}")
-        # show me the model
-        channel.line(f" -- model: {self}")
-        # the model state
-        channel.line(f"    observations: {self.observations}")
-        # the parameter sets
-        channel.line(f"    parameters: {self.parameters} total, in {len(self.psets)} sets")
-
-        # go through the parameter sets
-        for name, pset in self.psets.items():
-            # and show me what we know about them
-            channel.line(f"      {name}:")
-            channel.line(f"        offset: {pset.offset}:")
-            channel.line(f"         count: {pset.count}:")
-            channel.line(f"         prior: {pset.prior}:")
-            channel.line(f"          prep: {pset.prep}:")
-
-        # the test case name
-        channel.line(f" -- case: {self.case}")
-        # the contents of the data filesystem
-        channel.line(f" -- contents of '{self.case}':")
-        channel.line("\n".join(self.ifs.dump(indent=2)))
-        # the loaded data
-        # the loaded data
-        channel.line(f" -- inputs in memory:")
-        channel.line(f"    observations: {len(self.d)} displacements")
-        channel.line(f"    covariance: {self.cd.shape}")
-        # flush
-        channel.log()
-
-        # all done
-        return self
+            from .Fast import Fast as strategy
+        return strategy()
 
 
     # private data
-    ifs = None # filesystem with the input data
-
-    # input
-    d = None # the vector of displacements for each control point
-    los = None # the list of LOS vectors for each observation
-    oid = None # dataset id that each observation belongs to; tied to the {offset} parameter set
-    points = None # the list of observation points
-    cd = None # the data covariance matrix
-
-    # the sample layout; patched during {initialize}
-    xIdx = 0
-    yIdx = 0
-    dIdx = 0
-    sIdx = 0
-    offsetIdx = 0
-
-    # computed
-    cd_inv = None # the inverse of my data covariance matrix
-    normalization = 1 # the normalization of the L2 norm
+    stations = None # the observation geometry, (observations x 6)
+    oid = None # the dataset of each observation
+    _impl = None # my implementation strategy, chosen once, in {initialize}
 
 
 # end of file

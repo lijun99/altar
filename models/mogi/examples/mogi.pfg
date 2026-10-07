@@ -5,19 +5,22 @@
 ; (c) 2010-present california institute of technology
 ; all rights reserved
 ;
-; orthologue
+; generate the input files first, in {synthetic}:
+;     cd synthetic && python3 mogi.py
+; then sample with
+;     mogi --config=mogi.pfg
 
 mogi:
     ; shell
     ; shell = mpi.shells.mpirun ; for running with mpi
 
-    controller:
-        ; saving the results of the calculation
-        archiver:
-            theta = theta.asc
-            sigma = sigma.asc
-            llk = posterior.asc
+    controller = altar.bayesian.catmip
+    controller.archiver = altar.bayesian.h5recorder
+    controller.archiver.output_dir = results
+    ; no covariance conditioning: its eigenvalue floor swamps the small-scale parameters
+    ; (offsets) with the spread of the large-scale ones (dV)
     controller.scheduler.check_positive_definiteness = False
+    controller.sampler.proposal.check_positive_definiteness = False
 
     ; job layout
     job:
@@ -26,16 +29,20 @@ mogi:
         chains = 2**12  ; number of chains per task
         steps = 20      ; the length of each chain
 
-    ; event handlers
-    monitors:
-       prof = altar.bayesian.profiler
-
     ; model configuration
     model:
-        ; the mogi engine: native or fast
+        case = synthetic
+        ; the cpu engine: native (python) or fast (c++)
         mode = fast
 
+        ; the observed LOS displacements
+        dataobs:
+            observations = 121
+            data_file = data.txt
+            cd_file = cd.txt
+
         ; parameter sets
+        psets_list = [location, depth, source, offsets]
         psets:
             location = contiguous
             depth = contiguous
@@ -44,36 +51,21 @@ mogi:
 
             location:
                 count = 2
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (-5000, 5000)
-                prior:
-                    support = (-5000, 5000)
+                prior.support = (-5000, 5000)
             depth:
                 count = 1
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (2000, 4000)
-                prior:
-                    support = (2000, 4000)
+                prior.support = (1000, 6000)
+            ; the volume change, in m^3
             source:
                 count = 1
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (9, 11)
-                prior:
-                    support = (9, 11)
+                prior.support = (-1e8, 1e8)
             offsets:
                 count = 2
-                prep = uniform
                 prior = uniform
-                prep:
-                    support = (-0.1, 0.1)
-                prior:
-                    support = (-0.1, 0.1)
+                prior.support = (-0.1, 0.1)
 
 
 ; for parallel runs

@@ -30,55 +30,10 @@ function(altar_mogi_buildPackage)
 endfunction(altar_mogi_buildPackage)
 
 
-# buld the mogi libraries
-function(altar_mogi_buildLibrary)
-  # the libmogi target
-  add_library(libmogi SHARED)
-  # adjust the name
-  set_target_properties(
-    libmogi PROPERTIES
-    LIBRARY_OUTPUT_NAME mogi
-    )
-  # set the include directories
-  target_include_directories(
-    libmogi PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
-    ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRE_INCLUDE_DIRS}
-    )
-  # set the link directories
-  target_link_directories(
-    libmogi PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
-  # add the dependencies
-  target_link_libraries(
-    libmogi PRIVATE ${GSL_LIBRARIES} journal
-    )
-  # add the sources
-  target_sources(
-    libmogi PRIVATE
-    lib/libmogi/version.cc
-    lib/libmogi/Source.cc
-    )
-
-  # stage the mogi headers
-  altar_stageHeaders(lib/libmogi altar/models/mogi)
-
-  # install the library
-  install(
-    TARGETS libmogi
-    LIBRARY DESTINATION lib
-    )
-
-  # all done
-endfunction(altar_mogi_buildLibrary)
-
-
-# build the mogi extension module
+# build the mogi extension module, with the forward model compiled in
 function(altar_mogi_buildModule)
+  # stage the mogi headers; the cuda library shares the point source formula
+  altar_stageHeaders(lib/libmogi altar/models/mogi)
   # mogi
   Python_add_library(mogimodule MODULE)
   # adjust the name to match what python expects
@@ -91,29 +46,15 @@ function(altar_mogi_buildModule)
   target_include_directories(
     mogimodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
-  # set the link directories
-  target_link_directories(
-    mogimodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
   # set the libraries to link against
-  target_link_libraries(mogimodule PUBLIC libmogi libaltar journal)
+  target_link_libraries(mogimodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
   # add the sources
   target_sources(mogimodule PRIVATE
+    lib/libmogi/mogi.cc
     ext/mogi/mogi.cc
-    ext/mogi/metadata.cc
-    ext/mogi/exceptions.cc
-    ext/mogi/source.cc
-    )
-
-  # install the capsule
-  install(
-    FILES ext/mogi/capsules.h
-    DESTINATION ${ALTAR_DEST_INCLUDE}/altar/models/mogi
     )
 
   # install the mogi extension
@@ -123,6 +64,87 @@ function(altar_mogi_buildModule)
     DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/mogi/ext
     )
 endfunction(altar_mogi_buildModule)
+
+
+# build the mogi cuda library
+function(altar_mogi_cuda_buildLibrary)
+  # the libcudamogi target
+  add_library(libcudamogi SHARED)
+  # adjust the name
+  set_target_properties(
+    libcudamogi PROPERTIES
+    LIBRARY_OUTPUT_NAME cudamogi
+    )
+  # set the include directories
+  target_include_directories(
+    libcudamogi PRIVATE
+    ${CMAKE_INSTALL_PREFIX}/include
+    ${GSL_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
+    )
+  # kernels index pyre grids directly; see {altar_cuda_buildLibrary}
+  target_compile_definitions(libcudamogi PRIVATE WITH_CUDA)
+  target_compile_options(libcudamogi PRIVATE $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>)
+  # add the sources
+  target_sources(
+    libcudamogi PRIVATE
+    lib/libcudamogi/cudaMogi.cu
+    )
+
+  # stage the mogi cuda headers
+  altar_stageHeaders(lib/libcudamogi altar/models/mogi/cuda)
+
+  # install the library
+  install(
+    TARGETS libcudamogi
+    LIBRARY DESTINATION lib
+    )
+  # all done
+endfunction(altar_mogi_cuda_buildLibrary)
+
+
+# build the mogi cuda extension module
+function(altar_mogi_cuda_buildModule)
+  # pybind11, like {altar_cuda_buildModule}
+  Python_add_library(cudamogimodule MODULE WITH_SOABI)
+  # adjust the name to match what python expects
+  set_target_properties(
+    cudamogimodule PROPERTIES
+    LIBRARY_OUTPUT_NAME cudamogi
+    LINKER_LANGUAGE CUDA
+    )
+  # set the include directories; altar/ext/cuda provides the shared binding helpers
+  target_include_directories(
+    cudamogimodule PRIVATE
+    ${CMAKE_INSTALL_PREFIX}/include
+    ${GSL_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
+    ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
+    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda
+    )
+  # set  the link directories
+  target_link_directories(
+    cudamogimodule PRIVATE
+    ${CMAKE_INSTALL_PREFIX}/lib
+    )
+  # set the libraries to link against
+  target_link_libraries(
+    cudamogimodule PRIVATE
+    libcudamogi pybind11::module cudart ${PYRE_LIBRARIES}
+    )
+  # add the sources
+  target_sources(cudamogimodule PRIVATE
+    ext/cudamogi/cudamogi.cc
+    )
+
+  # install the mogi cuda extension
+  install(
+    TARGETS cudamogimodule
+    LIBRARY
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/mogi/ext
+    )
+endfunction(altar_mogi_cuda_buildModule)
 
 
 # the scripts

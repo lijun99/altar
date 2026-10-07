@@ -11,7 +11,8 @@
 
 
 # externals
-from math import sin, cos, pi as π
+import numpy
+from math import pi as π
 # the framework
 import altar
 # my model
@@ -21,7 +22,8 @@ import altar.models.mogi
 # app
 class Mogi(altar.application, family="altar.applications.mogi"):
     """
-    A generator of synthetic data for Mogi sources
+    A generator of synthetic data for Mogi sources: writes the observation geometry to
+    {geometry.csv}, the LOS displacements to {data.txt}, and their covariance to {cd.txt}
     """
 
     # user configurable state
@@ -34,11 +36,20 @@ class Mogi(altar.application, family="altar.applications.mogi"):
     d = altar.properties.float(default=3000)
     d.doc = "the depth of the Mogi source"
 
-    dV = altar.properties.float(default=1e10)
-    dV.doc = "the strength of the Mogi source"
+    dV = altar.properties.float(default=1e7)
+    dV.doc = "the volume change of the Mogi source, in m^3"
 
     nu = altar.properties.float(default=.25)
     nu.doc = "the Poisson ratio"
+
+    offsets = altar.properties.list(schema=altar.properties.float(), default=[0, 0])
+    offsets.doc = "the offsets of the eastern (oid 0) and western (oid 1) datasets"
+
+    sigma = altar.properties.float(default=0.005)
+    sigma.doc = "the standard deviation of the data noise, in m"
+
+    noise = altar.properties.bool(default=False)
+    noise.doc = "whether to add gaussian noise with {sigma} to the displacements"
 
 
     # protocol obligation
@@ -47,111 +58,43 @@ class Mogi(altar.application, family="altar.applications.mogi"):
         """
         The main entry point
         """
+        # the stations: a 1km grid
+        stations = [(x*1000., y*1000.) for x in range(-5, 6) for y in range(-5, 6)]
+        observations = len(stations)
+        # observe all displacements from the same angle for now
+        theta = π/4 # the incidence angle
+        phi = π     # the azimuth, counterclockwise from east
+        los = altar.matrix(shape=(observations, 3))
+        for obs in range(observations):
+            los[obs, 0] = numpy.sin(theta) * numpy.cos(phi)
+            los[obs, 1] = numpy.sin(theta) * numpy.sin(phi)
+            los[obs, 2] = numpy.cos(theta)
+
         # compute the displacements
-        data, covariance = self.mogi()
-        # dump the displacements in a CSV file
-        data.write(uri="displacements.csv")
-        # and the covariance in an ascii file
-        covariance.save(filename=altar.primitives.path("cd.txt"))
+        source = altar.models.mogi.source(x=self.x, y=self.y, d=self.d, dV=self.dV, nu=self.nu)
+        u = numpy.array(source.displacements(locations=stations, los=los))
+
+        # the geometry; the western stations come from a different dataset
+        geometry = altar.models.mogi.data(name="geometry")
+        oid = numpy.zeros(observations, dtype=int)
+        for idx, (x, y) in enumerate(stations):
+            oid[idx] = 1 if x < 0 else 0
+            record = geometry.pyre_new()
+            record.oid = int(oid[idx])
+            record.x = x
+            record.y = y
+            record.theta = theta
+            record.phi = phi
+        geometry.write(uri="geometry.csv")
+
+        # the data, shifted by the dataset offsets
+        u -= numpy.asarray(self.offsets)[oid]
+        if self.noise:
+            u += numpy.random.default_rng().normal(scale=self.sigma, size=observations)
+        numpy.savetxt("data.txt", u)
+        numpy.savetxt("cd.txt", self.sigma**2 * numpy.eye(observations))
         # all done
         return 0
-
-
-    # meta-methods
-    def __init__(self, **kwds):
-        # chain up
-        super().__init__(**kwds)
-        # create my stations
-        self.stations = self.make_stations()
-        # all done
-        return
-
-
-    # implementation details
-    def mogi(self):
-        """
-        Synthesize displacements for a grid of stations given a specific source location and
-        strength
-        """
-        # get the stations
-        stations = self.stations
-        # dedcue the number of observations
-        observations = len(stations)
-        # make a source
-        source = altar.models.mogi.source(x=self.x, y=self.y, d=self.d, dV=self.dV, nu=self.nu)
-
-        # observe all displacements from the same angle for now
-        theta = π/4 # the azimuthal angle
-        phi = π     # the polar angle
-        # build the common projection vector
-        s = sin(theta)*cos(phi), sin(theta)*sin(phi), cos(theta)
-
-        # allocate a matrix to hold the projections
-        los = altar.matrix(shape=(observations,3))
-        # go through the observations
-        for obs in range(observations):
-            # store the LOS vector
-            los[obs, 0] = s[0]
-            los[obs, 1] = s[1]
-            los[obs, 2] = s[2]
-
-        # compute the displacements
-        u = source.displacements(locations=stations, los=los)
-
-        # prepare the dataset
-        # rows: one for each location
-        # columns: observation id, u.s, x, y, theta, phi
-        # observation id simulates data that come from different sources and therefore require
-        # a different offset
-        data = altar.models.mogi.data(name="displacements")
-
-        # go through the observation locations
-        for idx, (x,y) in enumerate(stations):
-            # make a new entry in the data sheet
-            observation = data.pyre_new()
-            # western stations
-            if x < 0:
-                # come from a different data set
-                observation.oid = 1
-            # than
-            else:
-                # eastern stations
-                observation.oid = 0
-
-            # record the location of this observation
-            observation.x = x
-            observation.y = y
-
-            # project the displacement
-            observation.d = u[idx]
-            # save the direction of the projection vector
-            observation.theta = theta
-            observation.phi = phi
-
-        # the length of the data sheet is the number of observations
-        observations = len(data)
-        # allocate a matrix for the data correlation
-        correlation = altar.matrix(shape=[observations]*2).zero()
-
-        # go through the observations
-        for idx, observation in enumerate(data):
-            # set the covariance to a fraction of the "observed" displacement
-            correlation[idx,idx] = 1.0 #.01 * observation.d
-
-        # all done
-        return data, correlation
-
-
-    def make_stations(self):
-        """
-        Create a set of station coordinate
-        """
-        # get some help
-        import itertools
-        # build a set of points on a grid
-        stations = itertools.product(range(-5,6), range(-5,6))
-        # and return it
-        return tuple((x*1000, y*1000) for x,y in stations)
 
 
 # bootstrap

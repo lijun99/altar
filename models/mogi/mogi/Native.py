@@ -9,6 +9,8 @@
 #
 
 
+# the package
+import altar
 # the pure python implementation of the Mogi source
 from .Source import Source as source
 
@@ -16,85 +18,49 @@ from .Source import Source as source
 # declaration
 class Native:
     """
-    A strategy for computing the data log likelihood that is written in pure python
+    The pure python strategy: one sample at a time, through {Source}; slow, but a reference
     """
 
-    # interface
-    def initialize(self, **kwds):
+
+    def initialize(self, model):
         """
-        Initialize the strategy
+        Unpack the observation geometry
         """
-        # nothing to do
-        return self
-
-
-    def data_likelihood(self, model, step):
-        """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
-        """
-        # get the norm
-        norm = model.norm
-        # grab the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # the observed displacements
-        displacements = model.d
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the storage for the data likelihoods
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # get the parameter sets
-        psets = model.psets
-
-        # get the offsets of the various parameter sets
-        xIdx = model.xIdx
-        yIdx = model.yIdx
-        dIdx = model.dIdx
-        sIdx = model.sIdx
-        offsetIdx = model.offsetIdx
-
-        # get the observations
-        los = model.los
-        oid = model.oid
-        locations = model.points
-        observations = model.observations
-
-        # for each sample in the sample set
-        for sample in range(samples):
-            # extract the parameters
-            parameters = θ.getRow(sample)
-            # get the location of the source
-            x = parameters[xIdx]
-            y = parameters[yIdx]
-            # its depth
-            d = parameters[dIdx]
-            # and its strength; we model the logarithm of this one, so we have to exponentiate
-            dV = 10**parameters[sIdx]
-
-            # make a source using the sample parameters
-            mogi = source(x=x, y=y, d=d, dV=dV)
-            # compute the expected displacement
-            u = mogi.displacements(locations=locations, los=los)
-
-            # subtract the observed displacements
-            u -= displacements
-            # adjust using the offset
-            for obs in range(observations):
-                # appropriate for the corresponding dataset
-                u[obs] -= parameters[offsetIdx + oid[obs]]
-
-            # compute the norm of the displacements
-            nrm = norm.eval(v=u, sigma_inv=cd_inv)
-            # normalize and store it as the data log likelihood
-            dataLLK[sample] = normalization - nrm**2 / 2
-
+        self.model = model
+        stations = model.stations
+        self.locations = [tuple(row) for row in stations[:, :2]]
+        self.los = model.io.toGsl(stations[:, 2:5].copy())
+        self.offsets = [int(column) for column in stations[:, 5]]
         # all done
         return self
+
+
+    def forward_model_batched(self, theta, prediction, batch):
+        """
+        Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
+        """
+        model = self.model
+        for sample in range(batch):
+            parameters = theta.getRow(sample)
+            s = parameters[model.sIdx]
+            mogi = source(x=parameters[model.xIdx], y=parameters[model.yIdx],
+                          d=parameters[model.dIdx], dV=10**s if model.log10_dV else s,
+                          nu=model.nu)
+            u = mogi.displacements(locations=self.locations, los=self.los)
+            # less the dataset offsets
+            for obs, column in enumerate(self.offsets):
+                if column >= 0:
+                    u[obs] -= parameters[column]
+            prediction.setRow(sample, u)
+        # all done
+        return self
+
+
+    # private data
+    model = None
+    locations = None
+    los = None
+    offsets = None
 
 
 # end of file

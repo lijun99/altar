@@ -9,105 +9,47 @@
 #
 
 
-# externals
+# the package
 import altar
-# the pure python implementation of the Mogi source
-from altar.models.mogi.ext import libcudamogi
+import altar.cuda
 
 
 # declaration
 class CUDA:
     """
-    A strategy for computing the data log likelihood that is written in pure python
+    The cuda strategy: the forward model of all samples at once, one thread per observation
     """
 
-    # interface
-    def initialize(self, application, model):
+
+    def initialize(self, model):
         """
-        Initialize the strategy with {model} information
+        Upload the observation geometry and the parameter layout
         """
-        # get the number of observations
-        observations = model.observations
-        # the locations on the ground where the observations were made
-        locations = model.points
-        # the observed displacements
-        displacements = model.d
-        # the array with the lines of sight to the observation locations
-        los = model.los
-        # and the data set id for each observation
-        oid = model.oid
-
-        # get the number of parameters
-        nParameters = model.parameters
-        # the number of samples
-        nSamples = application.job.chains
-        # and the number of observations
-        nObservations = model.observations
-
-        # build the calculator
-        source = libcudamogi.newSource(nParameters, nSamples, nObservations, model.nu)
-
-        # attach the coordinates of the observation points
-        libcudamogi.locations(source, locations)
-        # attach the observed displacements
-        libcudamogi.data(source, displacements.data)
-        # attach the LOS vectors
-        libcudamogi.los(source, los.data)
-        # attach the map of observations to their set
-        libcudamogi.oid(source, oid)
-        # inform the source about the parameter layout; assumes contiguous parameter sets
-        libcudamogi.layout(source, model.xIdx, model.dIdx, model.sIdx, model.offsetIdx)
-
-        # if all went well, attach the calculator
-        self.source = source
-
-        # nothing to do
+        # get the extension; {altar.models.mogi.ext} swallows a failed import
+        from .ext import libcudamogi
+        self.libcudamogi = libcudamogi
+        self.model = model
+        self.stations = altar.cuda.matrix(source=model.stations, dtype=model.precision)
+        # all done
         return self
 
 
-    def data_likelihood(self, model, step):
+    def forward_model_batched(self, theta, prediction, batch):
         """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
+        Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
-        # grab my calculator
-        source = self.source
-        # compute the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # allocate a matrix to hold the predicted displacements
-        predicted = altar.matrix(shape=(step.samples, model.observations))
-
-        # compute the residuals (in place)
-        libcudamogi.residuals(source, θ.capsule, predicted.data)
-
-        # get the norm
-        norm = model.norm
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the data likelihood vector
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # go through the samples
-        for sample in range(samples):
-            # get the residuals
-            residuals = predicted.getRow(sample)
-            # compute the norm
-            nrm = norm.eval(v=residuals, sigma_inv=cd_inv)
-            # and normalize
-            llk = normalization - nrm**2 / 2
-            # store it
-            dataLLK[sample] = llk
-
+        model = self.model
+        self.libcudamogi.displacements(
+            theta.grid, self.stations.grid, model.xIdx, model.yIdx, model.dIdx, model.sIdx,
+            model.log10_dV, model.nu, batch, prediction.grid)
         # all done
         return self
 
 
     # private data
-    source = None
+    libcudamogi = None
+    model = None
+    stations = None # the observation geometry, on the device
 
 
 # end of file
