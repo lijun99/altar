@@ -40,6 +40,8 @@ class DataL2:
         self.info = application.info
         # get the number of samples
         self.samples = application.job.chains
+        # and the precision of the residuals; the densities are always in double precision
+        self.precision = application.job.precision
         # load the data and covariance
         self.ifs = application.pfs["inputs"]
         # set up my file reader/writer
@@ -63,7 +65,7 @@ class DataL2:
         # whether {prediction} has cd merged into it
         merged = self.merge_cd_with_data and whitened
         # the data to compare it against
-        data = self.dataobs if merged or not self.merge_cd_with_data else self._observed
+        data = self.dataobs if merged or not self.merge_cd_with_data else self._raw
         # the residuals of all the samples at once, (batch x observations)
         dp = prediction[:batch]
         # subtract the dataobs if residual is not pre-calculated
@@ -96,7 +98,9 @@ class DataL2:
             filename=self.data_file, shape=self.observations, dataset=self.datafile_dataset)
         # the valid observations, if some are masked
         self.load_mask()
-        self.dataobs = self._observed.copy()
+        # the raw data, in my precision, for the residuals
+        self._raw = self._observed.astype(self.precision)
+        self.dataobs = self._raw.copy()
 
         if self.cd_file is not None:
             if self.mask is not None:
@@ -172,11 +176,12 @@ class DataL2:
         if isinstance(cd, numpy.ndarray):
             # normalization
             self.normalization = self.compute_normalization(observations=observations, cd=cd)
-            # the factor of the inverse
-            self.cd_inv = self.compute_covariance_inverse(cd=cd)
+            # the factor of the inverse, computed in double precision, used in mine
+            L = self.compute_covariance_inverse(cd=cd)
+            self.cd_inv = L.astype(self.precision)
             # merge it into the data
             if self.merge_cd_with_data:
-                self.dataobs = self.cd_inv.T @ self._observed
+                self.dataobs = (L.T @ self._observed).astype(self.precision)
         else:
             # cd is standard deviation
             # only the valid observations count
@@ -185,7 +190,7 @@ class DataL2:
             self.normalization = -0.5 * math.log(2 * math.pi) * observations - observations * math.log(cd)
             self.cd_inv = 1.0 / cd
             if self.merge_cd_with_data:
-                self.dataobs = self._observed * self.cd_inv
+                self.dataobs = (self._observed * self.cd_inv).astype(self.precision)
 
         # all done
         return self
@@ -247,7 +252,9 @@ class DataL2:
     cd: float | numpy.ndarray
     cd_inv: float | numpy.ndarray  # 1/sigma, or L with cd^{-1} = L L^T
     _chi_variance: numpy.ndarray | None = None # diag(C_chi), when a C_p is part of it
-    _observed: numpy.ndarray  # the raw observed data
+    _observed: numpy.ndarray  # the raw observed data, in double precision
+    _raw: numpy.ndarray  # the raw observed data, in my precision
+    precision: str = "float64"  # the precision of the residuals
     mask: numpy.ndarray | None = None # the valid observations; None if all are valid
     error: journal.error
     info: journal.info

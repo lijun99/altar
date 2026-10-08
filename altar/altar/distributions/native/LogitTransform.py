@@ -56,7 +56,7 @@ class LogitTransform:
         transform owns. {theta} is PHYSICAL space; see the shim's docstring for why.
         """
         a, b = self.support
-        sig = (theta - a) / (b - a)
+        sig = (numpy.asarray(theta, dtype=numpy.float64) - a) / (b - a)
         # log(sig) + log(1-sig); dropping the constant log(b-a) term this omits changes
         # nothing downstream -- it cancels exactly in any delta-H/acceptance decision
         contribution = numpy.log(sig) + numpy.log(1.0 - sig)

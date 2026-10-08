@@ -78,10 +78,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # super class method
         super().initialize(application=application)
 
-        # my working precision, needed by {eval_data_likelihood}'s cuda buffer allocation and
-        # by any concrete model's own cuda numerics (mirrors
-        # {altar.distributions.cuda.Base.initialize})
-        self.precision = application.job.gpuprecision
+        # the precision of my backend, for my inputs, my predictions and my own numerics
+        self.precision = application.job.working_precision
 
         # mount my input data space
         self.ifs = self.mount_input_dataspace(pfs=application.pfs)
@@ -337,7 +335,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
                 # module-level {altar} name as a local variable in this function
                 prediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
             else:
-                prediction = numpy.zeros((self.samples, self.observations))
+                prediction = numpy.zeros((self.samples, self.observations), dtype=self.precision)
             self._prediction = prediction
         # survey forward model whether it computes residual or not
         returnResidual = self.return_residual

@@ -203,10 +203,10 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
     def _displace(self, sample: numpy.ndarray) -> numpy.ndarray:
         """
         The samples displaced by the Gaussian random walk, sample + L z with z ~ N(0, 1) and
-        L the Cholesky factor of the scaled covariance
+        L the Cholesky factor of the scaled covariance, in the precision of the samples
         """
         z = self.rng.standard_normal(size=sample.shape)
-        return sample + z @ self._sigma_chol.T
+        return (sample + z @ self._sigma_chol.T).astype(sample.dtype, copy=False)
 
     @altar.export
     def compute_covariance(self, step: typing.Any, w: numpy.ndarray) -> numpy.ndarray:

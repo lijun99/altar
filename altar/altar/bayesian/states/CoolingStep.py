@@ -55,23 +55,23 @@ class CoolingStep(BayesianState):
         model = annealer.model
         has_reparametrization = getattr(model, 'has_reparametrization', False)
         return cls.alloc(samples=model.job.chains, parameters=model.parameters,
-                         has_reparametrization=has_reparametrization)
+                         has_reparametrization=has_reparametrization, dtype=model.job.precision)
 
 
     @classmethod
     def alloc(cls, samples: int, parameters: int, has_reparametrization: bool = False,
-              beta: float = 0) -> typing.Self:
+              beta: float = 0, dtype: str = "float64") -> typing.Self:
         """
         Allocate storage for the parts of a cooling step
         """
         # allocate the initial sample set in sampling space
-        theta_sampling = numpy.zeros((samples, parameters))
+        theta_sampling = numpy.zeros((samples, parameters), dtype=dtype)
 
         # allocate physical parameters and jacobian only if using reparameterization
         theta = None
         jacobian = None
         if has_reparametrization:
-            theta = numpy.zeros((samples, parameters))
+            theta = numpy.zeros((samples, parameters), dtype=dtype)
             jacobian = numpy.zeros(samples)
 
         # allocate the likelihood vectors

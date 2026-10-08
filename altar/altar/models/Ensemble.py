@@ -52,7 +52,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         """
         # skip {BayesianL2}'s own setup: i have no data of my own
         super(BayesianL2, self).initialize(application=application)
-        self.precision = application.job.gpuprecision
+        self.precision = application.job.working_precision
         self.ifs = self.mount_input_dataspace(pfs=application.pfs)
         self.io = altar.io.FileIO(ifs=self.ifs, error=self.error, precision=self.precision)
         self.samples = application.job.chains

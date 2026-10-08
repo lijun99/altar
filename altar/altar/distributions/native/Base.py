@@ -68,8 +68,8 @@ class Base:
         """
         Add to {likelihood} the log prior probabilities of my portion of the samples in {theta}
         """
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
+        # grab the portion of the sample that's mine, in double precision
+        θ = numpy.asarray(self.restrict(theta=theta), dtype=numpy.float64)
         # sum the log densities of each sample's parameters
         likelihood[:θ.shape[0]] += self.log_density(θ).sum(axis=1)
         # all done

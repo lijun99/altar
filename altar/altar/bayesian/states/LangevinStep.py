@@ -52,14 +52,15 @@ class LangevinStep(BayesianState):
     def allocate(cls, annealer: Annealer) -> typing.Self:
         model = annealer.model
         return cls.alloc(samples=model.job.chains, parameters=model.parameters,
-                         has_reparametrization=getattr(model, "has_reparametrization", False))
+                         has_reparametrization=getattr(model, "has_reparametrization", False),
+                         dtype=model.job.precision)
 
     @classmethod
-    def alloc(cls, samples: int, parameters: int,
-              has_reparametrization: bool = False) -> typing.Self:
-        theta = numpy.zeros((samples, parameters))
+    def alloc(cls, samples: int, parameters: int, has_reparametrization: bool = False,
+              dtype: str = "float64") -> typing.Self:
+        theta = numpy.zeros((samples, parameters), dtype=dtype)
         prior, data, posterior = cls._alloc_likelihoods(samples)
-        gradients = numpy.zeros((samples, parameters)), numpy.zeros((samples, parameters))
+        gradients = numpy.zeros_like(theta), numpy.zeros_like(theta)
         return cls(beta=1, theta=theta, likelihoods=(prior, data, posterior),
                    gradients=gradients, has_reparametrization=has_reparametrization)
 
@@ -130,11 +131,11 @@ class LangevinStep(BayesianState):
         if has_reparametrization:
             self.theta_sampling = theta.copy()
             self.jacobian = numpy.zeros(theta.shape[0])
-            self.Jacobian = numpy.ones(theta.shape)
+            self.Jacobian = numpy.ones_like(theta)
         else:
             self.theta_sampling = theta
         if gradients is None:
-            gradients = numpy.zeros(theta.shape), numpy.zeros(theta.shape)
+            gradients = numpy.zeros_like(theta), numpy.zeros_like(theta)
         self.grad_prior, self.grad_data = gradients
         return
 

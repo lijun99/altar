@@ -446,7 +446,8 @@ The `job` sets the size of the simulation and how it is deployed:
 | `tasks` | 1 | the number of processes per host |
 | `hosts` | 1 | the number of hosts |
 | `gpus` | 0 | GPUs per process: 0 for the cpu, 1 for a GPU |
-| `gpuprecision` | `float64` | `float32` or `float64`, for GPU computations |
+| `precision` | `float64` | `float32` or `float64`, for the computations |
+| `gpuprecision` | `precision` | `float32` or `float64`, for GPU computations, if not `precision` |
 | `gpuids` | | the GPUs to use on each host |
 | `tolerance` | 0.001 | $\beta$ within this of 1 counts as 1 |
 
@@ -556,10 +557,14 @@ The processes of a host use its GPUs in order, 0, 1, 2, ...; to use others, list
 `job.gpuids`, e.g. `job.gpuids = [2, 3]`, or make only those visible, with
 `export CUDA_VISIBLE_DEVICES=2,3`.
 
-`job.gpuprecision` chooses single (`float32`) or double (`float64`, the default) precision. Most
-consumer GPUs have few double precision units, so single precision is much faster on them, and
-enough for many models; but not for all: the cascaded kinematic model, for one, loses its chains
-in single precision (see {doc}`Kinematic`).
+`job.precision` chooses single (`float32`) or double (`float64`, the default) precision, on the cpu
+and the GPU; `job.gpuprecision`, if set, overrides it on the GPU. Most consumer GPUs have few double
+precision units, so single precision is much faster on them, and enough for many models; but not
+for all: the cascaded kinematic model, for one, loses its chains in single precision (see
+{doc}`Kinematic`). On the cpu, single precision speeds up the models dominated by matrix products,
+e.g. those with large Green's functions, and halves their memory. The samples, the data and the
+forward models take the precision; the log densities, and the sums that make them, stay in double
+precision.
 
 ## The model
 

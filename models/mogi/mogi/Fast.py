@@ -44,9 +44,12 @@ class Fast:
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
         model = self.model
+        θ, out = double(theta=theta, prediction=prediction)
         self.libmogi.displacements(
-            theta, self.stations, model.xIdx, model.yIdx, model.dIdx, model.sIdx,
-            model.log10_dV, model.nu, batch, prediction)
+            θ, self.stations, model.xIdx, model.yIdx, model.dIdx, model.sIdx,
+            model.log10_dV, model.nu, batch, out)
+        if out is not prediction:
+            prediction[:batch] = out[:batch]
         # all done
         return self
 
@@ -55,6 +58,15 @@ class Fast:
     libmogi: typing.Any = None
     model: Mogi
     stations: numpy.ndarray # the observation geometry
+
+
+# the c++ computes in double precision
+def double(theta: numpy.ndarray, prediction: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """
+    {theta} and a buffer for {prediction}, in double precision; copies only for float32
+    """
+    out = prediction if prediction.dtype == numpy.float64 else numpy.zeros(prediction.shape)
+    return numpy.asarray(theta, dtype=numpy.float64), out
 
 
 # end of file

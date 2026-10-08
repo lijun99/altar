@@ -22,9 +22,9 @@ only, and AlTar runs every model that has a cpu implementation.
 
 - **CPU**: any 64-bit processor supported by your compiler.
 - **GPU** (optional): an NVIDIA GPU supported by your CUDA toolkit. AlTar computes in single or
-  double precision (`job.gpuprecision`); consumer cards have far fewer double-precision units, so
-  single precision is much faster on them, but some problems need double precision (see the
-  cascaded example in {doc}`Kinematic`).
+  double precision (`job.precision`, or `job.gpuprecision` for the GPU alone); consumer cards have
+  far fewer double-precision units, so single precision is much faster on them, but some problems
+  need double precision (see the cascaded example in {doc}`Kinematic`).
 - **Operating systems**: Linux. Windows users can use the
   [Windows Subsystem for Linux](https://learn.microsoft.com/windows/wsl/) (WSL2), which also
   supports CUDA. macOS has not been tested with the current version.

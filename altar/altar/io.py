@@ -42,11 +42,11 @@ class FileIO:
     def load(self, filename: str, shape: int | tuple[int, ...] | None = None,
              dataset: str | None = None, dtype: str | None = None) -> numpy.ndarray:
         """
-        Load {filename}, found through {self.ifs}, as a float64 array; {dtype}, by default my
-        {precision}, is the precision it is read at
+        Load {filename}, found through {self.ifs}, as an array of {dtype}, by default my
+        {precision}, or float64
         """
         # the desired precision
-        dtype = dtype or self.precision
+        dtype = dtype or self.precision or "float64"
 
         ifs = self.ifs
         try:
@@ -86,8 +86,8 @@ class FileIO:
         if shape is not None:
             cpuData = cpuData.reshape(shape)
 
-        # in double precision
-        return numpy.asarray(cpuData, dtype=numpy.float64)
+        # in the desired precision
+        return numpy.asarray(cpuData, dtype=dtype)
 
 
     def save(self, filename: str | os.PathLike, data: typing.Any, dataset: str | None = None,

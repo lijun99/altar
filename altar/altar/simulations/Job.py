@@ -8,12 +8,17 @@
 # all rights reserved
 #
 
+# stdlib
+from __future__ import annotations
+import typing
+from importlib.util import find_spec
 # the package
 import altar
-# stdlib
-from importlib.util import find_spec
 # my protocol
 from .Run import Run as run
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
 
 
 # the run protocol
@@ -38,9 +43,13 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
     gpus = altar.properties.int(default=0)
     gpus.doc = "the number of gpus per task"
 
-    gpuprecision = altar.properties.str(default="float64")
-    gpuprecision.doc = "the precision of gpu computations"
-    gpuprecision.validators = altar.constraints.isMember("float64", "float32")
+    precision = altar.properties.str(default="float64")
+    precision.doc = "the precision of the computations: float64 or float32"
+    precision.validators = altar.constraints.isMember("float64", "float32")
+
+    gpuprecision = altar.properties.str(default=None)
+    gpuprecision.doc = "the precision of gpu computations, if not {precision}"
+    gpuprecision.validators = altar.constraints.isMember(None, "float64", "float32")
 
     gpuids = altar.properties.list(schema=altar.properties.int())
     gpuids.default = None
@@ -58,7 +67,7 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
 
     # initialize
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the job parameters with information from the application context
         """
@@ -67,10 +76,14 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         # all done
         return self
 
-    def pyre_configured(self):
+    def pyre_configured(self) -> list:
         """
-        Select backend early so component factories pick cpu/cuda implementations.
+        Select backend early so component factories pick cpu/cuda implementations, and settle
+        the gpu precision
         """
+        # unless set, the gpu computes in my precision
+        if self.gpuprecision is None:
+            self.gpuprecision = self.precision
         if self.gpus > 0 and altar.backends.cuda_available():
             altar.backends.activate_cuda()
         else:
@@ -78,8 +91,16 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         return []
 
 
+    @property
+    def working_precision(self) -> str:
+        """
+        The precision of the active backend: {gpuprecision} on the gpu, {precision} on the cpu
+        """
+        return self.gpuprecision if altar.backends.active() == "cuda" else self.precision
+
+
     # implementation details
-    def validate_machine_layout(self, application):
+    def validate_machine_layout(self, application: Application) -> typing.Self:
         """
         Adjust the machine parameters based on the {application} context and the runtime
         environment

@@ -28,7 +28,7 @@ class L2:
         The L2 norm of {v}, or of each of its first {batch} rows, with or without a covariance
         """
         r = self._whiten(v=v, sigma_inv=sigma_inv, batch=batch, weight=None)
-        return numpy.sqrt(numpy.einsum("...i,...i->...", r, r))
+        return numpy.sqrt(numpy.einsum("...i,...i->...", r, r, dtype=numpy.float64))
 
 
     def eval_likelihood(self, v: numpy.ndarray, constant: float = 0.0,
@@ -42,7 +42,8 @@ class L2:
         a diagonal covariance
         """
         r = self._whiten(v=v, sigma_inv=sigma_inv, batch=batch, weight=weight)
-        llk = constant - 0.5 * numpy.einsum("...i,...i->...", r, r)
+        # the sums of squares in double precision, whatever the precision of {v}
+        llk = constant - 0.5 * numpy.einsum("...i,...i->...", r, r, dtype=numpy.float64)
         if r.ndim == 1:
             return float(llk)
         if out is None:

@@ -138,7 +138,7 @@ class HMC:
             likelihoods=(numpy.zeros(samples), numpy.zeros(samples), numpy.zeros(samples)))
         if reparameterized:
             current.phi = step.theta_sampling.copy()
-            current.Jacobian = numpy.ones((samples, parameters))
+            current.Jacobian = numpy.ones_like(current.phi)
             current.log_jacobian = numpy.zeros(samples)
         self._evaluate(annealer=annealer, model=model, candidate=current, samples=samples)
 
@@ -251,6 +251,7 @@ class HMC:
         population in {theta}, pooled across every mpi rank's chains when running in
         parallel, not just the calling rank's own shard
         """
+        theta = numpy.asarray(theta, dtype=numpy.float64)
         n = theta.shape[0]
         sum_x = theta.sum(axis=0)
         sum_x2 = (theta ** 2).sum(axis=0)

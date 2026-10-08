@@ -44,7 +44,10 @@ class Fast:
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
         model = self.model
-        self.libcdm.displacements(theta, self.stations, model.layout, model.nu, batch, prediction)
+        θ, out = double(theta=theta, prediction=prediction)
+        self.libcdm.displacements(θ, self.stations, model.layout, model.nu, batch, out)
+        if out is not prediction:
+            prediction[:batch] = out[:batch]
         # all done
         return self
 
@@ -54,7 +57,7 @@ class Fast:
         Flag in {mask} the first {batch} samples of {theta} whose source reaches above the free
         surface
         """
-        self.libcdm.verify(theta, self.model.layout, batch, mask)
+        self.libcdm.verify(numpy.asarray(theta, dtype=numpy.float64), self.model.layout, batch, mask)
         # all done
         return self
 
@@ -63,6 +66,15 @@ class Fast:
     libcdm: typing.Any = None
     model: Model
     stations: numpy.ndarray # the observation geometry
+
+
+# the c++ computes in double precision
+def double(theta: numpy.ndarray, prediction: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """
+    {theta} and a buffer for {prediction}, in double precision; copies only for float32
+    """
+    out = prediction if prediction.dtype == numpy.float64 else numpy.zeros(prediction.shape)
+    return numpy.asarray(theta, dtype=numpy.float64), out
 
 
 # end of file

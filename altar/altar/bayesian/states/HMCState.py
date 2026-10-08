@@ -42,11 +42,11 @@ class HMCState(BayesianState):
 
 
     @classmethod
-    def alloc(cls, samples: int, parameters: int) -> typing.Self:
-        theta = numpy.zeros((samples, parameters))
+    def alloc(cls, samples: int, parameters: int, dtype: str = "float64") -> typing.Self:
+        theta = numpy.zeros((samples, parameters), dtype=dtype)
         prior, data, posterior = cls._alloc_likelihoods(samples)
-        momentum = numpy.zeros((samples, parameters))
-        gradients = tuple(numpy.zeros((samples, parameters)) for _ in range(3))
+        momentum = numpy.zeros_like(theta)
+        gradients = tuple(numpy.zeros_like(theta) for _ in range(3))
         return cls(beta=0, theta=theta, likelihoods=(prior, data, posterior),
                    momentum=momentum, gradients=gradients)
 
@@ -77,10 +77,10 @@ class HMCState(BayesianState):
         self.beta = beta
         self.theta = theta
         self.prior, self.data, self.posterior = likelihoods
-        shape = theta.shape
-        self.momentum = momentum if momentum is not None else numpy.zeros(shape)
+        # the momentum and the gradients, in the precision of the samples
+        self.momentum = momentum if momentum is not None else numpy.zeros_like(theta)
         if gradients is None:
-            gradients = numpy.zeros(shape), numpy.zeros(shape), numpy.zeros(shape)
+            gradients = tuple(numpy.zeros_like(theta) for _ in range(3))
         self.grad_prior, self.grad_data, self.grad_posterior = gradients
         return
 

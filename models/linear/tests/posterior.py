@@ -21,6 +21,7 @@ deviations and the correlations of its final samples with the exact ones.
     python posterior.py                 # every case, on the cpu
     python posterior.py mala hmc        # some of them
     python posterior.py --gpu           # on the gpu
+    python posterior.py --precision=float32   # in single precision, cpu or gpu
     python posterior.py --list          # the cases
 """
 
@@ -169,9 +170,8 @@ def run(name, gpu, precision, keep):
     try:
         shutil.copytree(EXAMPLES / CASE, scratch / CASE)
         (scratch / "posterior.pfg").write_text(BASE)
-        command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}", *settings]
-        if gpu:
-            command.append(f"--job.gpuprecision={precision}")
+        command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}",
+                   f"--job.precision={precision}", *settings]
         start = time.perf_counter()
         status = subprocess.run(command, cwd=scratch, capture_output=True, text=True, errors="replace")
         elapsed = time.perf_counter() - start
@@ -195,7 +195,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("cases", nargs="*", help="the cases to run; all by default")
     parser.add_argument("--gpu", action="store_true", help="run on the gpu")
-    parser.add_argument("--precision", default="float64", help="the gpu precision")
+    parser.add_argument("--precision", default="float64", help="the precision, cpu or gpu")
     parser.add_argument("--keep", action="store_true", help="keep the scratch directories")
     parser.add_argument("--list", action="store_true", help="list the cases")
     options = parser.parse_args()

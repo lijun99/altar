@@ -110,16 +110,18 @@ class BayesianState:
         # get the model
         model = annealer.model
         # build an uninitialized step
-        step = cls.alloc(samples=model.job.chains, parameters=model.parameters)
+        step = cls.alloc(samples=model.job.chains, parameters=model.parameters,
+                         dtype=model.job.precision)
         return step
 
     @classmethod
-    def alloc(cls, samples: int, parameters: int) -> typing.Self:
+    def alloc(cls, samples: int, parameters: int, dtype: str = "float64") -> typing.Self:
         """
-        Allocate storage for the parts of a cooling step
+        Allocate storage for the parts of a cooling step: the samples in {dtype}, the log
+        densities in double precision
         """
         # allocate the initial sample set
-        theta = numpy.zeros((samples, parameters))
+        theta = numpy.zeros((samples, parameters), dtype=dtype)
         # allocate the likelihood vectors
         prior, data, posterior = cls._alloc_likelihoods(samples)
         # build one of my instances and return it

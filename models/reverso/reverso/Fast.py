@@ -44,9 +44,12 @@ class Fast:
         Fill the first {batch} rows of {prediction} with the displacements of {theta}
         """
         model = self.model
+        θ, out = double(theta=theta, prediction=prediction)
         self.libreverso.displacements(
-            theta, self.stations, model.layout, model.G, model.v, model.mu, model.drho, model.g,
-            model.shallow == "sill", model.deep == "sill", batch, prediction)
+            θ, self.stations, model.layout, model.G, model.v, model.mu, model.drho, model.g,
+            model.shallow == "sill", model.deep == "sill", batch, out)
+        if out is not prediction:
+            prediction[:batch] = out[:batch]
         # all done
         return self
 
@@ -56,7 +59,7 @@ class Fast:
         Flag in {mask} the first {batch} samples of {theta} whose deep chamber isn't below the
         shallow one
         """
-        self.libreverso.verify(theta, self.model.layout, batch, mask)
+        self.libreverso.verify(numpy.asarray(theta, dtype=numpy.float64), self.model.layout, batch, mask)
         # all done
         return self
 
@@ -65,6 +68,15 @@ class Fast:
     libreverso: typing.Any = None
     model: Reverso
     stations: numpy.ndarray # the observation geometry
+
+
+# the c++ computes in double precision
+def double(theta: numpy.ndarray, prediction: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
+    """
+    {theta} and a buffer for {prediction}, in double precision; copies only for float32
+    """
+    out = prediction if prediction.dtype == numpy.float64 else numpy.zeros(prediction.shape)
+    return numpy.asarray(theta, dtype=numpy.float64), out
 
 
 # end of file

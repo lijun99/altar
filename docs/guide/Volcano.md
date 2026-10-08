@@ -168,7 +168,8 @@ The Mogi kernel computes in the precision of the job, `job.gpuprecision`. The CD
 kernels always compute in double precision, and store in the precision of the job: in single
 precision, the CDM's angular dislocations cancel to errors of up to a fifth of the signal. On a GPU
 with slow double precision arithmetic, such as a consumer card, CDM runs no faster in single
-precision.
+precision. On the cpu, the c++ forward models of all three compute in double precision, whatever
+`job.precision`.
 
 ## References
 
