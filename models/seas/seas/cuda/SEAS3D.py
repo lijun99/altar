@@ -72,6 +72,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "the previous call, instead of from v_init; it saves most of the spin-up cycles, but "
         "needs a tight spinup_rtol, or the likelihoods depend on what the slot computed before"
     )
+    warm_up = altar.properties.bool(default=True)
+    warm_up.doc = (
+        "with {warm_start}, spin up the mean sample of the first batch alone, from v_init, and "
+        "start every slot from its state: the long cold spin-up then runs on one system "
+        "rather than on the whole batch"
+    )
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
     estimate_row_indices = altar.properties.list(
@@ -586,8 +592,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # call CUDA forward model
             ticks.append(self.sync_and_time())
             self.cmodel.forward_model_batch(state_init=self.state_init.grid, **args)
-            # the next batch can start from the slip rates this one reached
-            self._warm = True
+
+        # the next batch can start from the slip rates this one reached
+        self._warm = True
 
         # log timings
         ticks.append(self.sync_and_time())
@@ -631,6 +638,19 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         # the data storage for data prediction and its likelihood
         predictions = self.obs_disp
         llk_batch = self.likelihood_batch
+
+        # before the first batch, spin up its mean sample alone; the forward model leaves its
+        # state in every slot, for all the samples to start from
+        if self.warm_start and self.warm_up and not self._warm:
+            start = perf_counter()
+            self.forward_model_batched(
+                theta=theta[:batch].mean(axis=0, keepdims=True), prediction=predictions, batch=1
+            )
+            cycles = int(np.asarray(self.cmodel.step_statistics()["cycles"])[0])
+            self.info.log(
+                f"Device {self.device.id}: warmed up on the mean sample in "
+                f"{perf_counter() - start:.1f}s, {cycles} spin-up cycles"
+            )
 
         # iterate over batches
         cuda_batch_size = self.cuda_batch_size
