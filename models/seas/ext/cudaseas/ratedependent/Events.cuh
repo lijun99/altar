@@ -54,6 +54,8 @@ struct __ALIGNED__ SEASEvents {
         system_size = patches * units;
         nevents = num_slips + 2;
         cudaSafeCall(cudaMalloc(&spun_up, systems * sizeof(bool)));
+        // the spin-up uses the final events too, not whatever the allocation held
+        cudaSafeCall(cudaMemset(spun_up, true, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
     }
@@ -68,6 +70,8 @@ struct __ALIGNED__ SEASEvents {
         system_size = patches * units;
         nevents = num_slips + 2;
         cudaSafeCall(cudaMalloc(&spun_up, systems * sizeof(bool)));
+        // the spin-up uses the final events too, not whatever the allocation held
+        cudaSafeCall(cudaMemset(spun_up, true, systems * sizeof(bool)));
         // // this is run on cpu, so only a host function
         // describe();
     }
