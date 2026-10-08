@@ -136,13 +136,13 @@ void TractionDependent<T, MethodType>::forward_model_batch(
                              conv_i_start, conv_i_stop, max_cycles, verbose);
     cudaDeviceSynchronize();
 
-    // copy traction for next batch
-    copy_traction(state_init, sim_state, num_inner_patches, num_t_obs,
-        systems_to_process, cuda_batch_size, solver->threads);
-
     // convert traction to velocity
     convert_traction<T>(sim_state, num_forward_batch, num_t_obs,
                          num_inner_patches, v_0, mu_over_2vs, rho, alpha_h_vec, solver->threads);
+
+    // keep the slip rate at t = 0 of each system, to start the next batch's spin-up from
+    copy_traction(state_init, sim_state, num_inner_patches, num_t_obs,
+        systems_to_process, cuda_batch_size, solver->threads);
 
     // compute displacement
     compute_displacement_impl1<T>(

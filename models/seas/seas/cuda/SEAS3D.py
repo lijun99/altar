@@ -66,6 +66,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "which forward ODE to use, the simpler 'ratedependent' tracking logarithmic "
         "velocity or the 'tractiondependent' one which tracks the elastic traction"
     )
+    warm_start = altar.properties.bool(default=True)
+    warm_start.doc = (
+        "start the spin-up of each forward call from the slip rates its gpu slot reached in "
+        "the previous call, instead of from v_init; it saves most of the spin-up cycles, but "
+        "needs a tight spinup_rtol, or the likelihoods depend on what the slot computed before"
+    )
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
     estimate_row_indices = altar.properties.list(
@@ -226,17 +232,16 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             source=np.ascontiguousarray(v_plate_ddcs_proj_eff_inner, dtype=self.gpuprec)
         )
 
-        # several copies of the initial state, one per system; the rate-dependent model
-        # keeps it, and starts each batch from the end state of the previous one; the
-        # traction-dependent one depends on alpha_h, so it is refilled for each batch
+        # several copies of the initial state, one per system; after each batch, the forward
+        # model leaves in it the slip rates of each system at t = 0, the logarithmic ones for
+        # the rate-dependent model, for the next batch to start from (see {warm_start})
         state_init_arr = np.concatenate(
             [np.zeros(2 * patches), np.log(self.sim.v_init / self.rheo.v_0).T.ravel()]
         )
-        self.state_init = altar.cuda.matrix(
-            source=np.tile(state_init_arr, (self.cuda_batch_size, 1)).astype(
-                self.gpuprec
-            )
+        self.state_init_cold = np.tile(state_init_arr, (self.cuda_batch_size, 1)).astype(
+            self.gpuprec
         )
+        self.state_init = altar.cuda.matrix(source=self.state_init_cold.copy())
 
         G_surf = (
             self.sim.G_surf[:, :, self.sim.fault.s_inner, :]
@@ -542,6 +547,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
         if self.forward_ode == "ratedependent":
 
+            # without a warm start, every batch starts from v_init
+            if not self.warm_start:
+                np.asarray(self.state_init)[...] = self.state_init_cold
             # call CUDA forward model
             ticks.append(self.sync_and_time())
             self.cmodel.forward_model_batch(**args)
@@ -552,18 +560,24 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # initial patch state, (cuda_batch_size, 4 * num_inner_patches) [m|m|Pa|Pa]
             # tau_0 + alpha_h_vec * np.log(v / v_0) + mu_over_2vs * v
 
-            # alpha_h_vec_stacked is [batch_size_run, patches]
-            v_init_norm = np.linalg.norm(self.sim.v_init, axis=1)  # is [patches]
+            # the slip rates to start from, [batch_size_run, patches, 2]: those each slot
+            # reached at t = 0 in the previous batch, else v_init
+            state_init = np.asarray(self.state_init)
+            if self.warm_start and self._warm:
+                v = state_init[:batch_size_run, 2 * patches :].reshape(
+                    batch_size_run, 2, patches
+                ).transpose(0, 2, 1)
+            else:
+                v = np.broadcast_to(self.sim.v_init, (batch_size_run, patches, 2))
+            v_norm = np.linalg.norm(v, axis=2)  # is [batch_size_run, patches]
+            # the traction for those slip rates, with this batch's alpha_h, which
+            # alpha_h_vec_stacked has as [batch_size_run, patches]
             tau_init_norm = (
-                self.sim.rho + np.log(v_init_norm[None, :] / self.rheo.v_0)
-            ) * alpha_h_vec_stacked + self.fault.mu_over_2vs * v_init_norm[None, :]
-            # tau_init_norm  is also now [batch_size_run, patches]
-            tau_init = self.sim.v_init[None, :, :] * (
-                tau_init_norm[:, :, None] / v_init_norm[None, :, None]
-            )  # is now [batch_size_run, patches, 2]
+                self.sim.rho + np.log(v_norm / self.rheo.v_0)
+            ) * alpha_h_vec_stacked + self.fault.mu_over_2vs * v_norm
+            tau_init = v * (tau_init_norm / v_norm)[:, :, None]
 
             # zero slip, and the traction, for each system in the batch
-            state_init = np.asarray(self.state_init)
             state_init[:batch_size_run, : 2 * patches] = 0
             state_init[:batch_size_run, 2 * patches :] = tau_init.transpose(
                 0, 2, 1
@@ -572,6 +586,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # call CUDA forward model
             ticks.append(self.sync_and_time())
             self.cmodel.forward_model_batch(state_init=self.state_init.grid, **args)
+            # the next batch can start from the slip rates this one reached
+            self._warm = True
 
         # log timings
         ticks.append(self.sync_and_time())
@@ -707,6 +723,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
                 f"failed to integrate, and are rejected"
             )
         return self
+
+
+    # private data
+    _warm = False  # whether {state_init} holds the slip rates of a batch, for a warm start
 
 
 # end of file
