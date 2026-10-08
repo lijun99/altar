@@ -64,7 +64,9 @@ class HMC:
         )
         # the buffers of a trajectory follow the new state
         self._backup = self._scratch = self._mask = None
-        self.step_size = self.stepsizer.initialize(self.proposal_state.eta)
+        # from the step size a restarted run reached, else from the configured one
+        eta = self.proposal_state.eta if self._restored is None else self._restored
+        self.step_size = self.stepsizer.initialize(eta)
         self._set_step_size(self.step_size)
         return self
 
@@ -144,6 +146,19 @@ class HMC:
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
         # all done
         return
+
+
+    def restore(self, scaling):
+        """
+        Continue with the step size {scaling} an earlier run reached
+        """
+        # my state, allocated on the first walk, starts from it
+        self._restored = scaling
+        # as do the step size regulator and my trajectories, if it is there already
+        if self.proposal_state is not None:
+            self._set_step_size(self.stepsizer.initialize(scaling))
+        # all done
+        return self
 
 
     def _set_step_size(self, eta):
@@ -478,6 +493,7 @@ class HMC:
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
+    _restored = None        # the step size a restarted run reached, for my state to start from
     _backup = None          # the state at the start of a trajectory, for the rejected chains
     _scratch = None         # the energies of a trajectory
     _mask = None            # the accepted chains of a trajectory

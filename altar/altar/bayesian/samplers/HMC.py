@@ -118,6 +118,16 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         return self._impl.sample_posterior(annealer=annealer, step=step)
 
 
+    def restore(self, scaling):
+        """
+        Continue with the step size {scaling} an earlier run reached
+        """
+        # my implementation knows where it keeps it
+        self._impl.restore(scaling=scaling)
+        # all done
+        return self
+
+
     @altar.export
     def update(self, annealer, statistics):
         """

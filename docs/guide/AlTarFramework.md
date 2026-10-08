@@ -389,6 +389,31 @@ linear:
             output_freq = 3
 ```
 
+(restart)=
+### Restarting a run
+
+An annealing run can continue from any step the HDF5 recorder saved, e.g. after it was stopped or
+ran out of time, by naming the step in the controller's `restart`:
+
+```none
+linear:
+    controller:
+        restart = results/linear/step_015.h5
+        archiver.output_dir = results/linear_restart
+```
+
+The run starts from that step's samples, $\beta$ and data likelihoods, and from the proposal scaling
+it reached; it recomputes the prior, and the sampling space of reparameterized priors, so these may
+change between the runs. It goes on with the next $\beta$ step, numbering its steps after the
+earlier ones, and its `BetaStatistics.txt` covers both runs. The model, its parameter sets and
+`cd_std` must be the same, since the data likelihoods are taken from the file. The number of chains
+may differ: a population of another size is drawn from the step's, with replacement. Writing to a
+fresh `output_dir` keeps the earlier run's files as they were.
+
+Each step file records the statistics of the run so far. Step files of older versions don't; their
+history and scaling come from the `BetaStatistics.txt` next to the file, which a run writes when it
+finishes, and without one the scaling starts from the sampler's configured value.
+
 (forward-check)=
 ## Checking the posterior against the data
 

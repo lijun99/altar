@@ -87,6 +87,16 @@ class HMC:
         return self
 
 
+    def restore(self, scaling):
+        """
+        Continue with the step size {scaling} an earlier run reached
+        """
+        # let the step size regulator start from it
+        self.step_size = self.stepsizer.initialize(value=scaling)
+        # all done
+        return self
+
+
     def sample_posterior(self, annealer: Annealer, step: CoolingStep) -> Statistics:
         """
         Sample the posterior distribution

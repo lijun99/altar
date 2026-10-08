@@ -46,6 +46,11 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
                "work on, and that the archiver records (gpu only); 1, the default, keeps the " \
                "final states only, which turns pooling off"
 
+    restart = altar.properties.path(default=None)
+    restart.doc = "a step archived by an earlier run, e.g. results/step_015.h5, to continue " \
+                  "the annealing from: its samples, temperature and data likelihoods, and the " \
+                  "proposal scaling it reached; none, the default, starts from the prior"
+
     pool_interval = altar.properties.int(default=1)
     pool_interval.validators = altar.constraints.isGreaterEqual(value=1)
     pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps"
@@ -107,17 +112,22 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
         # notify all interested parties that the simulation is about to start
         dispatcher.notify(event=dispatcher.start, controller=self)
-        # start the process
-        # initialize samples
-        worker.start(annealer=self)
-        # collect and record samples
-        worker.archive(annealer=self, scaling=self.sampler.scaling, stats=(0,0,0))
-        # bottom process: compute mean,sd and print a summary
-        worker.bottom(annealer=self)
+        # continue an earlier run from one of its steps
+        if self.restart is not None:
+            iteration = self.resume(worker=worker)
+        # or start the process
+        else:
+            # initialize samples
+            worker.start(annealer=self)
+            # collect and record samples
+            worker.archive(annealer=self, scaling=self.sampler.scaling, stats=(0,0,0))
+            # bottom process: compute mean,sd and print a summary
+            worker.bottom(annealer=self)
+            # nothing done yet
+            iteration = 0
 
         # iterate until done, by default until β is sufficiently close to one; the count of
         # iterations is kept here, since under mpi only the manager's worker counts them
-        iteration = 0
         while self.continuing(worker=worker, iteration=iteration, tolerance=tolerance):
             # count this one
             iteration += 1
@@ -175,6 +185,27 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         of one
         """
         return worker.beta + tolerance < 1
+
+
+    def resume(self, worker):
+        """
+        Continue an earlier run from the step in {restart}; return the iteration it concluded
+        """
+        # the step
+        from ..states.Checkpoint import Checkpoint
+        checkpoint = Checkpoint(path=self.restart, model=self.model)
+        # let my worker rebuild its state from it
+        worker.restart(annealer=self, checkpoint=checkpoint)
+        # carry on with the proposal scaling it reached
+        if checkpoint.scaling is not None:
+            self.sampler.restore(scaling=checkpoint.scaling)
+        # and with its history, so the statistics the archiver writes cover the whole run
+        self.archiver.statistics = checkpoint.history()
+        # say so
+        self.info.log(f"restarting from {checkpoint.path}: iteration {checkpoint.iteration}, "
+                      f"beta {checkpoint.beta:.6g}, {checkpoint.samples} samples")
+        # all done
+        return checkpoint.iteration
 
 
     # implementation details

@@ -74,12 +74,19 @@ class AnnealingMethod:
         return self
 
 
-    def restart(self, annealer: Annealer) -> typing.Self:
+    def restart(self, annealer: Annealer, checkpoint: typing.Any,
+                share: tuple[int, int] | None = None) -> typing.Self:
         """
-        Start the annealing process from a checkpoint
+        Start the annealing process from a {checkpoint}, a step an earlier run archived; my
+        rows of its population are {share}, (the population size, my first row), all of it
+        by default
         """
-        # NYI
-        raise NotImplementedError()
+        # the same checks as a fresh start
+        AnnealingMethod.start(self, annealer=annealer)
+        # and carry on counting from the step
+        self.iteration = checkpoint.iteration
+        # all done
+        return self
 
 
     def top(self, annealer: Annealer) -> typing.Self:

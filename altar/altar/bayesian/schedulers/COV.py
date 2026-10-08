@@ -132,6 +132,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         # the normalized weights, filled in by the solver
         w = numpy.zeros(step.samples)
+        # start from the temperature of {step}, which a restarted run did not reach through me
+        self.solver.beta = step.beta
         # compute {δβ} and the normalized {w}
         β, self.cov = self.solver.solve(step.data, w)
         # publish weights on the step so all components (proposal, etc.) can consume them
