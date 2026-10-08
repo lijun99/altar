@@ -8,6 +8,9 @@
 # all rights reserved
 #
 
+# externals
+import math
+import numpy
 # get the package
 import altar
 
@@ -40,29 +43,16 @@ class Uniform(base):
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
         {theta} is physical, reparameterized or not
         """
-        # unpack my support
+        # mark the samples with a parameter outside my support
+        return self.outside(theta=theta, mask=mask, support=self.support)
+
+
+    def log_density(self, x):
+        """
+        The log density of each entry of {x}: -log(high - low) on [low, high), as gsl's
+        """
         low, high = self.support
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # and how many parameters belong to me
-        parameters = θ.columns
-
-        # go through the samples in θ
-        for sample in range(samples):
-            # and the parameters in this sample
-            for parameter in range(parameters):
-                # if the parameter lies outside my support
-                if not (low <= θ[sample,parameter] <= high):
-                    # mark the entire sample as invalid
-                    mask[sample] += 1
-                    # and skip checking the rest of the parameters
-                    break
-
-        # all done; return the rejection map
-        return mask
+        return numpy.where((x >= low) & (x < high), -math.log(high - low), -numpy.inf)
 
 
     def prior_gradient(self, theta, gradient, batch=None):

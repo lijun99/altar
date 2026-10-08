@@ -9,7 +9,7 @@
 #
 
 # externals
-import math
+import numpy
 
 
 # the declaration
@@ -49,25 +49,35 @@ class Base:
         Fill my portion of {likelihood} with the log prior probabilities of the samples in
         {theta}
         """
-        # get my pdf implementation
-        pdf = self.pdf
         # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
-        # find out how may samples there are
-        samples = θ.rows
-
-        # for each one
-        for sample in range(samples):
-            # fill the vector with the log likelihoods; a sample far enough into the tail can
-            # underflow {density} to exactly zero (e.g. a gradient-based sampler's trajectory
-            # straying through an extreme, strongly-rejected region), and {math.log} raises
-            # rather than returning {-inf} for that, so guard it explicitly
-            likelihood[sample] += sum(
-                math.log(density) if (density := pdf.density(parameter)) > 0 else float('-inf')
-                for parameter in θ.getRow(sample))
-
+        θ = numpy.asarray(self.restrict(theta=theta))
+        # sum the log densities of each sample's parameters
+        numpy.asarray(likelihood)[:θ.shape[0]] += self.log_density(θ).sum(axis=1)
         # all done
         return self
+
+
+    def log_density(self, x):
+        """
+        The log density of each entry of the numpy array {x}; the default asks {self.pdf}, one
+        entry at a time, and a distribution with a closed form overrides it
+        """
+        density = numpy.vectorize(self.pdf.density, otypes=[float])(x)
+        # a density that underflows to zero, far into a tail, is a log density of -inf
+        with numpy.errstate(divide="ignore"):
+            return numpy.log(density)
+
+
+    def outside(self, theta, mask, support):
+        """
+        Mark in {mask} the samples in {theta} with a parameter outside {support}; a NaN is
+        outside too
+        """
+        θ = numpy.asarray(self.restrict(theta=theta))
+        low, high = support
+        inside = ((θ >= low) & (θ <= high)).all(axis=1)
+        numpy.asarray(mask)[:θ.shape[0]] += ~inside
+        return mask
 
 
     def prior_gradient(self, theta, gradient, batch=None):

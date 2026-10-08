@@ -10,7 +10,7 @@
 
 
 # externals
-import math
+import numpy
 from collections import namedtuple
 # the package
 import altar
@@ -127,10 +127,6 @@ class Metropolis:
             walker.weighted_theta = getattr(step, "weighted_theta", None)
         else:
             walker = step
-        # a couple of functions from the math module
-        exp = math.exp
-        log = math.log
-
         # reset the accept/reject counters
         accepted = invalid = rejected = 0
 
@@ -178,13 +174,10 @@ class Metropolis:
                 model.verify(step=candidate, mask=rejects.zero())
                 # make the candidate a consistent set by replacing the rejected samples with
                 # copies of the originals from {θ}
-                for index, flag in enumerate(rejects):
-                    # if this sample was rejected
-                    if flag:
-                        # copy the corresponding row from {θ} into {candidate}
-                        cθ.setRow(index, θ.getRow(index))
-                        if reparameterized:
-                            cθs.setRow(index, θs.getRow(index))
+                invalids = numpy.asarray(rejects) != 0
+                numpy.asarray(cθ)[invalids] = numpy.asarray(θ)[invalids]
+                if reparameterized:
+                    numpy.asarray(cθs)[invalids] = numpy.asarray(θs)[invalids]
                 # notify that the verification process is finished
                 dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
@@ -206,35 +199,23 @@ class Metropolis:
                 # notify we are starting accepting samples
                 dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
-                # accept/reject: go through all the samples
-                for sample in range(samples):
-                    # a candidate is invalid if the model considered it outside its support
-                    if rejects[sample]:
-                        # nothing to do: θ, priorL, dataL, and postL contain the right
-                        # statistics for this sample; just update the invalid count
-                        invalid += 1
-                        # and move on
-                        continue
-                    # a candidate is rejected if it was considered less likely than the
-                    # original and it wasn't saved by the {dice}
-                    if log(dice[sample]) > diff[sample]:
-                        # nothing to do: θ, priorL, dataL, and postL contain the right
-                        # statistics for this sample; just update the rejection count
-                        rejected += 1
-                        # and move on
-                        continue
-
-                    # otherwise, update the acceptance count
-                    accepted += 1
-                    # copy the candidate sample
-                    θ.setRow(sample, cθ.getRow(sample))
-                    if reparameterized:
-                        θs.setRow(sample, cθs.getRow(sample))
-                        jacobian[sample] = cjacobian[sample]
-                    # and its likelihoods
-                    prior[sample] = cprior[sample]
-                    data[sample] = cdata[sample]
-                    posterior[sample] = cpost[sample]
+                # accept/reject: a candidate is invalid if the model considered it outside its
+                # support, rejected if it was less likely than the original and it wasn't saved
+                # by the {dice}, and accepted otherwise
+                unlucky = numpy.log(numpy.asarray(dice)) > numpy.asarray(diff)
+                rejections = ~invalids & unlucky
+                accepts = ~invalids & ~unlucky
+                # update the counts
+                invalid += int(invalids.sum())
+                rejected += int(rejections.sum())
+                accepted += int(accepts.sum())
+                # copy the accepted candidates, and their likelihoods
+                numpy.asarray(θ)[accepts] = numpy.asarray(cθ)[accepts]
+                if reparameterized:
+                    numpy.asarray(θs)[accepts] = numpy.asarray(cθs)[accepts]
+                    numpy.asarray(jacobian)[accepts] = numpy.asarray(cjacobian)[accepts]
+                for current, proposed in ((prior, cprior), (data, cdata), (posterior, cpost)):
+                    numpy.asarray(current)[accepts] = numpy.asarray(proposed)[accepts]
 
                 # notify we are done accepting samples
                 dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)

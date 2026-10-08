@@ -189,10 +189,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         if w is not None:
             return w
         # uniform fallback (beta=0 or no scheduler)
-        w = altar.vector(shape=samples).zero()
-        value = 1.0 / samples
-        for i in range(samples):
-            w[i] = value
+        w = altar.vector(shape=samples)
+        w.fill(1.0 / samples)
         return w
 
 

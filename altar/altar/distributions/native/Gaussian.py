@@ -8,6 +8,9 @@
 # all rights reserved
 #
 
+# externals
+import math
+import numpy
 # get the package
 import altar
 
@@ -43,6 +46,14 @@ class Gaussian(base):
         return mask
 
 
+    def log_density(self, x):
+        """
+        The log density of each entry of {x}
+        """
+        u = (x - self.mean) / self.sigma
+        return -0.5 * u * u - math.log(math.sqrt(2 * math.pi) * self.sigma)
+
+
     def prior_gradient(self, theta, gradient, batch=None):
         r"""
         Fill my portion of {gradient} with d\log P(\theta)/d\theta, elementwise, for the
@@ -53,17 +64,8 @@ class Gaussian(base):
         # grab the portion of the sample and gradient that are mine
         θ = self.restrict(theta=theta)
         g = self.restrict(theta=gradient)
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # and how many parameters belong to me
-        parameters = θ.columns
-
-        # go through the samples in θ
-        for sample in range(samples):
-            # and every parameter in this sample
-            for parameter in range(parameters):
-                g[sample, parameter] = (self.mean - θ[sample, parameter]) * self.sigma_invsqr
+        # and fill it
+        numpy.asarray(g)[:] = (self.mean - numpy.asarray(θ)) * self.sigma_invsqr
 
         # all done
         return self

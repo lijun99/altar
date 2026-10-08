@@ -7,6 +7,8 @@
 #
 
 
+# externals
+import numpy
 # the package
 import altar
 # my protocol
@@ -284,7 +286,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
     def forward_model(self, theta, prediction):
         """
-        The forward model for a single set of parameters
+        The forward model for a single set of parameters: fill {prediction} from {theta}; on
+        the cpu, both are numpy vectors
         """
         # i don't know what to do, so...
         raise NotImplementedError(
@@ -299,6 +302,13 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
         # The default method computes samples one by one, the first {batch} of them
         batch = theta.rows if batch is None else batch
+        # on the cpu, hand {forward_model} numpy views of the rows, which share their memory
+        if altar.backends.active() != "cuda":
+            θ = numpy.asarray(theta)
+            predicted = numpy.asarray(prediction)
+            for sample in range(batch):
+                self.forward_model(theta=θ[sample], prediction=predicted[sample])
+            return self
         # create a prediction vector
         prediction_sample = altar.vector(shape=self.observations)
         # iterate over samples

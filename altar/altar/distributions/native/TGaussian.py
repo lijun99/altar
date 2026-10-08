@@ -8,6 +8,9 @@
 # all rights reserved
 #
 
+# externals
+import math
+import numpy
 # get the package
 import altar
 
@@ -44,29 +47,21 @@ class TGaussian(base):
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
         {theta} is physical, reparameterized or not
         """
-        # unpack my support
+        # mark the samples with a parameter outside my support
+        return self.outside(theta=theta, mask=mask, support=self.support)
+
+
+    def log_density(self, x):
+        """
+        The log density of each entry of {x}: the gaussian's, renormalized by the mass the
+        truncation retains, and -inf outside my support
+        """
         low, high = self.support
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=theta)
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # and how many parameters belong to me
-        parameters = θ.columns
-
-        # go through the samples in θ
-        for sample in range(samples):
-            # and the parameters in this sample
-            for parameter in range(parameters):
-                # if the parameter lies outside my support
-                if not (low <= θ[sample,parameter] <= high):
-                    # mark the entire sample as invalid
-                    mask[sample] += 1
-                    # and skip checking the rest of the parameters
-                    break
-
-        # all done; return the rejection map
-        return mask
+        Φ = lambda z: 0.5 * (1 + math.erf(z / math.sqrt(2)))
+        mass = Φ((high - self.mean) / self.sigma) - Φ((low - self.mean) / self.sigma)
+        u = (x - self.mean) / self.sigma
+        logp = -0.5 * u * u - math.log(math.sqrt(2 * math.pi) * self.sigma * mass)
+        return numpy.where((x >= low) & (x <= high), logp, -numpy.inf)
 
 
     def prior_gradient(self, theta, gradient, batch=None):
@@ -81,17 +76,8 @@ class TGaussian(base):
         # grab the portion of the sample and gradient that are mine
         θ = self.restrict(theta=theta)
         g = self.restrict(theta=gradient)
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # and how many parameters belong to me
-        parameters = θ.columns
-
-        # go through the samples in θ
-        for sample in range(samples):
-            # and every parameter in this sample
-            for parameter in range(parameters):
-                g[sample, parameter] = (self.mean - θ[sample, parameter]) * self.sigma_invsqr
+        # and fill it
+        numpy.asarray(g)[:] = (self.mean - numpy.asarray(θ)) * self.sigma_invsqr
 
         # reparameterized: chain the physical-space gradient into sampling space
         if self.reparameterize:

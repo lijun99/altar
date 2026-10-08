@@ -8,6 +8,9 @@
 # all rights reserved
 #
 
+# externals
+import math
+import numpy
 # get the package
 import altar
 
@@ -39,6 +42,13 @@ class UnitGaussian(base):
         """
         # all samples are valid, so there is nothing to do
         return mask
+
+
+    def log_density(self, x):
+        """
+        The log density of each entry of {x}
+        """
+        return -0.5 * x * x - 0.5 * math.log(2 * math.pi)
 
 
 # end of file

@@ -36,10 +36,14 @@ class L2:
     def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
                         weight=None):
         """
-        Compute the l2 log likelihood {constant - 0.5 * norm(v)^2}. {out} is cuda only and
-        ignored here; cpu always returns the scalar likelihood directly. {weight} is applied
-        to {v} before {sigma_inv}, so it is only meaningful with a diagonal covariance
+        Compute the l2 log likelihood {constant - 0.5 * norm(v)^2}: of a vector {v}, returned
+        as a scalar, or of each of the first {batch} rows of a (samples x observations) {v},
+        filled into {out} if given and returned. {weight} is applied to {v} before
+        {sigma_inv}, so it is only meaningful with a diagonal covariance
         """
+        if numpy.ndim(v) == 2:
+            return self._eval_likelihood_batched(
+                v=v, constant=constant, sigma_inv=sigma_inv, batch=batch, out=out, weight=weight)
         if weight is not None:
             v = v.clone()
             numpy.asarray(v)[:] *= numpy.sqrt(numpy.asarray(weight))
@@ -48,6 +52,26 @@ class L2:
 
 
     # implementation details
+    def _eval_likelihood_batched(self, v, constant, sigma_inv, batch, out, weight):
+        """
+        The log likelihoods of the first {batch} rows of {v}, without modifying {v}
+        """
+        r = numpy.asarray(v)
+        batch = r.shape[0] if batch is None else batch
+        r = r[:batch]
+        if weight is not None:
+            r = r * numpy.sqrt(numpy.asarray(weight))
+        # each row v^T L L^T v = |L^T v|^2, with the rows of v L
+        if isinstance(sigma_inv, float):
+            r = r * sigma_inv
+        elif sigma_inv is not None:
+            r = r @ numpy.tril(numpy.asarray(sigma_inv))
+        llk = constant - 0.5 * numpy.einsum("ij,ij->i", r, r)
+        if out is None:
+            return llk
+        numpy.asarray(out)[:batch] = llk
+        return out
+
     def _with_covariance(self, v, sigma_inv):
         """
         Compute the L2 norm of the given vector using the given Cholesky decomposed inverse

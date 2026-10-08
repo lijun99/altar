@@ -55,17 +55,16 @@ class DataL2:
         # the data to compare it against
         data = self.dataobs if merged or not self.merge_cd_with_data else self._observed_gsl
 
-        # go through the residual of each sample
-        for idx in range(batch):
-            # extract it
-            dp = prediction.getRow(idx)
-            # subtract the dataobs if residual is not pre-calculated
-            if not residual:
-                dp -= data
-            # cd already merged, no need to multiply it by cd
-            sigma_inv = None if merged else self.cd_inv
-            likelihood[idx] = self.norm.eval_likelihood(
-                v=dp, constant=self.normalization, sigma_inv=sigma_inv, weight=self.mask)
+        # the residuals of all the samples at once, (batch x observations)
+        dp = numpy.asarray(prediction)[:batch]
+        # subtract the dataobs if residual is not pre-calculated
+        if not residual:
+            dp = dp - numpy.asarray(data)
+        # cd already merged, no need to multiply it by cd
+        sigma_inv = None if merged else self.cd_inv
+        self.norm.eval_likelihood(
+            v=dp, constant=self.normalization, sigma_inv=sigma_inv, batch=batch, out=likelihood,
+            weight=self.mask)
         # all done
         return self
 
