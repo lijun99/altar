@@ -58,10 +58,14 @@ class SequentialAnnealing(AnnealingMethod):
         step.data[...] = data
         # the sampling space, the prior and the posterior, from the samples
         step.refresh_sampling(model=model)
+        self.step = step
+        # and the data likelihoods of the current model, if asked
+        if annealer.restart_recompute:
+            self.densities(annealer=annealer)
+            self.compare(annealer=annealer, recorded=data, data=step.data)
         step.prior[...] = 0
         model.eval_prior(step=step)
         model.eval_posterior(step=step)
-        self.step = step
         # notify the archiver
         annealer.archiver.start(step=step, iteration=self.iteration, psets=model.psets)
         # all done

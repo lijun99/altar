@@ -120,6 +120,10 @@ class CUDAAnnealing(AnnealingMethod):
         # from the samples, and the posterior from the prior and the data likelihood
         for offset in range(0, step.samples, gstep.samples):
             gstep.copy_from_cpu(step=step, offset=offset)
+            # the data likelihoods of the current model, the way the walk computes them
+            if annealer.restart_recompute:
+                gstep.prior.zero(); gstep.data.zero(); gstep.posterior.zero()
+                model.likelihoods(annealer=annealer, step=gstep, batch=gstep.samples)
             if gstep.has_reparametrization:
                 gstep.theta_sampling.copy(gstep.theta)
                 model.to_sampling(theta=gstep.theta_sampling, batch=gstep.samples)
@@ -129,6 +133,9 @@ class CUDAAnnealing(AnnealingMethod):
             model.eval_prior(step=gstep, batch=gstep.samples)
             model.eval_posterior(step=gstep, batch=gstep.samples)
             gstep.copy_to_cpu(step=step, offset=offset)
+        # how far the data likelihoods moved, when recomputed
+        if annealer.restart_recompute:
+            self.compare(annealer=annealer, recorded=data, data=step.data)
         # notify the archiver
         annealer.archiver.start(step=step, iteration=self.iteration, psets=model.psets)
         # all done
