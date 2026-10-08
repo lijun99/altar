@@ -414,6 +414,12 @@ Each step file records the statistics of the run so far. Step files of older ver
 history and scaling come from the `BetaStatistics.txt` next to the file, which a run writes when it
 finishes, and without one the scaling starts from the sampler's configured value.
 
+The data likelihoods in the file are only right for the model and the data that produced them. After
+either changed, e.g. with another version of the model's code, set `controller.restart_recompute =
+yes`: the run computes the likelihoods of the step's samples anew, and logs how far they are from the
+file's. If they are far apart, every proposal would be judged against the file's values, and few or
+none would be accepted.
+
 (forward-check)=
 ## Checking the posterior against the data
 

@@ -89,6 +89,19 @@ class AnnealingMethod:
         return self
 
 
+    def compare(self, annealer: Annealer, recorded: typing.Any, data: typing.Any) -> typing.Self:
+        """
+        Log how far the recomputed data likelihoods {data} of a restart are from the {recorded} ones
+        """
+        import numpy
+        diff = numpy.asarray(data) - numpy.asarray(recorded)
+        annealer.info.log(f"restart: recomputed data likelihoods minus the step's: median "
+                          f"{numpy.median(diff):.6g}, 10% {numpy.percentile(diff, 10):.6g}, 90% "
+                          f"{numpy.percentile(diff, 90):.6g}, largest |difference| "
+                          f"{numpy.abs(diff).max():.6g}, over {diff.size} samples")
+        return self
+
+
     def top(self, annealer: Annealer) -> typing.Self:
         """
         Notification that we are at the beginning of an update

@@ -51,6 +51,11 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
                   "the annealing from: its samples, temperature and data likelihoods, and the " \
                   "proposal scaling it reached; none, the default, starts from the prior"
 
+    restart_recompute = altar.properties.bool(default=False)
+    restart_recompute.doc = "recompute the data likelihoods of the samples of {restart} instead of " \
+                            "taking the step's, e.g. after the model or the data changed; the log " \
+                            "shows how far they are from the step's"
+
     pool_interval = altar.properties.int(default=1)
     pool_interval.validators = altar.constraints.isGreaterEqual(value=1)
     pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps"
