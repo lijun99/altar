@@ -10,4 +10,5 @@ how to run them.
 Static
 StaticCp
 Kinematic
+Volcano
 ```

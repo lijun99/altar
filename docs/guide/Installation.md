@@ -45,6 +45,7 @@ Python 3.13 and CMake 4.1, on an NVIDIA RTX 4060.
 | BLAS | | e.g. OpenBLAS; otherwise GSL's own `gslcblas` |
 | MPI | | optional: for running on several processes or nodes, e.g. Open MPI |
 | CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand` and `cusolver` |
+| cuTile | | optional: `cuda-tile`, for the GPU kernels of the volcano models; with its compiler, `tileiras`, from a CUDA ≥ 13.2 toolkit or `pip install cuda-tile[tileiras]` |
 | PyYAML | | optional: for `.yaml` configuration files |
 | PostgreSQL client library | | optional: pyre's database support, not used by AlTar |
 
@@ -59,6 +60,8 @@ conda create -n altar2 -c conda-forge python=3.13 numpy h5py hdf5 gsl openblas p
 # optional, for MPI runs
 conda install -n altar2 -c conda-forge openmpi
 conda activate altar2
+# optional, for the GPU kernels of the volcano models
+pip install cuda-tile
 ```
 
 The C++ and CUDA compilers come from your system: a GCC 13 or newer on the `PATH`, and, for GPU

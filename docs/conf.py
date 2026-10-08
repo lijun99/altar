@@ -106,8 +106,6 @@ autoapi_options = ['members', 'undoc-members', 'show-inheritance', 'show-module-
 # the pre-2.0 cuda layer, superseded by the native/cuda implementations in each package
 autoapi_ignore = [f'*/_autoapi_src/altar/cuda/{legacy}/*'
                   for legacy in ('bayesian', 'data', 'distributions', 'models', 'norms')]
-# a sketch, not ready for use
-autoapi_ignore += ['*/_autoapi_src/altar/models/reverso/*']
 # compiled extension modules have no python source to resolve imports into
 suppress_warnings = ['autoapi.python_import_resolution']
 
