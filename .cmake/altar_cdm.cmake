@@ -53,6 +53,7 @@ function(altar_cdm_buildModule)
   target_sources(cdmmodule PRIVATE
     lib/libcdm/cdm.cc
     ext/cdm/cdm.cc
+    ext/cdm/bindings.cc
     )
 
   # install the cdm extension

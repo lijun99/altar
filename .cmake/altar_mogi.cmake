@@ -53,6 +53,7 @@ function(altar_mogi_buildModule)
   target_sources(mogimodule PRIVATE
     lib/libmogi/mogi.cc
     ext/mogi/mogi.cc
+    ext/mogi/bindings.cc
     )
 
   # install the mogi extension

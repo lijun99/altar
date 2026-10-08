@@ -53,6 +53,7 @@ function(altar_reverso_buildModule)
   target_sources(reversomodule PRIVATE
     lib/libreverso/reverso.cc
     ext/reverso/reverso.cc
+    ext/reverso/bindings.cc
     )
 
   # install the reverso extension

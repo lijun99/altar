@@ -9,7 +9,7 @@
 // code guard
 #pragma once
 
-// the two magma chamber model of Reverso et al. [2014], EPSL 405, 100-112: a deep chamber fed
+// the two magma chamber model of Reverso et al. [2014], JGR 119, 4666-4683: a deep chamber fed
 // at a constant rate {Qin} feeds a shallow one through a cylindrical conduit; the analytic
 // overpressures of the two, starting from zero, drive the surface displacements of two point
 // sources, sills or spheres, under the origin
