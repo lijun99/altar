@@ -93,7 +93,9 @@ class AdaptiveStepSizer(altar.component, family="altar.bayesian.stepsizers.adapt
     @altar.export
     def initialize(self, value):
         self._reset_counters()
-        return self._clip(value)
+        # adapt from {value}, not from my own default
+        self.step_size = self._clip(value)
+        return self.step_size
 
     @altar.export
     def adjust(self, *, attempts, accepted):
