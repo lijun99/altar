@@ -3,106 +3,60 @@
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 #
 
 
-# externals
+# the package
 import altar
-# a CDM source that delegates the time consuming calculation to an implementation in C++
-from altar.models.cdm.ext import libcdm
 
 
 # declaration
 class Fast:
     """
-    A C++ accelerated strategy for computing the data log likelihood
+    The cpu strategy: the forward model of all samples at once, in c++
     """
 
 
-    # interface
-    def initialize(self, model, **kwds):
+    def initialize(self, model):
         """
-        Initialize the strategy with {model} information
+        Upload the observation geometry
         """
-        # build the calculator and attach it
-        self.source = source = libcdm.newSource(model.nu)
-        # get the number of observations
-        observations = model.observations
-        # the locations on the ground where the observations were made
-        locations = model.points
-        # the observed displacements
-        displacements = model.d
-        # the array with the lines of sight to the observation locations
-        los = model.los
-        # and the data set id for each observation
-        oid = model.oid
-
-        # attach the coordinates of the observation points
-        libcdm.locations(source, locations)
-        # attach the observed displacements
-        libcdm.data(source, displacements.data)
-        # attach the LOS vectors
-        libcdm.los(source, los.data)
-        # attach the map of observations to their set
-        libcdm.oid(source, oid)
-        # inform the source about the parameter layout; assumes contiguous parameter sets
-        libcdm.layout(source,
-                      model.xIdx, model.dIdx,
-                      model.openingIdx, model.aXIdx, model.omegaXIdx,
-                      model.offsetIdx)
-
-        # nothing to do
+        # get the extension; {altar.models.cdm.ext} swallows a failed import
+        from .ext import libcdm
+        self.libcdm = libcdm
+        self.model = model
+        self.stations = model.io.toGsl(model.stations)
+        # all done
         return self
 
 
-    def data_likelihood(self, model, step):
+    def forward_model_batched(self, theta, prediction, batch):
         """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
+        Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
-        # grab my calculator
-        source = self.source
-        # compute the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # allocate a matrix to hold the predicted displacements
-        predicted = altar.matrix(shape=(step.samples, model.observations))
+        model = self.model
+        self.libcdm.displacements(theta, self.stations, model.layout, model.nu, batch, prediction)
+        # all done
+        return self
 
-        # compute the predicted displacements
-        libcdm.displacements(source, θ.capsule, predicted.data)
-        # compute the residuals (in place)
-        libcdm.residuals(source, predicted.data)
 
-        # get the norm
-        norm = model.norm
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the data likelihood vector
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # go through the samples
-        for sample in range(samples):
-            # get the residuals
-            residuals = predicted.getRow(sample)
-            # compute the norm
-            nrm = norm.eval(v=residuals, sigma_inv=cd_inv)
-            # and normalize it
-            llk = normalization - nrm**2 / 2
-            # store it
-            dataLLK[sample] = llk
-
+    def verify(self, theta, mask, batch):
+        """
+        Flag in {mask} the first {batch} samples of {theta} whose source reaches above the free
+        surface
+        """
+        self.libcdm.verify(theta, self.model.layout, batch, mask)
         # all done
         return self
 
 
     # private data
-    source = None
+    libcdm = None
+    model = None
+    stations = None # the observation geometry, as a gsl matrix
 
 
 # end of file

@@ -1,7 +1,11 @@
 # -*- cmake -*-
 #
 # michael a.g. aïvázis <michael.aivazis@para-sim.com>
-# (c) 2003-2020 all rights reserved
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
 
 # build the reverso package
 function(altar_reverso_buildPackage)
@@ -26,55 +30,10 @@ function(altar_reverso_buildPackage)
 endfunction(altar_reverso_buildPackage)
 
 
-# buld the reverso libraries
-function(altar_reverso_buildLibrary)
-  # the libreverso target
-  add_library(libreverso SHARED)
-  # adjust the name
-  set_target_properties(
-    libreverso PROPERTIES
-    LIBRARY_OUTPUT_NAME reverso
-    )
-  # set the include directories
-  target_include_directories(
-    libreverso PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
-    )
-  # set the link directories
-  target_link_directories(
-    libreverso PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    )
-  # add the dependencies
-  target_link_libraries(
-    libreverso PRIVATE
-    ${GSL_LIBRARIES} journal
-    )
-  # add the sources
-  target_sources(
-    libreverso PRIVATE
-    lib/libreverso/reverso.cc
-    lib/libreverso/Source.cc
-    )
-
-  # stage the reverso headers
-  altar_stageHeaders(lib/libreverso altar/models/reverso)
-
-  # install the library
-  install(
-    TARGETS libreverso
-    LIBRARY DESTINATION lib
-    )
-
-  # all done
-endfunction(altar_reverso_buildLibrary)
-
-
-# build the reverso extension module
+# build the reverso extension module, with the forward model compiled in
 function(altar_reverso_buildModule)
   # reverso
-  Python3_add_library(reversomodule MODULE)
+  Python_add_library(reversomodule MODULE)
   # adjust the name to match what python expects
   set_target_properties(
     reversomodule PROPERTIES
@@ -85,26 +44,16 @@ function(altar_reverso_buildModule)
   target_include_directories(
     reversomodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
-    )
-  # set the link directories
-  target_link_directories(
-    reversomodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
+    ${GSL_INCLUDE_DIRS}
+    ${PYRE_INCLUDE_DIRS}
     )
   # set the libraries to link against
-  target_link_libraries(reversomodule PUBLIC libreverso libaltar journal)
+  target_link_libraries(reversomodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
   # add the sources
   target_sources(reversomodule PRIVATE
+    lib/libreverso/reverso.cc
     ext/reverso/reverso.cc
-    ext/reverso/exceptions.cc
-    ext/reverso/source.cc
-    )
-
-  # install the capsule
-  install(
-    FILES ext/reverso/capsules.h
-    DESTINATION ${ALTAR_DEST_INCLUDE}/altar/models/reverso
+    ext/reverso/bindings.cc
     )
 
   # install the reverso extension
@@ -120,7 +69,7 @@ endfunction(altar_reverso_buildModule)
 function(altar_reverso_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/reverso
+    PROGRAMS bin/altar-reverso
     DESTINATION bin
     )
   # all done

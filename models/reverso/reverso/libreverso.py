@@ -4,114 +4,73 @@
 # grace bato           (mary.grace.p.bato@jpl.nasa.gov)
 # eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2013-2024 parasim inc
-# (c) 2010-2024 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
 # externals
-import math
+import numpy
 
 
-# the calculator
-def REVERSO(locations,
-            H_s, H_d, a_s, a_d, a_c,
-            Qin,
-            G, v, mu, drho, g):
+def gamma(sill, v):
     """
-    Calculate the surface displacements for a Reverso model at observation {locations}
+    The volume change of a chamber of radius a per unit overpressure, in units of pi a^3 / G
+    """
+    return 8 * (1 - v) / (3 * numpy.pi) if sill else 1.0
 
-    The parameter {locations} is an array of (t, x, y) triplets
+
+def response(sill, r, H, a, G, v):
+    """
+    The surface displacement, radial and up, at distance {r} per unit overpressure of a chamber
+    of radius {a} at depth {H}
+    """
+    R2 = r**2 + H**2
+    alpha = 4 * H**2 / (numpy.pi * R2) if sill else 1.0
+    f = a**3 * alpha * (1 - v) / (G * R2**1.5)
+    return r * f, H * f
+
+
+def REVERSO(t, x, y, Qin, H_s, H_d, a_s, a_d, a_c, G, v, mu, drho, g,
+            shallow_sill=True, deep_sill=True):
+    """
+    The (east, north, up) surface displacements at times {t} and locations ({x}, {y}) of the
+    two magma chamber model of Reverso et al. [2014], starting from zero overpressures
 
     model parameters:
-        a_c: the radius of the hydraulic pipe
-        a_s: the radius of the shallow reservoir
-        a_d: the radius of the deep reservoir
-        H_s: the depth of the shallow reservoir
-        H_d: the depth of the deep reservoir
+        Qin: the basal magma inflow rate
+        H_s, a_s: the depth and radius of the shallow chamber
+        H_d, a_d: the depth and radius of the deep chamber
+        a_c: the radius of the conduit connecting them
     """
+    t, x, y = (numpy.asarray(c, dtype=float) for c in (t, x, y))
+    pi = numpy.pi
+    gamma_s = gamma(shallow_sill, v)
+    gamma_d = gamma(deep_sill, v)
 
-    # constants
-    pi = math.pi
-    # functions
-    exp = math.exp
-
-    # initial conditions
-    # shallow reservoir overpressure [Pa]
-    dPs0 = 0.0
-    # deep reservoir overpressure [Pa]
-    dPd0 = 0.0
-
-    # ratio of reservoir volumes
+    # the ratio of the chamber volumes and the length of the conduit
     k = (a_d/a_s)**3
-    # length of the hydraulic connection
     H_c = H_d - H_s
-    gamma_s = 8.0 * (1-v) / (3.0 * pi)
-    gamma_d = 8.0 * (1-v) / (3.0 * pi)
-
     gamma_r = gamma_s + gamma_d*k
+    # the characteristic time (eq. 10)
+    tau = 8 * mu * H_c * gamma_s * gamma_d * k * a_s**3 / (G * a_c**4 * gamma_r)
+    # the amplitude of the transient
+    A = gamma_d*k / gamma_r * (drho*g*H_c - 8*gamma_s*mu*Qin*H_c / (pi * a_c**4 * gamma_r))
 
-    # the analytic solution
-    # the characteristic time constant (eq. 10)
-    tau = (8.0 * mu * H_c**gamma_s * gamma_d * k * a_s**3) / (G * a_c**4 * gamma_r)
+    # the overpressures
+    f0 = A * (1 - numpy.exp(-t/tau))
+    f1 = G * Qin * t / (pi * a_s**3 * gamma_r)
+    dP_s = f1 + f0
+    dP_d = f1 - f0 * gamma_s / (gamma_d*k)
 
-    A  = gamma_d*k / gamma_r
-    A *= dPd0 - dPs0 + drho*g*H_c - 8*gamma_s*mu*Qin*H_c / (pi * a_c**4 * gamma_r)
-
-    # generate the displacements
-    for t,x,y in locations:
-        # compute the pressures
-        f0 = A * (1 - exp(-t/tau))
-        f1 = G * Qin * t / (pi * a_s**3 * gamma_r)
-
-        dP_s = dPs0 + f1 + f0
-        dP_d = dPd0 + f1 - f0 * gamma_s/(gamma_d*k)
-
-        # compute the square of the distance to the reservoirs
-        r2 = x**2 + y**2
-        # get the H
-        H_r, H_z = H(r2=r2,
-                     H_s=H_s, H_d=H_d, a_s=a_s, a_d=a_d, gamma_s=gamma_s, gamma_d=gamma_d,
-                     G=G, v=v)
-        # compute the displacement in the radial direction
-        u_r = H_r[0] * dP_s + H_r[1] * dP_d
-        # compute the displacement in the vertical direction
-        u_z = H_z[0] * dP_s + H_z[1] * dP_d
-
-        # make them available
-        yield u_r, u_z
-
-    # all done
-    return
-
-
-# helpers
-def H(r2, H_s, H_d, a_s, a_d, gamma_s, gamma_d, G, v):
-    """
-    """
-    pi = math.pi
-    sqrt = math.sqrt
-
-    r = sqrt(r2)
-
-    H2_s = H_s**2
-    H2_d = H_d**2
-
-    R2_s = r2 + H2_s
-    R2_d = r2 + H2_d
-
-    alpha_s = 1.0 if gamma_s == 1.0 else 4 * H2_s / (pi*R2_s)
-    alpha_d = 1.0 if gamma_d == 1.0 else 4 * H2_d / (pi*R2_d)
-
-    f_s = a_s**3 * alpha_s * (1-v) / (G * (H2_s+r2)**1.5)
-    f_d = a_d**3 * alpha_d * (1-v) / (G * (H2_d+r2)**1.5)
-
-    H = [
-        [ r*f_s, r*f_d ],     # the radial H
-        [ H_s*f_s, H_d*f_d ]  # the vertical H
-        ]
-
-    return H
+    # the displacements
+    r = numpy.sqrt(x**2 + y**2)
+    ur_s, uz_s = response(shallow_sill, r, H_s, a_s, G, v)
+    ur_d, uz_d = response(deep_sill, r, H_d, a_d, G, v)
+    ur = ur_s*dP_s + ur_d*dP_d
+    uz = uz_s*dP_s + uz_d*dP_d
+    phi = numpy.arctan2(y, x)
+    return ur * numpy.cos(phi), ur * numpy.sin(phi), uz
 
 
 # end of file

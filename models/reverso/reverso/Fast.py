@@ -4,96 +4,61 @@
 # grace bato           (mary.grace.p.bato@jpl.nasa.gov)
 # eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
-# framework
+# the package
 import altar
-# the fast displacement calculator
-from altar.models.reverso.ext import libreverso
 
 
-# the strategy
+# declaration
 class Fast:
     """
-    A strategy for computing displacements predicted by the Reverso model that is implemented
-    in C++
+    The cpu strategy: the forward model of all samples at once, in c++
     """
 
 
-    # interface
-    def initialize(self, model, **kwds):
+    def initialize(self, model):
         """
-        Initialize the strategy with {model} information
+        Upload the observation geometry
         """
-        # build the calculator and attach it
-        self.source = source = libreverso.newSource(model.G, model.v, model.mu, model.drho, model.g)
-
-        # get the locations and time of the observations
-        ticks = model.ticks
-        # the observed displacements
-        displacements = model.d
-
-        # attach the coordinates of the observation points
-        libreverso.locations(source, ticks)
-        # and the observations
-        libreverso.data(source, displacements.data)
-        # inform the source about the sample layout; assume contiguous parameter sets
-        libreverso.layout(source,
-                          model.Qin_idx,
-                          model.Hs_idx, model.Hd_idx, model.as_idx, model.ad_idx, model.ac_idx)
-
+        # get the extension; {altar.models.reverso.ext} swallows a failed import
+        from .ext import libreverso
+        self.libreverso = libreverso
+        self.model = model
+        self.stations = model.io.toGsl(model.stations)
         # all done
         return self
 
 
-    def data_likelihood(self, model, step):
+    def forward_model_batched(self, theta, prediction, batch):
         """
-        Fill {step.data} with the likelihood of the samples in {step.theta} given the available
-        data
+        Fill the first {batch} rows of {prediction} with the displacements of {theta}
         """
-        # grab my calculator
-        source = self.source
-        # compute the portion of the sample that belongs to me
-        θ = model.restrict(theta=step.theta)
-        # allocate a matrix to hold the predicted displacements
-        predicted = altar.matrix(shape=(step.samples, 3*model.observations))
+        model = self.model
+        self.libreverso.displacements(
+            theta, self.stations, model.layout, model.G, model.v, model.mu, model.drho, model.g,
+            model.shallow == "sill", model.deep == "sill", batch, prediction)
+        # all done
+        return self
 
-        # compute the predicted displacements
-        libreverso.displacements(source, θ.capsule, predicted.data)
-        # compute the residuals (in place)
-        libreverso.residuals(source, predicted.data)
 
-        # get the norm
-        norm = model.norm
-        # the inverse of the covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the data likelihood vector
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # go through the samples
-        for sample in range(samples):
-            # get the residuals
-            residuals = predicted.getRow(sample)
-            # compute the norm
-            nrm = norm.eval(v=residuals, sigma_inv=cd_inv)
-            # and normalize it
-            llk = normalization - nrm**2 / 2
-            # and store it
-            dataLLK[sample] = llk
-
+    def verify(self, theta, mask, batch):
+        """
+        Flag in {mask} the first {batch} samples of {theta} whose deep chamber isn't below the
+        shallow one
+        """
+        self.libreverso.verify(theta, self.model.layout, batch, mask)
         # all done
         return self
 
 
     # private data
-    source = None
+    libreverso = None
+    model = None
+    stations = None # the observation geometry, as a gsl matrix
 
 
 # end of file

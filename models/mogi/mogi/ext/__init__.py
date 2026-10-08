@@ -19,14 +19,4 @@ except ImportError:
     pass
 
 
-# attempt
-try:
-    # to load the extension with the CUDA support
-    from . import cudamogi as libcudamogi
-# if it fails
-except ImportError:
-    # no worries
-    pass
-
-
 # end of file

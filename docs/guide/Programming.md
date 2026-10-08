@@ -200,6 +200,36 @@ kernel when the environment variable `ALTAR_CUDA_SYNC` is set, which pins an err
 that caused it. See `models/seismic` for the whole of it: the library, the module, and their
 build.
 
+### cuTile kernels
+
+A kernel can also be written in python, with NVIDIA's [cuTile](https://docs.nvidia.com/cuda/cutile-python)
+(`cuda.tile`): a kernel works on tiles, blocks of an array of a fixed shape, and cuTile compiles it
+the first time it runs. The volcano models (see {doc}`Volcano`) have their GPU forward models
+written this way, with no C++ and no extension module for the GPU. The Mogi kernel computes a tile
+of samples × observations:
+
+```{literalinclude} ../../models/mogi/mogi/CUDA.py
+:language: python
+:pyobject: displacements
+```
+
+and `altar.cuda.tile.launch` runs it, with the arrays of the steps:
+
+```{literalinclude} ../../models/mogi/mogi/CUDA.py
+:language: python
+:pyobject: CUDA.forward_model_batched
+```
+
+`launch` hands the arrays to cuTile, and runs the kernel on the default stream, in order with the
+rest of AlTar's kernels. Two things to keep in mind:
+
+- python floats, as arguments of a kernel or literals in it, are single precision in cuTile:
+  keep the constants that need double precision in a device vector, and read them with
+  `altar.cuda.tile.constant(constants, index)`;
+- cuTile inlines the functions a kernel calls, and unrolls the loops over python tuples: a large
+  kernel can take very long to compile. A loop over `range(n)` stays a loop; the CDM kernel keeps
+  the twelve sides of its dislocations in a table, and loops over them.
+
 ## Ensembles of models
 
 An ensemble, `altar.models.ensemble`, combines models that share parameters: it owns the parameter
@@ -262,7 +292,9 @@ source tree (e.g. `.cmake/altar_seismic.cmake`), and the model into the root `CM
 `add_subdirectory(models/<model>)`. For mm, a model is a project: add it to `.mm/projects.mm`, and
 describe its package, library and extension module, with their source directories, in
 `.mm/<model>.mm` (e.g. `.mm/mogi.mm`; `.mm/seismic-cuda.mm` for the GPU parts of a model, built
-only when mm finds CUDA).
+only when mm finds CUDA). mm builds the sources of an extension module, but its entry point
+`<module>.cc`, into a library: keep the bindings in a file of their own, e.g.
+`models/mogi/ext/mogi/bindings.cc`.
 
 ## Data types
 

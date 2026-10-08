@@ -4,8 +4,8 @@
 # grace bato           (mary.grace.p.bato@jpl.nasa.gov)
 # eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2013-2021 parasim inc
-# (c) 2010-2021 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
@@ -16,40 +16,22 @@ import altar
 # the dataset
 class Data(altar.tabular.sheet):
     """
-    The layout of the input file
+    The layout of the observation geometry file; the observed (east, north, up) displacements
+    of each observation are read by the model's {dataobs}, in the same order
     """
-
 
     # the layout
     oid = altar.tabular.int()
     oid.doc = "an integer identifying the data source"
 
     t = altar.tabular.float()
-    t.doc = "the time of the observation"
+    t.doc = "the time of the observation, in seconds since the start of the inflow"
 
     x = altar.tabular.float()
-    x.doc = "the EW coordinate of the location of the observation"
+    x.doc = "the EW coordinate of the location of the observation, from the chambers"
 
     y = altar.tabular.float()
-    y.doc = "the NS coordinate of the location of the observation"
-
-    uE = altar.tabular.float()
-    uE.doc = "the E component of the displacement"
-
-    uN = altar.tabular.float()
-    uN.doc = "the N component of the displacement"
-
-    uZ = altar.tabular.float()
-    uZ.doc = "the up component of the displacement"
-
-    σE = altar.tabular.float()
-    σE.doc = "the σ^2 of the E component of the displacement"
-
-    σN = altar.tabular.float()
-    σN.doc = "the σ^2 of the N component of the displacement"
-
-    σZ = altar.tabular.float()
-    σZ.doc = "the σ^2 of the up component of the displacement"
+    y.doc = "the NS coordinate of the location of the observation, from the chambers"
 
 
     # load data from a csv file
@@ -57,7 +39,7 @@ class Data(altar.tabular.sheet):
         """
         Load a data set from a CSV file
         """
-        # make a CSV writer
+        # make a CSV reader
         csv = altar.records.csv()
         # pull data from the file and populate me with immutable records
         self.pyre_immutable(data = csv.read(layout=self, uri=uri))

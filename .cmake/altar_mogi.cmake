@@ -30,54 +30,7 @@ function(altar_mogi_buildPackage)
 endfunction(altar_mogi_buildPackage)
 
 
-# buld the mogi libraries
-function(altar_mogi_buildLibrary)
-  # the libmogi target
-  add_library(libmogi SHARED)
-  # adjust the name
-  set_target_properties(
-    libmogi PROPERTIES
-    LIBRARY_OUTPUT_NAME mogi
-    )
-  # set the include directories
-  target_include_directories(
-    libmogi PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
-    ${Python3_NumPy_INCLUDE_DIRS}
-    ${PYRE_INCLUDE_DIRS}
-    )
-  # set the link directories
-  target_link_directories(
-    libmogi PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
-  # add the dependencies
-  target_link_libraries(
-    libmogi PRIVATE ${GSL_LIBRARIES} journal
-    )
-  # add the sources
-  target_sources(
-    libmogi PRIVATE
-    lib/libmogi/version.cc
-    lib/libmogi/Source.cc
-    )
-
-  # stage the mogi headers
-  altar_stageHeaders(lib/libmogi altar/models/mogi)
-
-  # install the library
-  install(
-    TARGETS libmogi
-    LIBRARY DESTINATION lib
-    )
-
-  # all done
-endfunction(altar_mogi_buildLibrary)
-
-
-# build the mogi extension module
+# build the mogi extension module, with the forward model compiled in
 function(altar_mogi_buildModule)
   # mogi
   Python_add_library(mogimodule MODULE)
@@ -91,29 +44,16 @@ function(altar_mogi_buildModule)
   target_include_directories(
     mogimodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS} ${Python3_NumPy_INCLUDE_DIRS}
+    ${GSL_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
-  # set the link directories
-  target_link_directories(
-    mogimodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
-    )
   # set the libraries to link against
-  target_link_libraries(mogimodule PUBLIC libmogi libaltar journal)
+  target_link_libraries(mogimodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
   # add the sources
   target_sources(mogimodule PRIVATE
+    lib/libmogi/mogi.cc
     ext/mogi/mogi.cc
-    ext/mogi/metadata.cc
-    ext/mogi/exceptions.cc
-    ext/mogi/source.cc
-    )
-
-  # install the capsule
-  install(
-    FILES ext/mogi/capsules.h
-    DESTINATION ${ALTAR_DEST_INCLUDE}/altar/models/mogi
+    ext/mogi/bindings.cc
     )
 
   # install the mogi extension
@@ -129,7 +69,7 @@ endfunction(altar_mogi_buildModule)
 function(altar_mogi_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/mogi
+    PROGRAMS bin/altar-mogi
     DESTINATION bin
     )
   # all done

@@ -4,114 +4,65 @@
 # grace bato           (mary.grace.p.bato@jpl.nasa.gov)
 # eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2018-2021 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
 # externals
-import math
-# the framework
+import numpy
+# the package
 import altar
-# the pure python implementation of the CDM source
-from .Source import Source as source
+# the pure python implementation
+from .libreverso import REVERSO
 
 
 # declaration
 class Native:
     """
-    A strategy for computing the data log likelihood that is written in pure python
+    The pure python strategy: one sample at a time, through {libreverso}; a reference
     """
 
-    # interface
-    def initialize(self, **kwds):
+
+    def initialize(self, model):
         """
-        Initialize the strategy
+        Unpack the observation geometry
         """
-        # nothing to do
-        return self
-
-
-    def data_likelihood(self, model, step):
-        """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
-        """
-        # get the norm
-        norm = model.norm
-        # grab the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # the observed displacements
-        displacements = model.d
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the storage for the data likelihoods
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # get the parameter sets
-        psets = model.psets
-
-        # get the offsets of the various parameter sets
-        QinIdx = model.Qin_idx
-        HsIdx = model.Hs_idx
-        HdIdx = model.Hd_idx
-        asIdx = model.as_idx
-        adIdx = model.ad_idx
-        acIdx = model.ac_idx
-
-        # get the locations and times of the observations
-        ticks = model.ticks
-        # initialize a vector to hold the expected displacements
-        u = altar.vector(shape=(3*model.observations))
-
-        # for each sample in the sample set
-        for sample in range(samples):
-            # extract the parameters
-            parameters = θ.getRow(sample)
-            # get the flow rate
-            Qin = parameters[QinIdx]
-            # get the locations of the chambers
-            H_s = parameters[HsIdx]
-            H_d = parameters[HdIdx]
-            # get the sizes
-            a_s = parameters[asIdx]
-            a_d = parameters[adIdx]
-            a_c = parameters[acIdx]
-
-            # make a source using the sample parameters
-            reverso = source(H_s=H_s, H_d=H_d,
-                             a_s=a_s, a_d=a_d, a_c=a_c,
-                             Qin=Qin,
-                             G=model.G, v=model.v, mu=model.mu, drho=model.drho, g=model.g)
-
-            # prime the displacement calculator
-            predicted = reverso.displacements(locations=ticks)
-
-            # compute the displacements
-            for idx, ((t,x,y), (u_R,u_Z)) in enumerate(zip(ticks, predicted)):
-                # find the polar angle of the vector to the observation location
-                phi = math.atan2(y,x)
-                # compute the E and N components
-                u_E = u_R * math.sin(phi)
-                u_N = u_R * math.cos(phi)
-                # save
-                u[3*idx + 0] = u_E
-                u[3*idx + 1] = u_N
-                u[3*idx + 2] = u_Z
-
-            # subtract the observed displacements
-            u -= displacements
-
-            # compute the norm of the displacements
-            nrm = norm.eval(v=u, sigma_inv=cd_inv)
-            # normalize and store it as the data log likelihood
-            dataLLK[sample] = normalization - nrm**2 /2
-
+        self.model = model
         # all done
         return self
+
+
+    def forward_model_batched(self, theta, prediction, batch):
+        """
+        Fill the first {batch} rows of {prediction} with the displacements of {theta}
+        """
+        model = self.model
+        t, x, y = model.stations.T
+        for sample in range(batch):
+            parameters = numpy.asarray(theta.getRow(sample).ndarray())
+            u = REVERSO(t, x, y, **model.source(parameters), **model.medium())
+            prediction.setRow(sample, model.io.toGsl(numpy.column_stack(u).ravel()))
+        # all done
+        return self
+
+
+    def verify(self, theta, mask, batch):
+        """
+        Flag in {mask} the first {batch} samples of {theta} whose deep chamber isn't below the
+        shallow one
+        """
+        model = self.model
+        for sample in range(batch):
+            source = model.source(numpy.asarray(theta.getRow(sample).ndarray()))
+            if source["H_d"] <= source["H_s"]:
+                mask[sample] = 1
+        # all done
+        return self
+
+
+    # private data
+    model = None
 
 
 # end of file

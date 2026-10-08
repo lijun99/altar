@@ -9,6 +9,6 @@
 
 # the projects: the framework, its gpu layer, and the models; the gpu projects build only when
 # mm finds cuda
-projects := altar altar-cuda emhp gaussian linear mogi cdm regression seismic seismic-cuda
+projects := altar altar-cuda emhp gaussian linear mogi cdm reverso regression seismic seismic-cuda
 
 # end of file

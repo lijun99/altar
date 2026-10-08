@@ -10,104 +10,100 @@
 
 
 # externals
+import math
+import cuda.tile as ct
+# the package
 import altar
-# the pure python implementation of the Mogi source
-from altar.models.mogi.ext import libcudamogi
+import altar.cuda
+from altar.cuda import tile
+
+
+# the tile shape: samples x observations
+TS = 16
+TO = 128
+
+
+@ct.kernel
+def displacements(theta, stations, predicted,
+                  xIdx: ct.Constant[int], yIdx: ct.Constant[int],
+                  dIdx: ct.Constant[int], sIdx: ct.Constant[int],
+                  log10dV: ct.Constant[bool], constants,
+                  TS: ct.Constant[int], TO: ct.Constant[int]):
+    """
+    Fill a (TS x TO) tile of {predicted} with the LOS displacements, less the dataset offsets,
+    of the Mogi sources in {theta}; {stations} is laid out as in {Mogi.load_geometry}, and
+    {constants} holds (1-nu)/pi
+    """
+    bs = ct.bid(0)
+    bo = ct.bid(1)
+
+    # the sources, as (TS, 1) columns
+    xs = ct.load(theta, index=(bs, xIdx), shape=(TS, 1), padding_mode=ct.PaddingMode.ZERO)
+    ys = ct.load(theta, index=(bs, yIdx), shape=(TS, 1), padding_mode=ct.PaddingMode.ZERO)
+    ds = ct.load(theta, index=(bs, dIdx), shape=(TS, 1), padding_mode=ct.PaddingMode.ZERO)
+    dV = ct.load(theta, index=(bs, sIdx), shape=(TS, 1), padding_mode=ct.PaddingMode.ZERO)
+    if log10dV:
+        dV = ct.pow(10.0, dV)
+
+    # the stations, as (1, TO) rows
+    def station(column):
+        values = ct.load(stations, index=(bo, column), shape=(TO, 1),
+                         padding_mode=ct.PaddingMode.ZERO)
+        return ct.reshape(values, (1, TO))
+    x = station(0) - xs
+    y = station(1) - ys
+    R2 = x*x + y*y + ds*ds
+    C = tile.constant(constants, 0) * dV / (R2 * ct.sqrt(R2))
+    u = C * (x*station(2) + y*station(3) + ds*station(4))
+
+    # less the offset of each observation's dataset, gathered from its column in {theta}
+    column = station(5)
+    rows = ct.reshape(ct.arange(TS, dtype=ct.int32) + bs*TS, (TS, 1))
+    columns = ct.astype(ct.maximum(column, 0), ct.int32)
+    shifted = ct.broadcast_to(column >= 0, (TS, TO))
+    u = u - ct.gather(theta, (rows, columns), mask=shifted, padding_value=0)
+
+    ct.store(predicted, index=(bs, bo), tile=u)
 
 
 # declaration
 class CUDA:
     """
-    A strategy for computing the data log likelihood that is written in pure python
+    The cuda strategy: the forward model of all samples at once, as a cuTile kernel
     """
 
-    # interface
-    def initialize(self, application, model):
+
+    def initialize(self, model):
         """
-        Initialize the strategy with {model} information
+        Upload the observation geometry
         """
-        # get the number of observations
-        observations = model.observations
-        # the locations on the ground where the observations were made
-        locations = model.points
-        # the observed displacements
-        displacements = model.d
-        # the array with the lines of sight to the observation locations
-        los = model.los
-        # and the data set id for each observation
-        oid = model.oid
-
-        # get the number of parameters
-        nParameters = model.parameters
-        # the number of samples
-        nSamples = application.job.chains
-        # and the number of observations
-        nObservations = model.observations
-
-        # build the calculator
-        source = libcudamogi.newSource(nParameters, nSamples, nObservations, model.nu)
-
-        # attach the coordinates of the observation points
-        libcudamogi.locations(source, locations)
-        # attach the observed displacements
-        libcudamogi.data(source, displacements.data)
-        # attach the LOS vectors
-        libcudamogi.los(source, los.data)
-        # attach the map of observations to their set
-        libcudamogi.oid(source, oid)
-        # inform the source about the parameter layout; assumes contiguous parameter sets
-        libcudamogi.layout(source, model.xIdx, model.dIdx, model.sIdx, model.offsetIdx)
-
-        # if all went well, attach the calculator
-        self.source = source
-
-        # nothing to do
+        self.model = model
+        self.stations = altar.cuda.matrix(source=model.stations, dtype=model.precision)
+        self.constants = altar.cuda.vector(source=[(1 - model.nu) / math.pi], dtype=model.precision)
+        # all done
         return self
 
 
-    def data_likelihood(self, model, step):
+    def forward_model_batched(self, theta, prediction, batch):
         """
-        Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
-        data.
+        Fill the first {batch} rows of {prediction} with the LOS displacements of {theta};
+        the rest of the last tile of rows gets filled too
         """
-        # grab my calculator
-        source = self.source
-        # compute the portion of the sample that belongs to this model
-        θ = model.restrict(theta=step.theta)
-        # allocate a matrix to hold the predicted displacements
-        predicted = altar.matrix(shape=(step.samples, model.observations))
-
-        # compute the residuals (in place)
-        libcudamogi.residuals(source, θ.capsule, predicted.data)
-
-        # get the norm
-        norm = model.norm
-        # the inverse of the data covariance matrix
-        cd_inv = model.cd_inv
-        # the normalization
-        normalization = model.normalization
-        # and the data likelihood vector
-        dataLLK = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-        # go through the samples
-        for sample in range(samples):
-            # get the residuals
-            residuals = predicted.getRow(sample)
-            # compute the norm
-            nrm = norm.eval(v=residuals, sigma_inv=cd_inv)
-            # and normalize
-            llk = normalization - nrm**2 / 2
-            # store it
-            dataLLK[sample] = llk
-
+        model = self.model
+        observations = self.stations.shape[0]
+        tile.launch(displacements,
+                    (tile.blocks(batch, TS), tile.blocks(observations, TO)),
+                    theta, self.stations, prediction,
+                    model.xIdx, model.yIdx, model.dIdx, model.sIdx,
+                    model.log10_dV, self.constants, TS, TO)
         # all done
         return self
 
 
     # private data
-    source = None
+    model = None
+    stations = None # the observation geometry, on the device
+    constants = None # the scalars of the kernel, in the working precision
 
 
 # end of file
