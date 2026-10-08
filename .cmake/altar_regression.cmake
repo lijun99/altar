@@ -34,7 +34,7 @@ endfunction(altar_regression_buildPackage)
 function(altar_regression_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/regression
+    PROGRAMS bin/altar-regression
     DESTINATION bin
     )
   # all done

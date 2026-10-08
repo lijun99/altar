@@ -5,24 +5,22 @@
 ; (c) 2010-present california institute of technology
 ; all rights reserved
 ;
-; sample with
-;     altar-regression --config=linear.pfg
+; the regression of linear.pfg, sampled with HMC, through the gradient of the model; sample with
+;     altar-regression --config=linear_hmc.pfg
 
 ; regression model
 regression:
-    ; shell
-    ; shell = mpi.shells.mpirun ; for running with mpi
 
-    controller = altar.bayesian.catmip
+    controller = altar.bayesian.catmip_hmc
     controller.archiver = altar.bayesian.h5recorder
-    controller.archiver.output_dir = results
+    controller.archiver.output_dir = results_hmc
 
     ; job layout
     job:
         tasks = 1       ; number of tasks per host
         gpus = 0        ; number of gpus per task
         chains = 2**10  ; number of chains per task
-        steps = 100     ; the length of each chain
+        steps = 20      ; the number of hmc trajectories per beta step
 
     ; model configuration
     model = altar.models.regression.linear
@@ -36,7 +34,7 @@ regression:
             data_file = y.txt
             cd_std = 0.2
 
-        ; parameter sets
+        ; parameter sets; HMC needs unbounded priors, so the uniform ones are reparameterized
         psets_list = [slope, intercept]
         psets:
             slope = contiguous
@@ -48,6 +46,7 @@ regression:
                 prep.support = (0, 5)
                 prior = uniform
                 prior.support = (0, 5)
+                prior.reparameterize = True
 
             intercept:
                 count = 1
@@ -55,10 +54,6 @@ regression:
                 prep.support = (0, 5)
                 prior = uniform
                 prior.support = (0, 5)
-
-
-; for parallel runs
-; mpi.shells.mpirun # altar.plexus.shell:
-;    extra = -mca btl self,tcp
+                prior.reparameterize = True
 
 ; end of file

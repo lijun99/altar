@@ -18,6 +18,6 @@ regression.pkg.root := models/regression/regression/
 regression.pkg.stem := regression
 regression.pkg.pycdir := $(builder.dest.pyc)altar/models/regression/
 regression.pkg.bin := models/regression/bin/
-regression.pkg.drivers := regression
+regression.pkg.drivers := altar-regression
 
 # end of file

@@ -33,9 +33,11 @@ It builds on the `BayesianL2` template, which provides everything but the forwar
   with the L2 norm;
 - the posterior, and the reparameterization of bounded priors.
 
-The model only adds the input file with the $x_n$, loads it in `initialize` with the model's file
-reader, `self.io.load`, and computes the residuals of one sample in `forward_model`. Its
-configuration, `models/regression/examples/linear.pfg`:
+The model only adds the input file with the $x_n$, which `initialize` loads with the model's file
+reader, `self.io.load`, finds its parameters in a sample from the offsets of the parameter sets,
+and computes the predictions of one sample in `forward_model`. It also provides `forward_problem`,
+for the {ref}`forward check <forward-check>`, and `gradient`, for the gradient-based samplers.
+Its configuration, `models/regression/examples/linear.pfg`:
 
 ```{literalinclude} ../../models/regression/examples/linear.pfg
 :language: none
@@ -43,7 +45,13 @@ configuration, `models/regression/examples/linear.pfg`:
 ```
 
 The $y_n$ are the observed data, `dataobs`; the parameter sets, `slope` and `intercept`, give the
-layout of $\boldsymbol\theta$, one row per sample.
+layout of $\boldsymbol\theta$, one row per sample. Run it with
+
+```bash
+cd ~/tools/src/altar/models/regression/examples
+altar-regression --config=linear.pfg        # CATMIP
+altar-regression --config=linear_hmc.pfg    # CATMIP with HMC, through the gradient
+```
 
 ## The model protocol
 
@@ -118,7 +126,14 @@ The gradient-based samplers, HMC, MALA and SGLD, need
   comes from the parameter sets (`prior_gradient`); for reparameterized priors, the framework
   takes both into sampling space.
 
-See the `gradient` of the linear model for an example.
+The regression model computes it with numpy:
+
+```{literalinclude} ../../models/regression/regression/Linear.py
+:language: python
+:pyobject: Linear.gradient
+```
+
+and the linear model with BLAS, on the cpu and the GPU.
 
 ### Model uncertainty
 
@@ -264,13 +279,14 @@ model named `regression`:
 models/regression
 ├── CMakeLists.txt          # builds and installs the package and its application
 ├── bin
-│   └── regression          # the application
+│   └── altar-regression    # the application
 ├── regression              # the python package, installed as altar.models.regression
 │   ├── __init__.py         # its foundries, e.g. altar.models.regression.linear
 │   ├── meta.py.in          # its version, filled in by the build
 │   └── Linear.py           # the model
 └── examples
     ├── linear.pfg          # an example configuration
+    ├── linear_hmc.pfg      # the same, with HMC
     └── synthetic           # its input files
 ```
 
