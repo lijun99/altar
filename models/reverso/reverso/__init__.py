@@ -4,17 +4,17 @@
 # grace bato           (mary.grace.p.bato@jpl.nasa.gov)
 # eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2013-2024 parasim inc
-# (c) 2010-2024 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
 # the framework
 import altar
 
-# access to the reverso source
-from .Source import Source as source
-# and the layout of the input file
+# the pure python reverso model
+from .libreverso import REVERSO as source
+# and the layout of the observation geometry file
 from .Data import Data as data
 
 

@@ -26,6 +26,10 @@ _build
 /models/cdm/examples/**/*.txt
 /models/cdm/examples/**/*.csv
 
+# the synthetic data from the reverso model
+/models/reverso/examples/**/*.txt
+/models/reverso/examples/**/*.csv
+
 # auctex lint
 /doc/**/auto
 # tex lint

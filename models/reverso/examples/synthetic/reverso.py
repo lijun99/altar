@@ -1,30 +1,32 @@
 #!/usr/bin/env python3
-# -*- python -*-
 # -*- coding: utf-8 -*-
 #
-# michael a.g. aïvázis <michael.aivazis@para-sim.com>
+# michael a.g. aïvázis (michael.aivazis@para-sim.com)
+# grace bato           (mary.grace.p.bato@jpl.nasa.gov)
+# eric m. gurrola      (eric.m.gurrola@jpl.nasa.gov)
 #
-# (c) 2013-2024 parasim inc
-# (c) 2010-2024 california institute of technology
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
 # all rights reserved
 
 
 # externals
-import math
-# framework
+import numpy
+# the framework
 import altar
 # my model
 import altar.models.reverso
 
 
-# app
+# the app
 class Reverso(altar.application, family="altar.applications.reverso"):
     """
-    A generator of synthetic data for {reverso} sources
+    A generator of synthetic data for {reverso} sources: writes the observation times and
+    locations to {geometry.csv}, the (east, north, up) displacements to {data.txt}, and their
+    covariance to {cd.txt}
     """
 
-
-    # public data
+    # user configurable state
     H_s = altar.properties.float(default=3.0e3)
     H_s.doc = "depth of the shallow reservoir"
 
@@ -43,7 +45,6 @@ class Reverso(altar.application, family="altar.applications.reverso"):
     Qin = altar.properties.float(default=0.6)
     Qin.doc = "basal magma inflow rate"
 
-    # physical parameters
     G = altar.properties.float(default=20.0E9)
     G.doc = "shear modulus, [Pa, kg-m/s**2]"
 
@@ -60,104 +61,37 @@ class Reverso(altar.application, family="altar.applications.reverso"):
     g.doc = "gravitational acceleration [m/s**2]"
 
 
-    # obligations
+    # protocol obligations
     @altar.export
     def main(self, *args, **kwds):
         """
         The main entry point
         """
-        # build the data records
-        data = self.reverso()
-        # dump the displacements in a CSV file
-        data.write(uri="displacements.csv")
+        # the observations: stations east of the chambers, from a microsecond to a year
+        year = altar.units.time.year.value
+        stations = numpy.array([(10**exponent * year, r, 0)
+                                for exponent in range(-6, 1) for r in range(1000, 6000, 1000)],
+                               dtype=float)
+        t, x, y = stations.T
+
+        geometry = altar.models.reverso.data(name="geometry")
+        for ts, xs, ys in stations:
+            record = geometry.pyre_new()
+            record.oid = 0
+            record.t = ts
+            record.x = xs
+            record.y = ys
+        geometry.write(uri="geometry.csv")
+
+        # the displacements, (east, north, up) for each observation
+        u = numpy.column_stack(altar.models.reverso.source(
+            t, x, y, Qin=self.Qin, H_s=self.H_s, H_d=self.H_d, a_s=self.a_s, a_d=self.a_d,
+            a_c=self.a_c, G=self.G, v=self.v, mu=self.mu, drho=self.drho, g=self.g)).ravel()
+        numpy.savetxt("data.txt", u)
+        # 5% of the displacements, but no less than a centimeter
+        numpy.savetxt("cd.txt", numpy.diag(numpy.maximum(0.05*numpy.abs(u), .01)**2))
         # all done
         return 0
-
-
-    # meta methods
-    def __init__(self, **kwds):
-        # chain up
-        super().__init__(**kwds)
-        # generate my the observation locations and times
-        self.ticks = tuple(self.makeTicks())
-        # all done
-        return
-
-
-    # implementation details
-    def reverso(self):
-        """
-        The generator
-        """
-        # make a source
-        source = altar.models.reverso.source(
-            H_s=self.H_s, H_d=self.H_d, a_s=self.a_s, a_d=self.a_d, a_c=self.a_c,
-            Qin=self.Qin,
-            G=self.G, v=self.v, mu=self.mu, drho=self.drho, g=self.g,
-            )
-
-        # prep the dataset; the layout is baked in
-        # rows: one for each location, time
-        # columns: oid, t,x,y,  u.E,u.N,u.U, σ.E,σ.N,σ.U
-        #
-        # the observation id simulates observations from different sensors
-        data = altar.models.reverso.data(name="displacements")
-
-        # get the observation locations and times
-        ticks = self.ticks
-        # prime the displacement calculator
-        displacements = source.displacements(locations=ticks)
-
-        # compute the displacements
-        for i,((t,x,y), (u_r, u_Z)) in enumerate(zip(ticks, displacements)):
-            # make a new entry in the data sheer
-            rec = data.pyre_new()
-
-            # record the observation id
-            rec.oid = 0
-            # record time and location
-            rec.t = t
-            rec.x = x
-            rec.y = y
-
-            # find the polar angle of the vector to the observation location
-            phi = math.atan2(y,x)
-            # compute the E and N components
-            u_E = u_r * math.sin(phi)
-            u_N = u_r * math.cos(phi)
-
-            # record the displacements
-            rec.uE = u_E
-            rec.uN = u_N
-            rec.uZ = u_Z
-
-            # estimate the variance base on a 5% deviation from the mean value
-            rec.σE = max(0.05*u_E, .01)**2
-            rec.σN = max(0.05*u_N, .01)**2
-            rec.σZ = max(0.05*u_Z, .01)**2
-
-        # all done
-        return data
-
-
-    def makeTicks(self):
-        """
-        Generate times and locations for the observations
-        """
-        # get time
-        year = altar.units.time.year.value
-        # max time
-        tMax = 1 * year
-        # build the time value
-        for exponent in range(-6,1):
-            # compute the time mark
-            t = 10**exponent * tMax
-            # build the distance
-            for r in range(1000, 6000, 1000):
-                # assemble the tick mark
-                yield (t, r, 0)
-        # all done
-        return
 
 
 # bootstrap

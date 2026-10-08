@@ -1,79 +1,60 @@
 // -*- C++ -*-
+// -*- coding: utf-8 -*-
 //
-// michael a.g. aïvázis <michael.aivazis@para-sim.com>
-//
-// (c) 2013-2024 parasim inc
+// (c) 2013-present parasim inc
+// (c) 2010-present california institute of technology
 // all rights reserved
 //
 
-// for the build system
-#include <portinfo>
-// external dependencies
-#include <string>
-#include <Python.h>
+#include <array>
+#include <gsl/gsl_matrix.h>
+#include <gsl/gsl_vector.h>
+#include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
-// the module method declarations
-#include "exceptions.h"
-#include "source.h"
+#include "../../lib/libreverso/reverso.h"
+
+namespace py = pybind11;
+using namespace py::literals;
+
+namespace reverso = altar::models::reverso;
+using layout_t = std::array<std::size_t, reverso::PARAMETERS>;
 
 
-// put everything in my private namespace
-namespace altar::extensions::models::reverso {
-    // the module method table
-    extern PyMethodDef module_methods[];
-    extern PyModuleDef module_definition;
-}
-
-PyMethodDef
-altar::extensions::models::reverso::
-module_methods[] = {
-    // source methods
-    // constructor
-    { newSource__name__, newSource, METH_VARARGS, newSource__doc__ },
-    // user supplied information
-    { data__name__, data, METH_VARARGS, data__doc__ },
-    { locations__name__, locations, METH_VARARGS, locations__doc__ },
-    { layout__name__, layout, METH_VARARGS, layout__doc__ },
-    // the calculation of the displacements
-    { displacements__name__, displacements, METH_VARARGS, displacements__doc__ },
-    // and the residuals
-    { residuals__name__, residuals, METH_VARARGS, residuals__doc__ },
-
-    // sentinel
-    {0, 0, 0, 0}
-};
-
-// the module definition structure
-PyModuleDef
-altar::extensions::models::reverso::
-module_definition = {
-    // header
-    PyModuleDef_HEAD_INIT,
-    // the name of the module
-    "reverso",
-    // the module documentation string
-    "the reverso extension module",
-    // size of the per-interpreter state of the module; -1 if this state is global
-    -1,
-    // the methods defined in this module
-    module_methods
-};
-
-// initialization function for the module
-// *must* be called PyInit_altar
-PyMODINIT_FUNC
-PyInit_reverso()
+PYBIND11_MODULE(reverso, m)
 {
-    // create the module
-    PyObject * module = PyModule_Create(&altar::extensions::models::reverso::module_definition);
-    // check whether module creation succeeded
-    if (!module) {
-        // and raise an exception if not
-        return 0;
-    }
-    // otherwise, we have an initialized module
-    // return the newly created module
-    return module;
+    m.doc() = "the altar reverso extension module";
+
+    m.def(
+        "displacements",
+        [](const gsl_matrix & theta, const gsl_matrix & stations, const layout_t & layout,
+           double G, double v, double mu, double drho, double g,
+           bool shallowSill, bool deepSill, std::size_t batch, gsl_matrix & predicted) -> void {
+            if (stations.size2 != reverso::STATION_COLUMNS) {
+                throw py::value_error("reverso.displacements: stations must have 3 columns");
+            }
+            if (batch > theta.size1 || batch > predicted.size1
+                || predicted.size2 != 3 * stations.size1) {
+                throw py::value_error("reverso.displacements: mismatched theta/predicted shapes");
+            }
+            reverso::medium_t medium { G, v, mu, drho, g, shallowSill, deepSill };
+            reverso::displacements(theta, stations, layout.data(), medium, batch, predicted);
+        },
+        "theta"_a, "stations"_a, "layout"_a, "G"_a, "v"_a, "mu"_a, "drho"_a, "g"_a,
+        "shallowSill"_a, "deepSill"_a, "batch"_a, "predicted"_a,
+        "fill predicted[:batch] with the (east, north, up) displacements of the models in theta[:batch]");
+
+    m.def(
+        "verify",
+        [](const gsl_matrix & theta, const layout_t & layout, std::size_t batch,
+           gsl_vector & mask) -> void {
+            if (batch > theta.size1 || batch > mask.size) {
+                throw py::value_error("reverso.verify: mismatched theta/mask shapes");
+            }
+            reverso::verify(theta, layout.data(), batch, mask);
+        },
+        "theta"_a, "layout"_a, "batch"_a, "mask"_a,
+        "flag in mask the samples in theta[:batch] whose deep chamber isn't below the shallow one");
 }
 
 // end of file
