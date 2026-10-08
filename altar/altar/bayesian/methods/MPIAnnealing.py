@@ -79,6 +79,26 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
+    def restart(self, annealer: Annealer, checkpoint: typing.Any,
+                share: tuple[int, int] | None = None) -> typing.Any:
+        """
+        Start the annealing process from a {checkpoint}, a step an earlier run archived
+        """
+        # chain up
+        super().restart(annealer=annealer, checkpoint=checkpoint, share=share)
+        # every task takes its own rows of the population, the same number each
+        rows = annealer.model.job.chains * annealer.pool
+        self.worker.restart(annealer=annealer, checkpoint=checkpoint,
+                            share=(self.tasks * rows, self.rank * rows))
+        # collect the global state at the manager, as after a fresh start
+        self.step = self.collect()
+        # notify the archiver on the manager
+        if self.rank == self.manager:
+            annealer.archiver.start(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+        # all done
+        return self
+
+
     def top(self, annealer: Annealer) -> typing.Any:
         """
         Notification that we are at the beginning of a β update

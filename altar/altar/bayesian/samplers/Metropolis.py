@@ -95,6 +95,18 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
         return self._impl.sample_posterior(annealer=annealer, step=step)
 
 
+    def restore(self, scaling):
+        """
+        Continue with the proposal {scaling} an earlier run reached
+        """
+        # let the step size regulator start from it
+        self.scaling = self.stepsizer.initialize(value=scaling)
+        # and my implementation walk with it
+        self._impl.scaling = self.scaling
+        # all done
+        return self
+
+
     @altar.export
     def update(self, annealer, statistics):
         """

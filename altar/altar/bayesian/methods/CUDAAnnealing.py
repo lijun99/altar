@@ -72,18 +72,10 @@ class CUDAAnnealing(AnnealingMethod):
         """
         # chain up
         super().start(annealer=annealer)
-        # assign a cuda device to worker in sequence of the worker id
-        # create both cpu/gpu steps to hold the state of the problem: the cpu one holds the
-        # population, the states each chain keeps, the gpu one the chains
+        # my cpu and gpu steps
+        reparameterized = self._allocate(annealer=annealer)
         model = annealer.model
         chains = model.job.chains
-        # no pool keeps the chains' final states only, as without pooling
-        size = annealer.pool
-        self.pool = Pool(size=size, interval=annealer.pool_interval, chains=chains) if size > 1 else None
-        reparameterized = getattr(model, 'has_reparametrization', False)
-        self.step = self.CoolingStep.alloc(samples=chains * size,
-            parameters=model.parameters, has_reparametrization=reparameterized)
-        self.gstep = self.cudaCoolingStep.start(annealer=annealer)
 
         # draw the initial population at once, so that preset samples don't repeat
         gstep = self.gstep
@@ -107,6 +99,60 @@ class CUDAAnnealing(AnnealingMethod):
 
         # all done
         return self
+
+    def restart(self, annealer, checkpoint, share=None):
+        """
+        Start the annealing process from a {checkpoint}, a step an earlier run archived
+        """
+        # chain up
+        super().restart(annealer=annealer, checkpoint=checkpoint, share=share)
+        # my cpu and gpu steps
+        self._allocate(annealer=annealer)
+        model = annealer.model
+        step, gstep = self.step, self.gstep
+        # my rows of the population, and their data likelihoods, at the step's temperature
+        total, start = share or (step.samples, 0)
+        theta, data = checkpoint.rows(total=total, start=start, count=step.samples)
+        step.beta = checkpoint.beta
+        step.theta[...] = theta
+        step.data[...] = data
+        # the rest of the densities, the chains at a time: the prior and the sampling space
+        # from the samples, and the posterior from the prior and the data likelihood
+        for offset in range(0, step.samples, gstep.samples):
+            gstep.copy_from_cpu(step=step, offset=offset)
+            if gstep.has_reparametrization:
+                gstep.theta_sampling.copy(gstep.theta)
+                model.to_sampling(theta=gstep.theta_sampling, batch=gstep.samples)
+                gstep.jacobian.zero()
+                model.eval_prior_with_physical(step=gstep, likelihood=gstep.jacobian, batch=gstep.samples)
+            gstep.prior.zero()
+            model.eval_prior(step=gstep, batch=gstep.samples)
+            model.eval_posterior(step=gstep, batch=gstep.samples)
+            gstep.copy_to_cpu(step=step, offset=offset)
+        # notify the archiver
+        annealer.archiver.start(step=step, iteration=self.iteration, psets=model.psets)
+        # all done
+        return self
+
+
+    # implementation details
+    def _allocate(self, annealer):
+        """
+        Build my cpu step, which holds the population, the states each chain keeps, and my gpu
+        step, which holds the chains; return whether the model is reparameterized
+        """
+        model = annealer.model
+        chains = model.job.chains
+        # no pool keeps the chains' final states only, as without pooling
+        size = annealer.pool
+        self.pool = Pool(size=size, interval=annealer.pool_interval, chains=chains) if size > 1 else None
+        reparameterized = getattr(model, 'has_reparametrization', False)
+        self.step = self.CoolingStep.alloc(samples=chains * size,
+            parameters=model.parameters, has_reparametrization=reparameterized)
+        self.gstep = self.cudaCoolingStep.start(annealer=annealer)
+        # all done
+        return reparameterized
+
 
     device = None
     gstep = None
