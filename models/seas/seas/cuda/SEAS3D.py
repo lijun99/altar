@@ -78,6 +78,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "start every slot from its state: the long cold spin-up then runs on one system "
         "rather than on the whole batch"
     )
+    record_mean = altar.properties.bool(default=True)
+    record_mean.doc = (
+        "at the end of each beta step, run the mean model of the population and record, in the "
+        "SEAS group of the step files, its parameters, its slip rates at t = 0, which restarts "
+        "and reruns can spin up from, its predicted data and its data log-likelihood"
+    )
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
     estimate_row_indices = altar.properties.list(
@@ -248,6 +254,14 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             self.gpuprec
         )
         self.state_init = altar.cuda.matrix(source=self.state_init_cold.copy())
+        # a restart spins up from the state its step recorded, if it did
+        self.load_spin_up(application=application)
+
+        # record the mean model with the steps
+        if self.record_mean:
+            archiver = getattr(getattr(application, "controller", None), "archiver", None)
+            if archiver is not None:
+                archiver.register(self)
 
         G_surf = (
             self.sim.G_surf[:, :, self.sim.fault.s_inner, :]
@@ -728,6 +742,76 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         # all done
         return self
 
+    @altar.export
+    def bottom(self, annealer):
+        """
+        At the end of a beta step, run the mean model of the population, for the archiver
+        """
+        super().bottom(annealer=annealer)
+        if self.record_mean:
+            self.run_mean(theta=np.asarray(annealer.worker.step.theta))
+        return self
+
+    def run_mean(self, theta):
+        """
+        Run the mean of the samples {theta}, and keep its slip rates at t = 0, its predicted
+        data and its data log-likelihood; every slot then starts from its state
+        """
+        patches = self.fault.inner_num_patches
+        mean = theta.mean(axis=0, keepdims=True).astype(float)
+        self.forward_model_batched(theta=mean, prediction=self.obs_disp, batch=1)
+        self.dataobs.eval_likelihood(
+            prediction=self.obs_disp, likelihood=self.likelihood_batch,
+            residual=False, whitened=False, batch=1,
+        )
+        # the slip rates the forward model left in the first slot, logarithmic for the
+        # rate-dependent model
+        v = np.asarray(self.state_init)[0, 2 * patches :].astype(float)
+        if self.forward_ode == "ratedependent":
+            v = self.rheo.v_0 * np.exp(v)
+        self._mean = {
+            "theta_mean": mean[0],
+            "v_t0": v,
+            "prediction": np.asarray(self.obs_disp)[0].astype(float),
+            "likelihood": float(np.asarray(self.likelihood_batch)[0]),
+        }
+        return self
+
+    def record(self, archiver):
+        """
+        Record the mean model of the last beta step via {archiver}
+        """
+        if self._mean is None:
+            return self
+        archiver.write("SEAS/theta_mean", self._mean["theta_mean"])
+        archiver.write("SEAS/v_t0", self._mean["v_t0"], {
+            "description": "slip rates of the mean model at t = 0 [m/s], [2, patches]",
+            "forward_ode": self.forward_ode})
+        archiver.write("SEAS/prediction", self._mean["prediction"])
+        archiver.write("SEAS/likelihood", self._mean["likelihood"])
+        return self
+
+    def load_spin_up(self, application):
+        """
+        Start every slot from the slip rates of the mean model a restart's step recorded
+        """
+        path = getattr(getattr(application, "controller", None), "restart", None)
+        if path is None or not self.warm_start:
+            return self
+        import h5py
+        with h5py.File(str(path), "r") as f:
+            if "SEAS/v_t0" not in f:
+                return self
+            v = np.asarray(f["SEAS/v_t0"], dtype=float)
+        patches = self.fault.inner_num_patches
+        if v.size != 2 * patches:
+            return self
+        state = np.log(v / self.rheo.v_0) if self.forward_ode == "ratedependent" else v
+        np.asarray(self.state_init)[:, 2 * patches :] = state.astype(self.gpuprec)
+        self._warm = True
+        self.info.log(f"Device {self.device.id}: spinning up from the mean model of {path}")
+        return self
+
     def reject_failed(self, llk):
         """
         Give the samples of the last batch whose integration failed the lowest
@@ -747,6 +831,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
     # private data
     _warm = False  # whether {state_init} holds the slip rates of a batch, for a warm start
+    _mean = None  # the mean model of the last beta step, for the archiver
 
 
 # end of file
