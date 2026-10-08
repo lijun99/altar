@@ -68,7 +68,7 @@ endfunction(altar_reverso_buildModule)
 function(altar_reverso_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/reverso
+    PROGRAMS bin/altar-reverso
     DESTINATION bin
     )
   # all done

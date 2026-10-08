@@ -8,7 +8,7 @@
 ; generate the input files first, in {synthetic}:
 ;     cd synthetic && python3 mogi.py
 ; then sample with
-;     mogi --config=mogi.pfg
+;     altar-mogi --config=mogi.pfg
 
 mogi:
     ; shell

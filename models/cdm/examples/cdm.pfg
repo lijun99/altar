@@ -8,7 +8,7 @@
 ; generate the input files first, in {synthetic}:
 ;     cd synthetic && python3 cdm.py
 ; then sample with
-;     cdm --config=cdm.pfg
+;     altar-cdm --config=cdm.pfg
 
 cdm:
     ; shell

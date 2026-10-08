@@ -68,7 +68,7 @@ endfunction(altar_cdm_buildModule)
 function(altar_cdm_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/cdm
+    PROGRAMS bin/altar-cdm
     DESTINATION bin
     )
   # all done

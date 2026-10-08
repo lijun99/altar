@@ -68,7 +68,7 @@ endfunction(altar_mogi_buildModule)
 function(altar_mogi_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/mogi
+    PROGRAMS bin/altar-mogi
     DESTINATION bin
     )
   # all done
