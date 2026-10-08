@@ -9,10 +9,23 @@
 #
 
 
+# externals
+from __future__ import annotations
+import typing
 # the package
 import altar
 # my protocol
 from .Model import Model as model
+
+if typing.TYPE_CHECKING:
+    import journal
+    import pyre
+    from altar.arrays import Array
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
+    from altar.simulations.Job import Job
+    from altar.simulations.NumpyRNG import NumpyRNG
 
 
 # declaration
@@ -30,13 +43,13 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     parameters.doc = "the number of model degrees of freedom"
 
     # public data
-    rng = None
-    controller = None
+    rng: NumpyRNG | None = None
+    controller: Annealer | None = None
 
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the state of the model given an {application} context
         """
@@ -59,7 +72,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def posterior(self, application):
+    def posterior(self, application: Application) -> typing.Any:
         """
         Sample my posterior distribution
         """
@@ -69,7 +82,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # services
     @altar.export
-    def initialize_sample(self, step, batch=None):
+    def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.theta} with an initial random sample from my prior distribution.
         """
@@ -77,7 +90,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def eval_prior(self, step, batch=None):
+    def eval_prior(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -86,7 +99,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def data_likelihood(self, step, batch=None):
+    def data_likelihood(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -95,27 +108,28 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def eval_posterior(self, step, batch=None):
+    def eval_posterior(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Given the {step.prior} and {step.data} likelihoods, compute a generalized posterior using
         {step.beta} and deposit the result in {step.post}
         """
-        # prime the posterior
-        step.posterior.copy(step.prior)
         # compute it; this expression reduces to Bayes' theorem for β->1
         if altar.backends.active() == "cuda":
+            # prime the posterior
+            step.posterior[...] = step.prior
             # {altar.cuda} is already imported by {altar.backends.activate_cuda}; referencing
             # it here (rather than a fresh `import altar.cuda`) avoids shadowing the
             # module-level {altar} name as a local variable in this function
             altar.cuda.cublas.axpy(alpha=step.beta, x=step.data, y=step.posterior, batch=batch)
         else:
-            altar.blas.daxpy(step.beta, step.data, step.posterior)
+            step.posterior[...] = step.prior + step.beta * step.data
         # all done
         return self
 
 
     @altar.export
-    def likelihoods(self, annealer, step, batch=None):
+    def likelihoods(self, annealer: Annealer, step: BayesianState,
+                    batch: int | None = None) -> typing.Self:
         """
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
@@ -150,7 +164,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def verify(self, step, mask, batch=None):
+    def verify(self, step: BayesianState, mask: Array, batch: int | None = None) -> Array:
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -160,7 +174,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
             f"model '{type(self).__name__}' must implement 'verify'")
 
 
-    def verify_theta(self, theta, mask, batch=None):
+    def verify_theta(self, theta: Array, mask: Array, batch: int | None = None) -> Array:
         """
         The same check as {verify}, against a bare {theta} matrix instead of a full step --
         for cuda samplers (e.g. Metropolis), which verify a candidate proposal before it has
@@ -173,7 +187,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # notifications
     @altar.export
-    def top(self, annealer):
+    def top(self, annealer: Annealer) -> typing.Self:
         """
         Notification that a β step is about to start
         """
@@ -182,14 +196,14 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def bottom(self, annealer):
+    def bottom(self, annealer: Annealer) -> typing.Self:
         """
         Notification that a β step just ended
         """
         # nothing to do
         return self
 
-    def update_model(self, annealer, step):
+    def update_model(self, annealer: Annealer, step: BayesianState) -> bool:
         """
         At the start of a walk at a new beta, update any model state that depends on the
         samples; return True if the densities of {step} need recomputing
@@ -198,7 +212,7 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
 
     @altar.export
-    def forward_problem(self, application, theta):
+    def forward_problem(self, application: Application, theta: typing.Any) -> dict:
         """
         Run the forward model for each row of {theta}; see {altar.models.Model}
         """
@@ -206,7 +220,8 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
             f"model '{type(self).__name__}' must implement 'forward_problem'")
 
     # implementation details
-    def mount_input_dataspace(self, pfs):
+    def mount_input_dataspace(self, pfs: pyre.filesystem.Filesystem.Filesystem
+                              ) -> pyre.filesystem.Filesystem.Filesystem:
         """
         Mount the directory with my input files
         """
@@ -229,14 +244,11 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         # all done
         return ifs
 
-    def restrict(self, theta):
+    def restrict(self, theta: Array) -> Array:
         """
         Return my portion of the sample matrix {theta}
 
-        On cpu, {theta} is a real gsl matrix and {.view} is a genuine, offset-preserving
-        sub-view -- exactly what {altar.distributions.native.Base.restrict} and
-        {altar.models.native.Base.restrict} already rely on for individual parameter sets with
-        a non-zero offset.
+        On cpu, {theta} is a numpy array, and my portion a view of my columns.
 
         On cuda, {theta} is an {altar.cuda.array.Array}: no cuda distribution or parameter set
         downstream of me ever receives a column-sliced sub-view of theta -- each already gets
@@ -246,12 +258,9 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         is 0 and whose {parameters} span the whole width of {theta}.
         """
         if altar.backends.active() != "cuda":
-            # find out how many samples in the set
-            samples = theta.rows
-            # find where my samples live within the overall sample matrix, and how wide my
-            # block is: i own data in all sample rows, starting in the column indicated by my
-            # {offset}, with a width determined by my parameter count
-            return theta.view(start=(0, self.offset), shape=(samples, self.parameters))
+            # i own all the sample rows, from the column of my {offset}, as wide as my
+            # parameter count
+            return theta[:, self.offset:self.offset + self.parameters]
 
         if self.offset != 0 or self.parameters != theta.shape[1]:
             raise NotImplementedError(
@@ -265,13 +274,13 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
 
     # public data
     # job parameters
-    job = None
+    job: Job | None = None
     # journal channels
-    info = None
-    warning = None
-    error = None
-    default = None
-    firewall = None
+    info: journal.info | None = None
+    warning: journal.warning | None = None
+    error: journal.error | None = None
+    debug: journal.debug | None = None
+    firewall: journal.firewall | None = None
 
 
 # end of file

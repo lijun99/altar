@@ -44,11 +44,10 @@ function(altar_reverso_buildModule)
   target_include_directories(
     reversomodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
   # set the libraries to link against
-  target_link_libraries(reversomodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
+  target_link_libraries(reversomodule PRIVATE pybind11::module)
   # add the sources
   target_sources(reversomodule PRIVATE
     lib/libreverso/reverso.cc

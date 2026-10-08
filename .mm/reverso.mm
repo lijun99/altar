@@ -24,7 +24,7 @@ reverso.pkg.drivers := altar-reverso
 reverso.lib.root := models/reverso/lib/libreverso/
 reverso.lib.stem := reverso
 reverso.lib.incdir := $(builder.dest.inc)altar/models/reverso/
-reverso.lib.extern := gsl
+reverso.lib.extern :=
 reverso.lib.c++.flags += $($(compiler.c++).std.c++23)
 
 # the extension module, {altar.models.reverso.ext.reverso}
@@ -33,7 +33,7 @@ reverso.ext.stem := reverso
 reverso.ext.pkg := reverso.pkg
 reverso.ext.wraps := reverso.lib
 reverso.ext.capsule :=
-reverso.ext.extern := reverso.lib gsl pybind11 python
+reverso.ext.extern := reverso.lib pybind11 python
 reverso.ext.lib.c++.flags += $($(compiler.c++).std.c++23)
 reverso.ext.lib.prerequisites += reverso.lib
 

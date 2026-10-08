@@ -10,12 +10,21 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import mpi
 import journal
 # the framework
 import altar
 # superclass
 from .AnnealingMethod import AnnealingMethod
+# moving the chains among the processes
+from .exchange import collect, excerpt
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.CoolingStep import CoolingStep
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -26,20 +35,15 @@ class MPIAnnealing(AnnealingMethod):
 
 
     # interface
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
         # chain up
         super().initialize(application=application)
 
-        # ask the application context for the rng component
-        rng = application.rng
-        # make a rank dependent seed; {rng.seed} is a float trait but the gsl binding
-        # requires an int
-        seed = rng.seed + 29*(self.rank+1) + 1
-        # seed the rng
-        rng.rng.seed(seed=int(seed))
+        # give my rank a random stream of its own
+        application.rng.reseed(rank=self.rank)
 
         # show me
         application.info.log(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
@@ -56,7 +60,7 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-    def start(self, annealer):
+    def start(self, annealer: Annealer) -> typing.Any:
         """
         Start the annealing process
         """
@@ -75,7 +79,7 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-    def top(self, annealer):
+    def top(self, annealer: Annealer) -> typing.Any:
         """
         Notification that we are at the beginning of a β update
         """
@@ -87,7 +91,7 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-    def cool(self, annealer):
+    def cool(self, annealer: Annealer) -> typing.Any:
         """
         Push my state forward along the cooling schedule
         """
@@ -99,7 +103,7 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-    def walk(self, annealer):
+    def walk(self, annealer: Annealer) -> typing.Any:
         """
         Explore configuration space by walking the Markov chains
         """
@@ -113,7 +117,7 @@ class MPIAnnealing(AnnealingMethod):
         return stats
 
 
-    def resample(self, annealer, statistics):
+    def resample(self, annealer: Annealer, statistics: tuple[int, int, int]) -> typing.Any:
         """
         Analyze the acceptance statistics and take the problem state to the end of the
         annealing step
@@ -134,7 +138,7 @@ class MPIAnnealing(AnnealingMethod):
         # all done
         return statistics
 
-    def archive(self, annealer, scaling, stats):
+    def archive(self, annealer: Annealer, scaling: float, stats: typing.Any) -> typing.Self:
         """
         Notify archiver to record annealer information
         """
@@ -144,7 +148,7 @@ class MPIAnnealing(AnnealingMethod):
         # otherwise, do nothing
         return self
 
-    def bottom(self, annealer):
+    def bottom(self, annealer: Annealer) -> typing.Any:
         """
         Notification that we are at the end of a β update
         """
@@ -156,7 +160,7 @@ class MPIAnnealing(AnnealingMethod):
         return self
 
 
-    def finish(self, annealer):
+    def finish(self, annealer: Annealer) -> typing.Any:
         """
         Shut down the annealing process
         """
@@ -170,25 +174,17 @@ class MPIAnnealing(AnnealingMethod):
 
     # for cuda worker
     @property
-    def device(self):
+    def device(self) -> typing.Any:
         return self.worker.device
 
     @property
-    def gstep(self):
-        return self.worker.gstep
-
-    # for cuda worker
-    @property
-    def device(self):
-        return self.worker.device
-
-    @property
-    def gstep(self):
+    def gstep(self) -> typing.Any:
         return self.worker.gstep
 
 
     # meta-methods
-    def __init__(self, annealer,  worker, communicator=None, **kwds):
+    def __init__(self, annealer: Annealer, worker: AnnealingMethod,
+                 communicator: typing.Any = None, **kwds) -> None:
         # chain up
         super().__init__(annealer=annealer, **kwds)
 
@@ -217,7 +213,7 @@ class MPIAnnealing(AnnealingMethod):
 
 
     # implementation details
-    def collect(self):
+    def collect(self) -> CoolingStep:
         """
         Assemble my global state
         """
@@ -230,26 +226,19 @@ class MPIAnnealing(AnnealingMethod):
         # get the temperature
         β = step.beta
         # assemble the sample set
-        θ = altar.matrix.collect(
-            matrix=step.theta, communicator=communicator, destination=manager)
-        # the prior
-        prior = altar.vector.collect(
-            vector=step.prior, communicator=communicator, destination=manager)
-        # the data
-        data = altar.vector.collect(
-            vector=step.data, communicator=communicator, destination=manager)
-        # the prior
-        posterior = altar.vector.collect(
-            vector=step.posterior, communicator=communicator, destination=manager)
+        θ = collect(array=step.theta, communicator=communicator, destination=manager)
+        # the likelihoods
+        prior = collect(array=step.prior, communicator=communicator, destination=manager)
+        data = collect(array=step.data, communicator=communicator, destination=manager)
+        posterior = collect(array=step.posterior, communicator=communicator, destination=manager)
 
         # and, when reparameterized, the sampling space and the jacobian
         reparameterized = getattr(step, "has_reparametrization", False)
         θ_sampling = jacobian = None
         if reparameterized:
-            θ_sampling = altar.matrix.collect(
-                matrix=step.theta_sampling, communicator=communicator, destination=manager)
-            jacobian = altar.vector.collect(
-                vector=step.jacobian, communicator=communicator, destination=manager)
+            θ_sampling = collect(
+                array=step.theta_sampling, communicator=communicator, destination=manager)
+            jacobian = collect(array=step.jacobian, communicator=communicator, destination=manager)
 
         # if I am not the manager task
         if self.rank != self.manager:
@@ -262,7 +251,7 @@ class MPIAnnealing(AnnealingMethod):
             likelihoods=(prior,data,posterior), has_reparametrization=reparameterized)
 
 
-    def partition(self):
+    def partition(self) -> CoolingStep:
         """
         Distribute my global state
         """
@@ -297,15 +286,15 @@ class MPIAnnealing(AnnealingMethod):
         # their workers set up views on the local state and we don't want to mess that up
 
         # grab my portion of the sample set
-        step.theta.excerpt(matrix=θ, source=manager, communicator=comm)
+        excerpt(target=step.theta, array=θ, source=manager, communicator=comm)
         # my portion of the likelihoods
-        step.prior.excerpt(vector=prior, source=manager, communicator=comm)
-        step.data.excerpt(vector=data, source=manager, communicator=comm)
-        step.posterior.excerpt(vector=posterior, source=manager, communicator=comm)
+        excerpt(target=step.prior, array=prior, source=manager, communicator=comm)
+        excerpt(target=step.data, array=data, source=manager, communicator=comm)
+        excerpt(target=step.posterior, array=posterior, source=manager, communicator=comm)
         # and the sampling space and the jacobian, when reparameterized
         if getattr(step, "has_reparametrization", False):
-            step.theta_sampling.excerpt(matrix=θ_sampling, source=manager, communicator=comm)
-            step.jacobian.excerpt(vector=jacobian, source=manager, communicator=comm)
+            excerpt(target=step.theta_sampling, array=θ_sampling, source=manager, communicator=comm)
+            excerpt(target=step.jacobian, array=jacobian, source=manager, communicator=comm)
 
         # NOTE: the proposal covariance Σ used to be broadcast here, back when it lived on
         # {step.sigma}; it now lives in GaussianProposal, computed per-rank from each rank's

@@ -8,58 +8,44 @@
 # all rights reserved
 #
 
-# get the package
-import altar
-# my protocol
-from .Solver import Solver as solver
+# externals
+from __future__ import annotations
+# my base class
+from .Base import Base
 
 
 # declaration
-class Grid(altar.component, family="altar.bayesian.solvers.grid", implements=solver):
+class Grid(Base, family="altar.bayesian.solvers.grid"):
     """
-    A δβ solver based on a naive grid search
+    A δβ solver based on an iterative grid search: scan ten steps across the interval that
+    holds the answer, then refine within the step that crossed the target, ten times over
     """
 
 
-    # user configurable state
-    tolerance = altar.properties.float(default=.01)
-    tolerance.doc = 'the fractional tolerance for achieving convergence'
-
-    maxiter = altar.properties.int(default=10**3)
-    maxiter.doc = 'the maximum number of iterations while looking for a δβ'
-
-
-    # protocol obligations
-    @altar.provides
-    def initialize(self, application, scheduler):
+    # implementation details
+    def dbeta(self, high: float) -> float:
         """
-        Initialize me and my parts given an {application} context and a {scheduler}
+        The δβ in [0, {high}] whose COV is my target
         """
-        # get the simulation RNG
-        rng = application.rng.rng
-        # instantiate my COV calculator
-        self.cov = altar.libaltar.COV(rng, self.maxiter, self.tolerance, scheduler.target)
-        # all done
-        return self
-
-
-    @altar.export
-    def solve(self, llk, weight):
-        """
-        Compute the next temperature in the cooling schedule
-        :param llk: data log-likelihood
-        :param weight: the normalized weight
-        :return: β, cov
-        """
-        # compute the median data log-likelihood; clone the source vector first, since the
-        # sorting happens in place
-        median = llk.clone().sort().median()
-        # call grid dbeta_solver, return β, cov
-        return self.cov.dbeta_grid(llk, median, weight)
-
-
-    # private data
-    cov = None # the COV calculator
+        target, tolerance = self.target, self.tolerance
+        low, bins = 0.0, 10
+        for refinement in range(bins + 1):
+            step = (high - low) / bins
+            guess = low
+            for scan in range(bins + 1):
+                cov = self.cov_at(dbeta=guess)
+                # close enough, or past the target on the very first point
+                if abs(cov - target) < tolerance or (cov >= target and scan == 0):
+                    return guess
+                # past the target: refine in the step that crossed it
+                if cov >= target:
+                    break
+                guess += step
+            else:
+                # the target is past the scanned interval: its upper end
+                guess -= step
+            low, high = guess - step, guess
+        return guess
 
 
 # end of file

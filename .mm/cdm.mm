@@ -24,7 +24,7 @@ cdm.pkg.drivers := altar-cdm
 cdm.lib.root := models/cdm/lib/libcdm/
 cdm.lib.stem := cdm
 cdm.lib.incdir := $(builder.dest.inc)altar/models/cdm/
-cdm.lib.extern := gsl
+cdm.lib.extern :=
 cdm.lib.c++.flags += $($(compiler.c++).std.c++23)
 
 # the extension module, {altar.models.cdm.ext.cdm}
@@ -33,7 +33,7 @@ cdm.ext.stem := cdm
 cdm.ext.pkg := cdm.pkg
 cdm.ext.wraps := cdm.lib
 cdm.ext.capsule :=
-cdm.ext.extern := cdm.lib gsl pybind11 python
+cdm.ext.extern := cdm.lib pybind11 python
 cdm.ext.lib.c++.flags += $($(compiler.c++).std.c++23)
 cdm.ext.lib.prerequisites += cdm.lib
 

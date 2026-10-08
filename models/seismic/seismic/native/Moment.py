@@ -7,12 +7,16 @@
 #
 
 # externals
+from __future__ import annotations
 import math
+import typing
 import numpy
-# the package
-import altar
 # my base class
 from altar.distributions.native.Uniform import Uniform
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
+    from altar.simulations.NumpyRNG import NumpyRNG
 
 
 # the declaration
@@ -22,71 +26,69 @@ class Moment(Uniform):
     """
 
 
-    def initialize(self, rng, application=None):
+    def initialize(self, rng: NumpyRNG, application: Application | None = None) -> typing.Self:
         """
         The uniform setup, plus the per-patch shear modulus times area
         """
         super().initialize(rng=rng, application=application)
-        self.rng = rng.rng
         self.mu_area = mu_area(distribution=self, application=application)
         return self
 
 
-    def initialize_sample(self, theta, batch=None):
+    def initialize_sample(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Fill my portion of {theta} with slips drawn from a gaussian Mw spread by a flat dirichlet
         """
-        θ = numpy.asarray(self.restrict(theta=theta))
-        θ[:, :] = draw(distribution=self, samples=θ.shape[0], rng=self.rng)
+        θ = self.restrict(theta=theta)
+        θ[...] = draw(distribution=self, samples=θ.shape[0], rng=self.rng)
         return self
 
 
-    def eval_prior(self, theta, likelihood, batch=None):
+    def eval_prior(self, theta: numpy.ndarray, likelihood: numpy.ndarray,
+                   batch: int | None = None) -> typing.Self:
         """
         Add the uniform log-density, plus the moment constraint if enabled, into {likelihood}
         """
         super().eval_prior(theta=theta, likelihood=likelihood, batch=batch)
         if self.moment_constraint:
-            θ = numpy.asarray(self.restrict(theta=theta))
+            θ = self.restrict(theta=theta)
             penalty, _ = moment_penalty(distribution=self, theta=θ)
-            L = numpy.asarray(likelihood)
-            L[:θ.shape[0]] += penalty
+            likelihood[:θ.shape[0]] += penalty
         return self
 
 
-    def prior_gradient(self, theta, gradient, batch=None):
+    def prior_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                       batch: int | None = None) -> typing.Self:
         r"""
         Fill my portion of {gradient} with d\log P/d\theta: the moment constraint's gradient (the
         uniform part is flat), chained into sampling space when reparameterized
         """
         θ = self.restrict(theta=theta)
         g = self.restrict(theta=gradient)
-        G = numpy.asarray(g)
         if self.moment_constraint:
-            _, G[:, :] = moment_penalty(distribution=self, theta=numpy.asarray(θ))
+            _, g[...] = moment_penalty(distribution=self, theta=θ)
         else:
-            G[:, :] = 0.0
+            g[...] = 0.0
         if self.reparameterize:
             self.transform.chain_gradient(theta=θ, gradient=g, batch=batch)
         return self
 
 
     # private data, set by the shim before {initialize} runs
-    area = None
-    area_patch_file = None
-    Mu = None
-    Mw_mean = None
-    Mw_sigma = None
-    slip_sign = None
-    moment_constraint = None
-    moment_constraint_factor = None
+    area: typing.Any = None
+    area_patch_file: str | None = None
+    Mu: typing.Any = None
+    Mw_mean: float
+    Mw_sigma: float
+    slip_sign: str
+    moment_constraint: bool = False
+    moment_constraint_factor: float
     # set by {initialize}
-    mu_area = None
-    rng = None
+    mu_area: numpy.ndarray
 
 
 # helpers shared with the cuda implementation
-def mu_area(distribution, application=None):
+def mu_area(distribution: typing.Any, application: Application | None = None) -> numpy.ndarray:
     """
     The per-patch shear modulus times area, from {Mu} and {area} or {area_patch_file}
     """
@@ -100,7 +102,7 @@ def mu_area(distribution, application=None):
     return per_patch(distribution.Mu, patches, "Mu") * area
 
 
-def per_patch(values, patches, name):
+def per_patch(values: typing.Any, patches: int, name: str) -> numpy.ndarray:
     """
     Broadcast a one-value {values} to all {patches}, or check it has one value per patch
     """
@@ -112,31 +114,29 @@ def per_patch(values, patches, name):
     return values
 
 
-def draw(distribution, samples, rng):
+def draw(distribution: typing.Any, samples: int, rng: numpy.random.Generator) -> numpy.ndarray:
     """
-    Slips with a gaussian Mw spread over the patches by a flat dirichlet, rejecting any sample
+    Slips with a gaussian Mw spread over the patches by a flat dirichlet, redrawing any sample
     with a slip outside the support
     """
     patches = distribution.parameters
     low, high = distribution.support
-    Mw = altar.pdf.gaussian(mean=distribution.Mw_mean, sigma=distribution.Mw_sigma, rng=rng)
-    dirichlet = altar.pdf.dirichlet(alpha=altar.vector(shape=patches).fill(1), rng=rng)
-    x = altar.vector(shape=patches)
     sign = -1.0 if distribution.slip_sign == "negative" else 1.0
     θ = numpy.empty((samples, patches))
-    for sample in range(samples):
-        while True:
-            # potency M0/Mu in GPa km^2 m, hence the -15
-            potency = sign * 10 ** (1.5 * Mw.sample() + 9.1 - 15)
-            dirichlet.vector(vector=x)
-            slips = potency * numpy.asarray(x) / distribution.mu_area
-            if numpy.all((slips > low) & (slips < high)):
-                break
-        θ[sample] = slips
+    pending = numpy.arange(samples)
+    while pending.size:
+        n = pending.size
+        # potency M0/Mu in GPa km^2 m, hence the -15
+        potency = sign * 10 ** (1.5 * rng.normal(distribution.Mw_mean, distribution.Mw_sigma, size=n)
+                                + 9.1 - 15)
+        slips = potency[:, None] * rng.dirichlet(numpy.ones(patches), size=n) / distribution.mu_area
+        θ[pending] = slips
+        pending = pending[~((slips > low) & (slips < high)).all(axis=1)]
     return θ
 
 
-def moment_penalty(distribution, theta):
+def moment_penalty(distribution: typing.Any,
+                   theta: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray]:
     """
     The moment constraint's log-density -f (Mw - mean)^2 / (2 sigma^2) per sample, and its
     gradient with respect to {theta}; Mw = (log10|M0| + 5.9)/1.5 with Mu in GPa, A in km^2

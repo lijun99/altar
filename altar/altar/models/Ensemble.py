@@ -9,6 +9,8 @@
 #
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
 # the package
 import altar
@@ -16,6 +18,12 @@ import altar
 from .BayesianL2 import BayesianL2
 # my protocol
 from .Model import Model as model
+
+if typing.TYPE_CHECKING:
+    from altar.arrays import Array
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -38,7 +46,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Lay out my parameter sets, then set up each of my models on its own columns
         """
@@ -77,7 +85,8 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
 
     @altar.export
-    def likelihoods(self, annealer, step, batch=None):
+    def likelihoods(self, annealer: Annealer, step: BayesianState,
+                    batch: int | None = None) -> typing.Self:
         """
         The prior from my parameter sets, plus each cascaded model's data likelihood; the data
         likelihood of the others; and the posterior at {step.beta}
@@ -90,9 +99,9 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
 
         dispatcher.notify(event=dispatcher.data_start, controller=annealer)
-        step.data.zero()
+        step.data[...] = 0
         for name, member in self.models.items():
-            likelihood = self._vector(samples=step.theta.shape[0]).zero()
+            likelihood = self._vector(samples=step.theta.shape[0])
             member.eval_data_likelihood(
                 theta=self._member_theta(name=name, theta=step.theta, batch=samples),
                 likelihood=likelihood, batch=batch)
@@ -105,7 +114,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return self
 
 
-    def update_model(self, annealer, step):
+    def update_model(self, annealer: Annealer, step: BayesianState) -> bool:
         """
         Let each of my models update its C_p, from its own columns of {step}
         """
@@ -118,7 +127,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
 
     @altar.export
-    def forward_problem(self, application, theta):
+    def forward_problem(self, application: Application, theta: typing.Any) -> dict:
         """
         Each model's predictions for its columns of {theta}, keyed "<model>.<name>"
         """
@@ -131,7 +140,8 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return out
 
 
-    def gradient(self, controller, step, batch=None):
+    def gradient(self, controller: Annealer, step: typing.Any,
+                 batch: int | None = None) -> typing.Self:
         """
         The prior gradient from my parameter sets, plus the data gradient of each cascaded model;
         the data gradient of the others; each model's on its own columns, scattered back to
@@ -173,7 +183,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return self
 
 
-    def columns(self, name):
+    def columns(self, name: str) -> numpy.ndarray:
         """
         The columns of theta that my model {name} works on
         """
@@ -181,7 +191,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
 
     # implementation details
-    def _member_theta(self, name, theta, batch):
+    def _member_theta(self, name: str, theta: Array, batch: int) -> Array:
         """
         The columns of {theta} my model {name} works on: {theta} itself if that is all of them,
         in order, otherwise a gather into a scratch matrix, on the device for cuda
@@ -191,9 +201,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
             return theta
         rows = theta.shape[0]
         if altar.backends.active() != "cuda":
-            θ = altar.matrix(shape=(rows, cols.size))
-            numpy.asarray(θ)[:, :] = numpy.asarray(theta)[:, cols]
-            return θ
+            return theta[:, cols]
         selection, θ = self._selection(name=name, rows=rows)
         cublas = altar.cuda.cublas
         gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
@@ -205,7 +213,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return θ
 
 
-    def _scatter(self, name, gradient, target, batch):
+    def _scatter(self, name: str, gradient: Array, target: Array, batch: int) -> Array:
         """
         target += the gradient on the columns of my model {name}, scattered to theta's columns
         """
@@ -220,7 +228,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return target
 
 
-    def _selection(self, name, rows):
+    def _selection(self, name: str, rows: int) -> tuple[Array, Array]:
         """
         The (parameters x columns) selection matrix of my model {name}, theta_m = theta S, and a
         scratch matrix for its columns of theta, on the device
@@ -236,31 +244,31 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         return selection, θ
 
 
-    def _vector(self, samples):
+    def _vector(self, samples: int) -> Array:
         """
-        A per-sample scratch vector, on my backend
+        A per-sample scratch vector of zeros, on my backend
         """
         if altar.backends.active() == "cuda":
-            return altar.cuda.vector(shape=samples, dtype=self.precision)
-        return altar.vector(shape=samples)
+            return altar.cuda.vector(shape=samples, dtype=self.precision).zero()
+        return numpy.zeros(samples)
 
 
     @staticmethod
-    def _add(x, y, batch=None):
+    def _add(x: Array, y: Array, batch: int | None = None) -> Array:
         """
         y += x
         """
         if altar.backends.active() == "cuda":
             altar.cuda.cublas.axpy(alpha=1.0, x=x, y=y, batch=batch)
         else:
-            altar.blas.daxpy(1.0, x, y)
+            y += x
         return y
 
 
     # private data
-    _columns = None # the columns of theta each of my models works on
-    _gather = None # per model, the cuda selection matrix and scratch theta
-    _cascade = None # the cascaded data gradients, before their Jacobian
+    _columns: dict[str, numpy.ndarray] | None = None # the columns of theta each of my models works on
+    _gather: dict | None = None # per model, the cuda selection matrix and scratch theta
+    _cascade: Array | None = None # the cascaded data gradients, before their Jacobian
 
 
 class _Gradients:
@@ -269,7 +277,7 @@ class _Gradients:
     gradient buffers
     """
 
-    def __init__(self, theta, prior_gradient, data_gradient):
+    def __init__(self, theta: Array, prior_gradient: Array, data_gradient: Array) -> None:
         self.theta = theta
         self.prior_gradient = prior_gradient
         self.data_gradient = data_gradient
@@ -280,7 +288,7 @@ class _Columns:
     A step as one of my models sees it, for its C_p updates: beta, and its columns of theta
     """
 
-    def __init__(self, beta, theta):
+    def __init__(self, beta: float, theta: numpy.ndarray) -> None:
         self.beta = beta
         self.theta = theta
 

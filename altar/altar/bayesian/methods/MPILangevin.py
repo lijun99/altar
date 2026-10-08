@@ -10,6 +10,8 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import mpi
 import journal
 import numpy
@@ -17,6 +19,13 @@ import numpy
 import altar
 # superclass
 from .LangevinMethod import LangevinMethod
+# moving the chains among the processes
+from .exchange import collect, excerpt
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.controllers.Langevin import Langevin
+    from altar.bayesian.states.LangevinStep import LangevinStep
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -27,20 +36,15 @@ class MPILangevin(LangevinMethod):
 
 
     # interface
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
         # chain up
         super().initialize(application=application)
 
-        # ask the application context for the rng component
-        rng = application.rng
-        # make a rank dependent seed; {rng.seed} is a float trait but the gsl binding
-        # requires an int
-        seed = rng.seed + 29*(self.rank+1) + 1
-        # seed the rng
-        rng.rng.seed(seed=int(seed))
+        # give my rank a random stream of its own
+        application.rng.reseed(rank=self.rank)
 
         # show me
         application.info.log(f"mpi annealing: worker {self.wid} out of total {self.workers}, {self.worker}")
@@ -57,7 +61,7 @@ class MPILangevin(LangevinMethod):
         return self
 
 
-    def start(self, controller):
+    def start(self, controller: Langevin) -> typing.Any:
         """
         Start the annealing process
         """
@@ -73,7 +77,7 @@ class MPILangevin(LangevinMethod):
         return self
 
 
-    def top(self, controller):
+    def top(self, controller: Langevin) -> typing.Any:
         """
         Notification that we are at the beginning of a β update
         """
@@ -85,7 +89,7 @@ class MPILangevin(LangevinMethod):
         return self
 
 
-    def cool(self, controller):
+    def cool(self, controller: Langevin) -> typing.Any:
         """
         Push my state forward along the cooling schedule
         """
@@ -97,7 +101,7 @@ class MPILangevin(LangevinMethod):
         return self
 
 
-    def walk(self, controller):
+    def walk(self, controller: Langevin) -> typing.Any:
         """
         Explore configuration space by walking the Markov chains
         """
@@ -111,7 +115,7 @@ class MPILangevin(LangevinMethod):
         return stats
 
 
-    def rate_statistics(self, controller):
+    def rate_statistics(self, controller: Langevin) -> typing.Any:
         """
         The statistics {estimate_rate} needs, pooled over the chains of every task, so that
         all tasks agree on the sampling rate
@@ -128,7 +132,7 @@ class MPILangevin(LangevinMethod):
         return n, sum_x, sum_x2, max_gradient
 
 
-    def resample(self, controller, statistics):
+    def resample(self, controller: Langevin, statistics: typing.Any) -> typing.Any:
         """
         Analyze the acceptance statistics and take the problem state to the end of the
         annealing step
@@ -149,7 +153,7 @@ class MPILangevin(LangevinMethod):
         # all done
         return statistics
 
-    def archive(self, controller, scaling, stats):
+    def archive(self, controller: Langevin, scaling: float, stats: typing.Any) -> typing.Self:
         """
         Notify archiver to record controller information
         """
@@ -159,7 +163,7 @@ class MPILangevin(LangevinMethod):
         # otherwise, do nothing
         return self
 
-    def bottom(self, controller):
+    def bottom(self, controller: Langevin) -> typing.Any:
         """
         Notification that we are at the end of a β update
         """
@@ -171,7 +175,7 @@ class MPILangevin(LangevinMethod):
         return self
 
 
-    def finish(self, controller):
+    def finish(self, controller: Langevin) -> typing.Any:
         """
         Shut down the annealing process
         """
@@ -185,25 +189,17 @@ class MPILangevin(LangevinMethod):
 
     # for cuda worker
     @property
-    def device(self):
+    def device(self) -> typing.Any:
         return self.worker.device
 
     @property
-    def gstep(self):
-        return self.worker.gstep
-
-    # for cuda worker
-    @property
-    def device(self):
-        return self.worker.device
-
-    @property
-    def gstep(self):
+    def gstep(self) -> typing.Any:
         return self.worker.gstep
 
 
     # meta-methods
-    def __init__(self, controller,  worker, communicator=None, **kwds):
+    def __init__(self, controller: Langevin, worker: LangevinMethod,
+                 communicator: typing.Any = None, **kwds) -> None:
         # chain up
         super().__init__(controller=controller, **kwds)
 
@@ -232,7 +228,7 @@ class MPILangevin(LangevinMethod):
 
 
     # implementation details
-    def collect(self):
+    def collect(self) -> LangevinStep:
         """
         Assemble my global state
         """
@@ -245,25 +241,17 @@ class MPILangevin(LangevinMethod):
         # get the temperature
         β = step.beta
         # assemble the sample set
-        θ = altar.matrix.collect(
-            matrix=step.theta, communicator=communicator, destination=manager)
-        # the prior
-        prior = altar.vector.collect(
-            vector=step.prior, communicator=communicator, destination=manager)
-        # the data
-        data = altar.vector.collect(
-            vector=step.data, communicator=communicator, destination=manager)
-        # the prior
-        posterior = altar.vector.collect(
-            vector=step.posterior, communicator=communicator, destination=manager)
+        θ = collect(array=step.theta, communicator=communicator, destination=manager)
+        # the likelihoods
+        prior = collect(array=step.prior, communicator=communicator, destination=manager)
+        data = collect(array=step.data, communicator=communicator, destination=manager)
+        posterior = collect(array=step.posterior, communicator=communicator, destination=manager)
         # the gradients, so the archived state reflects the last sweep, not zeros; a cuda
         # worker's host copy of its state has none
         grad_prior = grad_data = None
         if hasattr(step, "grad_prior"):
-            grad_prior = altar.matrix.collect(
-                matrix=step.grad_prior, communicator=communicator, destination=manager)
-            grad_data = altar.matrix.collect(
-                matrix=step.grad_data, communicator=communicator, destination=manager)
+            grad_prior = collect(array=step.grad_prior, communicator=communicator, destination=manager)
+            grad_data = collect(array=step.grad_data, communicator=communicator, destination=manager)
 
         # if I am not the manager task
         if self.rank != self.manager:
@@ -276,7 +264,7 @@ class MPILangevin(LangevinMethod):
             gradients=None if grad_prior is None else (grad_prior,grad_data))
 
 
-    def partition(self):
+    def partition(self) -> LangevinStep:
         """
         Distribute my global state
         """
@@ -310,19 +298,19 @@ class MPILangevin(LangevinMethod):
         # their workers set up views on the local state and we don't want to mess that up
 
         # grab my portion of the sample set
-        step.theta.excerpt(matrix=θ, source=manager, communicator=comm)
+        excerpt(target=step.theta, array=θ, source=manager, communicator=comm)
         # my portion of the likelihoods
-        step.prior.excerpt(vector=prior, source=manager, communicator=comm)
-        step.data.excerpt(vector=data, source=manager, communicator=comm)
-        step.posterior.excerpt(vector=posterior, source=manager, communicator=comm)
+        excerpt(target=step.prior, array=prior, source=manager, communicator=comm)
+        excerpt(target=step.data, array=data, source=manager, communicator=comm)
+        excerpt(target=step.posterior, array=posterior, source=manager, communicator=comm)
 
         # all done
         return step
 
 
     # private data
-    manager = 0 # the rank responsible for distributing and collecting the workload
-    worker = None # the annealing method implementation; deduced at start up time
+    manager: int = 0 # the rank responsible for distributing and collecting the workload
+    worker: LangevinMethod | None = None # the annealing method implementation; deduced at start up time
 
 
 # end of file

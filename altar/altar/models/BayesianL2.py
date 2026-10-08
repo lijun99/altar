@@ -8,6 +8,8 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
 # the package
 import altar
@@ -15,6 +17,13 @@ import altar
 from .Bayesian import Bayesian
 # the model uncertainty
 from .cp import cp as uncertainty
+
+if typing.TYPE_CHECKING:
+    import pyre
+    from altar.arrays import Array
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 # declaration
 class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
@@ -62,7 +71,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the state of the model given an {application} context
         """
@@ -98,7 +107,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
     @altar.export
-    def posterior(self, application):
+    def posterior(self, application: Application) -> typing.Any:
         """
         Sample my posterior distribution
         """
@@ -106,7 +115,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self.controller.posterior(model=self)
 
     @altar.export
-    def initialize_sample(self, step, batch=None):
+    def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -124,13 +133,13 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # {to_sampling} only actually does anything for the psets that are reparameterized,
         # leaving the rest as the (correct, identity) copy
         if self.has_reparametrization:
-            step.theta_sampling.copy(step.theta)
+            step.theta_sampling[...] = step.theta
             self.to_sampling(theta=step.theta_sampling, batch=batch)
         # and return
         return self
 
     @altar.export
-    def verify(self, step, mask, batch=None):
+    def verify(self, step: BayesianState, mask: Array, batch: int | None = None) -> Array:
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -138,7 +147,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self.verify_theta(theta=step.theta, mask=mask, batch=batch)
 
 
-    def verify_theta(self, theta, mask, batch=None):
+    def verify_theta(self, theta: Array, mask: Array, batch: int | None = None) -> Array:
         """
         The same check as {verify}, against a bare {theta} matrix instead of a full step --
         for cuda samplers (e.g. Metropolis), which verify a candidate proposal before it has
@@ -155,7 +164,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return mask
 
     @altar.export
-    def eval_prior(self, step, batch=None):
+    def eval_prior(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.prior} with the log likelihoods of the samples in {step.theta} in my prior
         distribution
@@ -172,7 +181,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def eval_prior_with_physical(self, step, likelihood=None, batch=None):
+    def eval_prior_with_physical(self, step: BayesianState, likelihood: Array | None = None,
+                                 batch: int | None = None) -> typing.Self:
         """
         Add the log-Jacobian of every reparameterized pset into {likelihood} (default
         {step.prior}); samplers keep it in a separate per-sample buffer so {step.prior} stays
@@ -189,7 +199,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def eval_prior_physical(self, step, batch=None):
+    def eval_prior_physical(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.prior} with the log likelihoods of the samples in {step.theta}, given in
         physical space
@@ -204,7 +214,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: Array, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from sampling space to physical space, in place; only
         reparameterized psets actually do anything here
@@ -218,7 +228,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: Array, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from physical space to sampling space, in place; the inverse of
         {to_physical}
@@ -232,7 +242,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def eval_jacobian(self, step, batch=None):
+    def eval_jacobian(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.Jacobian} with d(physical)/d(sampling) for every reparameterized pset (1
         elsewhere), for use by a reparameterized gradient-based sampler (e.g. HMC)
@@ -246,19 +256,19 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def transformToPhysical(self, step):
+    def transformToPhysical(self, step: BayesianState) -> typing.Self:
         """
         Refresh {step.theta} (physical space) from {step.phi} (sampling space); the bridge a
         reparameterized gradient-based sampler (e.g. cuda {HMC}) needs after every leapfrog
         position update
         """
-        step.theta.copy(step.phi)
+        step.theta[...] = step.phi
         self.to_physical(theta=step.theta, batch=step.samples)
         return self
 
 
     @property
-    def has_reparametrization(self):
+    def has_reparametrization(self) -> bool:
         """
         Whether any of my psets' priors are reparameterized; read by
         {altar.bayesian.states.cuda.CoolingStep.start}/my own {initialize_sample} to decide
@@ -277,54 +287,41 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
 
     @property
-    def reparameterization(self):
+    def reparameterization(self) -> bool:
         """
         Alias of {has_reparametrization}; this is the name cuda {HMC.initialize} reads
         """
         return self.has_reparametrization
 
 
-    def forward_model(self, theta, prediction):
+    def forward_model(self, theta: numpy.ndarray, prediction: numpy.ndarray) -> typing.Self:
         """
-        The forward model for a single set of parameters: fill {prediction} from {theta}; on
-        the cpu, both are numpy vectors
+        The forward model for a single set of parameters: fill {prediction} from {theta}
         """
         # i don't know what to do, so...
         raise NotImplementedError(
             f"model '{type(self).__name__}' must implement 'forward_model'")
 
 
-    def forward_model_batched(self, theta, prediction, batch=None):
+    def forward_model_batched(self, theta: Array, prediction: Array,
+                              batch: int | None = None) -> typing.Self:
         """
-        The forward model for a batch of theta: compute prediction from theta
-        also return {residual}=True, False if the difference between data and prediction is computed
+        Fill the first {batch} rows of the (samples x observations) {prediction} with the
+        predictions, or the residuals if {return_residual}, of the samples in {theta}
         """
-
-        # The default method computes samples one by one, the first {batch} of them
-        batch = theta.rows if batch is None else batch
-        # on the cpu, hand {forward_model} numpy views of the rows, which share their memory
-        if altar.backends.active() != "cuda":
-            θ = numpy.asarray(theta)
-            predicted = numpy.asarray(prediction)
-            for sample in range(batch):
-                self.forward_model(theta=θ[sample], prediction=predicted[sample])
-            return self
-        # create a prediction vector
-        prediction_sample = altar.vector(shape=self.observations)
-        # iterate over samples
+        # the default asks {forward_model}, one sample at a time, on the cpu only
+        if altar.backends.active() == "cuda":
+            raise NotImplementedError(
+                f"model '{type(self).__name__}' must implement 'forward_model_batched' on cuda")
+        batch = theta.shape[0] if batch is None else batch
         for sample in range(batch):
-            # obtain the sample (one set of parameters)
-            theta_sample = theta.getRow(sample)
-            # call the forward model
-            self.forward_model(theta=theta_sample, prediction=prediction_sample)
-            # copy to the prediction matrix
-            prediction.setRow(sample, prediction_sample)
-
+            self.forward_model(theta=theta[sample], prediction=prediction[sample])
         # all done
         return self
 
 
-    def eval_data_likelihood(self, theta, likelihood, batch=None):
+    def eval_data_likelihood(self, theta: Array, likelihood: Array,
+                             batch: int | None = None) -> typing.Self:
         """
         calculate data likelihood and add it to step.prior or step.data
         """
@@ -340,7 +337,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
                 # module-level {altar} name as a local variable in this function
                 prediction = altar.cuda.matrix(shape=(self.samples, self.observations), dtype=self.precision)
             else:
-                prediction = altar.matrix(shape=(self.samples, self.observations))
+                prediction = numpy.zeros((self.samples, self.observations))
             self._prediction = prediction
         # survey forward model whether it computes residual or not
         returnResidual = self.return_residual
@@ -356,7 +353,8 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
 
     @altar.export
-    def likelihoods(self, annealer, step, batch=None):
+    def likelihoods(self, annealer: Annealer, step: BayesianState,
+                    batch: int | None = None) -> typing.Self:
         """
         Convenience function that computes all three likelihoods at once given the current {step}
         of the problem
@@ -393,7 +391,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def update_model(self, annealer, step):
+    def update_model(self, annealer: Annealer, step: BayesianState) -> bool:
         """
         At the start of a walk at a new beta, let my model uncertainty update C_chi; return True
         if it changed, so the densities of {step} get recomputed
@@ -401,7 +399,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self.cp.update(model=self, annealer=annealer, step=step)
 
 
-    def update_covariance(self, cp=None):
+    def update_covariance(self, cp: numpy.ndarray | None = None) -> typing.Self:
         """
         Set the data likelihood's covariance to C_chi = C_d + {cp}, a numpy (observations x
         observations) array, or back to C_d alone
@@ -411,7 +409,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def covariance_updated(self):
+    def covariance_updated(self) -> typing.Self:
         """
         Notification that the data covariance changed, for models that fold it into their own
         data, e.g. premerged green's functions
@@ -419,7 +417,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
 
-    def compute_cp(self, theta):
+    def compute_cp(self, theta: numpy.ndarray) -> numpy.ndarray:
         """
         The model uncertainty C_p, (observations x observations), for the mean model {theta};
         models that can estimate it override this
@@ -432,7 +430,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     # implementation details
     # {mount_input_dataspace}/{restrict} are inherited unchanged from {Bayesian}
 
-    def initialize_psets(self, application=None):
+    def initialize_psets(self, application: Application | None = None) -> int:
         """
         Lay out my {psets} one after another, in {psets_list} order -- {psets} is a dict and
         doesn't guarantee iteration order matches the user's declared layout -- and let each
@@ -449,7 +447,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # all done
         return offset
 
-    def verify_unbounded_priors(self):
+    def verify_unbounded_priors(self) -> typing.Self:
         """
         Raise if any active prior is bounded and not reparameterized: gradient-based samplers
         (HMC, MALA, SGLD) move the chains along the gradient of the posterior, which a bounded
@@ -472,13 +470,14 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         return self
 
     # private data
-    observations = None
-    device = None
-    precision = None
-    ifs = None # the filesystem with the input files
-    io = None # my file reader/writer
-    checked_unbounded_priors = False # whether {gradient} has already verified all priors are unbounded
-    _prediction = None # the scratch prediction of {eval_data_likelihood}
+    observations: int
+    device: typing.Any = None
+    precision: str
+    ifs: pyre.filesystem.Filesystem.Filesystem # the filesystem with the input files
+    io: altar.io.FileIO # my file reader/writer
+    samples: int
+    checked_unbounded_priors: bool = False # whether {gradient} has already verified all priors are unbounded
+    _prediction: Array | None = None # the scratch prediction of {eval_data_likelihood}
 
 
 # end of file

@@ -9,8 +9,21 @@
 #
 
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # the package
 import altar
+
+if typing.TYPE_CHECKING:
+    import h5py
+    import journal
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.simulations.Archiver import Archiver
+
+# the prior, data and posterior log likelihoods of a step
+Likelihoods = tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]
 
 
 # declaration
@@ -28,48 +41,50 @@ class BayesianState:
     """
 
     # public data
-    theta = None     # a (samples x parameters) matrix
-    prior = None     # a (samples) vector with logs of the prior
-    data = None      # a (samples) vector with the logs of the data likelihoods given the samples
-    posterior = None # a (samples) vector with the logs of the posterior
-    weights = None   # a (samples) vector of importance weights w_i ∝ exp(Δβ · data_i); set by scheduler
+    beta: float
+    theta: numpy.ndarray     # (samples x parameters)
+    prior: numpy.ndarray     # (samples,) logs of the prior
+    data: numpy.ndarray      # (samples,) logs of the data likelihoods given the samples
+    posterior: numpy.ndarray # (samples,) logs of the posterior
+    # (samples,) importance weights w_i ∝ exp(Δβ · data_i), set by the scheduler
+    weights: numpy.ndarray | None = None
 
     # the statistics of samples
-    mean = None
-    sd = None
+    mean: numpy.ndarray | None = None
+    sd: numpy.ndarray | None = None
 
     # the name of the attribute that holds the (samples x parameters) sample matrix, and
     # the label used for it in diagnostic output; subclasses whose sample matrix lives
     # under a different name (e.g. {CoolingStep.theta_sampling}) override these
-    _theta_field = "theta"
-    _theta_label = "θ"
+    _theta_field: str = "theta"
+    _theta_label: str = "θ"
 
 
     # read-only public data
     @property
-    def _shape_matrix(self):
+    def _shape_matrix(self) -> numpy.ndarray:
         """
         The (samples x parameters) matrix that determines my shape
         """
         return getattr(self, self._theta_field)
 
     @property
-    def samples(self):
+    def samples(self) -> int:
         """
         The number of samples
         """
-        return self._shape_matrix.rows
+        return self._shape_matrix.shape[0]
 
     @property
-    def parameters(self):
+    def parameters(self) -> int:
         """
         The number of model parameters
         """
-        return self._shape_matrix.columns
+        return self._shape_matrix.shape[1]
 
 
     @classmethod
-    def start(cls, annealer):
+    def start(cls, annealer: Annealer) -> typing.Self:
         """
         Build the first cooling step by asking {model} to produce a sample set from its
         initializing prior, compute the likelihood of this sample given the data, and compute a
@@ -91,7 +106,7 @@ class BayesianState:
         return step
 
     @classmethod
-    def allocate(cls, annealer):
+    def allocate(cls, annealer: Annealer) -> typing.Self:
         # get the model
         model = annealer.model
         # build an uninitialized step
@@ -99,28 +114,28 @@ class BayesianState:
         return step
 
     @classmethod
-    def alloc(cls, samples, parameters):
+    def alloc(cls, samples: int, parameters: int) -> typing.Self:
         """
         Allocate storage for the parts of a cooling step
         """
         # allocate the initial sample set
-        theta = altar.matrix(shape=(samples, parameters)).zero()
+        theta = numpy.zeros((samples, parameters))
         # allocate the likelihood vectors
         prior, data, posterior = cls._alloc_likelihoods(samples)
         # build one of my instances and return it
         return cls(beta=0, theta=theta, likelihoods=(prior, data, posterior))
 
     @classmethod
-    def _alloc_likelihoods(cls, samples):
+    def _alloc_likelihoods(cls, samples: int) -> Likelihoods:
         """
         Allocate the (samples) prior/data/posterior likelihood vectors
         """
-        prior = altar.vector(shape=samples).zero()
-        data = altar.vector(shape=samples).zero()
-        posterior = altar.vector(shape=samples).zero()
+        prior = numpy.zeros(samples)
+        data = numpy.zeros(samples)
+        posterior = numpy.zeros(samples)
         return prior, data, posterior
 
-    def _on_start(self, annealer):
+    def _on_start(self, annealer: Annealer) -> None:
         """
         Hook invoked by {start} right after the likelihoods have been computed; the base
         implementation does nothing. {HMCState} uses this to compute gradients.
@@ -129,32 +144,29 @@ class BayesianState:
 
 
     # interface
-    def clone(self):
+    def clone(self) -> typing.Self:
         """
         Make a new step with a duplicate of my state
         """
         # make copies of my state
         beta = self.beta
-        theta = self.theta.clone()
-        likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
+        theta = self.theta.copy()
+        likelihoods = self.prior.copy(), self.data.copy(), self.posterior.copy()
 
         # make one and return it
         return type(self)(beta=beta, theta=theta, likelihoods=likelihoods)
 
-    def compute_posterior(self):
+    def compute_posterior(self) -> typing.Self:
         """
         Compute the posterior from prior, data, and beta
         """
 
         # in their log form, posterior = prior + beta * datalikelihood
-        # make a copy of prior at first
-        self.posterior.copy(self.prior)
-        # add the data likelihood
-        altar.blas.daxpy(self.beta, self.data, self.posterior)
+        self.posterior[:] =self.prior + self.beta * self.data
         # all done
         return self
 
-    def statistics(self):
+    def statistics(self) -> typing.Self:
         """
         Compute the statistics of samples
         :return:
@@ -162,12 +174,13 @@ class BayesianState:
         # get the samples
         θ = self._shape_matrix
         # compute the mean, sd
-        self.mean, self.sd = θ.mean_sd(axis=0)
+        self.mean, self.sd = θ.mean(axis=0), θ.std(axis=0, ddof=1)
         # all done
         return self
 
     # meta-methods
-    def __init__(self, beta, theta, likelihoods, **kwds):
+    def __init__(self, beta: float, theta: numpy.ndarray, likelihoods: Likelihoods,
+                 **kwds) -> None:
         # chain up
         super().__init__(**kwds)
 
@@ -183,7 +196,7 @@ class BayesianState:
 
 
     # implementation details
-    def print(self, channel, indent=' '*2):
+    def print(self, channel: journal.info, indent: str = ' '*2) -> journal.info:
         """
         Print info about this step
         """
@@ -197,23 +210,15 @@ class BayesianState:
         channel.line(f"{indent}β: {self.beta}")
         # the sample
         θ = self._shape_matrix
-        channel.line(f"{indent}{self._theta_label}: ({θ.rows} samples) x ({θ.columns} parameters)")
-        if θ.rows <= 10 and θ.columns <= 10:
-            channel.line("\n".join(θ.print(interactive=False, indent=indent*2)))
+        channel.line(f"{indent}{self._theta_label}: ({samples} samples) x ({parameters} parameters)")
+        if samples <= 10 and parameters <= 10:
+            channel.line(indent * 2 + str(θ).replace("\n", "\n" + indent * 2))
 
         if samples < 10:
-            # the prior
-            prior = self.prior
-            channel.line(f"{indent}prior:")
-            channel.line(prior.print(interactive=False, indent=indent*2))
-            # the data
-            data = self.data
-            channel.line(f"{indent}data:")
-            channel.line(data.print(interactive=False, indent=indent*2))
-            # the posterior
-            posterior = self.posterior
-            channel.line(f"{indent}posterior:")
-            channel.line(posterior.print(interactive=False, indent=indent*2))
+            # the likelihoods
+            for name in ("prior", "data", "posterior"):
+                channel.line(f"{indent}{name}:")
+                channel.line(indent * 2 + str(getattr(self, name)))
 
         # print statistics (axis=0 average over samples)
         mean, sd = self.mean, self.sd
@@ -237,13 +242,14 @@ class BayesianState:
         # all done
         return channel
 
-    def _extra_print(self, channel, indent):
+    def _extra_print(self, channel: journal.info, indent: str) -> None:
         """
         Hook for subclasses to print additional state; no-op by default
         """
         return
 
-    def save_hdf5(self, path=None, iteration=None, psets=None):
+    def save_hdf5(self, path: str | altar.primitives.path | None = None,
+                  iteration: int | None = None, psets: dict | None = None) -> None:
         """
         Save this step to an HDF5 file
 
@@ -259,7 +265,6 @@ class BayesianState:
         """
         import os
         import h5py
-        import numpy
 
         # determine the output name as "{path}/step_{iteration}.h5"
         str_iteration = 'final' if iteration is None else str(iteration).zfill(3)
@@ -282,9 +287,9 @@ class BayesianState:
         self._save_parameter_sets_hdf5(psetsgrp=psetsgrp, psets=psets or {})
         # save Bayesian likelihoods/probabilities
         bayesiangrp = f.create_group('Bayesian')
-        bayesiangrp.create_dataset('prior', data=self.prior.ndarray())
-        bayesiangrp.create_dataset('likelihood', data=self.data.ndarray())
-        bayesiangrp.create_dataset('posterior', data=self.posterior.ndarray())
+        bayesiangrp.create_dataset('prior', data=self.prior)
+        bayesiangrp.create_dataset('likelihood', data=self.data)
+        bayesiangrp.create_dataset('posterior', data=self.posterior)
         # let subclasses save anything extra (e.g. gradients)
         self._extra_save_hdf5(f=f)
         f.close()
@@ -292,26 +297,25 @@ class BayesianState:
         # all done
         return
 
-    def _save_parameter_sets_hdf5(self, psetsgrp, psets):
+    def _save_parameter_sets_hdf5(self, psetsgrp: h5py.Group, psets: dict) -> None:
         """
         Write my sample matrix into the "ParameterSets" hdf5 group; overridden by subclasses
         whose sample matrix needs more than a single flat dataset (e.g. reparameterization)
         """
         theta = self._shape_matrix
         if len(psets) == 0:
-            psetsgrp.create_dataset(self._theta_field, data=theta.ndarray())
+            psetsgrp.create_dataset(self._theta_field, data=theta)
         else:
-            theta_arr = theta.ndarray()
             for name, pset in psets.items():
-                psetsgrp.create_dataset(name, data=theta_arr[:, pset.offset:pset.offset+pset.count])
+                psetsgrp.create_dataset(name, data=theta[:, pset.offset:pset.offset+pset.count])
 
-    def _extra_save_hdf5(self, f):
+    def _extra_save_hdf5(self, f: h5py.File) -> None:
         """
         Hook for subclasses to persist additional state (e.g. gradients); no-op by default
         """
         return
 
-    def record(self, archiver):
+    def record(self, archiver: Archiver) -> typing.Self:
         """
         Record me using the provided {archiver}.
         """
@@ -337,7 +341,7 @@ class BayesianState:
         # all done
         return self
 
-    def _record_parameter_sets(self, archiver, psets):
+    def _record_parameter_sets(self, archiver: Archiver, psets: dict) -> None:
         """
         Write my sample matrix to the {archiver}; overridden by subclasses whose sample
         matrix needs more than a single flat dataset (e.g. reparameterization)
@@ -346,18 +350,17 @@ class BayesianState:
         if len(psets) == 0:
             archiver.write(f"ParameterSets/{self._theta_field}", theta)
         else:
-            theta_arr = theta.ndarray()
             for name, pset in psets.items():
                 archiver.write(f"ParameterSets/{name}",
-                               theta_arr[:, pset.offset:pset.offset+pset.count])
+                               theta[:, pset.offset:pset.offset+pset.count])
 
-    def _extra_record(self, archiver):
+    def _extra_record(self, archiver: Archiver) -> None:
         """
         Hook for subclasses to record additional state (e.g. gradients); no-op by default
         """
         return
 
-    def load_hdf5(self, path=None, iteration=0):
+    def load_hdf5(self, path: str | None = None, iteration: int = 0) -> None:
         """
         load state from HDF5 file
         """

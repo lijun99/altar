@@ -28,17 +28,11 @@ altar_getVersion()
 project(ALTAR VERSION ${REPO_MAJOR}.${REPO_MINOR}.${REPO_MICRO} LANGUAGES CXX)
 
 # packages
-# gsl
-find_package(GSL)
-
 # mpi
 find_package(MPI)
 
 # python
-set(PYTHON_COMPONENTS Interpreter Development.Module)
-if(GSL_FOUND)
-    list(APPEND PYTHON_COMPONENTS NumPy)
-endif()
+set(PYTHON_COMPONENTS Interpreter Development.Module NumPy)
 find_package(Python 3.7 REQUIRED COMPONENTS ${PYTHON_COMPONENTS} OPTIONAL_COMPONENTS Development.Embed)
 
 # pyre and pyre cuda

@@ -14,7 +14,7 @@ a real GPU.
 
 Covers every method the bayesian state/sampler layer (BayesianState, HMCState, ...) actually
 calls: {zero}/{fill}/{clone}/{copy}/{copy_from_host}/{copy_to_host}/{mean_sd}, the {source=}
-constructor, cpu <-> gpu interop (a cpu {altar.matrix} supports the buffer protocol directly,
+constructor, cpu <-> gpu interop (with plain numpy arrays on the host,
 so {copy_from_host}/{copy_to_host} work on it with no special-casing), attribute passthrough
 to the underlying grid for anything not explicitly wrapped, {axpy} (used by
 {compute_posterior}: posterior = prior + beta*data), and, added for the Metropolis sampler
@@ -54,14 +54,26 @@ def test():
     dest.copy(m)
     assert numpy.array_equal(numpy.asarray(dest), numpy.asarray(m))
 
-    # cpu <-> gpu interop: a cpu altar.matrix supports the buffer protocol directly
-    cpu_source = altar.matrix(shape=(5, 3))
-    numpy.asarray(cpu_source)[:, :] = 7.0
+    # whole assignment, the numpy idiom the code shared with the cpu uses
+    dest[...] = 0
+    assert numpy.all(numpy.asarray(dest) == 0)
+    dest[...] = m
+    assert numpy.array_equal(numpy.asarray(dest), numpy.asarray(m))
+    dest[...] = 2.5
+    assert numpy.all(numpy.asarray(dest) == 2.5)
+    try:
+        dest[0] = 1.0
+        raise AssertionError("partial assignment accepted")
+    except IndexError:
+        pass
+
+    # cpu <-> gpu interop, with numpy arrays on the host
+    cpu_source = numpy.full((5, 3), 7.0)
     gpu = altar.cuda.matrix(shape=(5, 3), dtype="float64").zero()
     gpu.copy_from_host(source=cpu_source)
     assert numpy.all(numpy.asarray(gpu) == 7.0)
 
-    cpu_target = altar.matrix(shape=(5, 3))
+    cpu_target = numpy.zeros((5, 3))
     gpu.copy_to_host(target=cpu_target)
     assert numpy.all(numpy.asarray(cpu_target) == 7.0)
 

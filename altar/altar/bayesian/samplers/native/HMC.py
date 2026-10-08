@@ -8,15 +8,21 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
-from collections import namedtuple
-# the package
-import altar
 # my scratch state
 from altar.bayesian.states.HMCState import HMCState
-
 # acceptance statistics container
-Statistics = namedtuple('Statistics', ['accepted', 'invalid', 'rejected'])
+from .Metropolis import Statistics
+
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.CoolingStep import CoolingStep
+    from altar.bayesian.stepsizers.StepSizer import StepSizer
+    from altar.models.Bayesian import Bayesian
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -43,7 +49,7 @@ class HMC:
 
 
     # protocol-shaped obligations (called by the shim, not pyre-dispatched directly)
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
@@ -54,8 +60,8 @@ class HMC:
             raise NotImplementedError("hmc: a dense mass matrix is supported on the gpu only")
         # pull the chain length (number of trajectories per outer step) from the job spec
         self.steps = application.job.steps
-        # get the capsule of the random number generator
-        rng = application.rng.rng
+        # the random number generator, for the momenta and the acceptance dice
+        self.rng = application.rng.rng
 
         # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
         # to 0.8), unless the user picked a target explicitly
@@ -66,12 +72,6 @@ class HMC:
         # and let an adaptive regulator start from it, not its own default
         if hasattr(self.stepsizer, "step_size"):
             self.stepsizer.step_size = self.step_size
-
-        # the distribution used to draw momentum, one N(0,1) per (sample, parameter)
-        self.uninormal = altar.pdf.ugaussian(rng=rng)
-        # the distribution for the Metropolis-Hastings acceptance draws; strictly positive so
-        # {log(dice)} never sees zero
-        self.uniform = altar.pdf.uniform_pos(rng=rng)
 
         # if i am one of several mpi ranks, my controller's worker is an {MPIAnnealing} with a
         # {communicator}; grab it (None on a single-process run) so per-trajectory step size
@@ -87,7 +87,7 @@ class HMC:
         return self
 
 
-    def sample_posterior(self, annealer, step):
+    def sample_posterior(self, annealer: Annealer, step: CoolingStep) -> Statistics:
         """
         Sample the posterior distribution
         """
@@ -103,7 +103,7 @@ class HMC:
         return self.statistics
 
 
-    def update(self, annealer, statistics):
+    def update(self, annealer: Annealer, statistics: Statistics) -> None:
         """
         Notification that a β step is complete; a no-op since {step_size} is already adjusted
         after every trajectory in {walk_chains} -- CATMIP's β schedule can reach β=1 in just a
@@ -114,7 +114,7 @@ class HMC:
         return
 
 
-    def walk_chains(self, annealer, step):
+    def walk_chains(self, annealer: Annealer, step: CoolingStep) -> None:
         """
         Run {self.steps} Hamiltonian trajectories, each ending in a Metropolis-Hastings
         accept/reject decision; the likelihoods and gradients at the current chains carry over
@@ -134,21 +134,17 @@ class HMC:
 
         # the chains, with their likelihoods and gradients, at the start of the walk
         current = self.HMCState(
-            beta=β, theta=step.theta.clone(),
-            likelihoods=(altar.vector(shape=samples), altar.vector(shape=samples),
-                         altar.vector(shape=samples)))
+            beta=β, theta=step.theta.copy(),
+            likelihoods=(numpy.zeros(samples), numpy.zeros(samples), numpy.zeros(samples)))
         if reparameterized:
-            current.phi = step.theta_sampling.clone()
-            current.Jacobian = altar.matrix(shape=(samples, parameters))
-            current.log_jacobian = altar.vector(shape=samples)
+            current.phi = step.theta_sampling.copy()
+            current.Jacobian = numpy.ones((samples, parameters))
+            current.log_jacobian = numpy.zeros(samples)
         self._evaluate(annealer=annealer, model=model, candidate=current, samples=samples)
 
         # reset the accept/reject counters; hmc has no notion of an invalid (out of support)
         # candidate -- bounded priors are reparameterized
         accepted = rejected = 0
-
-        # a vector with random numbers for the Metropolis-Hastings acceptance
-        dice = altar.vector(shape=samples)
 
         # step all chains together, one full trajectory per iteration
         for trajectory in range(self.steps):
@@ -169,8 +165,7 @@ class HMC:
             position = candidate.phi if reparameterized else candidate.theta
             # draw fresh momentum for this trajectory, scaled by the mass matrix:
             # p ~ N(0, M), M = diag(1/variance)
-            candidate.momentum.random(pdf=self.uninormal)
-            candidate.momentum.ndarray()[:] *= precision_sqrt
+            candidate.momentum[...] = self.rng.standard_normal(size=(samples, parameters)) * precision_sqrt
             # the kinetic energy of the freshly drawn momentum, one scalar per chain
             ke_old = self._kinetic(candidate.momentum, variance)
 
@@ -181,39 +176,39 @@ class HMC:
             # position update does, through M^-1 = diag(variance)
             ε = self.step_size
             half = 0.5 * ε
-            self._axpy(half, candidate.grad_posterior, candidate.momentum)
+            candidate.momentum += half * candidate.grad_posterior
             for k in range(self.leapfrog_steps):
                 self._update_position(position, candidate.momentum, ε, variance)
                 if reparameterized:
-                    candidate.theta.copy(candidate.phi)
+                    candidate.theta[...] = candidate.phi
                     model.to_physical(theta=candidate.theta)
                 self._evaluate(annealer=annealer, model=model, candidate=candidate, samples=samples)
                 if k < self.leapfrog_steps - 1:
-                    self._axpy(ε, candidate.grad_posterior, candidate.momentum)
-            self._axpy(half, candidate.grad_posterior, candidate.momentum)
+                    candidate.momentum += ε * candidate.grad_posterior
+            candidate.momentum += half * candidate.grad_posterior
 
             # the kinetic energy at the end of the trajectory
             ke_new = self._kinetic(candidate.momentum, variance)
 
-            # randomize the Metropolis-Hastings acceptance vector
-            dice.random(self.uniform)
+            # roll the Metropolis-Hastings dice, in (0, 1]
+            dice = 1.0 - self.rng.random(size=samples)
 
             # notify we are starting accepting samples
             dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
             # accept/reject: with U = -posterior (- log|J|) and H = U + KE, accept when
             # log(dice) <= -ΔH
-            Δ = (candidate.posterior.ndarray() - current.posterior.ndarray()) - (ke_new - ke_old)
+            Δ = (candidate.posterior - current.posterior) - (ke_new - ke_old)
             if reparameterized:
-                Δ += candidate.log_jacobian.ndarray() - current.log_jacobian.ndarray()
-            keep = numpy.log(dice.ndarray()) <= Δ
+                Δ += candidate.log_jacobian - current.log_jacobian
+            keep = numpy.log(dice) <= Δ
             # copy the accepted candidates into the current chains
             for name in ("theta", "phi", "grad_prior", "grad_data", "grad_posterior",
                          "prior", "data", "posterior", "log_jacobian"):
                 target = getattr(current, name)
                 if target is None or (name == "phi" and not reparameterized):
                     continue
-                target.ndarray()[keep] = getattr(candidate, name).ndarray()[keep]
+                target[keep] = getattr(candidate, name)[keep]
             trajectory_accepted = int(keep.sum())
             accepted += trajectory_accepted
             rejected += samples - trajectory_accepted
@@ -235,13 +230,13 @@ class HMC:
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
         # hand the chains back to the step
-        step.theta.copy(current.theta)
+        step.theta[...] = current.theta
         if reparameterized:
-            step.theta_sampling.copy(current.phi)
-            step.jacobian.copy(current.log_jacobian)
-        step.prior.copy(current.prior)
-        step.data.copy(current.data)
-        step.posterior.copy(current.posterior)
+            step.theta_sampling[...] = current.phi
+            step.jacobian[...] = current.log_jacobian
+        step.prior[...] = current.prior
+        step.data[...] = current.data
+        step.posterior[...] = current.posterior
 
         # store statistics on self for access by update() and the controller
         self.statistics = Statistics(accepted, 0, rejected)
@@ -250,16 +245,15 @@ class HMC:
 
 
     # implementation details
-    def _estimate_mass_variance(self, theta, parameters):
+    def _estimate_mass_variance(self, theta: numpy.ndarray, parameters: int) -> numpy.ndarray:
         """
         Estimate the diagonal mass matrix M^-1 (the per-parameter variance) from the current
         population in {theta}, pooled across every mpi rank's chains when running in
         parallel, not just the calling rank's own shard
         """
-        arr = theta.ndarray()
-        n = arr.shape[0]
-        sum_x = arr.sum(axis=0)
-        sum_x2 = (arr ** 2).sum(axis=0)
+        n = theta.shape[0]
+        sum_x = theta.sum(axis=0)
+        sum_x2 = (theta ** 2).sum(axis=0)
 
         if self.communicator is not None:
             n = int(self.communicator.sum(n))
@@ -272,16 +266,17 @@ class HMC:
         return numpy.clip(variance, self.min_variance, self.max_variance)
 
 
-    def _update_position(self, theta, momentum, epsilon, variance):
+    def _update_position(self, theta: numpy.ndarray, momentum: numpy.ndarray, epsilon: float,
+                         variance: numpy.ndarray) -> numpy.ndarray:
         """
-        theta += epsilon * M^-1 * momentum, where M^-1 = diag(variance); done through
-        {.ndarray()} since it's a per-column broadcast, which gsl has no single call for
+        theta += epsilon * M^-1 * momentum, where M^-1 = diag(variance)
         """
-        theta.ndarray()[:] += epsilon * variance[numpy.newaxis, :] * momentum.ndarray()
+        theta += epsilon * variance[numpy.newaxis, :] * momentum
         return theta
 
 
-    def _evaluate(self, annealer, model, candidate, samples):
+    def _evaluate(self, annealer: Annealer, model: Bayesian, candidate: HMCState,
+                  samples: int) -> HMCState:
         """
         Evaluate the (prior, data, posterior) likelihoods and their gradients at
         {candidate.theta}, and combine them into {candidate.grad_posterior}; when
@@ -290,61 +285,49 @@ class HMC:
         # {eval_prior} accumulates into whatever it's handed, so it can add up the
         # contributions of multiple parameter sets; re-zero before every evaluation, exactly
         # as {Metropolis.walk_chains} does for its own candidate
-        candidate.prior.zero()
+        candidate.prior[...] = 0
         model.likelihoods(annealer=annealer, step=candidate)
         model.gradient(controller=annealer, step=candidate, batch=samples)
         # the prior gradient of a reparameterized prior is already w.r.t. phi; the data one
         # needs the chain rule
         if candidate.phi is not None:
-            candidate.Jacobian.fill(1.0)
+            candidate.Jacobian[...] = 1.0
             model.eval_jacobian(step=candidate, batch=samples)
-            candidate.grad_data.ndarray()[:] *= candidate.Jacobian.ndarray()
-            candidate.log_jacobian.zero()
+            candidate.grad_data *= candidate.Jacobian
+            candidate.log_jacobian[...] = 0
             model.eval_prior_with_physical(
                 step=candidate, likelihood=candidate.log_jacobian, batch=samples)
         candidate.compute_posterior()
         return candidate
 
 
-    def _axpy(self, alpha, x, y):
-        """
-        y += alpha*x, for (samples x parameters) matrices; {altar.blas.daxpy} is vector-only,
-        so scale a clone of {x} and accumulate in place instead
-        """
-        scaled = x.clone()
-        scaled.scale(alpha)
-        y += scaled
-        return y
-
-
-    def _kinetic(self, momentum, variance):
+    def _kinetic(self, momentum: numpy.ndarray, variance: numpy.ndarray) -> numpy.ndarray:
         """
         The kinetic energy 0.5 * momentum^T M^-1 momentum = 0.5 * sum(momentum**2 * variance)
         of each chain, as a plain numpy array; M^-1 = diag(variance) is the same mass matrix
         used to scale the momentum draw and the leapfrog position update
         """
-        return 0.5 * numpy.sum((momentum.ndarray() ** 2) * variance[numpy.newaxis, :], axis=1)
+        return 0.5 * numpy.sum((momentum ** 2) * variance[numpy.newaxis, :], axis=1)
 
 
     # private data; the component-typed attributes and scalar traits are set by the shim's
     # initialize() before it calls mine (see {altar.bayesian.samplers.HMC._makeImpl})
-    target_acceptance = 0.7  # the default acceptance rate the stepsizer steers to
-    stepsizer = None       # the step size regulator
-    leapfrog_steps = 10    # the number of leapfrog substeps per trajectory
-    step_size = 0.01       # the leapfrog step size epsilon; adapted after each trajectory
-    adapt_mass_matrix = True
-    mass_matrix = "diagonal"
-    mass_update_interval = 20
-    min_variance = 1e-8
-    max_variance = 1e8
+    target_acceptance: float = 0.7  # the default acceptance rate the stepsizer steers to
+    stepsizer: StepSizer            # the step size regulator
+    leapfrog_steps: int = 10        # the number of leapfrog substeps per trajectory
+    step_size: float = 0.01         # the leapfrog step size epsilon; adapted after each trajectory
+    adapt_mass_matrix: bool = True
+    mass_matrix: str = "diagonal"
+    mass_update_interval: int = 20
+    min_variance: float = 1e-8
+    max_variance: float = 1e8
 
-    steps = 1              # the number of trajectories per call to {sample_posterior}
-    info = None            # the application info channel
-    uninormal = None       # the distribution used to draw momentum
-    uniform = None         # the distribution of the Metropolis-Hastings acceptance draws
-    statistics = None      # (accepted, invalid, rejected) from the last walk_chains call
-    communicator = None    # the mpi communicator, if running in parallel; else None
-    mass_variance = None   # the current diagonal mass matrix M^-1, as a numpy array
+    steps: int = 1                  # the number of trajectories per call to {sample_posterior}
+    info: journal.info | None = None  # the application info channel
+    rng: numpy.random.Generator     # the generator of the momenta and the dice
+    statistics: Statistics | None = None  # from the last walk_chains call
+    communicator: typing.Any = None # the mpi communicator, if running in parallel; else None
+    mass_variance: numpy.ndarray | None = None  # the current diagonal mass matrix M^-1
 
 
 # end of file

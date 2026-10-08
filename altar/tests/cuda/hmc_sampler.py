@@ -80,17 +80,16 @@ def test():
     class _Step:
         def __init__(self, rng):
             self.beta = 1.0
-            self.theta = altar.matrix(shape=(samples, nparams))
-            numpy.asarray(self.theta)[:, :] = rng.normal(size=(samples, nparams)) * 0.01
+            self.theta = rng.normal(size=(samples, nparams)) * 0.01
             self.momentum = None
-            self.prior = altar.vector(shape=samples)
-            self.data = altar.vector(shape=samples)
-            self.posterior = altar.vector(shape=samples)
-            self.U = altar.vector(shape=samples)
-            self.H = altar.vector(shape=samples)
-            self.prior_gradient = altar.matrix(shape=(samples, nparams))
-            self.data_gradient = altar.matrix(shape=(samples, nparams))
-            self.U_gradient = altar.matrix(shape=(samples, nparams))
+            self.prior = numpy.zeros(samples)
+            self.data = numpy.zeros(samples)
+            self.posterior = numpy.zeros(samples)
+            self.U = numpy.zeros(samples)
+            self.H = numpy.zeros(samples)
+            self.prior_gradient = numpy.zeros((samples, nparams))
+            self.data_gradient = numpy.zeros((samples, nparams))
+            self.U_gradient = numpy.zeros((samples, nparams))
 
     sampler = HMC()  # a plain impl class now; the pyre component is the shim,
                      # {altar.bayesian.samplers.HMC}, which this test bypasses

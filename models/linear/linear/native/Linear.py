@@ -10,9 +10,15 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
-# the package
-import altar
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
+    from ..Linear import Linear as Model
 
 
 # declaration
@@ -25,77 +31,63 @@ class Linear:
     """
 
 
-    def initialize(self, model, application):
+    def initialize(self, model: Model, application: Application) -> typing.Self:
         """
-        Load the Green functions and prime the residuals matrix
+        Load the Green functions and the observed data
         """
         # load my Green functions
         self.G = model.io.load(filename=model.green, shape=(model.observations, model.parameters))
-        # prepare the residuals matrix
-        self.residuals = self.initialize_residuals(samples=model.samples, data=model.dataobs.dataobs)
+        # the data the residuals are measured against
+        self.data = model.dataobs.dataobs
         # all done
         return self
 
 
-    def forward_model_batched(self, model, theta, prediction, batch=None):
+    def forward_model_batched(self, model: Model, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int | None = None) -> typing.Self:
         """
         Fill {prediction}, shape (samples x observations), with the residual G·θ - d for
         each sample in {theta}
         """
-        # the green functions and the observed data
-        G = self.G
-
-        # compute G·θ^T - d, shape (observations x samples): we must transpose θ because its
-        # shape is (samples x parameters) while the shape of G is (observations x parameters)
-        residuals = self.residuals.clone()
-        residuals = altar.blas.dgemm(G.opNoTrans, theta.opTrans, 1.0, G, theta, -1.0, residuals)
-
-        # transpose to the (samples x observations) convention {prediction} expects
-        residuals.transpose(prediction)
-
+        prediction[...] = theta @ self.G.T - self.data
         # all done
         return self
 
 
-    def forward_model(self, model, theta, green=None, prediction=None, observation=None):
+    def forward_model(self, model: Model, theta: numpy.ndarray, green: numpy.ndarray | None = None,
+                      prediction: numpy.ndarray | None = None,
+                      observation: numpy.ndarray | None = None) -> numpy.ndarray:
         """
         Linear forward model prediction = G * theta for a single sample, optionally
         subtracting {observation} to get the residual instead
         """
-        # resolve inputs
-        green = green or self.G
+        green = self.G if green is None else green
         if prediction is None:
-            prediction = altar.vector(shape=model.observations)
-
-        # prediction = G * theta, optionally subtract observation
-        if observation is None:
-            beta = 0.0
-        else:
-            prediction.copy(observation)
-            beta = -1.0
-
-        altar.blas.dgemv(green.opNoTrans, 1.0, green, theta, beta, prediction)
-
+            prediction = numpy.zeros(model.observations)
+        prediction[...] = green @ theta
+        if observation is not None:
+            prediction -= observation
         # all done
         return prediction
 
 
-    def covariance_updated(self, model):
+    def covariance_updated(self, model: Model) -> typing.Self:
         """
-        The observed data may have changed with the covariance; refresh my residuals
+        The observed data may have changed with the covariance; refresh them
         """
-        self.residuals = self.initialize_residuals(samples=model.samples, data=model.dataobs.dataobs)
+        self.data = model.dataobs.dataobs
         return self
 
 
-    def green(self):
+    def green(self) -> numpy.ndarray:
         """
-        The raw green's functions (observations x parameters), as a numpy array
+        The raw green's functions (observations x parameters)
         """
-        return numpy.asarray(self.G)
+        return self.G
 
 
-    def gradient(self, model, controller, step, batch=None):
+    def gradient(self, model: Model, controller: Annealer, step: BayesianState,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill {step.grad_prior} and {step.grad_data} with the gradients of the log prior and
         log data likelihood with respect to {step.theta}, for use by gradient-based samplers
@@ -118,62 +110,27 @@ class Linear:
         for name in ([] if model.embedded else model.psets_list):
             model.psets[name].prior_gradient(theta=θ, gradient=grad_prior)
 
-        # the data likelihood gradient: for r = Gθ - d and Cd_inv = L (the lower Cholesky
-        # factor of the inverse data covariance, L L^T),
-        #     grad_data_likelihood = -G^T L (L^T r)
-        G = self.G
+        # the data likelihood gradient: for r = Gθ - d and Cd^{-1} = L L^T, with L the lower
+        # Cholesky factor in {dataobs.cd_inv}, grad = -G^T Cd^{-1} r, one row per sample
+        r = θ @ self.G.T - self.data
         Cd_inv = model.dataobs.cd_inv
-        samples = θ.rows
-
-        # r = Gθ^T - d, shape (observations x samples)
-        r = self.residuals.clone()
-        r = altar.blas.dgemm(G.opNoTrans, θ.opTrans, 1.0, G, θ, -1.0, r)
         if isinstance(Cd_inv, float):
-            # a constant covariance, {Cd_inv} = 1/sigma: Cd_inv r = r/sigma^2, over the valid
-            # observations only
-            wt = r
-            v = wt.ndarray()
-            v *= Cd_inv * Cd_inv
+            # a constant covariance, {Cd_inv} = 1/sigma, over the valid observations only
+            wt = r * (Cd_inv * Cd_inv)
             mask = model.dataobs.mask
             if mask is not None:
-                v[~mask, :] = 0
+                wt[:, ~mask] = 0
         else:
-            # Cd_inv r = L L^T r: w = L^T r, then wt = L w (both in place)
-            w = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opTrans,
-                                 Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, r)
-            wt = altar.blas.dtrmm(Cd_inv.sideLeft, Cd_inv.lowerTriangular, Cd_inv.opNoTrans,
-                                  Cd_inv.nonUnitDiagonal, 1.0, Cd_inv, w)
-
-        # grad_T = -G^T wt, shape (parameters x samples)
-        grad_data_T = altar.matrix(shape=(model.parameters, samples)).zero()
-        grad_data_T = altar.blas.dgemm(G.opTrans, G.opNoTrans, -1.0, G, wt, 0.0, grad_data_T)
-
-        # transpose to the (samples x parameters) convention {grad_data} expects
-        grad_data_T.transpose(grad_data)
+            wt = r @ Cd_inv @ Cd_inv.T
+        grad_data[...] = -wt @ self.G
 
         # all done
         return self
 
 
-    # implementation details
-    def initialize_residuals(self, samples, data):
-        """
-        Prime the matrix that will hold the residuals (G θ - d) for each sample by duplicating the
-        observation vector as many times as there are samples
-        """
-        # allocate the residual matrix
-        r = altar.matrix(shape=(data.shape, samples))
-        # for each sample
-        for sample in range(samples):
-            # make the corresponding column a copy of the data vector
-            r.setColumn(sample, data)
-        # all done
-        return r
-
-
     # private data
-    G = None # the Green functions
-    residuals = None # matrix that holds (G θ - d) for each sample
+    G: numpy.ndarray     # the Green functions, (observations x parameters)
+    data: numpy.ndarray  # the observed data the residuals are measured against
 
 
 # end of file

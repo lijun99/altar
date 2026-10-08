@@ -10,13 +10,22 @@
 
 
 # externals
-import itertools
+from __future__ import annotations
+import typing
 import numpy
 # the package
 import altar
 # my protocol
 from .Scheduler import Scheduler as scheduler
-from ..statistics import weighted_covariance
+from ..statistics import weighted_covariance, condition_covariance, multiplicities
+
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.bayesian.states.CoolingStep import CoolingStep
+    from altar.shells.Application import Application
+
+# a step's sample matrix and its prior, data and posterior log likelihoods
+Resampled = tuple[numpy.ndarray, tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]]
 
 
 # declaration
@@ -58,33 +67,27 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     use_low_variance_resampler.doc = "whether to equal spaced random numbers for resampling"
 
     # public data
-    cov = 0.0 # the actual value for COV we were able to attain
+    cov: float = 0.0 # the actual value for COV we were able to attain
 
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
-        # get the rng wrapper
+        # the random number generator, for resampling
         self.rng = application.rng.rng
-
         # initialize my solver
         self.solver.initialize(application=application, scheduler=self)
-
-        # set up the distribution for building the sample multiplicities
-        self.uniform = altar.pdf.uniform(support=(0,1), rng=self.rng)
-
         # grab the info channel
         self.info = application.info
-
         # all done
         return self
 
 
     @altar.export
-    def update(self, step):
+    def update(self, step: CoolingStep) -> CoolingStep:
         """
         Push {step} forward along the annealing schedule
         """
@@ -95,12 +98,12 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.weighted_theta = None
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
-            step.weighted_theta = getattr(step, "theta_sampling", step.theta).clone()
+            step.weighted_theta = getattr(step, "theta_sampling", step.theta).copy()
             θ, (prior, data, posterior), θ_sampling, jacobian = self.resampling(step=step)
             # update the step after the resampling
-            step.prior.copy(prior)
-            step.data.copy(data)
-            step.theta.copy(θ)
+            step.prior[...] = prior
+            step.data[...] = data
+            step.theta[...] = θ
             # a reparameterized step keeps theta_sampling/jacobian as separate buffers (see
             # {altar.bayesian.states.CoolingStep}), not aliases of theta -- they must be
             # reordered by the exact same sample indices, or theta/theta_sampling end up
@@ -108,9 +111,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
             # corresponds to row i's sampling-space theta), silently corrupting any
             # reparameterized gradient-based sampler (e.g. HMC) that reads both
             if getattr(step, 'has_reparametrization', False):
-                step.theta_sampling.copy(θ_sampling)
+                step.theta_sampling[...] = θ_sampling
                 if jacobian is not None and step.jacobian is not None:
-                    step.jacobian.copy(jacobian)
+                    step.jacobian[...] = jacobian
 
         # update the step (common procedures with or w/o resampling)
         step.beta = β
@@ -123,16 +126,14 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
 
     @altar.export
-    def update_temperature(self, step):
+    def update_temperature(self, step: CoolingStep) -> float:
         """
         Generate the next temperature increment
         """
-        # grab the data log-likelihood
-        data_likelihood = step.data
-        # initialize the vector of weights
-        w = altar.vector(shape=step.samples).zero()
+        # the normalized weights, filled in by the solver
+        w = numpy.zeros(step.samples)
         # compute {δβ} and the normalized {w}
-        β, self.cov = self.solver.solve(data_likelihood, w)
+        β, self.cov = self.solver.solve(step.data, w)
         # publish weights on the step so all components (proposal, etc.) can consume them
         step.weights = w
         # adjust β if it is too small
@@ -142,7 +143,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
 
     @altar.export
-    def compute_covariance(self, step):
+    def compute_covariance(self, step: CoolingStep) -> numpy.ndarray:
         r"""
         Compute the parameter covariance Σ of the sample in {step}
 
@@ -157,188 +158,83 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # unpack what i need
         w = step.weights # published by update_temperature(); assumed normalized
         θ = step.theta # the current sample set
-        # extract the number of samples and number of parameters
-        samples = step.samples
-        parameters = step.parameters
 
         # check the geometries
-        assert w.shape == samples
-        assert θ.shape == (samples, parameters)
+        assert w.shape == (step.samples,)
+        assert θ.shape == (step.samples, step.parameters)
 
         # the weighted outer products about the weighted mean, in one matrix product
-        Σ = altar.matrix(shape=(parameters, parameters))
-        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
+        Σ = weighted_covariance(θ, w)
 
         # condition the covariance matrix
         if self.check_positive_definiteness:
-            self.condition_covariance(Σ=Σ)
+            Σ = self.condition_covariance(Σ=Σ)
 
         # all done
         return Σ
 
 
     @altar.export
-    def rank(self, step):
+    def rank(self, step: CoolingStep) -> Resampled:
         """
         Rebuild the sample and its statistics sorted by the likelihood of the parameter values
         """
-        θOld = step.theta
-        priorOld = step.prior
-        dataOld = step.data
-        postOld = step.posterior
-        # allocate the new entities
-        θ = altar.matrix(shape=θOld.shape)
-        prior = altar.vector(shape=priorOld.shape)
-        data = altar.vector(shape=dataOld.shape)
-        posterior = altar.vector(shape=postOld.shape)
+        counts = self.compute_sample_multiplicities(step=step)
+        # the old samples by decreasing multiplicity, each duplicated by its count
+        order = numpy.argsort(counts, kind="stable")[::-1]
+        rows = numpy.repeat(order, counts[order])
+        return step.theta[rows], (step.prior[rows], step.data[rows], step.posterior[rows])
 
-        # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(step=step).counts()
-        # print("      histogram as vector:")
-        # print("        counts: {}".format(tuple(multi)))
-
-        # compute the permutation that would sort the frequency table according to the sample
-        # multiplicity, in reverse order
-        p = multi.sortIndirect().reverse()
-        # print("        sorted: {}".format(tuple(p[i] for i in range(p.shape))))
-
-        # the number of samples we have processed
-        done = 0
-        # start moving stuff around until we have built a complete sample set
-        for i in range(p.shape):
-            # the old sample index
-            old = p[i]
-            # and its multiplicity
-            count = int(multi[old])
-            # if the count has dropped to zero, we are done
-            if count == 0: break
-            # otherwise, duplicate this sample {count} times
-            for dupl in range(count):
-                # update the samples
-                for param in range(step.parameters):
-                    θ[done, param] = θOld[old, param]
-                # update the log-likelihoods
-                prior[done] = priorOld[old]
-                data[done] = dataOld[old]
-                posterior[done] = postOld[old]
-                # update the number of processed samples
-                done += 1
-                # print(i, old, count, done)
-
-        # return the shuffled data
-        return θ, (prior, data, posterior)
 
     # important resampling: rank is not needed, shuffle is recommended
-    def resampling(self, step):
+    def resampling(self, step: CoolingStep) -> tuple[numpy.ndarray, tuple[numpy.ndarray, ...],
+                                                      numpy.ndarray | None, numpy.ndarray | None]:
         """
-        Rebuild the sample and its statistics sorted by the likelihood of the parameter values
+        Rebuild the sample and its statistics, resampled by their weights, in random order
         """
-        θOld = step.theta
-        priorOld = step.prior
-        dataOld = step.data
-        postOld = step.posterior
-        # allocate the new entities
-        θ = altar.matrix(shape=θOld.shape)
-        prior = altar.vector(shape=priorOld.shape)
-        data = altar.vector(shape=dataOld.shape)
-        posterior = altar.vector(shape=postOld.shape)
+        counts = self.compute_sample_multiplicities(step=step)
+        # the index of the old sample behind each new one, duplicated by its count, shuffled
+        rows = numpy.repeat(numpy.arange(counts.size), counts)
+        self.rng.shuffle(rows)
+
+        self.info.log(f"resampling: unique samples {numpy.count_nonzero(counts)} out of {counts.size}")
 
         # a reparameterized step carries theta_sampling/jacobian as separate buffers from
         # theta (not aliases; see {altar.bayesian.states.CoolingStep}), so they must be
-        # reordered by the exact same sample indices below, or theta/theta_sampling end up
+        # reordered by the exact same sample indices, or theta/theta_sampling end up
         # describing different chains after resampling
-        has_reparametrization = getattr(step, 'has_reparametrization', False)
-        θSamplingOld = θSampling = jacobianOld = jacobian = None
-        if has_reparametrization:
-            θSamplingOld = step.theta_sampling
-            θSampling = altar.matrix(shape=θSamplingOld.shape)
-            jacobianOld = step.jacobian
-            if jacobianOld is not None:
-                jacobian = altar.vector(shape=jacobianOld.shape)
-
-        # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(step=step).counts()
-        # print("      histogram as vector:")
-        # print("        counts: {}".format(tuple(multi)))
-
-        counts = multi.ndarray().astype(int)
-        unique_samples = int(numpy.count_nonzero(counts))
-        # the index of the old sample behind each new one, duplicated by its count
-        indices = altar.vector(shape=multi.shape)
-        indices.ndarray()[:] = numpy.repeat(numpy.arange(counts.size), counts)
-        # shuffle the indices
-        indices.shuffle(rng=self.rng)
-        rows = indices.ndarray().astype(int)
-
-        self.info.log(f"resampling: unique samples {unique_samples} out of {multi.shape}")
-
-        # copy theta, (prior, data, posterior) over according to the indices, and
-        # theta_sampling/jacobian, when reparameterized
-        pairs = [(θ, θOld), (prior, priorOld), (data, dataOld), (posterior, postOld)]
-        if has_reparametrization:
-            pairs.append((θSampling, θSamplingOld))
-            if jacobian is not None:
-                pairs.append((jacobian, jacobianOld))
-        for new, old in pairs:
-            new.ndarray()[:] = old.ndarray()[rows]
+        θ_sampling = jacobian = None
+        if getattr(step, 'has_reparametrization', False):
+            θ_sampling = step.theta_sampling[rows]
+            if step.jacobian is not None:
+                jacobian = step.jacobian[rows]
 
         # return the shuffled data
-        return θ, (prior, data, posterior), θSampling, jacobian
+        likelihoods = step.prior[rows], step.data[rows], step.posterior[rows]
+        return step.theta[rows], likelihoods, θ_sampling, jacobian
 
 
     # implementation details
-    def condition_covariance(self, Σ):
+    def condition_covariance(self, Σ: numpy.ndarray) -> numpy.ndarray:
         """
-        Make sure the covariance matrix Σ is symmetric and positive definite
+        Make sure the covariance matrix Σ is symmetric and positive definite, replacing
+        negative or small eigenvalues with min_eigenvalue_ratio*max_eigenvalue
         """
-        # replaces negative or small eigenvalues with min_eigenvalue_ratio*max_eigenvalue
-        altar.libaltar.matrix_condition(Σ, self.min_eigenvalue_ratio)
-        # all done
-        return Σ
+        return condition_covariance(Σ=Σ, ratio=self.min_eigenvalue_ratio)
 
 
-    def compute_sample_multiplicities(self, step):
+    def compute_sample_multiplicities(self, step: CoolingStep) -> numpy.ndarray:
         """
-        Prepare a frequency vector for the new samples given the scaled data log-likelihood in
-        {w} for this cooling step
+        How many copies of each sample to keep, given the normalized weights of this cooling
+        step
         """
-        # print("    computing sample multiplicities:")
-        # unpack what we need
-        w = step.weights
-        samples = step.samples
-
-        # build a vector of random numbers uniformly distributed in [0,1]
-        r = altar.vector(shape=samples)
-        if self.use_low_variance_resampler:
-            # use equal spaced random number s+i/samples in [0, 1]
-            altar.libaltar.low_variance_random(self.rng, r)
-        else:
-            # use uniform pdf generator in [0, 1]
-            r.random(pdf=self.uniform)
-
-        # compute the bin edges in the range [0, 1]
-        ticks = tuple(self.build_histogram_ranges(w))
-        # build a histogram
-        h = altar.histogram(bins=samples).ranges(edges=ticks).fill(r)
-        # and return it
-        return h
-
-
-    def build_histogram_ranges(self, w):
-        """
-        Build histogram bins based on the scaled data log-likelihood
-        """
-        # start at 0
-        yield 0
-        # yield the partial sums
-        for partialSum in itertools.accumulate(w): yield partialSum
-        # all done
-        return
+        return multiplicities(
+            w=step.weights, rng=self.rng, low_variance=self.use_low_variance_resampler)
 
 
     # private data
-    uniform = None
-    rng = None
+    rng: numpy.random.Generator
+    info: journal.info
 
 
 # end of file

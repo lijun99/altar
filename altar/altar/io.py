@@ -8,10 +8,14 @@
 
 
 # externals
+from __future__ import annotations
 import os
+import typing
 import numpy
-# the package
-import altar
+
+if typing.TYPE_CHECKING:
+    import journal
+    import pyre
 
 
 class FileIO:
@@ -21,7 +25,9 @@ class FileIO:
     """
 
     # meta-methods
-    def __init__(self, ifs=None, error=None, precision=None, **kwds):
+    def __init__(self, ifs: pyre.filesystem.Filesystem.Filesystem | None = None,
+                 error: journal.error | None = None, precision: str | None = None,
+                 **kwds) -> None:
         super().__init__(**kwds)
         # the mounted input filesystem, for {load}; not needed for {save}
         self.ifs = ifs
@@ -33,9 +39,11 @@ class FileIO:
         return
 
 
-    def load(self, filename, shape=None, dataset=None, dtype=None):
+    def load(self, filename: str, shape: int | tuple[int, ...] | None = None,
+             dataset: str | None = None, dtype: str | None = None) -> numpy.ndarray:
         """
-        Load {filename}, found through {self.ifs}, into a gsl vector or matrix
+        Load {filename}, found through {self.ifs}, as a float64 array; {dtype}, by default my
+        {precision}, is the precision it is read at
         """
         # the desired precision
         dtype = dtype or self.precision
@@ -78,17 +86,18 @@ class FileIO:
         if shape is not None:
             cpuData = cpuData.reshape(shape)
 
-        # convert to gsl and return
-        return self.toGsl(cpuData)
+        # in double precision
+        return numpy.asarray(cpuData, dtype=numpy.float64)
 
 
-    def save(self, filename, data, dataset=None, mode='a'):
+    def save(self, filename: str | os.PathLike, data: typing.Any, dataset: str | None = None,
+             mode: str = 'a') -> None:
         """
-        Save {data} (a gsl vector/matrix, or anything numpy can coerce) to {filename},
-        dispatching on its suffix
+        Save {data}, anything numpy can view as an array, to {filename}, dispatching on its
+        suffix
         """
         # get a plain numpy array, regardless of what {data} actually is
-        cpuData = data.ndarray() if hasattr(data, 'ndarray') else numpy.asarray(data)
+        cpuData = numpy.asarray(data)
 
         # {filename} may be a plain str or a pyre path-like object
         path = str(filename)
@@ -113,22 +122,6 @@ class FileIO:
 
         # all done
         return
-
-
-    # implementation details
-    def toGsl(self, cpuData):
-        """
-        Convert a numpy array into a gsl vector or matrix
-        """
-        if cpuData.ndim == 1:
-            vec = altar.vector(shape=cpuData.shape[0])
-            vec.ndarray()[:] = cpuData
-            return vec
-        if cpuData.ndim == 2:
-            mat = altar.matrix(shape=cpuData.shape)
-            mat.ndarray()[:] = cpuData
-            return mat
-        raise ValueError(f"unsupported data dimensions {cpuData.shape}")
 
 
 # end of file

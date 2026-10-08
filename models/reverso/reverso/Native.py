@@ -10,11 +10,14 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
-# the package
-import altar
 # the pure python implementation
 from .libreverso import REVERSO
+
+if typing.TYPE_CHECKING:
+    from .Reverso import Reverso
 
 
 # declaration
@@ -24,7 +27,7 @@ class Native:
     """
 
 
-    def initialize(self, model):
+    def initialize(self, model: Reverso) -> typing.Self:
         """
         Unpack the observation geometry
         """
@@ -33,28 +36,28 @@ class Native:
         return self
 
 
-    def forward_model_batched(self, theta, prediction, batch):
+    def forward_model_batched(self, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int) -> typing.Self:
         """
         Fill the first {batch} rows of {prediction} with the displacements of {theta}
         """
         model = self.model
         t, x, y = model.stations.T
         for sample in range(batch):
-            parameters = numpy.asarray(theta.getRow(sample).ndarray())
-            u = REVERSO(t, x, y, **model.source(parameters), **model.medium())
-            prediction.setRow(sample, model.io.toGsl(numpy.column_stack(u).ravel()))
+            u = REVERSO(t, x, y, **model.source(theta[sample]), **model.medium())
+            prediction[sample] = numpy.column_stack(u).ravel()
         # all done
         return self
 
 
-    def verify(self, theta, mask, batch):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray, batch: int) -> typing.Self:
         """
         Flag in {mask} the first {batch} samples of {theta} whose deep chamber isn't below the
         shallow one
         """
         model = self.model
         for sample in range(batch):
-            source = model.source(numpy.asarray(theta.getRow(sample).ndarray()))
+            source = model.source(theta[sample])
             if source["H_d"] <= source["H_s"]:
                 mask[sample] = 1
         # all done
@@ -62,7 +65,7 @@ class Native:
 
 
     # private data
-    model = None
+    model: Reverso
 
 
 # end of file

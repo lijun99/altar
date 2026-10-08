@@ -9,11 +9,18 @@
 #
 
 # externals
+from __future__ import annotations
 import math
-# the package
-import altar
+import typing
+import numpy
 # my base
-from .BayesianState import BayesianState
+from .BayesianState import BayesianState, Likelihoods
+
+if typing.TYPE_CHECKING:
+    import h5py
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.models.Bayesian import Bayesian
+    from altar.simulations.Archiver import Archiver
 
 
 class LangevinStep(BayesianState):
@@ -27,58 +34,56 @@ class LangevinStep(BayesianState):
         theta(t+1) = theta(t) + epsilon_t/2 (grad_prior + grad_data) + N(0, epsilon_t)
     """
 
-    # gradient information
-    grad_prior = None  # (samples x parameters) matrix
-    grad_data = None   # (samples x parameters) matrix
+    # gradient information, (samples x parameters)
+    grad_prior: numpy.ndarray
+    grad_data: numpy.ndarray
 
     # the current sampling rate, set by the controller before each walk
-    epsilon_t = None
+    epsilon_t: float | None = None
 
     # reparameterization: the chains move {theta_sampling}, {theta} follows in physical space
-    has_reparametrization = False
-    theta_sampling = None  # (samples x parameters) matrix; {theta} itself unless reparameterized
-    jacobian = None        # (samples) vector, log|d(theta)/d(theta_sampling)|
-    Jacobian = None        # (samples x parameters) matrix, d(theta)/d(theta_sampling)
+    has_reparametrization: bool = False
+    theta_sampling: numpy.ndarray          # (samples x parameters); {theta} itself unless reparameterized
+    jacobian: numpy.ndarray | None = None  # (samples,), log|d(theta)/d(theta_sampling)|
+    Jacobian: numpy.ndarray | None = None  # (samples x parameters), d(theta)/d(theta_sampling)
 
 
     @classmethod
-    def allocate(cls, annealer):
+    def allocate(cls, annealer: Annealer) -> typing.Self:
         model = annealer.model
         return cls.alloc(samples=model.job.chains, parameters=model.parameters,
                          has_reparametrization=getattr(model, "has_reparametrization", False))
 
     @classmethod
-    def alloc(cls, samples, parameters, has_reparametrization=False):
-        theta = altar.matrix(shape=(samples, parameters)).zero()
+    def alloc(cls, samples: int, parameters: int,
+              has_reparametrization: bool = False) -> typing.Self:
+        theta = numpy.zeros((samples, parameters))
         prior, data, posterior = cls._alloc_likelihoods(samples)
-        grad_prior = altar.matrix(shape=(samples, parameters)).zero()
-        grad_data = altar.matrix(shape=(samples, parameters)).zero()
+        gradients = numpy.zeros((samples, parameters)), numpy.zeros((samples, parameters))
         return cls(beta=1, theta=theta, likelihoods=(prior, data, posterior),
-                   gradients=(grad_prior, grad_data), has_reparametrization=has_reparametrization)
+                   gradients=gradients, has_reparametrization=has_reparametrization)
 
-    def clone(self):
-        beta = self.beta
-        theta = self.theta.clone()
-        likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
-        gradients = self.grad_prior.clone(), self.grad_data.clone()
-        clone = type(self)(beta=beta, theta=theta, likelihoods=likelihoods, gradients=gradients,
-                           has_reparametrization=self.has_reparametrization)
+    def clone(self) -> typing.Self:
+        likelihoods = self.prior.copy(), self.data.copy(), self.posterior.copy()
+        gradients = self.grad_prior.copy(), self.grad_data.copy()
+        clone = type(self)(beta=self.beta, theta=self.theta.copy(), likelihoods=likelihoods,
+                           gradients=gradients, has_reparametrization=self.has_reparametrization)
         if self.has_reparametrization:
-            clone.theta_sampling.copy(self.theta_sampling)
-            clone.jacobian.copy(self.jacobian)
+            clone.theta_sampling[...] = self.theta_sampling
+            clone.jacobian[...] = self.jacobian
         clone.epsilon_t = self.epsilon_t
         return clone
 
-    def _on_start(self, annealer):
+    def _on_start(self, annealer: Annealer) -> None:
         # the log-jacobian of the initial samples, then the gradients, which depend on the
         # likelihoods computed by {start} just before this hook runs
         if self.has_reparametrization:
-            self.jacobian.zero()
+            self.jacobian[...] = 0
             annealer.model.eval_prior_with_physical(step=self, likelihood=self.jacobian)
         self.compute_gradients(controller=annealer)
         return
 
-    def compute_gradients(self, controller):
+    def compute_gradients(self, controller: Annealer) -> typing.Self:
         """
         The gradients of the log prior and data likelihood w.r.t. {theta_sampling}: the prior
         gradient of a reparameterized prior already is, the data one needs the chain rule
@@ -86,66 +91,54 @@ class LangevinStep(BayesianState):
         model = controller.model
         model.gradient(controller=controller, step=self, batch=self.samples)
         if self.has_reparametrization:
-            self.Jacobian.fill(1.0)
+            self.Jacobian[...] = 1.0
             model.eval_jacobian(step=self, batch=self.samples)
-            self.grad_data.ndarray()[:] *= self.Jacobian.ndarray()
+            self.grad_data *= self.Jacobian
         return self
 
-    def refresh_physical(self, model):
+    def refresh_physical(self, model: Bayesian) -> typing.Self:
         """
         Rebuild {theta} and {jacobian} from {theta_sampling}, after an update
         """
         if self.has_reparametrization:
-            self.theta.copy(self.theta_sampling)
+            self.theta[...] = self.theta_sampling
             model.to_physical(theta=self.theta)
-            self.jacobian.zero()
+            self.jacobian[...] = 0
             model.eval_prior_with_physical(step=self, likelihood=self.jacobian)
         return self
 
-    def updateTheta(self, uninormal):
+    def updateTheta(self, rng: numpy.random.Generator) -> typing.Self:
         """
         Update theta(t+1) = theta(t) + epsilon_t/2 (grad_prior + grad_data) + eta_t,
-        where eta_t ~ N(0, epsilon_t), in sampling space when reparameterized. {uninormal} is
-        a unit-normal pdf (altar.pdf.ugaussian) used to draw the noise.
+        where eta_t ~ N(0, epsilon_t), in sampling space when reparameterized, with the noise
+        drawn from {rng}
         """
-        # draw standard normal noise, then scale to N(0, epsilon_t): sigma = sqrt(epsilon_t)
-        eta_t = altar.matrix(shape=self.theta.shape).random(pdf=uninormal)
-        eta_t.scale(math.sqrt(self.epsilon_t))
-
-        # combine the gradients: 0.5 * epsilon_t * (grad_prior + grad_data)
-        drift = self.grad_prior.clone()
-        drift += self.grad_data
-        drift.scale(0.5 * self.epsilon_t)
-
-        # theta += drift + eta_t
-        self.theta_sampling += drift
-        self.theta_sampling += eta_t
-
-        # all done
+        eta_t = math.sqrt(self.epsilon_t) * rng.standard_normal(size=self.theta_sampling.shape)
+        drift = 0.5 * self.epsilon_t * (self.grad_prior + self.grad_data)
+        self.theta_sampling += drift + eta_t
         return self
 
-    def __init__(self, beta, theta, likelihoods, gradients=None, has_reparametrization=False, **kwds):
+    def __init__(self, beta: float, theta: numpy.ndarray, likelihoods: Likelihoods,
+                 gradients: tuple[numpy.ndarray, numpy.ndarray] | None = None,
+                 has_reparametrization: bool = False, **kwds) -> None:
         # chain up (skip BayesianState.__init__ so we control gradient defaulting below)
         super(BayesianState, self).__init__(**kwds)
         self.beta = beta
         self.theta = theta
         self.prior, self.data, self.posterior = likelihoods
-        dof = self.parameters
         self.has_reparametrization = has_reparametrization
         if has_reparametrization:
-            self.theta_sampling = theta.clone()
-            self.jacobian = altar.vector(shape=self.samples).zero()
-            self.Jacobian = altar.matrix(shape=(self.samples, dof))
+            self.theta_sampling = theta.copy()
+            self.jacobian = numpy.zeros(theta.shape[0])
+            self.Jacobian = numpy.ones(theta.shape)
         else:
             self.theta_sampling = theta
-        if gradients is not None:
-            self.grad_prior, self.grad_data = gradients
-        else:
-            self.grad_prior = altar.matrix(shape=(self.samples, dof)).zero()
-            self.grad_data = altar.matrix(shape=(self.samples, dof)).zero()
+        if gradients is None:
+            gradients = numpy.zeros(theta.shape), numpy.zeros(theta.shape)
+        self.grad_prior, self.grad_data = gradients
         return
 
-    def _extra_record(self, archiver):
+    def _extra_record(self, archiver: Archiver) -> None:
         """
         Record the gradients and the current sampling rate alongside the base data
         """
@@ -153,15 +146,14 @@ class LangevinStep(BayesianState):
         archiver.write("Gradients/prior",      self.grad_prior)
         archiver.write("Gradients/likelihood", self.grad_data)
 
-    def _extra_save_hdf5(self, f):
+    def _extra_save_hdf5(self, f: h5py.File) -> None:
         """
         Persist the gradients and epsilon_t into their own hdf5 groups
         """
-        import numpy
         controllergrp = f.create_group('Controller')
         controllergrp.create_dataset('epsilon_t', data=numpy.asarray(self.epsilon_t))
         gradientsgrp = f.create_group('Gradients')
-        gradientsgrp.create_dataset('prior',      data=self.grad_prior.ndarray())
-        gradientsgrp.create_dataset('likelihood', data=self.grad_data.ndarray())
+        gradientsgrp.create_dataset('prior',      data=self.grad_prior)
+        gradientsgrp.create_dataset('likelihood', data=self.grad_data)
 
 # end of file

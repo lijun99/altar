@@ -33,14 +33,12 @@ function(altar_cuda_buildLibrary)
   target_include_directories(
     libcudaaltar PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
   # add the dependencies
   target_link_libraries(
     libcudaaltar PRIVATE
-    ${GSL_LIBRARIES}
     ${PYRE_LIBRARIES}
     )
   # {WITH_CUDA} turns on pyre's {PYRE_HOST_DEVICE} decorations on {pyre::grid}/{pyre::memory},
@@ -96,7 +94,6 @@ function(altar_cuda_buildModule)
   target_include_directories(
     cudaaltarmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
@@ -117,7 +114,7 @@ function(altar_cuda_buildModule)
   set(CUDA_LIBRARIES cudart cublas cusolver curand ${PYRE_LIBRARIES})
   target_link_libraries(
     cudaaltarmodule PRIVATE
-    libcudaaltar libaltar pybind11::module
+    libcudaaltar pybind11::module
     ${CUDA_LIBRARIES}
     )
   # add the sources; distributions.cc/metropolis.cc/langevin.cc/leapfrog.cc are not yet

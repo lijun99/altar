@@ -16,8 +16,8 @@ were written against.
 
 Covers {start}/{alloc} (buffer allocation), {compute_posterior} (posterior = prior +
 beta*data, via {altar.cuda.cublas.axpy}), {clone} (independent memory), and
-{copy_from_cpu}/{copy_to_cpu} (interop with a cpu-side step, whose {altar.matrix}/
-{altar.vector} buffers support the buffer protocol directly).
+{copy_from_cpu}/{copy_to_cpu} (interop with a cpu-side step, whose buffers are numpy
+arrays).
 """
 
 
@@ -69,12 +69,12 @@ def _check_bayesian_state():
 
     cpu_step = type("CPUStep", (), {})()
     cpu_step.beta = 0.75
-    cpu_step.theta = altar.matrix(shape=(samples, parameters))
+    cpu_step.theta = numpy.zeros((samples, parameters))
     numpy.asarray(cpu_step.theta)[:, :] = 42.0
-    cpu_step.prior = altar.vector(shape=samples)
+    cpu_step.prior = numpy.zeros(samples)
     numpy.asarray(cpu_step.prior)[:] = 7.0
-    cpu_step.data = altar.vector(shape=samples)
-    cpu_step.posterior = altar.vector(shape=samples)
+    cpu_step.data = numpy.zeros(samples)
+    cpu_step.posterior = numpy.zeros(samples)
 
     gpu_step = BayesianState.alloc(samples=samples, parameters=parameters, dtype="float64")
     gpu_step.copy_from_cpu(cpu_step)
@@ -83,10 +83,10 @@ def _check_bayesian_state():
     assert numpy.all(numpy.asarray(gpu_step.prior) == 7.0)
 
     cpu_out = type("CPUStep", (), {})()
-    cpu_out.theta = altar.matrix(shape=(samples, parameters))
-    cpu_out.prior = altar.vector(shape=samples)
-    cpu_out.data = altar.vector(shape=samples)
-    cpu_out.posterior = altar.vector(shape=samples)
+    cpu_out.theta = numpy.zeros((samples, parameters))
+    cpu_out.prior = numpy.zeros(samples)
+    cpu_out.data = numpy.zeros(samples)
+    cpu_out.posterior = numpy.zeros(samples)
     gpu_step.copy_to_cpu(cpu_out)
     assert cpu_out.beta == 0.75
     assert numpy.all(numpy.asarray(cpu_out.theta) == 42.0)

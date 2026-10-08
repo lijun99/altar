@@ -12,32 +12,32 @@
 
 void
 altar::models::cdm::
-displacements(const gsl_matrix & theta, const gsl_matrix & stations,
+displacements(const const_matrix_t & theta, const const_matrix_t & stations,
               const std::size_t * layout, double nu, std::size_t batch,
-              gsl_matrix & predicted)
+              const matrix_t & predicted)
 {
     for (std::size_t sample = 0; sample < batch; ++sample) {
         // the source of this sample
         double p[PARAMETERS];
         for (int i = 0; i < PARAMETERS; ++i) {
-            p[i] = gsl_matrix_get(&theta, sample, layout[i]);
+            p[i] = theta(sample, layout[i]);
         }
         auto s = source(p);
 
-        for (std::size_t obs = 0; obs < stations.size1; ++obs) {
-            auto u = displacement(s, gsl_matrix_get(&stations, obs, X),
-                                  gsl_matrix_get(&stations, obs, Y), nu);
+        for (std::size_t obs = 0; obs < stations.rows; ++obs) {
+            auto u = displacement(s, stations(obs, X),
+                                  stations(obs, Y), nu);
             // project along the LOS
-            vec3<double> n = { gsl_matrix_get(&stations, obs, LOS_E),
-                               gsl_matrix_get(&stations, obs, LOS_N),
-                               gsl_matrix_get(&stations, obs, LOS_U) };
+            vec3<double> n = { stations(obs, LOS_E),
+                               stations(obs, LOS_N),
+                               stations(obs, LOS_U) };
             auto uLOS = dot(u, n);
             // shift by the offset of the observation's dataset, if any
-            auto offset = gsl_matrix_get(&stations, obs, OFFSET);
+            auto offset = stations(obs, OFFSET);
             if (offset >= 0) {
-                uLOS -= gsl_matrix_get(&theta, sample, static_cast<std::size_t>(offset));
+                uLOS -= theta(sample, static_cast<std::size_t>(offset));
             }
-            gsl_matrix_set(&predicted, sample, obs, uLOS);
+            predicted(sample, obs) = uLOS;
         }
     }
 }
@@ -45,16 +45,16 @@ displacements(const gsl_matrix & theta, const gsl_matrix & stations,
 
 void
 altar::models::cdm::
-verify(const gsl_matrix & theta, const std::size_t * layout, std::size_t batch,
-       gsl_vector & mask)
+verify(const const_matrix_t & theta, const std::size_t * layout, std::size_t batch,
+       const vector_t & mask)
 {
     for (std::size_t sample = 0; sample < batch; ++sample) {
         double p[PARAMETERS];
         for (int i = 0; i < PARAMETERS; ++i) {
-            p[i] = gsl_matrix_get(&theta, sample, layout[i]);
+            p[i] = theta(sample, layout[i]);
         }
         if (!buried(source(p))) {
-            gsl_vector_set(&mask, sample, 1);
+            mask[sample] = 1;
         }
     }
 }

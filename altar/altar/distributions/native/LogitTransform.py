@@ -6,97 +6,101 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
 import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
 
 
 # the declaration
 class LogitTransform:
     """
     The cpu implementation of {altar.distributions.transforms.Transform.LogitTransform}:
-    physical = a + (b-a)*sigmoid(sampling); sampling = logit((physical-a)/(b-a)). Plain numpy
-    math on a gsl matrix already *is* native cpu computation, so this is unchanged from (and
-    numerically identical to) the shim's own body before it grew a native/cuda split.
+    physical = a + (b-a)*sigmoid(sampling); sampling = logit((physical-a)/(b-a)). The samples
+    {theta} are the (samples x parameters) columns of the distribution that owns me, and
+    {likelihood} a (samples,) array
     """
 
-    def initialize(self, application=None):
+    def initialize(self, application: Application | None = None) -> typing.Self:
         """
         Nothing to set up beyond {support}, already handed to me by my owning distribution
         """
         return self
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         theta <- a + (b-a)*sigmoid(theta), in place
         """
         a, b = self.support
-        arr = numpy.asarray(theta)
-        arr[:] = a + (b - a) / (1.0 + numpy.exp(-arr))
+        theta[...] = a + (b - a) / (1.0 + numpy.exp(-theta))
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         theta <- logit((theta-a)/(b-a)), in place; the inverse of {to_physical}
         """
         a, b = self.support
-        arr = numpy.asarray(theta)
-        arr[:] = numpy.log((arr - a) / (b - arr))
+        theta[...] = numpy.log((theta - a) / (b - theta))
         return self
 
 
-    def log_jacobian(self, theta, likelihood, batch=None):
+    def log_jacobian(self, theta: numpy.ndarray, likelihood: numpy.ndarray,
+                     batch: int | None = None) -> typing.Self:
         """
         Add the standard-logistic log-pdf into {likelihood}, summed over the parameters this
         transform owns. {theta} is PHYSICAL space; see the shim's docstring for why.
         """
         a, b = self.support
-        x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
+        sig = (theta - a) / (b - a)
         # log(sig) + log(1-sig); dropping the constant log(b-a) term this omits changes
         # nothing downstream -- it cancels exactly in any delta-H/acceptance decision
         contribution = numpy.log(sig) + numpy.log(1.0 - sig)
-        numpy.asarray(likelihood)[:] += contribution.sum(axis=1)
+        likelihood[:theta.shape[0]] += contribution.sum(axis=1)
         return self
 
 
-    def jacobian(self, theta, jacobian, batch=None):
+    def jacobian(self, theta: numpy.ndarray, jacobian: numpy.ndarray,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill {jacobian} with d(physical)/d(sampling) = (b-a)*sig*(1-sig)
         """
         a, b = self.support
-        x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
-        numpy.asarray(jacobian)[:] = (b - a) * sig * (1.0 - sig)
+        sig = (theta - a) / (b - a)
+        jacobian[...] = (b - a) * sig * (1.0 - sig)
         return self
 
 
-    def jacobian_gradient(self, theta, gradient, batch=None):
+    def jacobian_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                          batch: int | None = None) -> typing.Self:
         """
         Fill {gradient} with d/d(sampling)[log(sig) + log(1-sig)] = 1 - 2*sig
         """
         a, b = self.support
-        x = numpy.asarray(theta)
-        sig = (x - a) / (b - a)
-        numpy.asarray(gradient)[:] = 1.0 - 2.0 * sig
+        sig = (theta - a) / (b - a)
+        gradient[...] = 1.0 - 2.0 * sig
         return self
 
 
-    def chain_gradient(self, theta, gradient, batch=None):
+    def chain_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                       batch: int | None = None) -> typing.Self:
         """
         gradient <- gradient*(b-a)*sig*(1-sig) + (1 - 2*sig), in place
         """
         a, b = self.support
-        sig = (numpy.asarray(theta) - a) / (b - a)
-        g = numpy.asarray(gradient)
-        g[:] = g * (b - a) * sig * (1.0 - sig) + 1.0 - 2.0 * sig
+        sig = (theta - a) / (b - a)
+        gradient[...] = gradient * (b - a) * sig * (1.0 - sig) + 1.0 - 2.0 * sig
         return self
 
 
     # private data, set by the shim before {initialize} runs
-    support = None
-    idx_begin = None  # unused on cpu; native's caller already hands me a pre-sliced view
-    idx_end = None
+    support: tuple[float, float]
+    idx_begin: int | None = None  # unused on cpu; native's caller already hands me a pre-sliced view
+    idx_end: int | None = None
 
 
 # end of file

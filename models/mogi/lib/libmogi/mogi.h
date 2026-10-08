@@ -11,9 +11,37 @@
 
 #include <cmath>
 #include <cstddef>
-#include <gsl/gsl_matrix.h>
 
 namespace altar::models::mogi {
+
+    // a strided view of a matrix, e.g. of a numpy array, in cells
+    template <typename cell_t>
+    struct matrix_view_t {
+        cell_t * data;
+        std::size_t rows, cols;
+        std::ptrdiff_t rowStride, colStride;
+
+        auto operator()(std::size_t row, std::size_t col) const -> cell_t & {
+            return data[static_cast<std::ptrdiff_t>(row) * rowStride
+                        + static_cast<std::ptrdiff_t>(col) * colStride];
+        }
+    };
+
+    // and of a vector
+    template <typename cell_t>
+    struct vector_view_t {
+        cell_t * data;
+        std::size_t size;
+        std::ptrdiff_t stride;
+
+        auto operator[](std::size_t i) const -> cell_t & {
+            return data[static_cast<std::ptrdiff_t>(i) * stride];
+        }
+    };
+
+    using const_matrix_t = matrix_view_t<const double>;
+    using matrix_t = matrix_view_t<double>;
+    using vector_t = vector_view_t<double>;
 
     // the columns of a {stations} matrix: location, LOS unit vector (east, north, up), and the
     // column of the observation's dataset offset in {theta}, or -1 for none
@@ -37,9 +65,9 @@ namespace altar::models::mogi {
 
     // fill the first {batch} rows of {predicted} (samples x observations) with the LOS
     // displacements, less the dataset offsets, of the Mogi sources in {theta}
-    void displacements(const gsl_matrix & theta, const gsl_matrix & stations,
+    void displacements(const const_matrix_t & theta, const const_matrix_t & stations,
                        std::size_t xIdx, std::size_t yIdx, std::size_t dIdx, std::size_t sIdx,
-                       bool log10dV, double nu, std::size_t batch, gsl_matrix & predicted);
+                       bool log10dV, double nu, std::size_t batch, const matrix_t & predicted);
 
 } // of namespace altar::models::mogi
 

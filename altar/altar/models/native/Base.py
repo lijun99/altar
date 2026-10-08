@@ -8,6 +8,14 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.models.BayesianL2 import BayesianL2
+    from altar.shells.Application import Application
 
 # the declaration
 class Base:
@@ -21,7 +29,7 @@ class Base:
     """
 
 
-    def constrain(self, theta, batch=None):
+    def constrain(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Force the samples in {theta} back within my constraints, in place. A cpu sampler
         rejects through {verify} instead, so there is nothing to do here.
@@ -29,7 +37,8 @@ class Base:
         return self
 
 
-    def eval_prior_with_physical(self, theta, prior, batch=None):
+    def eval_prior_with_physical(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                                 batch: int | None = None) -> typing.Self:
         """
         Add any prior contributions that depend on physical parameters, beyond what
         {eval_prior} already contributed. Default: nothing further to add.
@@ -37,7 +46,8 @@ class Base:
         return self
 
 
-    def eval_prior_physical(self, theta, prior, batch=None):
+    def eval_prior_physical(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                            batch: int | None = None) -> typing.Self:
         """
         Fill {prior} with the log likelihoods of the samples in {theta}, given in physical
         space. Without reparameterization, physical space is sampling space, so the default
@@ -46,7 +56,8 @@ class Base:
         return self.eval_prior(theta=theta, prior=prior, batch=batch)
 
 
-    def jacobian(self, theta, jacobian, batch=None):
+    def jacobian(self, theta: numpy.ndarray, jacobian: numpy.ndarray,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill {jacobian} with d(physical)/d(sampling). Default: nothing to do -- {jacobian}
         is expected to already hold 1, the correct value for an unreparameterized parameter
@@ -55,7 +66,7 @@ class Base:
         return self
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from sampling space to physical space, in place. Without
         reparameterization, the two coincide, so the default is a no-op.
@@ -63,7 +74,7 @@ class Base:
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from physical space to sampling space, in place; the default is
         likewise a no-op.
@@ -72,22 +83,17 @@ class Base:
 
 
     # implementation details
-    def restrict(self, theta):
+    def restrict(self, theta: numpy.ndarray) -> numpy.ndarray:
         """
         Return my portion of the sample matrix {theta}
         """
-        # find out how many samples in the set
-        samples = theta.rows
-        # find where my samples live within the overall sample matrix, and how wide my slice is
-        start = 0, self.offset
-        shape = samples, self.count
-        # return a view to the portion of the sample that's mine
-        return theta.view(start=start, shape=shape)
+        # a view of my columns
+        return theta[:, self.offset:self.offset + self.count]
 
 
     # private data, set by the shim before any other method runs
-    count = None
-    offset = 0
+    count: int
+    offset: int = 0
 
 
 # end of file

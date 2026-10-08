@@ -10,6 +10,8 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
 # the package
 import altar
@@ -17,6 +19,11 @@ import altar
 from altar.models.BayesianL2 import BayesianL2
 # the layout of the observation geometry file
 from .Data import Data as datasheet
+
+if typing.TYPE_CHECKING:
+    from altar.arrays import Array
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -58,7 +65,7 @@ class CDM(BayesianL2, family="altar.models.cdm"):
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the state of the model given an {application} context
         """
@@ -75,7 +82,7 @@ class CDM(BayesianL2, family="altar.models.cdm"):
 
 
     @altar.export
-    def initialize_sample(self, step, batch=None):
+    def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Draw the initial sample from my prior, replacing the sources that reach above the free
         surface with copies of the ones that don't
@@ -86,13 +93,13 @@ class CDM(BayesianL2, family="altar.models.cdm"):
         if altar.backends.active() == "cuda":
             mask = altar.cuda.vector(shape=step.theta.shape[0], dtype="int32").zero()
         else:
-            mask = altar.vector(shape=step.theta.shape[0]).zero()
+            mask = numpy.zeros(step.theta.shape[0])
         self.verify_theta(theta=step.theta, mask=mask, batch=samples)
         if altar.backends.active() == "cuda":
             altar.cuda.synchronize()
             invalid = numpy.flatnonzero(numpy.asarray(mask.grid)[:samples])
         else:
-            invalid = numpy.flatnonzero(mask.ndarray()[:samples])
+            invalid = numpy.flatnonzero(mask[:samples])
         if len(invalid) == 0:
             return self
         valid = numpy.setdiff1d(numpy.arange(samples), invalid)
@@ -101,18 +108,18 @@ class CDM(BayesianL2, family="altar.models.cdm"):
             channel.log("every source drawn from the prior reaches above the free surface")
             raise SystemExit(1)
         # replace them, in physical and, if separate, sampling space
-        sources = numpy.random.default_rng().choice(valid, size=len(invalid))
+        sources = self.rng.rng.choice(valid, size=len(invalid))
         buffers = [step.theta]
         if self.has_reparametrization:
             buffers.append(step.theta_sampling)
         for buffer in buffers:
-            θ = numpy.asarray(buffer.grid) if altar.backends.active() == "cuda" else buffer.ndarray()
+            θ = numpy.asarray(buffer.grid) if altar.backends.active() == "cuda" else buffer
             θ[invalid] = θ[sources]
         # all done
         return self
 
 
-    def verify_theta(self, theta, mask, batch=None):
+    def verify_theta(self, theta: Array, mask: Array, batch: int | None = None) -> Array:
         """
         Reject the samples outside the support of my priors, or whose source reaches above the
         free surface
@@ -124,7 +131,8 @@ class CDM(BayesianL2, family="altar.models.cdm"):
         return mask
 
 
-    def forward_model_batched(self, theta, prediction, batch=None):
+    def forward_model_batched(self, theta: Array, prediction: Array,
+                              batch: int | None = None) -> typing.Self:
         """
         Fill {prediction}, shape (samples x observations), with the predicted LOS displacements
         of each sample in {theta}
@@ -134,21 +142,21 @@ class CDM(BayesianL2, family="altar.models.cdm"):
 
 
     @altar.export
-    def forward_problem(self, application, theta):
+    def forward_problem(self, application: Application, theta: numpy.ndarray) -> dict:
         """
         The predicted LOS displacements for each row of {theta}; see {altar.models.Model}
         """
         from .ext import libcdm
         θ = numpy.atleast_2d(numpy.asarray(theta, dtype=float))
         samples = θ.shape[0]
-        prediction = altar.matrix(shape=(samples, self.observations))
-        libcdm.displacements(self.io.toGsl(θ), self.io.toGsl(self.stations), self.layout,
-                             self.nu, samples, prediction)
-        return {"data": prediction.ndarray().copy()}
+        prediction = numpy.zeros((samples, self.observations))
+        libcdm.displacements(θ, numpy.ascontiguousarray(self.stations, dtype=numpy.float64),
+                             self.layout, self.nu, samples, prediction)
+        return {"data": prediction}
 
 
     # implementation details
-    def load_geometry(self):
+    def load_geometry(self) -> numpy.ndarray:
         """
         Read the observation geometry into a (observations x 6) array of the location, the LOS
         unit vector (east, north, up) and the column of the dataset offset (-1 for none)
@@ -192,7 +200,7 @@ class CDM(BayesianL2, family="altar.models.cdm"):
         return stations
 
 
-    def find_layout(self):
+    def find_layout(self) -> list[int]:
         """
         The columns of (x0, y0, depth, opening, ax, ay, az, omegaX, omegaY, omegaZ) in the
         sample vector
@@ -231,7 +239,7 @@ class CDM(BayesianL2, family="altar.models.cdm"):
         return layout
 
 
-    def _makeImpl(self):
+    def _makeImpl(self) -> typing.Any:
         """
         Build my implementation: cuda for the cuda backend, python or c++ on the cpu
         """
@@ -245,10 +253,10 @@ class CDM(BayesianL2, family="altar.models.cdm"):
 
 
     # private data
-    stations = None # the observation geometry, (observations x 6)
-    oid = None # the dataset of each observation
-    layout = None # the columns of the source parameters in the sample vector
-    _impl = None # my implementation strategy, chosen once, in {initialize}
+    stations: numpy.ndarray | None = None # the observation geometry, (observations x 6)
+    oid: numpy.ndarray | None = None # the dataset of each observation
+    layout: list[int] | None = None # the columns of the source parameters in the sample vector
+    _impl: typing.Any = None # my implementation strategy, chosen once, in {initialize}
 
 
 # end of file

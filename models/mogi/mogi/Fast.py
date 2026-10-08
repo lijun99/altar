@@ -9,8 +9,13 @@
 #
 
 
-# the package
-import altar
+# externals
+from __future__ import annotations
+import typing
+import numpy
+
+if typing.TYPE_CHECKING:
+    from .Mogi import Mogi
 
 
 # declaration
@@ -20,7 +25,7 @@ class Fast:
     """
 
 
-    def initialize(self, model):
+    def initialize(self, model: Mogi) -> typing.Self:
         """
         Upload the observation geometry and the parameter layout
         """
@@ -28,12 +33,13 @@ class Fast:
         from .ext import libmogi
         self.libmogi = libmogi
         self.model = model
-        self.stations = model.io.toGsl(model.stations)
+        self.stations = numpy.ascontiguousarray(model.stations, dtype=numpy.float64)
         # all done
         return self
 
 
-    def forward_model_batched(self, theta, prediction, batch):
+    def forward_model_batched(self, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int) -> typing.Self:
         """
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
@@ -46,9 +52,9 @@ class Fast:
 
 
     # private data
-    libmogi = None
-    model = None
-    stations = None # the observation geometry, as a gsl matrix
+    libmogi: typing.Any = None
+    model: Mogi
+    stations: numpy.ndarray # the observation geometry
 
 
 # end of file

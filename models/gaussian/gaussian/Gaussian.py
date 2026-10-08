@@ -10,9 +10,16 @@
 
 
 # externals
+from __future__ import annotations
 import math
+import typing
+import numpy
 # the package
 import altar
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 
 # declaration
@@ -50,7 +57,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the state of the model given a {problem} specification
         """
@@ -68,7 +75,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def initialize_sample(self, step):
+    def initialize_sample(self, step: BayesianState) -> typing.Self:
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -81,7 +88,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def eval_prior(self, step):
+    def eval_prior(self, step: BayesianState) -> typing.Self:
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -101,42 +108,23 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def data_likelihood(self, step):
+    def data_likelihood(self, step: BayesianState) -> typing.Self:
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
         """
-        # cache the inverse of {σ}
-        σ_inv = self.σ_inv
-
-        # grab the portion of the sample that's mine
-        θ = self.restrict(theta=step.theta)
-        # and the storage for the data likelihoods
-        data = step.data
-
-        # find out how many samples in the set
-        samples = θ.rows
-
-        # for each sample in the sample set
-        for sample in range(samples):
-            # prepare vector with the sample difference from the mean
-            δ = θ.getRow(sample)
-            δ -= self.peak
-            # storage for {σ_inv . δ}
-            y = altar.vector(shape=δ.shape).zero()
-            # compute {σ_inv . δ} and store it in {y}
-            altar.blas.dsymv(σ_inv.upperTriangular, 1.0, σ_inv, δ, 0.0, y)
-            # finally, form {δ^T . σ_inv . δ}
-            v = altar.blas.ddot(δ, y)
-            # compute and return the log-likelihood of the data given this sample
-            data[sample] += self.normalization - v/2
+        # grab the portion of the sample that's mine, as differences from the mean
+        δ = self.restrict(theta=step.theta) - self.peak
+        # the log-likelihood of the data given each sample, from {δ^T . σ_inv . δ}
+        v = numpy.einsum("si,ij,sj->s", δ, self.σ_inv, δ)
+        step.data[:δ.shape[0]] += self.normalization - v/2
 
         # all done
         return self
 
 
     @altar.export
-    def verify(self, step, mask):
+    def verify(self, step: BayesianState, mask: numpy.ndarray) -> numpy.ndarray:
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -152,7 +140,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     # meta methods
-    def __init__(self, **kwds):
+    def __init__(self, **kwds) -> None:
         # chain up
         super().__init__(**kwds)
 
@@ -162,10 +150,8 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
         # the number of model parameters
         dof = self.parameters
 
-        # convert the central value into a vector; allocate
-        peak = altar.vector(shape=dof)
-        # and populate
-        for index, value in enumerate(self.μ): peak[index] = value
+        # the central value
+        peak = numpy.array(self.μ, dtype=float)
 
         # the trigonometry
         cos_φ = cos(self.φ)
@@ -178,7 +164,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
         λ1_inv = 1/λ1
 
         # build the inverse of the covariance matrix
-        σ_inv = altar.matrix(shape=(dof, dof))
+        σ_inv = numpy.zeros((dof, dof))
         σ_inv[0,0] = λ0_inv*cos_φ**2 +  λ1_inv*sin_φ**2
         σ_inv[1,1] = λ1_inv*cos_φ**2 +  λ0_inv*sin_φ**2
         σ_inv[0,1] = σ_inv[1,0] = (λ1_inv - λ0_inv) * cos_φ * sin_φ
@@ -198,9 +184,9 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     # implementation details
-    peak = None # the location of my central value
-    σ_inv = None # the inverse of my data covariance
-    normalization = 1 # the normalization factor for my prior distribution
+    peak: numpy.ndarray # the location of my central value
+    σ_inv: numpy.ndarray # the inverse of my data covariance
+    normalization: float = 1 # the normalization factor for my prior distribution
 
 
 # end of file

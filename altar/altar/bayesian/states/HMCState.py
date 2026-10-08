@@ -8,9 +8,15 @@
 # all rights reserved
 #
 
-import altar
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # my base
-from .BayesianState import BayesianState
+from .BayesianState import BayesianState, Likelihoods
+
+# the prior, data and posterior gradients of a step
+Gradients = tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray]
 
 
 class HMCState(BayesianState):
@@ -21,71 +27,61 @@ class HMCState(BayesianState):
     persistent per-β state remains a plain {CoolingStep}, exactly as it does for {Metropolis}.
     """
 
-    # momentum
-    momentum = None        # (samples x parameters) matrix
+    # momentum, (samples x parameters)
+    momentum: numpy.ndarray
 
-    # gradient information
-    grad_prior = None      # (samples x parameters) matrix
-    grad_data = None       # (samples x parameters) matrix
-    grad_posterior = None  # (samples x parameters) matrix
+    # gradient information, (samples x parameters)
+    grad_prior: numpy.ndarray
+    grad_data: numpy.ndarray
+    grad_posterior: numpy.ndarray
 
     # reparameterization, set by the sampler when the model reparameterizes
-    phi = None             # (samples x parameters) matrix, theta in sampling space
-    Jacobian = None        # (samples x parameters) matrix, d(theta)/d(phi)
-    log_jacobian = None    # (samples) vector, log|d(theta)/d(phi)|
+    phi: numpy.ndarray | None = None          # (samples x parameters), theta in sampling space
+    Jacobian: numpy.ndarray | None = None     # (samples x parameters), d(theta)/d(phi)
+    log_jacobian: numpy.ndarray | None = None # (samples,), log|d(theta)/d(phi)|
 
 
     @classmethod
-    def alloc(cls, samples, parameters):
-        theta = altar.matrix(shape=(samples, parameters)).zero()
+    def alloc(cls, samples: int, parameters: int) -> typing.Self:
+        theta = numpy.zeros((samples, parameters))
         prior, data, posterior = cls._alloc_likelihoods(samples)
-        momentum = altar.matrix(shape=(samples, parameters)).zero()
-        grad_prior = altar.matrix(shape=(samples, parameters)).zero()
-        grad_data = altar.matrix(shape=(samples, parameters)).zero()
-        grad_posterior = altar.matrix(shape=(samples, parameters)).zero()
+        momentum = numpy.zeros((samples, parameters))
+        gradients = tuple(numpy.zeros((samples, parameters)) for _ in range(3))
         return cls(beta=0, theta=theta, likelihoods=(prior, data, posterior),
-                   momentum=momentum, gradients=(grad_prior, grad_data, grad_posterior))
+                   momentum=momentum, gradients=gradients)
 
-    def clone(self):
-        beta = self.beta
-        theta = self.theta.clone()
-        likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
-        momentum = self.momentum.clone()
-        gradients = self.grad_prior.clone(), self.grad_data.clone(), self.grad_posterior.clone()
-        clone = type(self)(beta=beta, theta=theta, likelihoods=likelihoods,
-                           momentum=momentum, gradients=gradients)
+    def clone(self) -> typing.Self:
+        likelihoods = self.prior.copy(), self.data.copy(), self.posterior.copy()
+        gradients = self.grad_prior.copy(), self.grad_data.copy(), self.grad_posterior.copy()
+        clone = type(self)(beta=self.beta, theta=self.theta.copy(), likelihoods=likelihoods,
+                           momentum=self.momentum.copy(), gradients=gradients)
         # and the reparameterization state, when there is one
         for name in ("phi", "Jacobian", "log_jacobian"):
             value = getattr(self, name)
             if value is not None:
-                setattr(clone, name, value.clone())
+                setattr(clone, name, value.copy())
         return clone
 
-    def compute_posterior(self):
+    def compute_posterior(self) -> typing.Self:
         # the shared prior + beta*data computation
         super().compute_posterior()
-        # plus the posterior gradient: grad_posterior = grad_prior + beta * grad_data;
-        # {daxpy} is vector-only, so scale a clone rather than accumulate in place
-        self.grad_posterior.copy(self.grad_prior)
-        scaled = self.grad_data.clone()
-        scaled.scale(self.beta)
-        self.grad_posterior += scaled
+        # plus the posterior gradient
+        self.grad_posterior[...] = self.grad_prior + self.beta * self.grad_data
         return self
 
-    def __init__(self, beta, theta, likelihoods, momentum=None, gradients=None, **kwds):
+    def __init__(self, beta: float, theta: numpy.ndarray, likelihoods: Likelihoods,
+                 momentum: numpy.ndarray | None = None, gradients: Gradients | None = None,
+                 **kwds) -> None:
         # chain up (skip BayesianState.__init__ so we control the extra fields below)
         super(BayesianState, self).__init__(**kwds)
         self.beta = beta
         self.theta = theta
         self.prior, self.data, self.posterior = likelihoods
-        dof = self.parameters
-        self.momentum = momentum if momentum is not None else altar.matrix(shape=(self.samples, dof)).zero()
-        if gradients is not None:
-            self.grad_prior, self.grad_data, self.grad_posterior = gradients
-        else:
-            self.grad_prior = altar.matrix(shape=(self.samples, dof)).zero()
-            self.grad_data = altar.matrix(shape=(self.samples, dof)).zero()
-            self.grad_posterior = altar.matrix(shape=(self.samples, dof)).zero()
+        shape = theta.shape
+        self.momentum = momentum if momentum is not None else numpy.zeros(shape)
+        if gradients is None:
+            gradients = numpy.zeros(shape), numpy.zeros(shape), numpy.zeros(shape)
+        self.grad_prior, self.grad_data, self.grad_posterior = gradients
         return
 
 # end of file

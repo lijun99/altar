@@ -9,10 +9,11 @@
 #
 
 
-# framework
-import altar
 # externals
+from __future__ import annotations
+import typing
 from math import sqrt, pi as π
+import numpy
 
 
 # declaration
@@ -26,17 +27,18 @@ class Source:
 
     # public data
     # location
-    x = 0
-    y = 0
-    d = 0
+    x: float = 0
+    y: float = 0
+    d: float = 0
     # strength
-    dV = 0
+    dV: float = 0
     # material properties
-    nu = .25 # Poisson ration
+    nu: float = .25 # Poisson ration
 
 
     # interface
-    def displacements(self, locations, los):
+    def displacements(self, locations: typing.Sequence[tuple[float, float]],
+                      los: numpy.ndarray) -> numpy.ndarray:
         """
         Compute the expected displacements from a point pressure source at a set of observation
         locations
@@ -51,7 +53,7 @@ class Source:
         nu = self.nu
 
         # allocate space for the result
-        u = altar.vector(shape=len(locations))
+        u = numpy.zeros(len(locations))
         # go through each observation location
         for index, (x_obs,y_obs) in enumerate(locations):
             # compute displacements
@@ -74,7 +76,8 @@ class Source:
 
 
     # meta-methods
-    def __init__(self, x=x, y=y, d=d, dV=dV, nu=nu, **kwds):
+    def __init__(self, x: float = x, y: float = y, d: float = d, dV: float = dV, nu: float = nu,
+                 **kwds) -> None:
         # chain up
         super().__init__(**kwds)
         # store the location

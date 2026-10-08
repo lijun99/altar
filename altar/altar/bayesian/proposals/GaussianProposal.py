@@ -9,12 +9,22 @@
 #
 
 # externals
+from __future__ import annotations
 import types
+import typing
+import numpy
 # the package
 import altar
 # my protocol
 from .Proposal import Proposal as proposal
-from ..statistics import weighted_covariance
+from ..statistics import weighted_covariance, condition_covariance
+
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
+    from altar.simulations.Archiver import Archiver
 
 # declaration
 class GaussianProposal(altar.component, family="altar.proposals.gaussian", implements=proposal):
@@ -51,16 +61,14 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
         # grab the info channel
         self.info = application.info
-        # get the rng capsule
+        # and the random number generator
         self.rng = application.rng.rng
-        # distribution for random walk displacement vectors
-        self.uninormal = altar.pdf.ugaussian(rng=self.rng)
 
         # register with the archiver so our record() is called at each save point; the
         # archiver lives on the controller, not the application itself, and by this point
@@ -73,13 +81,13 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         # all done
         return self
 
-    def set_sigma(self, sigma):
+    def set_sigma(self, sigma: numpy.ndarray) -> typing.Self:
         """
         Fix the proposal covariance to the given matrix, disabling auto-update.
         Call before the first {propose} to use a user-supplied Σ rather than computing
         it from sample auto-correlation.
         """
-        self._sigma = sigma.clone()
+        self._sigma = numpy.array(sigma, dtype=float)
         self._sigma_is_fixed = True
         # invalidate the cached decomposition so it is rebuilt on the next propose
         self._sigma_chol = None
@@ -87,7 +95,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return self
 
     @altar.export
-    def propose(self, sampler, step, annealer=None):
+    def propose(self, sampler: typing.Any, step: BayesianState,
+                annealer: Annealer | None = None) -> numpy.ndarray:
         """
         Propose a new sample set using a Gaussian random walk with covariance Σ
         """
@@ -100,7 +109,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
 
 
     @altar.export
-    def new_walk(self):
+    def new_walk(self) -> typing.Self:
         """
         A walk of the chains is about to start: recompute Σ from the current samples, when it
         is not fixed, before the next proposal
@@ -110,7 +119,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
 
 
     # implementation details
-    def _prepare(self, sampler, step, annealer):
+    def _prepare(self, sampler: typing.Any, step: BayesianState,
+                 annealer: Annealer | None) -> typing.Self:
         """
         Update Σ if warranted, then scale it by {sampler.scaling}^2 and Cholesky-decompose
         """
@@ -133,9 +143,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
                     self._sigma = self._compute_sigma(step=step, annealer=annealer)
 
         # scale Σ by the sampler scaling factor and Cholesky-decompose for sampling
-        Σ = self._sigma.clone()
-        Σ *= sampler.scaling ** 2
-        self._sigma_chol = altar.lapack.cholesky_decomposition(Σ)
+        self._sigma_chol = numpy.linalg.cholesky(self._sigma * sampler.scaling ** 2)
 
         # cache preparation state
         self._walk_pending = False
@@ -148,7 +156,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return self
 
 
-    def _needs_prepare(self, step, scaling):
+    def _needs_prepare(self, step: BayesianState, scaling: float) -> bool:
         """
         Decide whether we need to refresh the cached Cholesky decomposition (and possibly Σ)
         """
@@ -164,7 +172,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return False
 
 
-    def _compute_sigma(self, step, annealer):
+    def _compute_sigma(self, step: BayesianState, annealer: Annealer | None) -> numpy.ndarray:
         """
         Compute Σ from the importance-weighted auto-correlation of {step.theta}
         """
@@ -177,7 +185,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return self.compute_covariance(step=step, w=weights)
 
 
-    def _get_weights(self, step, annealer):
+    def _get_weights(self, step: BayesianState, annealer: Annealer | None) -> numpy.ndarray:
         """
         Return importance weights for the covariance computation.
         In a tempering scheme these are w_i ∝ exp(Δβ · data_i), written to step.weights
@@ -189,35 +197,19 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         if w is not None:
             return w
         # uniform fallback (beta=0 or no scheduler)
-        w = altar.vector(shape=samples)
-        w.fill(1.0 / samples)
-        return w
+        return numpy.full(samples, 1.0 / samples)
 
 
-    def _displace(self, sample):
+    def _displace(self, sample: numpy.ndarray) -> numpy.ndarray:
         """
-        Construct a set of displacement vectors for the Gaussian random walk
+        The samples displaced by the Gaussian random walk, sample + L z with z ~ N(0, 1) and
+        L the Cholesky factor of the scaled covariance
         """
-        # get the Cholesky factor of the scaled covariance
-        Σ_chol = self._sigma_chol
-
-        # build random displacement vectors; shape (parameters x samples) for convenience
-        δT = altar.matrix(shape=tuple(reversed(sample.shape))).random(pdf=self.uninormal)
-        # multiply by the Cholesky factor: δT ← Σ_chol · δT
-        δT = altar.blas.dtrmm(
-            Σ_chol.sideLeft, Σ_chol.lowerTriangular, Σ_chol.opNoTrans, Σ_chol.nonUnitDiagonal,
-            1, Σ_chol, δT)
-
-        # transpose to (samples x parameters)
-        δ = altar.matrix(shape=sample.shape)
-        δT.transpose(δ)
-        # offset by the current sample
-        δ += sample
-        # and return it
-        return δ
+        z = self.rng.standard_normal(size=sample.shape)
+        return sample + z @ self._sigma_chol.T
 
     @altar.export
-    def compute_covariance(self, step, w):
+    def compute_covariance(self, step: typing.Any, w: numpy.ndarray) -> numpy.ndarray:
         r"""
         Compute the parameter covariance Σ of the sample in {step} with weights {w}:
 
@@ -230,28 +222,26 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         samples = step.samples
         parameters = step.parameters
 
-        assert w.shape == samples
+        assert w.shape == (samples,)
         assert θ.shape == (samples, parameters)
 
         # the weighted outer products about the weighted mean, in one matrix product
-        Σ = altar.matrix(shape=(parameters, parameters))
-        Σ.ndarray()[:] = weighted_covariance(θ.ndarray(), w.ndarray())
+        Σ = weighted_covariance(θ, w)
 
         # condition the covariance matrix if requested
         if self.check_positive_definiteness:
-            self.condition_covariance(Σ=Σ)
+            Σ = self.condition_covariance(Σ=Σ)
 
         return Σ
 
-    def condition_covariance(self, Σ):
+    def condition_covariance(self, Σ: numpy.ndarray) -> numpy.ndarray:
         """
         Ensure Σ is symmetric positive definite by lifting small/negative eigenvalues
         """
-        altar.libaltar.matrix_condition(Σ, self.min_eigenvalue_ratio)
-        return Σ
+        return condition_covariance(Σ=Σ, ratio=self.min_eigenvalue_ratio)
 
     @altar.export
-    def record(self, archiver):
+    def record(self, archiver: Archiver) -> typing.Self:
         """
         Record the proposal covariance Σ via {archiver}.
         Called automatically at each save point when registered during initialize().
@@ -263,18 +253,17 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         return self
 
     # private data
-    info = None
-    rng = None
-    uninormal = None
+    info: journal.info | None = None
+    rng: numpy.random.Generator
 
     # owned proposal covariance and its Cholesky factor
-    _sigma = None          # the unscaled proposal covariance Σ
-    _sigma_chol = None     # Cholesky factor of (scaling^2 * Σ)
-    _sigma_is_fixed = False  # True if sigma was set externally via set_sigma()
+    _sigma: numpy.ndarray | None = None       # the unscaled proposal covariance Σ
+    _sigma_chol: numpy.ndarray | None = None  # lower Cholesky factor of (scaling^2 * Σ)
+    _sigma_is_fixed: bool = False  # True if sigma was set externally via set_sigma()
 
     # update tracking
-    _anneal_count = 0      # number of walks since the first Σ computation
-    _walk_pending = True   # whether a walk started since _prepare was last called
-    _prepared_scaling = None  # scaling at which _prepare was last called
+    _anneal_count: int = 0      # number of walks since the first Σ computation
+    _walk_pending: bool = True  # whether a walk started since _prepare was last called
+    _prepared_scaling: float | None = None  # scaling at which _prepare was last called
 
 # end of file

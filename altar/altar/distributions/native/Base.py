@@ -9,7 +9,14 @@
 #
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
+    from altar.simulations.NumpyRNG import NumpyRNG
+    from ..transforms.Transform import Transform
 
 
 # the declaration
@@ -20,78 +27,91 @@ class Base:
     {parameters}/{offset} as configurable traits and copies their values down to me, once, at
     {initialize} time.
 
-    A concrete distribution overrides {initialize} and {verify}; the rest are sensible
-    defaults (a flat prior, forwarding to {self.pdf}) that most distributions never need to
-    touch.
+    A concrete distribution provides {draw}, {log_density} and {verify}; the rest are sensible
+    defaults that most distributions never need to touch. The samples {theta} are
+    (samples x parameters) arrays, of which I own the columns {offset} to {offset+parameters};
+    {likelihood} and {mask} are (samples,) arrays.
     """
 
 
-    def initialize(self, rng, application=None):
-        # being abstract, i don't know what to do here
-        raise NotImplementedError(
-            f"class '{type(self).__name__}' must implement 'initialize'")
+    def initialize(self, rng: NumpyRNG, application: Application | None = None) -> typing.Self:
+        """
+        Hold on to the numpy generator of the {rng} component
+        """
+        self.rng = rng.rng
+        return self
 
 
-    def initialize_sample(self, theta, batch=None):
+    def initialize_sample(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Fill my portion of {theta} with initial random values from my distribution.
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=theta)
         # fill it with random numbers from my initializer
-        self.pdf.matrix(matrix=θ)
+        θ[...] = self.draw(shape=θ.shape)
         # and return
         return self
 
 
-    def eval_prior(self, theta, likelihood, batch=None):
+    def draw(self, shape: tuple[int, ...]) -> numpy.ndarray:
         """
-        Fill my portion of {likelihood} with the log prior probabilities of the samples in
-        {theta}
+        An array of {shape} with random values from my distribution
+        """
+        # being abstract, i don't know what to do here
+        raise NotImplementedError(
+            f"class '{type(self).__name__}' must implement 'draw'")
+
+
+    def eval_prior(self, theta: numpy.ndarray, likelihood: numpy.ndarray,
+                   batch: int | None = None) -> typing.Self:
+        """
+        Add to {likelihood} the log prior probabilities of my portion of the samples in {theta}
         """
         # grab the portion of the sample that's mine
-        θ = numpy.asarray(self.restrict(theta=theta))
+        θ = self.restrict(theta=theta)
         # sum the log densities of each sample's parameters
-        numpy.asarray(likelihood)[:θ.shape[0]] += self.log_density(θ).sum(axis=1)
+        likelihood[:θ.shape[0]] += self.log_density(θ).sum(axis=1)
         # all done
         return self
 
 
-    def log_density(self, x):
+    def log_density(self, x: numpy.ndarray) -> numpy.ndarray:
         """
-        The log density of each entry of the numpy array {x}; the default asks {self.pdf}, one
-        entry at a time, and a distribution with a closed form overrides it
+        The log density of each entry of {x}
         """
-        density = numpy.vectorize(self.pdf.density, otypes=[float])(x)
-        # a density that underflows to zero, far into a tail, is a log density of -inf
-        with numpy.errstate(divide="ignore"):
-            return numpy.log(density)
+        # being abstract, i don't know what to do here
+        raise NotImplementedError(
+            f"class '{type(self).__name__}' must implement 'log_density'")
 
 
-    def outside(self, theta, mask, support):
+    def outside(self, theta: numpy.ndarray, mask: numpy.ndarray,
+                support: tuple[float, float]) -> numpy.ndarray:
         """
         Mark in {mask} the samples in {theta} with a parameter outside {support}; a NaN is
         outside too
         """
-        θ = numpy.asarray(self.restrict(theta=theta))
+        θ = self.restrict(theta=theta)
         low, high = support
         inside = ((θ >= low) & (θ <= high)).all(axis=1)
-        numpy.asarray(mask)[:θ.shape[0]] += ~inside
+        mask[:θ.shape[0]] += ~inside
         return mask
 
 
-    def prior_gradient(self, theta, gradient, batch=None):
+    def prior_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                       batch: int | None = None) -> typing.Self:
         r"""
         Fill my portion of {gradient} with d\log P(\theta)/d\theta, elementwise, for the
         samples in {theta}. {gradient} has the same shape as {theta}.
         """
         # default: assume a flat (improper) prior, so the gradient is 0
-        self.restrict(theta=gradient).zero()
+        self.restrict(theta=gradient)[...] = 0
         # all done
         return self
 
 
-    def verify(self, theta, mask, batch=None):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -101,7 +121,7 @@ class Base:
             f"class '{type(self).__name__}' must implement 'verify'")
 
 
-    def constrain(self, theta, batch=None):
+    def constrain(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Force my portion of the samples in {theta} back within my constraints, in place. A
         cpu sampler rejects through {verify} instead, so there is nothing to do here.
@@ -109,7 +129,8 @@ class Base:
         return self
 
 
-    def jacobian(self, theta, jacobian, batch=None):
+    def jacobian(self, theta: numpy.ndarray, jacobian: numpy.ndarray,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill my portion of {jacobian} with d(physical)/d(sampling) when reparameterized;
         otherwise {jacobian} already holds 1, the right value
@@ -120,7 +141,8 @@ class Base:
         return self
 
 
-    def eval_prior_with_physical(self, theta, likelihood, batch=None):
+    def eval_prior_with_physical(self, theta: numpy.ndarray, likelihood: numpy.ndarray,
+                                 batch: int | None = None) -> typing.Self:
         """
         Add my log|J| into {likelihood} when reparameterized; otherwise nothing to add
         """
@@ -130,16 +152,17 @@ class Base:
         return self
 
 
-    def eval_prior_physical(self, theta, likelihood, batch=None):
+    def eval_prior_physical(self, theta: numpy.ndarray, likelihood: numpy.ndarray,
+                            batch: int | None = None) -> typing.Self:
         """
-        Fill my portion of {likelihood} with the log prior probabilities of the samples in
+        Add to {likelihood} the log prior probabilities of my portion of the samples in
         {theta}, given in physical space. Without reparameterization, physical space is
         sampling space, so the default is just {eval_prior}.
         """
         return self.eval_prior(theta=theta, likelihood=likelihood, batch=batch)
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform my portion of {theta} from sampling space to physical space, in place; a
         no-op unless reparameterized
@@ -149,7 +172,7 @@ class Base:
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform my portion of {theta} from physical space to sampling space, in place; a
         no-op unless reparameterized
@@ -159,7 +182,7 @@ class Base:
         return self
 
 
-    def _initialize_transform(self, application=None):
+    def _initialize_transform(self, application: Application | None = None) -> typing.Self:
         """
         For a bounded distribution with a {reparameterize} trait: hand my transform my
         {support} and let it initialize
@@ -171,64 +194,58 @@ class Base:
         return self
 
 
-    # the forwarding interface
-    def sample(self):
+    # the forwarding interface of the protocol
+    def sample(self) -> float:
         """
-        Sample the distribution using a random number generator
+        A single value drawn from me
         """
-        # ask my pdf
-        return self.pdf.sample()
+        return float(self.draw(shape=()))
 
 
-    def density(self, x):
+    def density(self, x: float | numpy.ndarray) -> float | numpy.ndarray:
         """
-        Compute the probability density of the distribution at {x}
+        My probability density at {x}
         """
-        # ask my pdf
-        return self.pdf.density(x)
+        return numpy.exp(self.log_density(numpy.asarray(x, dtype=float)))
 
 
-    def vector(self, vector):
+    def vector(self, vector: numpy.ndarray) -> numpy.ndarray:
         """
-        Fill {vector} with random values
+        Fill {vector} with values drawn from me
         """
-        # ask my pdf
-        return self.pdf.vector(vector)
+        vector[...] = self.draw(shape=vector.shape)
+        return vector
 
 
-    def matrix(self, matrix):
+    def matrix(self, matrix: numpy.ndarray) -> numpy.ndarray:
         """
-        Fill {matrix} with random values
+        Fill {matrix} with values drawn from me
         """
-        # ask my pdf
-        return self.pdf.matrix(matrix)
+        matrix[...] = self.draw(shape=matrix.shape)
+        return matrix
 
 
     # implementation details
-    def restrict(self, theta):
+    def restrict(self, theta: numpy.ndarray) -> numpy.ndarray:
         """
-        Return my portion of the {theta}
+        Return my portion of the {theta}, a view of my columns
         """
-        # find out how many samples in the set
-        samples = theta.rows
-        # find where my samples live within the overall sample matrix, and how wide my slice is
-        start = 0, self.offset
-        shape = samples, self.parameters
-        # return the portion of the sample that's mine
-        return theta.view(start=start, shape=shape)
+        return theta[:, self.offset:self.offset + self.parameters]
 
 
     # private data, set by the shim before any other method runs
-    parameters = None
-    offset = None
+    parameters: int
+    offset: int
     # mirrored back onto the shim after {initialize}; a concrete distribution sets this to
     # True in its own {initialize} when reparameterizing (see {Uniform})
-    has_reparametrization = False
+    has_reparametrization: bool = False
     # set by the shim of a distribution that supports reparameterization (e.g. {Uniform})
-    reparameterize = False
-    transform = None
+    reparameterize: bool = False
+    transform: Transform
+    # the support of a bounded distribution, set by its shim
+    support: tuple[float, float]
     # set by {initialize}
-    pdf = None
+    rng: numpy.random.Generator
 
 
 # end of file

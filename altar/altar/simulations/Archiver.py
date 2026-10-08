@@ -38,11 +38,8 @@ class Archiver(altar.protocol, family="altar.simulations.archivers"):
         Persist one dataset.
 
         {path} is a slash-separated string "Group/Subgroup/Name"; a bare name with no
-        slash is stored at the top level.  {data} may be any of:
-
-          - an object with a .ndarray() method  (altar.matrix, altar.vector, gsl objects)
-          - a numpy ndarray
-          - a Python scalar
+        slash is stored at the top level.  {data} may be anything numpy can view as an array:
+        a numpy array, a device array, or a Python scalar
 
         {info} is an optional dict of metadata (written as HDF5 attributes or stored
         alongside the data in other backends).

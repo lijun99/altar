@@ -8,8 +8,17 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # the package
 import altar
+
+if typing.TYPE_CHECKING:
+    import h5py
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 
 # an implementation of the archiver protocol
@@ -30,7 +39,7 @@ class Recorder(
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me given an {application} context
         """
@@ -47,7 +56,8 @@ class Recorder(
 
 
     @altar.export
-    def record(self, step, iteration, psets, **kwds):
+    def record(self, step: BayesianState, iteration: int | None, psets: dict,
+               **kwds) -> typing.Self:
         """
         Record the final state of the calculation
         """
@@ -56,7 +66,7 @@ class Recorder(
         # all done
         return self
 
-    def recordstep(self, step, stats, psets):
+    def recordstep(self, step: BayesianState, stats: dict, psets: dict) -> typing.Self:
         """
         Record step to file for ce
         """
@@ -65,7 +75,7 @@ class Recorder(
         self.statistics.append(statcopy)
         return self
 
-    def save_stats(self):
+    def save_stats(self) -> typing.Self:
         """
         Save the statistics information to file
         """
@@ -95,21 +105,24 @@ class Recorder(
         #return
         return self
 
-    def start(self, step, iteration, psets, **kwds):
+    def start(self, step: BayesianState, iteration: int | None, psets: dict,
+              **kwds) -> typing.Self:
         """
         Hook for the beginning of annealing.
         """
         self._set_context(iteration=iteration, psets=psets)
         return self
 
-    def top(self, step, iteration, psets, **kwds):
+    def top(self, step: BayesianState, iteration: int | None, psets: dict,
+            **kwds) -> typing.Self:
         """
         Hook for the top of a beta step.
         """
         self._set_context(iteration=iteration, psets=psets)
         return self
 
-    def bottom(self, step, iteration, psets, **kwds):
+    def bottom(self, step: BayesianState, iteration: int | None, psets: dict,
+               **kwds) -> typing.Self:
         """
         Hook for the bottom of a beta step.
         """
@@ -120,7 +133,8 @@ class Recorder(
                 component.record(archiver=self)
         return self
 
-    def final(self, step, iteration, psets, **kwds):
+    def final(self, step: BayesianState, iteration: int | None, psets: dict,
+              **kwds) -> typing.Self:
         """
         Hook for the end of annealing.
         """
@@ -133,15 +147,14 @@ class Recorder(
         return self
 
     @altar.export
-    def write(self, path, data, info=None):
+    def write(self, path: str, data: typing.Any, info: dict | None = None) -> typing.Self:
         """
         Store one dataset in memory.
 
-        {path} is "Group/Name" or "Group/Sub/Name".  {data} may have a .ndarray() method,
-        be a numpy array, or be a scalar.  {info} is optional metadata stored alongside.
+        {path} is "Group/Name" or "Group/Sub/Name".  {data} is anything numpy can view as an
+        array, or a scalar.  {info} is optional metadata stored alongside.
         """
-        import numpy
-        arr = data.ndarray() if hasattr(data, 'ndarray') else numpy.asarray(data)
+        arr = numpy.asarray(data)
         key = self._current_label
         if key not in self.records:
             self.records[key] = []
@@ -149,14 +162,14 @@ class Recorder(
         return self
 
     @altar.export
-    def register(self, component):
+    def register(self, component: typing.Any) -> typing.Self:
         """
         Register a component whose record(archiver) will be called at each save point.
         """
         self._components.append(component)
         return self
 
-    def save(self, record):
+    def save(self, record: tuple[str, str, typing.Any]) -> typing.Self:
         """
         Compatibility shim: accept the old (group, name, data) tuple form.
         """
@@ -164,7 +177,7 @@ class Recorder(
         path = '/'.join(p for p in [group_name, dataset_name] if p)
         return self.write(path, data)
 
-    def _record_statistics(self):
+    def _record_statistics(self) -> typing.Self:
         """
         Persist the MC statistics table in memory.
         """
@@ -174,13 +187,12 @@ class Recorder(
         self.save(("Statistics", "mc_updates", stats))
         return self
 
-    def _statistics_as_array(self):
+    def _statistics_as_array(self) -> numpy.ndarray | None:
         """
         Pack statistics into a numeric array.
         """
         if not self.statistics:
             return None
-        import numpy
 
         rows = []
         for item in self.statistics:
@@ -198,7 +210,7 @@ class Recorder(
             ])
         return numpy.asarray(rows)
 
-    def _set_context(self, iteration, psets):
+    def _set_context(self, iteration: int | None, psets: dict) -> typing.Self:
         """
         Save context needed by components during recording.
         """
@@ -207,10 +219,10 @@ class Recorder(
         return self
 
     # unconfigurable traits
-    statistics = None
-    records = None
-    psets = None
-    _current_label = None
-    _components = []
+    statistics: list[dict] | None = None
+    records: dict | None = None
+    psets: dict | None = None
+    _current_label: int | str | None = None
+    _components: list = []
 
 # end of file

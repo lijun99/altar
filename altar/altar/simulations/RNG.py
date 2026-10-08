@@ -31,8 +31,8 @@ class RNG(altar.protocol, family="altar.simulations.rng"):
         """
         Supply a default implementation
         """
-        # pull the GSL random number generator component
-        from .GSLRNG import GSLRNG as default
+        # pull the numpy random number generator component
+        from .NumpyRNG import NumpyRNG as default
         # and return it
         return default
 

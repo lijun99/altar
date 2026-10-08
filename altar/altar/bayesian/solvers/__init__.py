@@ -11,7 +11,7 @@ from .Solver import Solver as solver
 
 @altar.foundry(
     implements=solver,
-    tip="a solver for δβ based on a Brent minimizer from gsl")
+    tip="a solver for δβ based on Brent's root finding method")
 def brent():
     from .Brent import Brent
     __doc__ = Brent.__doc__

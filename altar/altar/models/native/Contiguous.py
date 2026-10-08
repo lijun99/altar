@@ -8,6 +8,16 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.distributions.Distribution import Distribution
+    from altar.models.BayesianL2 import BayesianL2
+    from altar.shells.Application import Application
+
 # and my base class
 from .Base import Base as base
 
@@ -19,7 +29,8 @@ class Contiguous(base):
     """
 
 
-    def initialize(self, model, offset, application=None):
+    def initialize(self, model: BayesianL2, offset: int,
+                   application: Application | None = None) -> int:
         """
         Initialize my state given the {model} that owns me
         """
@@ -46,7 +57,7 @@ class Contiguous(base):
         return count
 
 
-    def initialize_sample(self, theta, batch=None):
+    def initialize_sample(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
@@ -58,7 +69,8 @@ class Contiguous(base):
         return self
 
 
-    def eval_prior(self, theta, prior, batch=None):
+    def eval_prior(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                   batch: int | None = None) -> typing.Self:
         """
         Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
@@ -70,7 +82,8 @@ class Contiguous(base):
         return self
 
 
-    def prior_gradient(self, theta, gradient, batch=None):
+    def prior_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                       batch: int | None = None) -> typing.Self:
         r"""
         Fill {gradient} with d\log P(\theta)/d\theta for my portion of the samples in
         {theta}, for use by gradient-based samplers (e.g. SGLD)
@@ -84,7 +97,8 @@ class Contiguous(base):
         return self
 
 
-    def verify(self, theta, mask, batch=None):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         Check whether the samples in {theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones
@@ -97,7 +111,8 @@ class Contiguous(base):
         return mask
 
 
-    def eval_prior_with_physical(self, theta, prior, batch=None):
+    def eval_prior_with_physical(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                                 batch: int | None = None) -> typing.Self:
         """
         Add any prior contributions that depend on physical parameters, e.g. the log-jacobian
         of a reparameterized prior
@@ -106,7 +121,8 @@ class Contiguous(base):
         return self
 
 
-    def jacobian(self, theta, jacobian, batch=None):
+    def jacobian(self, theta: numpy.ndarray, jacobian: numpy.ndarray,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill my portion of {jacobian} with d(physical)/d(sampling), when reparameterized
         """
@@ -115,7 +131,7 @@ class Contiguous(base):
         return self
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform my portion of {theta} from sampling space to physical space, in place
         """
@@ -123,7 +139,7 @@ class Contiguous(base):
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform my portion of {theta} from physical space to sampling space, in place
         """
@@ -132,8 +148,8 @@ class Contiguous(base):
 
 
     # private data, set by the shim before {initialize} runs
-    prior = None
-    prep = None
+    prior: Distribution | None = None
+    prep: Distribution | None = None
 
 
 # end of file

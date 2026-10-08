@@ -9,10 +9,14 @@
 #
 
 # externals
+from __future__ import annotations
 import math
+import typing
 import numpy
-# get the package
-import altar
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
+    from altar.simulations.NumpyRNG import NumpyRNG
 
 # and my base class
 from .Base import Base as base
@@ -25,19 +29,20 @@ class Uniform(base):
     """
 
 
-    def initialize(self, rng, application=None):
+    def initialize(self, rng: NumpyRNG, application: Application | None = None) -> typing.Self:
         """
         Initialize with the given random number generator
         """
-        # set up my pdf
-        self.pdf = altar.pdf.uniform(rng=rng.rng, support=self.support)
+        # hold on to the generator
+        super().initialize(rng=rng, application=application)
         # set up my transform, if reparameterizing
         self._initialize_transform(application=application)
         # all done
         return self
 
 
-    def verify(self, theta, mask, batch=None):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         Check whether my portion of the samples in {theta} are consistent with my constraints, and
         update {mask}, a vector with zeroes for valid samples and non-zero for invalid ones;
@@ -47,15 +52,24 @@ class Uniform(base):
         return self.outside(theta=theta, mask=mask, support=self.support)
 
 
-    def log_density(self, x):
+    def draw(self, shape: tuple[int, ...]) -> numpy.ndarray:
         """
-        The log density of each entry of {x}: -log(high - low) on [low, high), as gsl's
+        An array of {shape} with values drawn uniformly from my support
+        """
+        low, high = self.support
+        return self.rng.uniform(low, high, size=shape)
+
+
+    def log_density(self, x: numpy.ndarray) -> numpy.ndarray:
+        """
+        The log density of each entry of {x}: -log(high - low) on [low, high)
         """
         low, high = self.support
         return numpy.where((x >= low) & (x < high), -math.log(high - low), -numpy.inf)
 
 
-    def prior_gradient(self, theta, gradient, batch=None):
+    def prior_gradient(self, theta: numpy.ndarray, gradient: numpy.ndarray,
+                       batch: int | None = None) -> typing.Self:
         r"""
         Fill my portion of {gradient} with d\log P(\theta)/d\theta; when reparameterized,
         this is exactly the transform's jacobian-gradient, since a uniform prior's
@@ -66,12 +80,8 @@ class Uniform(base):
             θ = self.restrict(theta=theta)
             self.transform.jacobian_gradient(theta=θ, gradient=g, batch=batch)
         else:
-            g.zero()
+            g[...] = 0
         return self
-
-
-    # private data, set by the shim before {initialize} runs
-    support = None
 
 
 # end of file

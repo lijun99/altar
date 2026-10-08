@@ -38,9 +38,9 @@ altar-cuda.ext.stem := cudaaltar
 altar-cuda.ext.pkg := altar-cuda.pkg
 altar-cuda.ext.wraps := altar-cuda.lib
 altar-cuda.ext.capsule :=
-altar-cuda.ext.extern := altar-cuda.lib altar.lib pyre cuda pybind11 python
+altar-cuda.ext.extern := altar-cuda.lib pyre cuda pybind11 python
 altar-cuda.ext.lib.c++.flags += $($(compiler.c++).std.c++23)
-altar-cuda.ext.lib.prerequisites += altar.lib altar-cuda.lib
+altar-cuda.ext.lib.prerequisites += altar-cuda.lib
 
 # the cuda libraries the kernels and the bindings use
 cuda.libraries += cudart cublas cusolver curand

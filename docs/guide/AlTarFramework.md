@@ -292,7 +292,9 @@ of 1 keeps half of the samples effective. The samples are then resampled by thei
 : the COV to aim at; default 1.
 
 `solver`
-: the solver for $\beta_{m+1}$: `grid` (a grid search, the default) or `brent` (Brent's method).
+: the solver for $\beta_{m+1}$: `brent` (Brent's root finding, the default; the COV grows with
+  the step, so the target is bracketed) or `grid` (an iterative grid search); each has a
+  `tolerance` on the COV, 0.01 by default.
 
 `check_positive_definiteness`, `min_eigenvalue_ratio`
 : condition the covariance of the samples; defaults `True` and 0.001.
@@ -312,7 +314,7 @@ linear:
     controller:
         scheduler:
             target = 2.0
-            solver = brent
+            solver = grid
 ```
 
 ### Constant

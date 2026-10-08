@@ -8,7 +8,13 @@
 # all rights reserved
 #
 
+from __future__ import annotations
+import typing
 from datetime import datetime
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.shells.Application import Application
 
 # declaration
 class AnnealingMethod:
@@ -22,14 +28,14 @@ class AnnealingMethod:
 
 
     # public data
-    step = None # the current state of the solver
-    iteration = 0 # my iteration counter
+    step: CoolingStep | None = None # the current state of the solver
+    iteration: int = 0 # my iteration counter
 
-    wid = 0 # my worker id
-    workers = None # the total number of chain processors
+    wid: int = 0 # my worker id
+    workers: int | None = None # the total number of chain processors
 
     @property
-    def beta(self):
+    def beta(self) -> float:
         """
         Return the temperature of my current step
         """
@@ -38,7 +44,7 @@ class AnnealingMethod:
 
 
     # interface
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
@@ -53,7 +59,7 @@ class AnnealingMethod:
         return self
 
 
-    def start(self, annealer):
+    def start(self, annealer: Annealer) -> typing.Self:
         """
         Start the annealing process from scratch
         """
@@ -68,7 +74,7 @@ class AnnealingMethod:
         return self
 
 
-    def restart(self, annealer):
+    def restart(self, annealer: Annealer) -> typing.Self:
         """
         Start the annealing process from a checkpoint
         """
@@ -76,7 +82,7 @@ class AnnealingMethod:
         raise NotImplementedError()
 
 
-    def top(self, annealer):
+    def top(self, annealer: Annealer) -> typing.Self:
         """
         Notification that we are at the beginning of an update
         """
@@ -89,7 +95,7 @@ class AnnealingMethod:
         return self
 
 
-    def cool(self, annealer):
+    def cool(self, annealer: Annealer) -> typing.Self:
         """
         Push my state forward along the cooling schedule
         """
@@ -103,7 +109,7 @@ class AnnealingMethod:
         return self
 
 
-    def walk(self, annealer):
+    def walk(self, annealer: Annealer) -> typing.Any:
         """
         Explore configuration space by walking the Markov chains
         """
@@ -118,17 +124,19 @@ class AnnealingMethod:
         return stats
 
 
-    def densities(self, annealer):
+    def densities(self, annealer: Annealer) -> typing.Self:
         """
         Recompute the prior, data and posterior densities of my step, after the model changed
         """
         step = self.step
-        step.prior.zero(), step.data.zero(), step.posterior.zero()
+        step.prior[...] = 0
+        step.data[...] = 0
+        step.posterior[...] = 0
         annealer.model.likelihoods(annealer=annealer, step=step)
         return self
 
 
-    def resample(self, annealer, statistics):
+    def resample(self, annealer: Annealer, statistics: typing.Any) -> typing.Any:
         """
         Analyze the acceptance statistics and take the problem state to the end of the
         annealing step
@@ -140,7 +148,7 @@ class AnnealingMethod:
         # all done
         return statistics
 
-    def archive(self, annealer, scaling, stats):
+    def archive(self, annealer: Annealer, scaling: float, stats: typing.Any) -> typing.Self:
         """
         Notify archiver to record
         """
@@ -157,7 +165,7 @@ class AnnealingMethod:
         return self
 
 
-    def bottom(self, annealer):
+    def bottom(self, annealer: Annealer) -> typing.Self:
         """
         Notification that we are at the bottom of an update
         """
@@ -179,7 +187,7 @@ class AnnealingMethod:
         return self
 
 
-    def finish(self, annealer):
+    def finish(self, annealer: Annealer) -> typing.Self:
         """
         Notification that the simulation is over
         """
@@ -194,11 +202,11 @@ class AnnealingMethod:
 
 
     # whether i keep a pool of the states of the chains
-    pools = False
+    pools: bool = False
 
 
     # meta-methods
-    def __init__(self, annealer, **kwds):
+    def __init__(self, annealer: Annealer, **kwds) -> None:
         # chain up; absorb the {annealer}
         super().__init__(**kwds)
         # all done

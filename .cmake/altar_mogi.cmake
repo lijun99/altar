@@ -44,11 +44,10 @@ function(altar_mogi_buildModule)
   target_include_directories(
     mogimodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
   # set the libraries to link against
-  target_link_libraries(mogimodule PRIVATE ${GSL_LIBRARIES} pybind11::module)
+  target_link_libraries(mogimodule PRIVATE pybind11::module)
   # add the sources
   target_sources(mogimodule PRIVATE
     lib/libmogi/mogi.cc

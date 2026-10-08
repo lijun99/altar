@@ -11,12 +11,20 @@ Protocol and implementations for regulating how many MC steps a Metropolis-famil
 runs per β step -- paired with {altar.bayesian.stepsizers.StepSizer}: {stepsizer} regulates
 the size of each step/jump, {stepcounter} regulates how many of them to take.
 
-Backend-agnostic: {theta} may be a cpu {altar.matrix} or a cuda {altar.cuda.array.Array} --
-both support the numpy buffer protocol directly, so {DecorrelatingSteps}'s correlation check
-works unchanged on either.
+Backend-agnostic: {theta} may be a cpu numpy array or a cuda {altar.cuda.array.Array}, which
+numpy can view, so {DecorrelatingSteps}'s correlation check works unchanged on either.
 """
 
+from __future__ import annotations
+import typing
+import numpy
 import altar
+
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.arrays import Array
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.shells.Application import Application
 
 
 class StepCounter(altar.protocol, family="altar.bayesian.stepcounters"):
@@ -25,32 +33,32 @@ class StepCounter(altar.protocol, family="altar.bayesian.stepcounters"):
     """
 
     @altar.provides
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me given an {application} context
         """
 
     @altar.provides
-    def start(self, theta, beta=None):
+    def start(self, theta: Array, beta: float | None = None) -> typing.Self:
         """
         Called once per β step, before the first block, given the starting sample matrix
         """
 
     @altar.provides
-    def block_size(self):
+    def block_size(self) -> int:
         """
         The number of MC steps to run before the next {done} check
         """
 
     @altar.provides
-    def done(self, mcsteps, theta, annealer=None):
+    def done(self, mcsteps: int, theta: Array, annealer: Annealer | None = None) -> bool:
         """
         Return whether the current β step's chain walk should stop, given the number of MC
         steps run so far ({mcsteps}) and the current sample matrix ({theta})
         """
 
     @classmethod
-    def pyre_default(cls, **kwds):
+    def pyre_default(cls, **kwds) -> type:
         """
         Supply a default implementation
         """
@@ -68,21 +76,21 @@ class FixedSteps(altar.component, family="altar.bayesian.stepcounters.fixed", im
                 "application.job.steps"
 
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         if self.steps is None:
             self.steps = application.job.steps
         return self
 
     @altar.export
-    def start(self, theta, beta=None):
+    def start(self, theta: Array, beta: float | None = None) -> typing.Self:
         return self
 
     @altar.export
-    def block_size(self):
+    def block_size(self) -> int:
         return self.steps
 
     @altar.export
-    def done(self, mcsteps, theta, annealer=None):
+    def done(self, mcsteps: int, theta: Array, annealer: Annealer | None = None) -> bool:
         return mcsteps >= self.steps
 
 
@@ -113,34 +121,33 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
     beta_stage2.doc = 'β threshold above which to use max_mc_steps_stage2'
 
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         if self.max_mc_steps_stage2 is None:
             self.max_mc_steps_stage2 = self.max_mc_steps
         self.info = application.info
         return self
 
     @altar.export
-    def start(self, theta, beta=None):
+    def start(self, theta: Array, beta: float | None = None) -> typing.Self:
         # snapshot of starting positions for the correlation check
-        self._theta_start = theta.clone()
+        self._theta_start = numpy.array(theta, dtype=float)
         # the max-step budget for this β (two-stage: a tighter budget once annealing is done)
         self._max_steps = (self.max_mc_steps_stage2 if (beta is not None and beta > self.beta_stage2)
                            else self.max_mc_steps)
         return self
 
     @altar.export
-    def block_size(self):
+    def block_size(self) -> int:
         return self.corr_check_steps
 
     @altar.export
-    def done(self, mcsteps, theta, annealer=None):
+    def done(self, mcsteps: int, theta: Array, annealer: Annealer | None = None) -> bool:
         if mcsteps < self.min_mc_steps:
             return False
         if mcsteps >= self._max_steps:
             return True
 
-        import numpy
-        ts = numpy.asarray(self._theta_start)
+        ts = self._theta_start
         tc = numpy.asarray(theta)
         ts = ts - ts.mean(axis=0)
         tc = tc - tc.mean(axis=0)
@@ -160,8 +167,8 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
         return correlation <= self.target_correlation
 
     # private data
-    info = None
-    _theta_start = None
-    _max_steps = None
+    info: journal.info | None = None
+    _theta_start: numpy.ndarray | None = None
+    _max_steps: int | None = None
 
 # end of file

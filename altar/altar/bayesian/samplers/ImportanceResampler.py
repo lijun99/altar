@@ -10,9 +10,18 @@
 #
 
 # externals
-import itertools
+from __future__ import annotations
+import typing
+import numpy
 # the package
 import altar
+from ..statistics import multiplicities
+
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
+
 
 # declaration
 class ImportanceResampler(altar.component, family="altar.bayesian.importanceresampler"):
@@ -29,122 +38,51 @@ class ImportanceResampler(altar.component, family="altar.bayesian.importanceresa
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
-        # get the rng wrapper
+        # the random number generator, for resampling
         self.rng = application.rng.rng
-
-        # set up the distribution for building the sample multiplicities
-        self.uniform = altar.pdf.uniform(support=(0,1), rng=self.rng)
-
         # grab the info channel
         self.info = application.info
-
         # all done
         return self
 
     @altar.export
-    def resample(self, w, step, β):
+    def resample(self, w: numpy.ndarray, step: BayesianState, β: float) -> bool:
         """
         Rebuild the sample and its statistics based on importance weights if β threshold is met
         """
         # check if resampling should be performed
         if β <= self.beta_resampling_start:
             return False
-            
-        θOld = step.theta
-        priorOld = step.prior
-        dataOld = step.data
-        postOld = step.posterior
-        # allocate the new entities
-        θ = altar.matrix(shape=θOld.shape)
-        prior = altar.vector(shape=priorOld.shape)
-        data = altar.vector(shape=dataOld.shape)
-        posterior = altar.vector(shape=postOld.shape)
 
-        # build a histogram for the new samples and convert it into a vector
-        multi = self.compute_sample_multiplicities(w=w, step=step).counts()
+        counts = self.compute_sample_multiplicities(w=w, step=step)
+        # the index of the old sample behind each new one, duplicated by its count, shuffled
+        rows = numpy.repeat(numpy.arange(counts.size), counts)
+        self.rng.shuffle(rows)
 
-        # unique samples count
-        unique_samples = 0
-        # sample count
-        index = 0
-        # indices for kept samples
-        indices = altar.vector(shape=multi.shape)
-
-        # record kept sample indices
-        for i in range(multi.shape):
-            count = int(multi[i])
-            # if count is zero, skip
-            if count == 0: continue
-            # add the unique samples count
-            unique_samples += 1
-            # duplicate indices
-            for ic in range(count):
-                indices[index] = i
-                index += 1
-        # shuffle the indices
-        indices.shuffle(rng=self.rng)
-
-        self.info.log(f"resampling: unique samples {unique_samples} out of {multi.shape}")
-
-        # copy theta, (prior, data, posterior) over according to the indices
-        for i in range(indices.shape):
-            # get the index for old samples
-            old = int(indices[i])
-            # duplicate theta
-            for param in range(step.parameters):
-                θ[i, param] = θOld[old, param]
-            prior[i] = priorOld[old]
-            data[i] = dataOld[old]
-            posterior[i] = postOld[old]
+        self.info.log(f"resampling: unique samples {numpy.count_nonzero(counts)} out of {counts.size}")
 
         # update the step with resampled data
-        step.prior.copy(prior)
-        step.data.copy(data)
-        step.theta.copy(θ)
+        step.prior[...] = step.prior[rows]
+        step.data[...] = step.data[rows]
+        step.theta[...] = step.theta[rows]
 
         # indicate resampling was performed
         return True
 
-    def compute_sample_multiplicities(self, w, step):
+    def compute_sample_multiplicities(self, w: numpy.ndarray, step: BayesianState) -> numpy.ndarray:
         """
-        Prepare a frequency vector for the new samples given the importance weights {w}
+        How many copies of each sample to keep, given the importance weights {w}
         """
-        # unpack what we need
-        samples = step.samples
-
-        # build a vector of random numbers uniformly distributed in [0,1]
-        r = altar.vector(shape=samples)
-        if self.use_low_variance_resampler:
-            # use equal spaced random number s+i/samples in [0, 1]
-            altar.libaltar.low_variance_random(self.rng, r)
-        else:
-            # use uniform pdf generator in [0, 1]
-            r.random(pdf=self.uniform)
-
-        # compute the bin edges in the range [0, 1]
-        ticks = tuple(self.build_histogram_ranges(w))
-        # build a histogram
-        h = altar.histogram(bins=samples).ranges(edges=ticks).fill(r)
-        # and return it
-        return h
-
-    def build_histogram_ranges(self, w):
-        """
-        Build histogram bins based on the importance weights
-        """
-        # start at 0
-        yield 0
-        # yield the partial sums
-        for partialSum in itertools.accumulate(w): yield partialSum
-        # all done
-        return
+        return multiplicities(
+            w=numpy.asarray(w, dtype=float), rng=self.rng,
+            low_variance=self.use_low_variance_resampler)
 
     # private data
-    uniform = None
-    rng = None
+    rng: numpy.random.Generator
+    info: journal.info
 
 # end of file

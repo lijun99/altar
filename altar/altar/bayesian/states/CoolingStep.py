@@ -9,10 +9,18 @@
 #
 
 
-# the package
-import altar
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # my base
-from .BayesianState import BayesianState
+from .BayesianState import BayesianState, Likelihoods
+
+if typing.TYPE_CHECKING:
+    import h5py
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.models.Bayesian import Bayesian
+    from altar.simulations.Archiver import Archiver
 
 
 # declaration
@@ -26,19 +34,19 @@ class CoolingStep(BayesianState):
 
 
     # public data
-    theta_sampling = None     # a (samples x parameters) matrix in sampling space (phi)
-    jacobian = None  # a (samples) vector with the log of the Jacobian determinant (d theta/d phi)
+    theta_sampling: numpy.ndarray        # (samples x parameters), in sampling space (phi)
+    jacobian: numpy.ndarray | None = None # (samples,) log of the jacobian determinant d theta/d phi
 
     # reparameterization flag
-    has_reparametrization = False  # whether reparameterization is implemented
+    has_reparametrization: bool = False  # whether reparameterization is implemented
 
     # my sample matrix lives in {theta_sampling}, not {theta}
-    _theta_field = "theta_sampling"
-    _theta_label = "θ_sampling"
+    _theta_field: str = "theta_sampling"
+    _theta_label: str = "θ_sampling"
 
 
     @classmethod
-    def allocate(cls, annealer):
+    def allocate(cls, annealer: Annealer) -> typing.Self:
         """
         Build an uninitialized step sized for {annealer}'s model, carrying the extra
         sampling/physical-space state when the model is reparameterized -- overrides
@@ -51,19 +59,20 @@ class CoolingStep(BayesianState):
 
 
     @classmethod
-    def alloc(cls, samples, parameters, has_reparametrization=False, beta=0):
+    def alloc(cls, samples: int, parameters: int, has_reparametrization: bool = False,
+              beta: float = 0) -> typing.Self:
         """
         Allocate storage for the parts of a cooling step
         """
         # allocate the initial sample set in sampling space
-        theta_sampling = altar.matrix(shape=(samples, parameters)).zero()
+        theta_sampling = numpy.zeros((samples, parameters))
 
         # allocate physical parameters and jacobian only if using reparameterization
         theta = None
         jacobian = None
         if has_reparametrization:
-            theta = altar.matrix(shape=(samples, parameters)).zero()
-            jacobian = altar.vector(shape=samples).zero()
+            theta = numpy.zeros((samples, parameters))
+            jacobian = numpy.zeros(samples)
 
         # allocate the likelihood vectors
         prior, data, posterior = cls._alloc_likelihoods(samples)
@@ -74,18 +83,18 @@ class CoolingStep(BayesianState):
                   has_reparametrization=has_reparametrization)
 
     # interface
-    def clone(self):
+    def clone(self) -> typing.Self:
         """
         Make a new step with a duplicate of my state
         """
         # make copies of my state
         beta = self.beta
-        theta_sampling = self.theta_sampling.clone()
-        likelihoods = self.prior.clone(), self.data.clone(), self.posterior.clone()
+        theta_sampling = self.theta_sampling.copy()
+        likelihoods = self.prior.copy(), self.data.copy(), self.posterior.copy()
 
         # handle physical parameters and jacobian based on reparameterization flag
-        theta = self.theta.clone() if self.has_reparametrization else None
-        jacobian = self.jacobian.clone() if self.has_reparametrization else None
+        theta = self.theta.copy() if self.has_reparametrization else None
+        jacobian = self.jacobian.copy() if self.has_reparametrization else None
 
         # make one and return it
         return type(self)(beta=beta, theta_sampling=theta_sampling, theta=theta,
@@ -93,7 +102,10 @@ class CoolingStep(BayesianState):
                          has_reparametrization=self.has_reparametrization)
 
     # meta-methods
-    def __init__(self, beta, theta_sampling=None, theta=None, jacobian=None, likelihoods=None, has_reparametrization=False, **kwds):
+    def __init__(self, beta: float, theta_sampling: numpy.ndarray | None = None,
+                 theta: numpy.ndarray | None = None, jacobian: numpy.ndarray | None = None,
+                 likelihoods: Likelihoods | None = None, has_reparametrization: bool = False,
+                 **kwds) -> None:
         # chain up (skip BayesianState.__init__, which expects a plain {theta}; go straight
         # to object.__init__)
         super(BayesianState, self).__init__(**kwds)
@@ -101,19 +113,21 @@ class CoolingStep(BayesianState):
         # store the temperature
         self.beta = beta
         # fall back to physical parameters when sampling space is not provided
-        if theta_sampling is None and theta is not None:
+        if theta_sampling is None:
+            if theta is None:
+                raise ValueError("CoolingStep requires theta_sampling or theta")
             theta_sampling = theta
+        if likelihoods is None:
+            raise ValueError("CoolingStep requires likelihoods")
         # store the sample sets
         self.theta_sampling = theta_sampling
-        if self.theta_sampling is None:
-            raise ValueError("CoolingStep requires theta_sampling or theta")
         # store reparameterization flag
         self.has_reparametrization = has_reparametrization
 
         # handle physical parameters and jacobian based on reparameterization flag
         if has_reparametrization:
-            self.theta = theta if theta is not None else theta_sampling.clone()
-            self.jacobian = jacobian if jacobian is not None else altar.vector(shape=theta_sampling.rows).zero()
+            self.theta = theta if theta is not None else theta_sampling.copy()
+            self.jacobian = jacobian if jacobian is not None else numpy.zeros(theta_sampling.shape[0])
         else:
             # if no reparameterization, physical parameters are the same as sampling parameters
             self.theta = self.theta_sampling
@@ -126,69 +140,66 @@ class CoolingStep(BayesianState):
         return
 
 
-    def refresh_sampling(self, model, batch=None):
+    def refresh_sampling(self, model: Bayesian, batch: int | None = None) -> typing.Self:
         """
         Rebuild {theta_sampling} and {jacobian} from the physical {theta}, e.g. after a walk in
         physical space
         """
         if not self.has_reparametrization:
             return self
-        self.theta_sampling.copy(self.theta)
+        self.theta_sampling[...] = self.theta
         model.to_sampling(theta=self.theta_sampling, batch=batch)
-        self.jacobian.zero()
+        self.jacobian[:] = 0
         model.eval_prior_with_physical(step=self, likelihood=self.jacobian, batch=batch)
         return self
 
 
     # implementation details
-    def _on_start(self, annealer):
+    def _on_start(self, annealer: Annealer) -> None:
         """
         The jacobian of the initial samples, when reparameterized
         """
         if self.has_reparametrization:
-            self.jacobian.zero()
+            self.jacobian[:] = 0
             annealer.model.eval_prior_with_physical(step=self, likelihood=self.jacobian)
         return
 
 
-    def _save_parameter_sets_hdf5(self, psetsgrp, psets):
+    def _save_parameter_sets_hdf5(self, psetsgrp: h5py.Group, psets: dict) -> None:
         """
         Write theta_sampling (and, under reparameterization, the physical theta + jacobian)
         into the "ParameterSets" hdf5 group
         """
-        import numpy
         # save reparameterization flag
         psetsgrp.create_dataset('has_reparametrization', data=numpy.array([self.has_reparametrization]))
 
         if len(psets) == 0:
             # no parameter sets info provided, save both parameter spaces
-            psetsgrp.create_dataset('theta_sampling', data=self.theta_sampling.ndarray())
+            psetsgrp.create_dataset('theta_sampling', data=self.theta_sampling)
             # save physical parameters and jacobian only if using reparameterization
             if self.has_reparametrization:
-                psetsgrp.create_dataset('theta', data=self.theta.ndarray())
-                psetsgrp.create_dataset('jacobian', data=self.jacobian.ndarray())
+                psetsgrp.create_dataset('theta', data=self.theta)
+                psetsgrp.create_dataset('jacobian', data=self.jacobian)
         else:
-            # get ndarray reference for sampling parameters
-            theta_sampling = self.theta_sampling.ndarray()
+            theta_sampling = self.theta_sampling
             # save sampling parameters for all parameter sets
             for name, pset in psets.items():
                 psetsgrp.create_dataset(name+'_sampling', data=theta_sampling[:, pset.offset:pset.offset+pset.count])
 
             # save physical parameters and jacobian only if using reparameterization
             if self.has_reparametrization:
-                theta = self.theta.ndarray()
+                theta = self.theta
                 for name, pset in psets.items():
                     psetsgrp.create_dataset(name+'_physical',
                                          data=theta[:, pset.offset:pset.offset+pset.count])
                 # save jacobian
-                psetsgrp.create_dataset('jacobian', data=self.jacobian.ndarray())
+                psetsgrp.create_dataset('jacobian', data=self.jacobian)
 
-    def _record_parameter_sets(self, archiver, psets):
+    def _record_parameter_sets(self, archiver: Archiver, psets: dict) -> None:
         """
         Write theta_sampling (and, under reparameterization, the physical theta + jacobian)
         to the {archiver}
         """
-        import numpy
         archiver.write("ParameterSets/has_reparametrization",
                        numpy.array([self.has_reparametrization]))
 
@@ -198,12 +209,12 @@ class CoolingStep(BayesianState):
                 archiver.write("ParameterSets/theta",    self.theta)
                 archiver.write("ParameterSets/jacobian", self.jacobian)
         else:
-            theta_sampling = self.theta_sampling.ndarray()
+            theta_sampling = self.theta_sampling
             for name, pset in psets.items():
                 archiver.write(f"ParameterSets/{name}_sampling",
                                theta_sampling[:, pset.offset:pset.offset+pset.count])
             if self.has_reparametrization:
-                theta = self.theta.ndarray()
+                theta = self.theta
                 for name, pset in psets.items():
                     archiver.write(f"ParameterSets/{name}_physical",
                                    theta[:, pset.offset:pset.offset+pset.count])

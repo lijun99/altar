@@ -10,10 +10,17 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
 # the package
 import altar
 from altar.models.BayesianL2 import BayesianL2
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 # declaration
 class Linear(BayesianL2, family="altar.models.regression.linear"):
@@ -33,14 +40,14 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize the state of the model given an {application} context
         """
         # chain up; mounts my input dataspace, loads the observations and lays out my psets
         super().initialize(application=application)
-        # load the x, as a numpy vector
-        self.x = numpy.asarray(self.io.load(filename=self.x_file, shape=self.observations))
+        # load the x
+        self.x = self.io.load(filename=self.x_file, shape=self.observations)
         # find my parameters in a sample
         for name in ("slope", "intercept"):
             if name not in self.psets_list or self.psets[name].count != 1:
@@ -53,7 +60,7 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
         return self
 
 
-    def forward_model(self, theta, prediction):
+    def forward_model(self, theta: numpy.ndarray, prediction: numpy.ndarray) -> typing.Self:
         """
         Fill {prediction} with the predicted y of a single sample {theta}
         """
@@ -67,7 +74,7 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
 
     @altar.export
-    def forward_problem(self, application, theta):
+    def forward_problem(self, application: Application, theta: numpy.ndarray) -> dict:
         """
         The predicted y for each row of {theta}; see {altar.models.Model}
         """
@@ -75,7 +82,8 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
 
     @altar.export
-    def gradient(self, controller, step, batch=None):
+    def gradient(self, controller: Annealer, step: BayesianState,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill {step.grad_prior} and {step.grad_data} with the gradients of the log prior and of
         the log data likelihood with respect to {step.theta}, for the gradient-based samplers
@@ -87,10 +95,8 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
         for name in self.psets_list:
             self.psets[name].prior_gradient(theta=step.theta, gradient=step.grad_prior)
         # the residuals r = prediction - d, (samples x observations)
-        θ = numpy.asarray(step.theta)
-        batch = θ.shape[0] if batch is None else batch
-        r = self.predict(theta=θ[:batch])
-        r -= self.dataobs.observed()
+        batch = step.theta.shape[0] if batch is None else batch
+        r = self.predict(theta=step.theta[:batch]) - self.dataobs.observed()
         # weighted by the inverse data covariance, C^{-1} r, with C^{-1} = L L^T
         cd_inv = self.dataobs.cd_inv
         if isinstance(cd_inv, float):
@@ -99,18 +105,16 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
             if self.dataobs.mask is not None:
                 w[:, ~self.dataobs.mask] = 0
         else:
-            L = numpy.tril(numpy.asarray(cd_inv))
-            w = r @ L @ L.T
+            w = r @ cd_inv @ cd_inv.T
         # the log likelihood is -r^T C^{-1} r / 2, so its gradient is -(dr/dθ)^T C^{-1} r
-        grad = numpy.asarray(step.grad_data)
-        grad[:batch, self.slopeIdx] = -w @ self.x
-        grad[:batch, self.interceptIdx] = -w.sum(axis=1)
+        step.grad_data[:batch, self.slopeIdx] = -w @ self.x
+        step.grad_data[:batch, self.interceptIdx] = -w.sum(axis=1)
         # all done
         return self
 
 
     # implementation details
-    def predict(self, theta):
+    def predict(self, theta: numpy.ndarray) -> numpy.ndarray:
         """
         The predicted y for each row of the numpy array {theta}, (samples x observations)
         """
@@ -119,8 +123,8 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
 
 
     # private data
-    x = None # the x of each observation
-    slopeIdx = None # where my parameters are in a sample
-    interceptIdx = None
+    x: numpy.ndarray # the x of each observation
+    slopeIdx: int # where my parameters are in a sample
+    interceptIdx: int
 
 # end of file

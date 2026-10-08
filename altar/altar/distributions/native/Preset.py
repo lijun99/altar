@@ -7,8 +7,14 @@
 #
 
 # externals
+from __future__ import annotations
 import os
+import typing
 import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.shells.Application import Application
+    from altar.simulations.NumpyRNG import NumpyRNG
 # my base class
 from .Base import Base as base
 
@@ -20,7 +26,7 @@ class Preset(base):
     """
 
 
-    def initialize(self, rng, application=None):
+    def initialize(self, rng: NumpyRNG, application: Application | None = None) -> typing.Self:
         """
         Find my file and read my samples
         """
@@ -29,16 +35,17 @@ class Preset(base):
         return self
 
 
-    def initialize_sample(self, theta, batch=None):
+    def initialize_sample(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Fill my portion of {theta} with my samples, this worker's share of them
         """
-        θ = numpy.asarray(self.restrict(theta=theta))
-        θ[:, :] = rows(samples=self.samples, count=θ.shape[0], rank=self.rank)
+        θ = self.restrict(theta=theta)
+        θ[...] = rows(samples=self.samples, count=θ.shape[0], rank=self.rank)
         return self
 
 
-    def verify(self, theta, mask, batch=None):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         I am not a prior: nothing to check
         """
@@ -46,15 +53,15 @@ class Preset(base):
 
 
     # private data, set by the shim before {initialize} runs
-    input_file = None
-    dataset = None
+    input_file: str | None = None
+    dataset: str | None = None
     # set by {initialize}
-    samples = None
-    rank = 0
+    samples: numpy.ndarray
+    rank: int = 0
 
 
 # helpers shared with the cuda implementation
-def load(distribution, application):
+def load(distribution: typing.Any, application: Application | None) -> numpy.ndarray:
     """
     Read the (samples x parameters) dataset of {distribution}, preferring an archived step's
     physical samples
@@ -80,7 +87,7 @@ def load(distribution, application):
     return samples
 
 
-def rank(application):
+def rank(application: Application | None) -> int:
     """
     My worker's rank, so that each worker under mpi starts from its own samples
     """
@@ -90,7 +97,7 @@ def rank(application):
     return getattr(worker, "rank", getattr(worker, "wid", 0))
 
 
-def rows(samples, count, rank):
+def rows(samples: numpy.ndarray, count: int, rank: int) -> numpy.ndarray:
     """
     {count} rows of {samples} for the worker of {rank}, wrapping around when there are too few
     """

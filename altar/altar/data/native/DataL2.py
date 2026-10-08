@@ -6,9 +6,19 @@
 # all rights reserved
 #
 
-# the package
+# externals
+from __future__ import annotations
+import math
+import typing
 import numpy
+# the package
 import altar
+
+if typing.TYPE_CHECKING:
+    import journal
+    import pyre
+    from altar.norms.L2 import L2
+    from altar.shells.Application import Application
 
 
 # the declaration
@@ -21,7 +31,7 @@ class DataL2:
     """
 
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize data obs from model
         """
@@ -41,25 +51,24 @@ class DataL2:
         return self
 
 
-    def eval_likelihood(self, prediction, likelihood, residual=True, batch=None, whitened=True):
+    def eval_likelihood(self, prediction: numpy.ndarray, likelihood: numpy.ndarray,
+                        residual: bool = True, batch: int | None = None,
+                        whitened: bool = True) -> typing.Self:
         """
-        compute the datalikelihood for prediction (samples x observations); {whitened=False}
+        Fill the first {batch} entries of {likelihood} with the data log likelihoods of the
+        (samples x observations) {prediction}, the residuals if {residual}; {whitened=False}
         marks {prediction} as raw even when {merge_cd_with_data} is set
         """
-        # depending on convenience, users can
-        # copy dataobs to their model and use the residual as input of prediction
-        # or compute prediction from forward model and subtract the dataobs here
-        batch = batch if batch is not None else likelihood.shape
+        batch = likelihood.shape[0] if batch is None else batch
         # whether {prediction} has cd merged into it
         merged = self.merge_cd_with_data and whitened
         # the data to compare it against
-        data = self.dataobs if merged or not self.merge_cd_with_data else self._observed_gsl
-
+        data = self.dataobs if merged or not self.merge_cd_with_data else self._observed
         # the residuals of all the samples at once, (batch x observations)
-        dp = numpy.asarray(prediction)[:batch]
+        dp = prediction[:batch]
         # subtract the dataobs if residual is not pre-calculated
         if not residual:
-            dp = dp - numpy.asarray(data)
+            dp = dp - data
         # cd already merged, no need to multiply it by cd
         sigma_inv = None if merged else self.cd_inv
         self.norm.eval_likelihood(
@@ -70,36 +79,24 @@ class DataL2:
 
 
     @property
-    def dataobs_batch(self):
+    def dataobs_batch(self) -> numpy.ndarray:
         """
-        Get a batch of duplicated dataobs
-
-        The original cpu implementation shadowed this method with a same-named class
-        attribute default (`dataobs_batch = None`), making it permanently unreachable; this
-        is a property instead, matching the cuda side's own {dataobs_batch} property.
+        The (samples x observations) array with a copy of {dataobs} in each row
         """
-        if self._dataobs_batch is None:
-            self._dataobs_batch = altar.matrix(shape=(self.samples, self.observations))
-        # for each sample
-        for sample in range(self.samples):
-            # make the corresponding column a copy of the data vector
-            self._dataobs_batch.setColumn(sample, self.dataobs)
-        return self._dataobs_batch
+        return numpy.tile(self.dataobs, (self.samples, 1))
 
 
-    def load_data(self):
+    def load_data(self) -> None:
         """
         load data and covariance
         """
-        # next, the observations
-        self.dataobs = self.io.load(
+        # the observations; {_observed} keeps them raw, since {initialize_covariance} may merge
+        # the covariance into {dataobs}
+        self._observed = self.io.load(
             filename=self.data_file, shape=self.observations, dataset=self.datafile_dataset)
-        # a raw copy, kept since {initialize_covariance} may merge the covariance into {dataobs}
-        self._observed = numpy.array(self.dataobs, dtype=float)
         # the valid observations, if some are masked
         self.load_mask()
-        # the raw copy, as a gsl vector, for raw predictions against merged data
-        self._observed_gsl = self.io.toGsl(self._observed.copy())
+        self.dataobs = self._observed.copy()
 
         if self.cd_file is not None:
             if self.mask is not None:
@@ -116,7 +113,7 @@ class DataL2:
         return
 
 
-    def load_mask(self):
+    def load_mask(self) -> typing.Self:
         """
         Load the mask of valid observations from {mask_dataset}, and zero the masked data
         """
@@ -130,81 +127,74 @@ class DataL2:
 
         mask = self.io.load(
             filename=self.data_file, shape=self.observations, dataset=self.mask_dataset)
-        self.mask = numpy.asarray(mask) != 0
+        self.mask = mask != 0
         if not numpy.isfinite(self._observed[self.mask]).all():
             self.error.log(f"non-finite values in '{self.data_file}' that are not masked")
             raise SystemExit(1)
         # masked values are left out of the likelihood; zero them so they stay finite
         self._observed[~self.mask] = 0
-        self.dataobs = self.io.toGsl(self._observed.copy())
         # all done
         return self
 
 
-    def observed(self):
+    def observed(self) -> numpy.ndarray:
         """
-        The raw observed data, as a numpy vector
+        The raw observed data
         """
         return self._observed
 
 
-    def sigma(self):
+    def sigma(self) -> numpy.ndarray:
         """
-        The standard deviation of each observation, as a numpy vector
+        The standard deviation of each observation
         """
         if isinstance(self.cd, float):
             return numpy.full(self.observations, self.cd)
-        return numpy.sqrt(numpy.diag(numpy.asarray(self.cd)))
+        return numpy.sqrt(numpy.diag(self.cd))
 
 
-    def sigma_chi(self):
+    def sigma_chi(self) -> numpy.ndarray:
         """
-        The standard deviation of each observation under C_chi, as a numpy vector
+        The standard deviation of each observation under C_chi
         """
         return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
 
 
-    def initialize_covariance(self, cd):
+    def initialize_covariance(self, cd: float | numpy.ndarray) -> typing.Self:
         """
-        For a given data covariance cd, compute L2 likelihood normalization, inverse of cd
-        in Cholesky decomposed form, and merge cd with data observation, d-> L*d with
-        cd^{-1} = L L*
+        For a given data covariance {cd}, a standard deviation or a full matrix, compute the
+        normalization of the L2 likelihood and L, the lower Cholesky factor of cd^{-1} = L L^T,
+        and merge it into the data, d -> L^T d, if asked to
         """
         # grab the number of observations
         observations = self.observations
 
-        if isinstance(cd, altar.matrix):
+        if isinstance(cd, numpy.ndarray):
             # normalization
             self.normalization = self.compute_normalization(observations=observations, cd=cd)
-            # inverse matrix
+            # the factor of the inverse
             self.cd_inv = self.compute_covariance_inverse(cd=cd)
-            # merge cd to data
+            # merge it into the data
             if self.merge_cd_with_data:
-                Cd_inv = self.cd_inv
-                self.dataobs = self.io.toGsl(self._observed.copy())
-                self.dataobs = altar.blas.dtrmv(
-                    Cd_inv.upperTriangular, Cd_inv.opNoTrans, Cd_inv.nonUnitDiagonal,
-                    Cd_inv, self.dataobs)
-
-        elif isinstance(cd, float):
+                self.dataobs = self.cd_inv.T @ self._observed
+        else:
             # cd is standard deviation
-            from math import log, pi as π
             # only the valid observations count
             if self.mask is not None:
                 observations = int(self.mask.sum())
-            self.normalization = -0.5 * log(2 * π) * observations - observations * log(cd)
+            self.normalization = -0.5 * math.log(2 * math.pi) * observations - observations * math.log(cd)
             self.cd_inv = 1.0 / cd
             if self.merge_cd_with_data:
-                self.dataobs = self.io.toGsl(self._observed * self.cd_inv)
+                self.dataobs = self._observed * self.cd_inv
 
         # all done
         return self
 
 
-    def update_covariance(self, cp=None):
+    def update_covariance(self, cp: numpy.ndarray | None = None) -> typing.Self:
         """
-        Use C_chi = C_d + {cp}, a numpy (observations x observations) array, from now on; back
-        to C_d alone if {cp} is None
+        Use C_chi = C_d + {cp}, an (observations x observations) array, from now on; back to
+        C_d alone if {cp} is None
         """
         if cp is None:
             self._chi_variance = None
@@ -220,67 +210,47 @@ class DataL2:
             cchi = numpy.array(cd, dtype=float)
         cchi += numpy.asarray(cp, dtype=float)
         self._chi_variance = numpy.diag(cchi).copy()
-        return self.initialize_covariance(cd=self.io.toGsl(cchi))
+        return self.initialize_covariance(cd=cchi)
 
 
-    def compute_normalization(self, observations, cd):
+    def compute_normalization(self, observations: int, cd: numpy.ndarray) -> float:
         """
         Compute the normalization of the L2 norm
         """
-        # support
-        from math import log, pi as π
-        # make a copy of cd
-        cd = cd.clone()
-        # compute its LU decomposition
-        decomposition = altar.lapack.LU_decomposition(cd)
-        # use it to compute the log of its determinant
-        logdet = altar.lapack.LU_lndet(*decomposition)
-
-        # all done
-        return -(log(2 * π) * observations + logdet) / 2
+        sign, logdet = numpy.linalg.slogdet(cd)
+        return -(math.log(2 * math.pi) * observations + logdet) / 2
 
 
-    def compute_covariance_inverse(self, cd):
+    def compute_covariance_inverse(self, cd: numpy.ndarray) -> numpy.ndarray:
         """
-        Compute the inverse of the data covariance matrix
+        L, the lower Cholesky factor of the inverse of the data covariance, cd^{-1} = L L^T
         """
-        # make a copy so we don't destroy the original
-        cd = cd.clone()
-        # perform the LU decomposition
-        lu = altar.lapack.LU_decomposition(cd)
-        # invert; this creates a new matrix
-        inv = altar.lapack.LU_invert(*lu)
-        # compute the Cholesky decomposition
-        inv = altar.lapack.cholesky_decomposition(inv)
-
-        # and return it
-        return inv
+        return numpy.linalg.cholesky(numpy.linalg.inv(cd))
 
 
     # configuration, copied down from the shim by {_makeImpl}
-    data_file = None
-    observations = None
-    cd_file = None
-    cd_std = None
-    merge_cd_with_data = None
-    norm = None
-    datafile_dataset = None
-    mask_dataset = None
+    data_file: str
+    observations: int
+    cd_file: str | None = None
+    cd_std: float
+    merge_cd_with_data: bool = False
+    norm: L2
+    datafile_dataset: str | None = None
+    mask_dataset: str | None = None
 
     # local variables
-    normalization = 0
-    ifs = None
-    io = None  # my file reader/writer
-    samples = None
-    dataobs = None
-    _dataobs_batch = None
-    cd = None
-    cd_inv = None
-    _chi_variance = None # diag(C_chi), when a C_p is part of it
-    _observed_gsl = None # the raw observed data, as a gsl vector
-    mask = None # the valid observations, a numpy bool vector; None if all are valid
-    error = None
-    info = None
+    normalization: float = 0
+    ifs: pyre.filesystem.Filesystem.Filesystem
+    io: altar.io.FileIO  # my file reader/writer
+    samples: int
+    dataobs: numpy.ndarray  # the observed data, with the covariance merged in if asked to
+    cd: float | numpy.ndarray
+    cd_inv: float | numpy.ndarray  # 1/sigma, or L with cd^{-1} = L L^T
+    _chi_variance: numpy.ndarray | None = None # diag(C_chi), when a C_p is part of it
+    _observed: numpy.ndarray  # the raw observed data
+    mask: numpy.ndarray | None = None # the valid observations; None if all are valid
+    error: journal.error
+    info: journal.info
 
 
 # end of file

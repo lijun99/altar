@@ -21,8 +21,8 @@ from .Base import Base as base
 class PositiveUniform(base, family="altar.distributions.positiveuniform"):
     """
     The uniform probability distribution over the open interval (0, 1), guaranteed to never
-    land on 0 exactly, so a caller may safely take its log -- gsl's own {gsl_rng_uniform_pos}
-    exists for exactly this reason, unlike the plain uniform generator, which can return 0.
+    land on 0 exactly, so a caller may safely take its log, unlike the plain uniform generator,
+    which can return 0.
 
     My actual numerics live in {altar.distributions.native.PositiveUniform.PositiveUniform};
     there is no cuda counterpart today.

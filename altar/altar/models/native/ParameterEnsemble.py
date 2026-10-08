@@ -8,6 +8,15 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
+
+if typing.TYPE_CHECKING:
+    from altar.models.BayesianL2 import BayesianL2
+    from altar.shells.Application import Application
+
 # and my base class
 from .Base import Base as base
 
@@ -19,7 +28,8 @@ class ParameterEnsemble(base):
     """
 
 
-    def initialize(self, model, offset, application=None):
+    def initialize(self, model: BayesianL2, offset: int,
+                   application: Application | None = None) -> int:
         """
         Initialize my parameter sets given the {model} that owns me
         """
@@ -38,7 +48,7 @@ class ParameterEnsemble(base):
         return self.count
 
 
-    def initialize_sample(self, theta, batch=None):
+    def initialize_sample(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Fill {theta} with an initial random sample from my prior distribution.
         """
@@ -48,7 +58,8 @@ class ParameterEnsemble(base):
         return self
 
 
-    def eval_prior(self, theta, prior, batch=None):
+    def eval_prior(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                   batch: int | None = None) -> typing.Self:
         """
         Fill {prior} with the log likelihoods of the samples in {theta} in my prior distribution
         """
@@ -58,7 +69,8 @@ class ParameterEnsemble(base):
         return self
 
 
-    def verify(self, theta, mask, batch=None):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         Check whether the samples in {theta} are consistent with the model requirements and
         update {mask}
@@ -69,7 +81,8 @@ class ParameterEnsemble(base):
         return mask
 
 
-    def eval_prior_with_physical(self, theta, prior, batch=None):
+    def eval_prior_with_physical(self, theta: numpy.ndarray, prior: numpy.ndarray,
+                                 batch: int | None = None) -> typing.Self:
         """
         Add any prior contributions that depend on physical parameters, e.g. the log-jacobian
         of a reparameterized prior
@@ -79,7 +92,8 @@ class ParameterEnsemble(base):
         return self
 
 
-    def jacobian(self, theta, jacobian, batch=None):
+    def jacobian(self, theta: numpy.ndarray, jacobian: numpy.ndarray,
+                 batch: int | None = None) -> typing.Self:
         """
         Fill {jacobian} with d(physical)/d(sampling), for the reparameterized parameter sets
         """
@@ -88,7 +102,7 @@ class ParameterEnsemble(base):
         return self
 
 
-    def to_physical(self, theta, batch=None):
+    def to_physical(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from sampling space to physical space, in place
         """
@@ -97,7 +111,7 @@ class ParameterEnsemble(base):
         return self
 
 
-    def to_sampling(self, theta, batch=None):
+    def to_sampling(self, theta: numpy.ndarray, batch: int | None = None) -> typing.Self:
         """
         Transform {theta} from physical space to sampling space, in place
         """
@@ -107,7 +121,7 @@ class ParameterEnsemble(base):
 
 
     # implementation details
-    def _iter_psets(self):
+    def _iter_psets(self) -> typing.Iterator:
         """
         Iterate over parameter sets in a stable order.
         """
@@ -119,8 +133,8 @@ class ParameterEnsemble(base):
 
 
     # private data, set by the shim before {initialize} runs
-    psets = None
-    psets_list = None
+    psets: dict | None = None
+    psets_list: list[str] | None = None
 
 
 # end of file

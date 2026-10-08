@@ -8,8 +8,17 @@
 # all rights reserved
 #
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # the package
 import altar
+
+if typing.TYPE_CHECKING:
+    import h5py
+    from altar.bayesian.states.BayesianState import BayesianState
+    from altar.shells.Application import Application
 
 
 # an implementation of the archiver protocol
@@ -30,7 +39,7 @@ class H5Recorder(
 
     # protocol obligations
     @altar.export
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me given an {application} context
         """
@@ -48,7 +57,8 @@ class H5Recorder(
 
 
     @altar.export
-    def record(self, step, iteration, psets, **kwds):
+    def record(self, step: BayesianState, iteration: int | None, psets: dict,
+               **kwds) -> typing.Self:
         """
         Record the final state of the calculation
         """
@@ -57,7 +67,7 @@ class H5Recorder(
         # all done
         return self
 
-    def recordstep(self, step, stats, psets):
+    def recordstep(self, step: BayesianState, stats: dict, psets: dict) -> typing.Self:
         """
         Record step to file for ce
         """
@@ -66,7 +76,7 @@ class H5Recorder(
         self.statistics.append(statcopy)
         return self
 
-    def save_stats(self):
+    def save_stats(self) -> typing.Self:
         """
         Save the statistics information to file
         """
@@ -98,21 +108,24 @@ class H5Recorder(
         #return
         return self
 
-    def start(self, step, iteration, psets, **kwds):
+    def start(self, step: BayesianState, iteration: int | None, psets: dict,
+              **kwds) -> typing.Self:
         """
         Hook for the beginning of annealing.
         """
         self._set_context(iteration=iteration, psets=psets)
         return self
 
-    def top(self, step, iteration, psets, **kwds):
+    def top(self, step: BayesianState, iteration: int | None, psets: dict,
+            **kwds) -> typing.Self:
         """
         Hook for the top of a beta step.
         """
         self._set_context(iteration=iteration, psets=psets)
         return self
 
-    def bottom(self, step, iteration, psets, **kwds):
+    def bottom(self, step: BayesianState, iteration: int | None, psets: dict,
+               **kwds) -> typing.Self:
         """
         Hook for the bottom of a beta step.
         """
@@ -125,7 +138,8 @@ class H5Recorder(
             self._close_file()
         return self
 
-    def final(self, step, iteration, psets, **kwds):
+    def final(self, step: BayesianState, iteration: int | None, psets: dict,
+              **kwds) -> typing.Self:
         """
         Hook for the end of annealing.
         """
@@ -140,18 +154,17 @@ class H5Recorder(
         return self
 
     @altar.export
-    def write(self, path, data, info=None):
+    def write(self, path: str, data: typing.Any, info: dict | None = None) -> typing.Self:
         """
         Persist one dataset into the current HDF5 file.
 
         {path} is "Group/Name" or "Group/Sub/Name"; a bare name is stored at the root.
-        {data} may have a .ndarray() method (altar.matrix/vector), be a numpy array, or
-        be a scalar.  {info} is an optional dict written as HDF5 dataset attributes.
+        {data} is anything numpy can view as an array, or a scalar. {info} is an optional dict
+        written as HDF5 dataset attributes.
         """
-        import numpy
         if self._file is None:
             raise RuntimeError("H5Recorder.write called without an open file")
-        arr = data.ndarray() if hasattr(data, 'ndarray') else numpy.asarray(data)
+        arr = numpy.asarray(data)
         parts = [p for p in path.split('/') if p]
         if not parts:
             raise ValueError("empty path")
@@ -164,14 +177,14 @@ class H5Recorder(
         return self
 
     @altar.export
-    def register(self, component):
+    def register(self, component: typing.Any) -> typing.Self:
         """
         Register a component whose record(archiver) will be called at each save point.
         """
         self._components.append(component)
         return self
 
-    def save(self, record):
+    def save(self, record: tuple[str, str, typing.Any]) -> typing.Self:
         """
         Compatibility shim: accept the old (group, name, data) tuple form.
         """
@@ -179,7 +192,7 @@ class H5Recorder(
         path = '/'.join(p for p in [group_name, dataset_name] if p)
         return self.write(path, data)
 
-    def _record_statistics(self):
+    def _record_statistics(self) -> typing.Self:
         """
         Persist the MC statistics table into the current HDF5 file.
         """
@@ -189,13 +202,12 @@ class H5Recorder(
         self.save(("Statistics", "mc_updates", stats))
         return self
 
-    def _statistics_as_array(self):
+    def _statistics_as_array(self) -> numpy.ndarray | None:
         """
         Pack statistics into a numeric array.
         """
         if not self.statistics:
             return None
-        import numpy
 
         rows = []
         for item in self.statistics:
@@ -213,7 +225,7 @@ class H5Recorder(
             ])
         return numpy.asarray(rows)
 
-    def _open_file(self, iteration):
+    def _open_file(self, iteration: int | None) -> typing.Self:
         """
         Open a fresh HDF5 file for the current record.
         """
@@ -229,7 +241,7 @@ class H5Recorder(
         self._groups = {}
         return self
 
-    def _close_file(self):
+    def _close_file(self) -> typing.Self:
         """
         Close the current HDF5 file.
         """
@@ -239,7 +251,7 @@ class H5Recorder(
         self._groups = None
         return self
 
-    def _set_context(self, iteration, psets):
+    def _set_context(self, iteration: int | None, psets: dict) -> typing.Self:
         """
         Save context needed by components during recording.
         """
@@ -248,11 +260,11 @@ class H5Recorder(
         return self
 
     # unconfigurable traits
-    statistics = None
-    psets = None
-    _current_label = None
-    _file = None
-    _groups = None
-    _components = []
+    statistics: list[dict] | None = None
+    psets: dict | None = None
+    _current_label: int | str | None = None
+    _file: h5py.File | None = None
+    _groups: dict | None = None
+    _components: list = []
 
 # end of file

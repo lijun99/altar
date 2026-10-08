@@ -24,7 +24,7 @@ mogi.pkg.drivers := altar-mogi
 mogi.lib.root := models/mogi/lib/libmogi/
 mogi.lib.stem := mogi
 mogi.lib.incdir := $(builder.dest.inc)altar/models/mogi/
-mogi.lib.extern := gsl
+mogi.lib.extern :=
 mogi.lib.c++.flags += $($(compiler.c++).std.c++23)
 
 # the extension module, {altar.models.mogi.ext.mogi}
@@ -33,7 +33,7 @@ mogi.ext.stem := mogi
 mogi.ext.pkg := mogi.pkg
 mogi.ext.wraps := mogi.lib
 mogi.ext.capsule :=
-mogi.ext.extern := mogi.lib gsl pybind11 python
+mogi.ext.extern := mogi.lib pybind11 python
 mogi.ext.lib.c++.flags += $($(compiler.c++).std.c++23)
 mogi.ext.lib.prerequisites += mogi.lib
 

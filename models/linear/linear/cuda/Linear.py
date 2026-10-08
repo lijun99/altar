@@ -40,7 +40,7 @@ class Linear:
         # {forward_model_batched}, which doesn't otherwise receive {model}
         self._dataobs = model.dataobs
 
-        # {model.io.load} always returns a cpu gsl object regardless of backend; upload it
+        # {model.io.load} always returns a host array regardless of backend; upload it
         G_cpu = model.io.load(filename=model.green, shape=(self.observations, self.parameters))
         self.G_host = numpy.array(G_cpu, dtype=float)
         self.G = altar.cuda.matrix(source=G_cpu, dtype=self.precision)

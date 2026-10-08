@@ -10,11 +10,14 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
-# the package
-import altar
 # the pure python implementation of the CDM source
 from .libcdm import CDM
+
+if typing.TYPE_CHECKING:
+    from .CDM import CDM as Model
 
 
 # the names of the source parameters, in the order of {CDM.layout}
@@ -28,7 +31,7 @@ class Native:
     """
 
 
-    def initialize(self, model):
+    def initialize(self, model: Model) -> typing.Self:
         """
         Unpack the observation geometry
         """
@@ -38,31 +41,32 @@ class Native:
         return self
 
 
-    def forward_model_batched(self, theta, prediction, batch):
+    def forward_model_batched(self, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int) -> typing.Self:
         """
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
         stations = self.stations
         for sample in range(batch):
-            parameters = numpy.asarray(theta.getRow(sample).ndarray())
+            parameters = theta[sample]
             ue, un, uv = CDM(X=stations[:, 0], Y=stations[:, 1], nu=self.model.nu,
                              **self.source(parameters))
             u = ue*stations[:, 2] + un*stations[:, 3] + uv*stations[:, 4]
             # less the dataset offsets
             shifted = stations[:, 5] >= 0
             u[shifted] -= parameters[stations[shifted, 5].astype(int)]
-            prediction.setRow(sample, self.model.io.toGsl(u))
+            prediction[sample] = u
         # all done
         return self
 
 
-    def verify(self, theta, mask, batch):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray, batch: int) -> typing.Self:
         """
         Flag in {mask} the first {batch} samples of {theta} whose source reaches above the free
         surface
         """
         for sample in range(batch):
-            parameters = numpy.asarray(theta.getRow(sample).ndarray())
+            parameters = theta[sample]
             try:
                 CDM(X=numpy.zeros(1), Y=numpy.zeros(1), nu=self.model.nu,
                     **self.source(parameters))
@@ -73,7 +77,7 @@ class Native:
 
 
     # implementation details
-    def source(self, parameters):
+    def source(self, parameters: numpy.ndarray) -> dict[str, float]:
         """
         The source parameters of a sample, by name
         """
@@ -81,8 +85,8 @@ class Native:
 
 
     # private data
-    model = None
-    stations = None
+    model: Model
+    stations: numpy.ndarray
 
 
 # end of file

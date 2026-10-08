@@ -9,86 +9,65 @@
 #
 
 # externals
+from __future__ import annotations
 import numpy
-# get the package
-import altar
 
 
 # the declaration
 class L2:
     """
-    The cpu implementation of the L2 norm
+    The cpu implementation of the L2 norm, of a vector {v} or of each row of a
+    (samples x observations) {v}; {sigma_inv} is 1/sigma, or L, the lower Cholesky factor of
+    the inverse covariance L L^T
     """
 
 
-    def eval(self, v, sigma_inv=None, batch=None):
+    def eval(self, v: numpy.ndarray, sigma_inv: float | numpy.ndarray | None = None,
+             batch: int | None = None) -> float | numpy.ndarray:
         """
-        Compute the L2 norm of the given vector, with or without a covariance matrix
+        The L2 norm of {v}, or of each of its first {batch} rows, with or without a covariance
         """
-        # if we have a covariance matrix
-        if sigma_inv is not None:
-            # use the specialized implementation
-            return self._with_covariance(v=v, sigma_inv=sigma_inv)
-        # otherwise, compute the norm and return it
-        return altar.blas.dnrm2(v)
+        r = self._whiten(v=v, sigma_inv=sigma_inv, batch=batch, weight=None)
+        return numpy.sqrt(numpy.einsum("...i,...i->...", r, r))
 
 
-    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
-                        weight=None):
+    def eval_likelihood(self, v: numpy.ndarray, constant: float = 0.0,
+                        sigma_inv: float | numpy.ndarray | None = None, batch: int | None = None,
+                        out: numpy.ndarray | None = None,
+                        weight: numpy.ndarray | None = None) -> float | numpy.ndarray:
         """
-        Compute the l2 log likelihood {constant - 0.5 * norm(v)^2}: of a vector {v}, returned
-        as a scalar, or of each of the first {batch} rows of a (samples x observations) {v},
-        filled into {out} if given and returned. {weight} is applied to {v} before
-        {sigma_inv}, so it is only meaningful with a diagonal covariance
+        The l2 log likelihood {constant - 0.5 * norm(v)^2}: of a vector {v}, returned as a
+        scalar, or of each of the first {batch} rows of {v}, filled into {out} if given and
+        returned. {weight} is applied to {v} before {sigma_inv}, so it is only meaningful with
+        a diagonal covariance
         """
-        if numpy.ndim(v) == 2:
-            return self._eval_likelihood_batched(
-                v=v, constant=constant, sigma_inv=sigma_inv, batch=batch, out=out, weight=weight)
-        if weight is not None:
-            v = v.clone()
-            numpy.asarray(v)[:] *= numpy.sqrt(numpy.asarray(weight))
-        norm = self.eval(v=v, sigma_inv=sigma_inv)
-        return constant - 0.5 * norm * norm
+        r = self._whiten(v=v, sigma_inv=sigma_inv, batch=batch, weight=weight)
+        llk = constant - 0.5 * numpy.einsum("...i,...i->...", r, r)
+        if r.ndim == 1:
+            return float(llk)
+        if out is None:
+            return llk
+        out[:r.shape[0]] = llk
+        return out
 
 
     # implementation details
-    def _eval_likelihood_batched(self, v, constant, sigma_inv, batch, out, weight):
+    def _whiten(self, v: numpy.ndarray, sigma_inv: float | numpy.ndarray | None,
+                batch: int | None, weight: numpy.ndarray | None) -> numpy.ndarray:
         """
-        The log likelihoods of the first {batch} rows of {v}, without modifying {v}
+        The rows of {v}, or {v}, weighed and multiplied by L^T, without modifying {v}
         """
         r = numpy.asarray(v)
-        batch = r.shape[0] if batch is None else batch
-        r = r[:batch]
+        if r.ndim == 2 and batch is not None:
+            r = r[:batch]
         if weight is not None:
-            r = r * numpy.sqrt(numpy.asarray(weight))
-        # each row v^T L L^T v = |L^T v|^2, with the rows of v L
+            r = r * numpy.sqrt(weight)
+        # v^T L L^T v = |L^T v|^2, and the rows of v L are the (L^T v)^T
+        if sigma_inv is None:
+            return r
         if isinstance(sigma_inv, float):
-            r = r * sigma_inv
-        elif sigma_inv is not None:
-            r = r @ numpy.tril(numpy.asarray(sigma_inv))
-        llk = constant - 0.5 * numpy.einsum("ij,ij->i", r, r)
-        if out is None:
-            return llk
-        numpy.asarray(out)[:batch] = llk
-        return out
-
-    def _with_covariance(self, v, sigma_inv):
-        """
-        Compute the L2 norm of the given vector using the given Cholesky decomposed inverse
-        covariance matrix
-        """
-        # {sigma_inv} holds L, the lower Cholesky factor of the inverse covariance, L L^T, so
-        # v^T L L^T v = |L^T v|^2: pre-multiply by L^T, then just take the norm
-        if isinstance(sigma_inv, altar.matrix):
-            v = altar.blas.dtrmv(
-                sigma_inv.lowerTriangular, sigma_inv.opTrans, sigma_inv.nonUnitDiagonal,
-                sigma_inv, v)
-        elif isinstance(sigma_inv, float):
-            v *= sigma_inv
-        else:
-            raise ValueError("L2 norm, sigma_inv should be a matrix or constant")
-        # compute the dot product and return it
-        return altar.blas.dnrm2(v)
+            return r * sigma_inv
+        return r @ sigma_inv
 
 
 # end of file

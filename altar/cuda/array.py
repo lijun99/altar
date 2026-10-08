@@ -19,6 +19,8 @@ that layer expects. Managed memory is host-visible, so every method here is just
 there was for the old capsule-based buffers, {copy_from_host}/{copy_to_host} included.
 """
 
+from __future__ import annotations
+import typing
 import numpy
 import pyre.cuda
 
@@ -31,7 +33,7 @@ class Array:
     """
 
 
-    def __init__(self, grid, dtype=None):
+    def __init__(self, grid: typing.Any, dtype: typing.Any = None) -> None:
         # the grid i wrap
         self._grid = grid
         # its shape and cell type, kept so that asking doesn't wait for the device
@@ -41,7 +43,7 @@ class Array:
 
     # construction
     @classmethod
-    def _allocate(cls, shape, dtype):
+    def _allocate(cls, shape: int | tuple[int, ...], dtype: typing.Any) -> typing.Self:
         """
         Allocate a new, uninitialized grid of the given {shape} and {dtype}
         """
@@ -51,7 +53,7 @@ class Array:
 
 
     @classmethod
-    def _wrap(cls, source, dtype=None):
+    def _wrap(cls, source: typing.Any, dtype: typing.Any = None) -> typing.Self:
         """
         Allocate a new grid matching {source}'s shape and dtype (or {dtype}), and copy {source} into it
         """
@@ -63,7 +65,7 @@ class Array:
 
     # shape/dtype accessors
     @property
-    def shape(self):
+    def shape(self) -> tuple[int, ...]:
         """
         My shape, as a plain tuple
         """
@@ -71,7 +73,7 @@ class Array:
 
 
     @property
-    def rows(self):
+    def rows(self) -> int:
         """
         My first extent; only meaningful for a rank-2 (matrix) array
         """
@@ -79,7 +81,7 @@ class Array:
 
 
     @property
-    def cols(self):
+    def cols(self) -> int:
         """
         My second extent; only meaningful for a rank-2 (matrix) array
         """
@@ -87,7 +89,7 @@ class Array:
 
 
     @property
-    def dtype(self):
+    def dtype(self) -> str:
         """
         My cell type, as the same string spelling ({matrix}/{vector}'s own {dtype}
         parameter accepts it right back, e.g. to build a same-typed buffer elsewhere)
@@ -96,7 +98,7 @@ class Array:
 
 
     @property
-    def grid(self):
+    def grid(self) -> typing.Any:
         """
         My underlying {pyre.grid} grid, for handing to a cuda extension binding directly
         """
@@ -104,7 +106,7 @@ class Array:
 
 
     # mutators
-    def zero(self):
+    def zero(self) -> typing.Self:
         """
         Fill me with zeroes, in place, on the device
         """
@@ -112,7 +114,7 @@ class Array:
         return self
 
 
-    def fill(self, value):
+    def fill(self, value: float) -> typing.Self:
         """
         Fill me with {value}, in place, on the device
         """
@@ -122,7 +124,7 @@ class Array:
         return self
 
 
-    def clone(self):
+    def clone(self) -> typing.Self:
         """
         Make a new array with a duplicate of my cells
         """
@@ -131,11 +133,10 @@ class Array:
         return clone
 
 
-    def copy(self, other):
+    def copy(self, other: typing.Any) -> typing.Self:
         """
         Overwrite my cells with {other}'s, in place; {other} may be another {Array} or
-        anything {numpy.asarray} accepts (e.g. a cpu {altar.matrix}/{altar.vector}, which
-        supports the buffer protocol directly); on the device when it is a managed grid like me
+        anything {numpy.asarray} accepts; on the device when it is a managed grid like me
         """
         source = self._peer(other)
         if source is not None:
@@ -146,7 +147,7 @@ class Array:
         return self
 
 
-    def copy_from_host(self, source):
+    def copy_from_host(self, source: typing.Any) -> typing.Self:
         """
         Overwrite my cells with {source}'s, in place; {source} is anything {numpy.asarray}
         accepts
@@ -155,7 +156,8 @@ class Array:
         return self
 
 
-    def copy_to_host(self, target=None, type=None):
+    def copy_to_host(self, target: typing.Any = None,
+                     type: str | None = None) -> typing.Any:
         """
         Copy my cells out to {target} (anything {numpy.asarray} accepts and can be assigned
         into), or, with {type="numpy"} and no {target}, return a fresh, host-owned
@@ -169,7 +171,7 @@ class Array:
         return numpy.asarray(self._grid).copy()
 
 
-    def mean_sd(self):
+    def mean_sd(self) -> tuple[numpy.ndarray, numpy.ndarray]:
         """
         The per-column mean and standard deviation, for a rank-2 (matrix) array
         """
@@ -177,7 +179,7 @@ class Array:
         return arr.mean(axis=0), arr.std(axis=0)
 
 
-    def sum(self):
+    def sum(self) -> float:
         """
         The sum of all my cells, as a plain python scalar (e.g. counting how many cells of an
         int32 flag vector are set), computed on the device
@@ -185,7 +187,7 @@ class Array:
         return _grids().sum(self._grid)
 
 
-    def cholesky(self, uplo=None):
+    def cholesky(self, uplo: typing.Any = None) -> typing.Self:
         """
         Factor me in place as a symmetric positive definite matrix, leaving my own Cholesky
         factor U (self = U^T U) in my row-major upper triangle -- the same convention
@@ -222,7 +224,7 @@ class Array:
     # in place arithmetic, for the handful of call sites that scale/accumulate directly
     # (e.g. {sigma_chol *= scaling}, {posterior += beta*data})
     # (on the device, by pyre's grid arithmetic, for a number or a managed grid like me)
-    def __imul__(self, other):
+    def __imul__(self, other: typing.Any) -> typing.Self:
         source = self._peer(other)
         if source is not None:
             self._grid *= source
@@ -235,7 +237,7 @@ class Array:
         return self
 
 
-    def __iadd__(self, other):
+    def __iadd__(self, other: typing.Any) -> typing.Self:
         source = self._peer(other)
         if source is not None:
             self._grid += source
@@ -245,7 +247,7 @@ class Array:
         return self
 
 
-    def __isub__(self, other):
+    def __isub__(self, other: typing.Any) -> typing.Self:
         source = self._peer(other)
         if source is not None:
             self._grid -= source
@@ -256,7 +258,7 @@ class Array:
 
 
     # implementation details
-    def _peer(self, other):
+    def _peer(self, other: typing.Any) -> typing.Any:
         """
         The grid of {other}, if it is a managed grid with my shape and cell type, so the device
         can combine it with mine; {None} otherwise
@@ -269,8 +271,19 @@ class Array:
         return other if cell(other) == self._dtype else None
 
 
+    # whole assignment, the numpy idiom of the code shared with the cpu: a[...] = b, a[...] = 0
+    def __setitem__(self, key: typing.Any, value: typing.Any) -> None:
+        if not (key is Ellipsis or key == slice(None)):
+            raise IndexError(f"{type(self).__name__} only supports whole assignment, a[...] = value")
+        if numpy.isscalar(value):
+            self.fill(value)
+        else:
+            self.copy(value)
+        return
+
+
     # buffer protocol support
-    def __array__(self, dtype=None, copy=None):
+    def __array__(self, dtype: typing.Any = None, copy: bool | None = None) -> numpy.ndarray:
         # let {numpy.asarray(array)} work directly, zero-copy; {numpy.array(array)} copies
         arr = numpy.asarray(self._grid)
         if dtype is not None:
@@ -278,19 +291,19 @@ class Array:
         return arr.copy() if copy else arr
 
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> typing.Any:
         # forward anything i don't define myself to the underlying grid (e.g. {strides},
         # {rank}, {writable}, {address}, {__dlpack__})
         return getattr(self._grid, name)
 
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<{type(self).__name__} shape={self.shape} dtype={self.dtype}>"
 
 
 # the cell type {pyre.cuda.managed} wants, from whatever spelling a caller used (a plain
 # string like "float64", a numpy dtype, or a numpy scalar type)
-def _grids():
+def _grids() -> typing.Any:
     """
     The device copies and fills of {altar.cuda}'s extension, which loads after me
     """
@@ -298,11 +311,11 @@ def _grids():
     return cudaaltar.grids
 
 
-def _cell(dtype):
+def _cell(dtype: typing.Any) -> str:
     return numpy.dtype(dtype).name
 
 
-def cell(grid):
+def cell(grid: typing.Any) -> str:
     """
     The cell type name of {grid}, an {Array} or a bare managed grid, without waiting for the device
     """
@@ -312,7 +325,8 @@ def cell(grid):
 
 
 # the module-level factories: the "alias" for the old {altar.cuda.matrix}/{altar.cuda.vector}
-def matrix(shape=None, dtype=None, source=None):
+def matrix(shape: tuple[int, int] | None = None, dtype: typing.Any = None,
+           source: typing.Any = None) -> Array:
     """
     Allocate a (rows x cols) managed-memory matrix, or, with {source} given instead of
     {shape}, one that duplicates {source}'s shape/cells, in {dtype} if given; {dtype}
@@ -323,7 +337,8 @@ def matrix(shape=None, dtype=None, source=None):
     return Array._allocate(shape=shape, dtype=dtype or "float64")
 
 
-def vector(shape=None, dtype=None, source=None):
+def vector(shape: int | None = None, dtype: typing.Any = None,
+           source: typing.Any = None) -> Array:
     """
     Allocate a managed-memory vector of {shape} cells, or, with {source} given instead of
     {shape}, one that duplicates {source}'s shape/cells, in {dtype} if given; {dtype}

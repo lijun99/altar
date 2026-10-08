@@ -21,13 +21,13 @@ from .RNG import RNG as rng
 
 # the implementations
 @altar.foundry(implements=rng, tip="the default random number generator")
-def gsl():
+def numpy():
     # grab the factory
-    from .GSLRNG import GSLRNG as gsl
+    from .NumpyRNG import NumpyRNG as numpy
     # attach its docstring
-    __doc__ = gsl.__doc__
+    __doc__ = numpy.__doc__
     # and return it
-    return gsl
+    return numpy
 
 
 @altar.foundry(implements=run, tip="the default job parameter specification")

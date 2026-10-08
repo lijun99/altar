@@ -9,8 +9,16 @@
 #
 
 
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # get the package
 import altar
+
+if typing.TYPE_CHECKING:
+    from altar.bayesian.schedulers.COV import COV
+    from altar.shells.Application import Application
 
 
 # the scheduler protocol
@@ -27,29 +35,30 @@ class Solver(altar.protocol, family="altar.bayesian.solvers"):
 
     # required behavior
     @altar.provides
-    def initialize(self, application, scheduler):
+    def initialize(self, application: Application, scheduler: COV) -> typing.Self:
         """
         Initialize me and my parts given an {application} context and a {scheduler}
         """
 
 
     @altar.provides
-    def solve(self, llk, weight):
+    def solve(self, llk: numpy.ndarray, weight: numpy.ndarray) -> tuple[float, float]:
         """
-        Compute the next temperature in the cooling schedule
+        Compute the next temperature in the cooling schedule, and the COV of the normalized
+        weights it gives {llk}, which are left in {weight}
         """
 
 
     # framework hooks
     @classmethod
-    def pyre_default(cls, **kwds):
+    def pyre_default(cls, **kwds) -> type:
         """
         Provide a default implementation
         """
-        # by default, use the naive grid solver
-        from .Grid import Grid
+        # by default, find the root with Brent's method
+        from .Brent import Brent
         # and return it
-        return Grid
+        return Brent
 
 
 # end of file

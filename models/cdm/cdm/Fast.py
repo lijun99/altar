@@ -9,8 +9,13 @@
 #
 
 
-# the package
-import altar
+# externals
+from __future__ import annotations
+import typing
+import numpy
+
+if typing.TYPE_CHECKING:
+    from .CDM import CDM as Model
 
 
 # declaration
@@ -20,7 +25,7 @@ class Fast:
     """
 
 
-    def initialize(self, model):
+    def initialize(self, model: Model) -> typing.Self:
         """
         Upload the observation geometry
         """
@@ -28,12 +33,13 @@ class Fast:
         from .ext import libcdm
         self.libcdm = libcdm
         self.model = model
-        self.stations = model.io.toGsl(model.stations)
+        self.stations = numpy.ascontiguousarray(model.stations, dtype=numpy.float64)
         # all done
         return self
 
 
-    def forward_model_batched(self, theta, prediction, batch):
+    def forward_model_batched(self, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int) -> typing.Self:
         """
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
@@ -43,7 +49,7 @@ class Fast:
         return self
 
 
-    def verify(self, theta, mask, batch):
+    def verify(self, theta: numpy.ndarray, mask: numpy.ndarray, batch: int) -> typing.Self:
         """
         Flag in {mask} the first {batch} samples of {theta} whose source reaches above the free
         surface
@@ -54,9 +60,9 @@ class Fast:
 
 
     # private data
-    libcdm = None
-    model = None
-    stations = None # the observation geometry, as a gsl matrix
+    libcdm: typing.Any = None
+    model: Model
+    stations: numpy.ndarray # the observation geometry
 
 
 # end of file

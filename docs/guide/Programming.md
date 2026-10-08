@@ -80,7 +80,7 @@ With `BayesianL2`, a model writes its forward model, and whatever else it needs 
 ### The forward model
 
 `forward_model(theta, prediction)`
-: the prediction, or the residual, for a single sample.
+: the prediction, or the residual, for a single sample; on the cpu, both are numpy vectors.
 
 `forward_model_batched(theta, prediction, batch=None)`
 : the predictions for the first `batch` samples at once, a (samples × observations) matrix. The
@@ -133,7 +133,7 @@ The regression model computes it with numpy:
 :pyobject: Linear.gradient
 ```
 
-and the linear model with BLAS, on the cpu and the GPU.
+and the linear model with numpy on the cpu, and with cuBLAS on the GPU.
 
 ### Model uncertainty
 
@@ -320,24 +320,18 @@ The traits of a component are declared with `altar.properties`, e.g. `int`, `flo
 `str`, `path`, `array`, `list`, `dict`, and with the protocols of other components, e.g.
 `altar.distributions.distribution()`. Each takes a `default`, and a `doc`.
 
-### Matrices and vectors on the cpu
+### Arrays on the cpu
 
-On the cpu, the samples and the densities are [GSL](https://www.gnu.org/software/gsl/) matrices
-and vectors, `altar.matrix` and `altar.vector`, row-major:
-
-```python
-m = altar.matrix(shape=(rows, cols))   # rows x cols
-m.zero()
-m.fill(1.0)
-c = m.clone()
-c.copy(m)
-```
-
-They work with numpy through views, which share the memory:
+On the cpu, the samples and the densities are numpy arrays: `step.theta` is
+(samples × parameters), and `step.prior`, `step.data` and `step.posterior` are (samples,). Other
+parts of the framework hold on to them, so fill them in place rather than replace them:
 
 ```python
-import numpy
-
-view = numpy.asarray(m)      # changes to the view change m
-copy = numpy.array(m)        # a copy
+step.data[...] = 0                                   # zero them
+step.posterior[:] = step.prior + step.beta * step.data
+θ = step.theta[:, offset:offset + count]             # a view of some columns
 ```
+
+The `altar.cuda` arrays take the same whole-array assignments, `a[...] = b` and `a[...] = 0`, so
+code that runs on both backends can use them. The random numbers come from the numpy generator of
+the application's `rng` component, `application.rng.rng`, seeded by its `seed`.

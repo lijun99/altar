@@ -64,11 +64,9 @@ class Mogi(altar.application, family="altar.applications.mogi"):
         # observe all displacements from the same angle for now
         theta = π/4 # the incidence angle
         phi = π     # the azimuth, counterclockwise from east
-        los = altar.matrix(shape=(observations, 3))
-        for obs in range(observations):
-            los[obs, 0] = numpy.sin(theta) * numpy.cos(phi)
-            los[obs, 1] = numpy.sin(theta) * numpy.sin(phi)
-            los[obs, 2] = numpy.cos(theta)
+        los = numpy.tile(
+            [numpy.sin(theta) * numpy.cos(phi), numpy.sin(theta) * numpy.sin(phi), numpy.cos(theta)],
+            (observations, 1))
 
         # compute the displacements
         source = altar.models.mogi.source(x=self.x, y=self.y, d=self.d, dV=self.dV, nu=self.nu)

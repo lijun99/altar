@@ -9,10 +9,15 @@
 #
 
 
-# the package
-import altar
+# externals
+from __future__ import annotations
+import typing
+import numpy
 # the pure python implementation of the Mogi source
 from .Source import Source as source
+
+if typing.TYPE_CHECKING:
+    from .Mogi import Mogi
 
 
 # declaration
@@ -22,26 +27,27 @@ class Native:
     """
 
 
-    def initialize(self, model):
+    def initialize(self, model: Mogi) -> typing.Self:
         """
         Unpack the observation geometry
         """
         self.model = model
         stations = model.stations
         self.locations = [tuple(row) for row in stations[:, :2]]
-        self.los = model.io.toGsl(stations[:, 2:5].copy())
+        self.los = stations[:, 2:5].copy()
         self.offsets = [int(column) for column in stations[:, 5]]
         # all done
         return self
 
 
-    def forward_model_batched(self, theta, prediction, batch):
+    def forward_model_batched(self, theta: numpy.ndarray, prediction: numpy.ndarray,
+                              batch: int) -> typing.Self:
         """
         Fill the first {batch} rows of {prediction} with the LOS displacements of {theta}
         """
         model = self.model
         for sample in range(batch):
-            parameters = theta.getRow(sample)
+            parameters = theta[sample]
             s = parameters[model.sIdx]
             mogi = source(x=parameters[model.xIdx], y=parameters[model.yIdx],
                           d=parameters[model.dIdx], dV=10**s if model.log10_dV else s,
@@ -51,16 +57,16 @@ class Native:
             for obs, column in enumerate(self.offsets):
                 if column >= 0:
                     u[obs] -= parameters[column]
-            prediction.setRow(sample, u)
+            prediction[sample] = u
         # all done
         return self
 
 
     # private data
-    model = None
-    locations = None
-    los = None
-    offsets = None
+    model: Mogi
+    locations: list[tuple[float, float]]
+    los: numpy.ndarray  # the LOS unit vector of each observation
+    offsets: list[int]  # the column of the dataset offset of each observation, or -1
 
 
 # end of file

@@ -9,6 +9,8 @@
 #
 
 # externals
+from __future__ import annotations
+import typing
 from importlib import import_module
 # get the package
 import altar
@@ -33,11 +35,12 @@ class Base(altar.component, implements=norm):
 
     # configuration
     @altar.export
-    def eval(self, v, sigma_inv=None, batch=None):
+    def eval(self, v: typing.Any, sigma_inv: typing.Any = None,
+             batch: int | None = None) -> typing.Any:
         """
-        Compute the norm of {v}, with or without a covariance matrix. On cuda, {v} is the
-        full (samples x observations) batch and the result is a vector of per-sample norms;
-        on cpu, {v} is a single sample and the result is its scalar norm.
+        Compute the norm of {v}, with or without a covariance matrix: of each row of a
+        (samples x observations) batch, as a vector, or, on the cpu, of a single sample, as a
+        scalar
         """
         if self._impl is None:
             self._impl = self._makeImpl()
@@ -45,13 +48,14 @@ class Base(altar.component, implements=norm):
 
 
     @altar.export
-    def eval_likelihood(self, v, constant=0.0, sigma_inv=None, batch=None, out=None,
-                        weight=None):
+    def eval_likelihood(self, v: typing.Any, constant: float = 0.0, sigma_inv: typing.Any = None,
+                        batch: int | None = None, out: typing.Any = None,
+                        weight: typing.Any = None) -> typing.Any:
         """
-        Compute the log likelihood {constant - 0.5 * norm(v)^2}. {out} is cuda only: fill it
-        (allocating one if not given) with the per-sample likelihoods instead of returning a
-        single scalar; the cpu implementation ignores it and returns the scalar as always.
-        {weight}, if given, weighs each component of {v}, e.g. a 0/1 mask of valid observations
+        Compute the log likelihood {constant - 0.5 * norm(v)^2} of each row of a
+        (samples x observations) batch, into {out}, allocated if not given, or, on the cpu, of
+        a single sample, as a scalar. {weight}, if given, weighs each component of {v}, e.g. a
+        0/1 mask of valid observations
         """
         if self._impl is None:
             self._impl = self._makeImpl()
@@ -59,7 +63,7 @@ class Base(altar.component, implements=norm):
             v=v, constant=constant, sigma_inv=sigma_inv, batch=batch, out=out, weight=weight)
 
 
-    def _makeImpl(self):
+    def _makeImpl(self) -> typing.Any:
         """
         Build my backend implementation: a same-named class in {native} (the cpu default) or
         {cuda}, picked once, here, based on {altar.backends.active()}

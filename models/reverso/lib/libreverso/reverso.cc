@@ -38,9 +38,9 @@ namespace {
 
 void
 altar::models::reverso::
-displacements(const gsl_matrix & theta, const gsl_matrix & stations,
+displacements(const const_matrix_t & theta, const const_matrix_t & stations,
               const std::size_t * layout, const medium_t & medium, std::size_t batch,
-              gsl_matrix & predicted)
+              const matrix_t & predicted)
 {
     const auto & [G, v, mu, drho, g, shallowSill, deepSill] = medium;
     auto gamma_s = gamma(shallowSill, v);
@@ -48,12 +48,12 @@ displacements(const gsl_matrix & theta, const gsl_matrix & stations,
 
     for (std::size_t sample = 0; sample < batch; ++sample) {
         // the model
-        auto Qin = gsl_matrix_get(&theta, sample, layout[QIN]);
-        auto H_s = gsl_matrix_get(&theta, sample, layout[H_S]);
-        auto H_d = gsl_matrix_get(&theta, sample, layout[H_D]);
-        auto a_s = gsl_matrix_get(&theta, sample, layout[A_S]);
-        auto a_d = gsl_matrix_get(&theta, sample, layout[A_D]);
-        auto a_c = gsl_matrix_get(&theta, sample, layout[A_C]);
+        auto Qin = theta(sample, layout[QIN]);
+        auto H_s = theta(sample, layout[H_S]);
+        auto H_d = theta(sample, layout[H_D]);
+        auto a_s = theta(sample, layout[A_S]);
+        auto a_d = theta(sample, layout[A_D]);
+        auto a_c = theta(sample, layout[A_C]);
 
         // the ratio of the chamber volumes and the length of the conduit
         auto k = std::pow(a_d/a_s, 3);
@@ -66,10 +66,10 @@ displacements(const gsl_matrix & theta, const gsl_matrix & stations,
         auto A = gamma_d*k / gamma_r
             * (drho*g*H_c - 8*gamma_s*mu*Qin*H_c / (pi * std::pow(a_c, 4) * gamma_r));
 
-        for (std::size_t obs = 0; obs < stations.size1; ++obs) {
-            auto t = gsl_matrix_get(&stations, obs, T);
-            auto x = gsl_matrix_get(&stations, obs, X);
-            auto y = gsl_matrix_get(&stations, obs, Y);
+        for (std::size_t obs = 0; obs < stations.rows; ++obs) {
+            auto t = stations(obs, T);
+            auto x = stations(obs, X);
+            auto y = stations(obs, Y);
             // the overpressures
             auto f0 = A * (1 - std::exp(-t/tau));
             auto f1 = G * Qin * t / (pi * std::pow(a_s, 3) * gamma_r);
@@ -84,9 +84,9 @@ displacements(const gsl_matrix & theta, const gsl_matrix & stations,
             auto uz = uz_s*dP_s + uz_d*dP_d;
             // the radial direction
             auto phi = std::atan2(y, x);
-            gsl_matrix_set(&predicted, sample, 3*obs + 0, ur * std::cos(phi));
-            gsl_matrix_set(&predicted, sample, 3*obs + 1, ur * std::sin(phi));
-            gsl_matrix_set(&predicted, sample, 3*obs + 2, uz);
+            predicted(sample, 3*obs + 0) = ur * std::cos(phi);
+            predicted(sample, 3*obs + 1) = ur * std::sin(phi);
+            predicted(sample, 3*obs + 2) = uz;
         }
     }
 }
@@ -94,12 +94,12 @@ displacements(const gsl_matrix & theta, const gsl_matrix & stations,
 
 void
 altar::models::reverso::
-verify(const gsl_matrix & theta, const std::size_t * layout, std::size_t batch,
-       gsl_vector & mask)
+verify(const const_matrix_t & theta, const std::size_t * layout, std::size_t batch,
+       const vector_t & mask)
 {
     for (std::size_t sample = 0; sample < batch; ++sample) {
-        if (gsl_matrix_get(&theta, sample, layout[H_D]) <= gsl_matrix_get(&theta, sample, layout[H_S])) {
-            gsl_vector_set(&mask, sample, 1);
+        if (theta(sample, layout[H_D]) <= theta(sample, layout[H_S])) {
+            mask[sample] = 1;
         }
     }
 }

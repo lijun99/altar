@@ -10,14 +10,26 @@
 
 
 # externals
+from __future__ import annotations
+import typing
 import numpy
-from collections import namedtuple
 # the package
-import altar
 from altar.bayesian.states.CoolingStep import CoolingStep
 
+if typing.TYPE_CHECKING:
+    import journal
+    from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.proposals.Proposal import Proposal
+    from altar.bayesian.stepcounters.StepCounter import StepCounter
+    from altar.bayesian.stepsizers.StepSizer import StepSizer
+    from altar.shells.Application import Application
+
+
 # acceptance statistics container
-Statistics = namedtuple('Statistics', ['accepted', 'invalid', 'rejected'])
+class Statistics(typing.NamedTuple):
+    accepted: int
+    invalid: int
+    rejected: int
 
 
 # declaration
@@ -33,14 +45,14 @@ class Metropolis:
 
 
     # protocol-shaped obligations (called by the shim, not pyre-dispatched directly)
-    def initialize(self, application):
+    def initialize(self, application: Application) -> typing.Self:
         """
         Initialize me and my parts given an {application} context
         """
         # grab the info channel
         self.info = application.info
-        # get the capsule of the random number generator
-        rng = application.rng.rng
+        # and the random number generator
+        self.rng = application.rng.rng
 
         # random-walk Metropolis's theoretically-optimal acceptance rate in high dimensions
         # (Roberts-Gelman-Gilks), unless the user picked a target explicitly
@@ -55,14 +67,11 @@ class Metropolis:
         # initialize the proposal mechanism
         self.proposal.initialize(application=application)
 
-        # set up the distribution for building the sample multiplicities; use a strictly
-        # positive distribution to avoid generating candidates with zero displacement
-        self.uniform = altar.pdf.uniform_pos(rng=rng)
         # all done
         return self
 
 
-    def sample_posterior(self, annealer, step):
+    def sample_posterior(self, annealer: Annealer, step: CoolingStep) -> Statistics:
         """
         Sample the posterior distribution
         """
@@ -80,7 +89,7 @@ class Metropolis:
         return self.statistics
 
 
-    def update(self, annealer, statistics):
+    def update(self, annealer: Annealer, statistics: Statistics) -> None:
         """
         Update my parameters based on the results of walking my Markov chains
         """
@@ -94,7 +103,7 @@ class Metropolis:
         return
 
 
-    def walk_chains(self, annealer, step):
+    def walk_chains(self, annealer: Annealer, step: CoolingStep) -> None:
         """
         Run the Metropolis algorithm on the Markov chains
         """
@@ -111,16 +120,15 @@ class Metropolis:
         posterior = step.posterior
         # the sample geometry
         samples = step.samples
-        parameters = step.parameters
         # a reparameterized model walks in sampling space, where every proposal is in the
         # support; the target there is the posterior plus the log-jacobian of the map
         reparameterized = step.has_reparametrization
         if reparameterized:
             θs = step.theta_sampling
             jacobian = step.jacobian
-            jacobian.zero()
+            jacobian[...] = 0
             model.eval_prior_with_physical(step=step, likelihood=jacobian)
-            cjacobian = altar.vector(shape=samples)
+            cjacobian = numpy.zeros(samples)
             # the proposal moves the sampling-space chains
             walker = self.CoolingStep(beta=β, theta=θs, likelihoods=(prior, data, posterior))
             walker.weights = getattr(step, "weights", None)
@@ -130,17 +138,12 @@ class Metropolis:
         # reset the accept/reject counters
         accepted = invalid = rejected = 0
 
-        # allocate some vectors that we use throughout the following
-        # candidate likelihoods
-        cprior = altar.vector(shape=samples)
-        cdata = altar.vector(shape=samples)
-        cpost = altar.vector(shape=samples)
-        # a fake covariance matrix for the candidate steps, just so we don't have to rebuild it
-        # every time
+        # the candidate likelihoods
+        cprior = numpy.zeros(samples)
+        cdata = numpy.zeros(samples)
+        cpost = numpy.zeros(samples)
         # the mask of samples rejected due to model constraint violations
-        rejects = altar.vector(shape=samples)
-        # and a vector with random numbers for the Metropolis acceptance
-        dice = altar.vector(shape=samples)
+        rejects = numpy.zeros(samples)
 
         # the step count regulator decides how many MC steps to run, in blocks, before
         # checking whether this β step is done ({FixedSteps}: one block, the fixed count;
@@ -159,42 +162,42 @@ class Metropolis:
                 # in sampling space, keep the candidate there and map a copy to physical
                 if reparameterized:
                     cθs = cθ
-                    cθ = cθs.clone()
+                    cθ = cθs.copy()
                     model.to_physical(theta=cθ)
                 # initialize the likelihoods
-                likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
+                for likelihood in (cprior, cdata, cpost):
+                    likelihood[...] = 0
                 # build a candidate state
-                candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=likelihoods)
+                candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=(cprior, cdata, cpost))
 
                 # the random displacement may have generated candidates that are outside the
                 # support of the model, so we must give it an opportunity to reject them;
                 # notify we are starting the verification process
                 dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
                 # reset the mask and ask the model to verify the sample validity
-                model.verify(step=candidate, mask=rejects.zero())
+                rejects[...] = 0
+                model.verify(step=candidate, mask=rejects)
                 # make the candidate a consistent set by replacing the rejected samples with
                 # copies of the originals from {θ}
-                invalids = numpy.asarray(rejects) != 0
-                numpy.asarray(cθ)[invalids] = numpy.asarray(θ)[invalids]
+                invalids = rejects != 0
+                cθ[invalids] = θ[invalids]
                 if reparameterized:
-                    numpy.asarray(cθs)[invalids] = numpy.asarray(θs)[invalids]
+                    cθs[invalids] = θs[invalids]
                 # notify that the verification process is finished
                 dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
                 # compute the likelihoods
                 model.likelihoods(annealer=annealer, step=candidate)
 
-                # build a vector to hold the difference of the two posterior likelihoods
-                diff = cpost.clone()
-                # subtract the previous posterior
-                diff -= posterior
-                # and, in sampling space, add the difference of the log-jacobians
+                # the difference of the two posterior likelihoods
+                diff = cpost - posterior
+                # and, in sampling space, the difference of the log-jacobians
                 if reparameterized:
-                    model.eval_prior_with_physical(step=candidate, likelihood=cjacobian.zero())
-                    diff += cjacobian
-                    diff -= jacobian
-                # randomize the Metropolis acceptance vector
-                dice.random(self.uniform)
+                    cjacobian[...] = 0
+                    model.eval_prior_with_physical(step=candidate, likelihood=cjacobian)
+                    diff += cjacobian - jacobian
+                # roll the Metropolis dice, in (0, 1]
+                dice = 1.0 - self.rng.random(size=samples)
 
                 # notify we are starting accepting samples
                 dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
@@ -202,7 +205,7 @@ class Metropolis:
                 # accept/reject: a candidate is invalid if the model considered it outside its
                 # support, rejected if it was less likely than the original and it wasn't saved
                 # by the {dice}, and accepted otherwise
-                unlucky = numpy.log(numpy.asarray(dice)) > numpy.asarray(diff)
+                unlucky = numpy.log(dice) > diff
                 rejections = ~invalids & unlucky
                 accepts = ~invalids & ~unlucky
                 # update the counts
@@ -210,12 +213,12 @@ class Metropolis:
                 rejected += int(rejections.sum())
                 accepted += int(accepts.sum())
                 # copy the accepted candidates, and their likelihoods
-                numpy.asarray(θ)[accepts] = numpy.asarray(cθ)[accepts]
+                θ[accepts] = cθ[accepts]
                 if reparameterized:
-                    numpy.asarray(θs)[accepts] = numpy.asarray(cθs)[accepts]
-                    numpy.asarray(jacobian)[accepts] = numpy.asarray(cjacobian)[accepts]
+                    θs[accepts] = cθs[accepts]
+                    jacobian[accepts] = cjacobian[accepts]
                 for current, proposed in ((prior, cprior), (data, cdata), (posterior, cpost)):
-                    numpy.asarray(current)[accepts] = numpy.asarray(proposed)[accepts]
+                    current[accepts] = proposed[accepts]
 
                 # notify we are done accepting samples
                 dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
@@ -233,16 +236,16 @@ class Metropolis:
 
     # private data; the component-typed attributes are set by the shim's initialize()
     # before it calls mine (see {altar.bayesian.samplers.Metropolis._makeImpl})
-    proposal = None    # the proposal mechanism used by this sampler
-    stepsizer = None   # the step size regulator
-    stepcounter = None # the step count regulator
+    proposal: Proposal       # the proposal mechanism used by this sampler
+    stepsizer: StepSizer     # the step size regulator
+    stepcounter: StepCounter # the step count regulator
 
-    scaling = 0.1      # current proposal scaling; updated by stepsizer after each update
-    statistics = None  # (accepted, invalid, rejected) from the last walk_chains call
+    scaling: float = 0.1     # current proposal scaling; updated by stepsizer after each update
+    statistics: Statistics | None = None  # from the last walk_chains call
 
-    info = None        # the application info channel
-    uniform = None     # the distribution of the sample multiplicities
-    dispatcher = None  # a reference to the event dispatcher
+    info: journal.info | None = None  # the application info channel
+    rng: numpy.random.Generator       # the generator of the dice
+    dispatcher: typing.Any = None     # a reference to the event dispatcher
 
 
 # end of file

@@ -63,7 +63,6 @@ function(altar_seismic_cuda_buildLibrary)
   target_include_directories(
     libcudaseismic PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
@@ -76,7 +75,7 @@ function(altar_seismic_cuda_buildLibrary)
   # add the dependencies
   target_link_libraries(
     libcudaseismic PRIVATE
-    ${GSL_LIBRARIES} ${PYRE_LIBRARIES} cublas
+    ${PYRE_LIBRARIES} cublas
     )
   # kernels index pyre grids directly; see {altar_cuda_buildLibrary}
   target_compile_definitions(libcudaseismic PRIVATE WITH_CUDA)
@@ -116,7 +115,6 @@ function(altar_seismic_cuda_buildModule)
   target_include_directories(
     cudaseismicmodule PRIVATE
     ${CMAKE_INSTALL_PREFIX}/include
-    ${GSL_INCLUDE_DIRS}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}

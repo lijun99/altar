@@ -37,24 +37,6 @@ from pyre import (
 # grab the journal
 import journal
 
-# numerics
-from gsl import (
-    # matrices
-    matrix,
-    # vectors
-    vector,
-    # basic linear algebra
-    blas,
-    # higher level linear algebra
-    linalg as lapack,
-    # random number generators
-    rng,
-    # probability distribution functions
-    pdf,
-    # histograms
-    histogram,
-)
-
 # fire up
 package = executive.registerPackage(name='altar', file=__file__)
 # save the geography
@@ -83,9 +65,6 @@ from . import (
     # user interfaces
     shells, actions,
     )
-
-# my extension modules
-from .ext import libaltar
 
 # administrative
 def copyright():

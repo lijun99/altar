@@ -70,14 +70,10 @@ def test():
         dispatcher = _Dispatcher()
 
     def matrix(source):
-        m = altar.matrix(shape=source.shape)
-        numpy.asarray(m)[:, :] = source
-        return m
+        return numpy.array(source, dtype=float)
 
     def vector(source):
-        v = altar.vector(shape=source.shape[0])
-        numpy.asarray(v)[:] = source
-        return v
+        return numpy.array(source, dtype=float)
 
     class _Step:
         # the chains start from the target, which is also the population the mass comes from
@@ -88,9 +84,9 @@ def test():
             self.weights = vector(numpy.full(samples, 1 / samples))
             self.momentum = None
             for name in ("prior", "data", "posterior", "U", "H"):
-                setattr(self, name, altar.vector(shape=samples))
+                setattr(self, name, numpy.zeros(samples))
             for name in ("prior_gradient", "data_gradient", "U_gradient"):
-                setattr(self, name, altar.matrix(shape=(samples, parameters)))
+                setattr(self, name, numpy.zeros((samples, parameters)))
 
     def sampler(mass):
         hmc = HMC()
