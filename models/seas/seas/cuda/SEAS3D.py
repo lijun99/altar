@@ -654,7 +654,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         """
         # the differences need the likelihood to many more digits than float32 keeps
         if self.precision != "float64":
-            self.error.log("the seas3d gradient needs job.gpuprecision = float64")
+            self.error.log("the seas3d gradient needs double precision: job.precision = float64, "
+                           "and job.gpuprecision unset or float64")
             raise SystemExit(1)
         # in an ensemble, the ensemble owns the parameter sets and their priors
         if not self.embedded and not self.checked_unbounded_priors:
