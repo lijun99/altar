@@ -79,7 +79,20 @@ linear:
 ```
 
 `hmc` spends `job.steps` HMC trajectories at $\beta = 1$, and `mala` `job.steps` MALA proposals,
-adapting their step size after each.
+adapting their step size after each. `hmc` can also walk in `rounds` of `job.steps` trajectories,
+re-estimating the mass matrix from the samples between them. Chains that start far from the
+others, e.g. deep in the logit space of a bounded prior, can stay stuck there, and slow every
+chain down by shrinking the step size; a burn-in replaces them between the first walks (see
+{ref}`the constant scheduler <constant-scheduler>`):
+
+```none
+linear:
+    controller = altar.bayesian.hmc
+    controller:
+        rounds = 5
+        scheduler.burnin = 3 ; replace the outlier chains after the first 3 walks
+    job.steps = 100 ; trajectories per round
+```
 
 The annealing controllers are built from these components, each configurable:
 
@@ -379,10 +392,21 @@ linear:
             solver = grid
 ```
 
+(constant-scheduler)=
 ### Constant
 
 `altar.bayesian.constanttemperature`, the default of the base annealer, keeps $\beta$ at
 `beta_start`, 1 by default: the chains sample the posterior directly.
+
+`burnin`
+: the walks after which the outlier chains are replaced, as in DE-MC
+  ([ter Braak, 2006](https://doi.org/10.1007/s11222-006-8769-1)); 0, none, by default. A chain is
+  an outlier when its log posterior is more than `outlier_iqr` interquartile ranges below the
+  first quartile of the chains'; it becomes a copy of a randomly chosen other chain. After the
+  burn-in the chains are left alone, so the walks that follow sample the posterior.
+
+`outlier_iqr`
+: 2 by default.
 
 (sgld)=
 ## Stochastic gradient Langevin dynamics

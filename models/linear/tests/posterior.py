@@ -123,6 +123,8 @@ CASES = {
                       *uniform(SUPPORT)], WIDE),
     "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200", *uniform(SUPPORT)], WIDE),
     "mala-uniform": (["--controller=altar.bayesian.mala", "--job.steps=4000", *uniform(SUPPORT)], WIDE),
+    "hmc-burnin": (["--controller=altar.bayesian.hmc", "--controller.rounds=4", "--job.steps=50",
+                    "--controller.scheduler.burnin=2"], GAUSSIAN),
     "catmip-tight": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(TIGHT)], TIGHTLY),
     "catmip-tight-physical": (["--controller=altar.bayesian.catmip", "--job.steps=256",
                                *uniform(TIGHT, reparameterize=False)], TIGHTLY),
