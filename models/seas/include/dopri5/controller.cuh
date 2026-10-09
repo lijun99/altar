@@ -45,7 +45,7 @@ struct __ALIGNED__ Controller
     int cycles; // spin-up cycles
     bool failed; // whether the system was given up on
     // the most steps, accepted or rejected, in one solve
-    static constexpr int MAX_STEPS = 1000000;
+    static constexpr int MAX_STEPS = 10000000;
     // the most rejections in a row; each shrinks the step by half or more
     static constexpr int MAX_REJECTIONS = 50;
     int consecutive_rejections;
