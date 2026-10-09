@@ -258,10 +258,12 @@ class MPILangevin(LangevinMethod):
             # just return the local state
             return step
 
-        # the manager packs the state of the problem and returns it
-        return self.LangevinStep(
+        # the manager packs the state of the problem, with the current sampling rate, and returns it
+        collected = self.LangevinStep(
             beta=β, theta=θ, likelihoods=(prior,data,posterior),
             gradients=None if grad_prior is None else (grad_prior,grad_data))
+        collected.epsilon_t = step.epsilon_t
+        return collected
 
 
     def partition(self) -> LangevinStep:

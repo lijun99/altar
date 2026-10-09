@@ -39,8 +39,10 @@ The same configuration runs on either. To use the GPU, set
 
 ```none
 job.gpus = 1                 ; or --job.gpus=1 on the command line
-job.gpuprecision = float32   ; optional; float64 is the default
+job.precision = float32      ; optional; float64 is the default, on the cpu and the GPU
 ```
+
+`job.gpuprecision` still works: if set, it overrides `job.precision` on the GPU.
 
 Several GPUs are used by running several MPI processes, one GPU each (`job.gpuids` picks which
 ones). You no longer need separate `altar.cuda.*` components or a separate GPU configuration. The
@@ -274,6 +276,49 @@ Three things differ from `.pfg`:
 `models/linear/tests/config.py` checks that a YAML translation of `linear.pfg` configures the run
 exactly as the `.pfg` does.
 
+## 8. numpy on the cpu
+
+**Why.** On the cpu, AlTar kept its samples, densities and data in GSL matrices and vectors
+(`altar.matrix`, `altar.vector`), reached through pyre's Python bindings. The arithmetic was
+fast, but the code reached it one chain at a time: the likelihood, the priors, the bounds checks
+and the Metropolis accept/reject each looped over the chains in Python, and every row access
+allocated a new GSL vector. A two-parameter regression took minutes. Writing a model meant
+learning the GSL interface (`getRow`, `setRow`, `clone`, BLAS calls with flag enums) rather than
+the numpy most of us already use, and the cpu needed a C++ library, `libaltar`, for the COV
+solver, the covariance conditioning and the resampling.
+
+**What has been implemented.**
+- **numpy arrays throughout the cpu path.** The samples (samples × parameters), the densities
+  (samples,), the data and the Green's functions are plain numpy arrays, and every step works on
+  all the chains at once.
+- **Faster.** The linear posterior tests, 12 cases, run in 31 s on the cpu instead of 19.5
+  minutes; the CATMIP regression example in about 2 s.
+- **Writing a model.** `forward_model` receives numpy rows, e.g. `prediction[:] = slope * x +
+  intercept`, and gradients are numpy expressions; the regression model in `models/regression`
+  is the example. `altar.matrix`, `altar.vector`, `altar.blas`, `altar.lapack`, `altar.pdf` and
+  `altar.histogram` are gone, with no aliases, and `io.load` returns numpy arrays.
+- **Random numbers** come from a numpy generator: `rng.seed` works as before, and
+  `rng.algorithm` picks the bit generator (`pcg64` by default). Each MPI process draws from its
+  own stream, derived from the seed.
+- **The COV scheduler** solves for the next β in Python. Brent's root finding is now the default
+  solver: as accurate as the old C++ one, and about twice as fast. The grid search is still
+  available (`solver = grid`) and reproduces the old grid solver's β steps exactly. Resampling
+  and covariance conditioning are numpy too.
+- **Precision.** `job.precision` (`float64` by default, or `float32`) sets the precision on the
+  cpu as well as on the GPU. The samples, the data and the forward models take it; the log
+  densities, and the sums that make them, stay in double precision. In single precision, the
+  cpu runs of models dominated by matrix products, such as those with large Green's functions,
+  are faster and use half the memory.
+- **No more GSL.** AlTar's core is pure Python: `libaltar` and the `altar` extension module are
+  removed, and the C++ forward models of the volcano models take numpy arrays. GSL is no longer
+  needed to build or run AlTar.
+- **Type annotations.** The framework's methods now declare the types of their arguments and
+  results, for editors and type checkers.
+- **Validation.** The linear posterior tests pass on the cpu, on the GPU and on 2 MPI processes,
+  in both precisions. The regression, volcano and static seismic examples recover their
+  posteriors, and the Python COV solvers were replayed against the C++ ones on recorded seismic
+  and linear runs.
+
 ## What changes for existing runs
 
 - **Configurations need updating.** The old component names are gone, with no aliases:
@@ -283,6 +328,12 @@ exactly as the `.pfg` does.
 
   The example `.pfg` files in `models/*/examples` show the current syntax.
 - Reparameterized runs archive physical values directly, so drop any `tophysical` step.
+- **Random numbers differ** from earlier versions, since they now come from numpy: a run
+  reproduces an older one statistically, not sample for sample.
+- **The default COV solver is now Brent's method**, so the β steps differ slightly, within the
+  solver's tolerance; `controller.scheduler.solver = grid` gives the old schedule.
+- **Models written against `altar.matrix`/`altar.vector`** need porting to numpy, which usually
+  makes them shorter; see the Programming Guide.
 - Rebuild pyre from `altar2` first, then AlTar. The Installation Guide covers a conda setup and
   both CMake and mm.
 
