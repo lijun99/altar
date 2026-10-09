@@ -81,7 +81,7 @@ def cpu():
     """
     tests = scripts(ROOT / "altar/tests/altar", ["sanity.py", "application.py", "application_instance.py",
                                                   "annealer.py", "annealer_instance.py",
-                                                  "weighted_statistics.py"])
+                                                  "weighted_statistics.py", "outliers.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py"])
     tests += [
