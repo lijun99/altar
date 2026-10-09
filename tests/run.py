@@ -8,8 +8,8 @@
 #
 
 """
-Run the tests of an installed AlTar from this source tree: the cpu suite, which the github
-workflow runs, or the gpu suite, for a machine with gpus. A test passes when its command exits
+Run the tests of an installed AlTar from this source tree: the cpu suite, or the gpu suite,
+for a machine with gpus. A test passes when its command exits
 with 0; an example run must also take its annealing to beta = 1. Tests that need something
 optional are skipped without it: jax, cuTile, the seismic 9patch data, or two gpus.
 

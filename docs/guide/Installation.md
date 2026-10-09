@@ -256,8 +256,8 @@ altar-linear --config=linear_catmip.pfg --job.gpus=1
 Each run anneals from β = 0 to β = 1, in about 20 steps, and prints the posterior mean and
 standard deviation of each parameter; a few minutes on the cpu, well under a minute on a GPU.
 
-The tests check an installation from the source tree, in two suites: the cpu one, which the
-github workflow runs on every push to `numpy`, and the GPU one:
+The tests check an installation from the source tree, in two suites, the cpu one and the GPU
+one:
 
 ```bash
 cd ~/tools/src/altar
