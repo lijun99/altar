@@ -44,7 +44,7 @@ def brent(f: typing.Callable[[float], float], a: float, b: float, fa: float, fb:
     """
     The root of {f} bracketed by [a, b], fa * fb < 0, by Brent's method: inverse quadratic
     interpolation or the secant when they converge fast enough, bisection otherwise; stop when
-    |f| < {ftol}, the bracket is below {xtol} plus roundoff, or after {maxiter} evaluations
+    abs(f) < {ftol}, the bracket is below {xtol} plus roundoff, or after {maxiter} evaluations
     """
     c, fc = b, fb
     d = e = b - a
