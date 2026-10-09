@@ -103,7 +103,7 @@ class CUDAAnnealing(AnnealingMethod):
             gstep.copy_to_cpu(step=self.step, offset=offset)
 
         # notify the archiver
-        annealer.archiver.start(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+        annealer.archiver.start(step=self.step, iteration=self.iteration, psets=getattr(annealer.model, "psets", None))
 
         # all done
         return self

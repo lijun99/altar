@@ -29,13 +29,15 @@ def active() -> str:
 
 def cuda_available() -> bool:
     """
-    Return True when altar.cuda is importable.
+    Return True when altar.cuda is importable, which needs a gpu the cuda driver can see
     """
     if find_spec("cuda") is None:
         return False
-    if find_spec("altar.cuda.ext.cudaaltar") is None:
+    # finding the extension imports altar.cuda, whose device discovery fails without a gpu
+    try:
+        return find_spec("altar.cuda.ext.cudaaltar") is not None
+    except Exception:
         return False
-    return True
 
 
 def activate_cpu() -> None:

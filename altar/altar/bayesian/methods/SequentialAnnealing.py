@@ -36,7 +36,7 @@ class SequentialAnnealing(AnnealingMethod):
         # build a cooling step to hold the state of the problem
         self.step = self.CoolingStep.start(annealer=annealer)
         # notify the archiver
-        annealer.archiver.start(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+        annealer.archiver.start(step=self.step, iteration=self.iteration, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
 

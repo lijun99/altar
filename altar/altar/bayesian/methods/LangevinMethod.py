@@ -152,7 +152,7 @@ class LangevinMethod:
         channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
-        controller.archiver.recordstep(step=self.step, stats=info, psets=controller.model.psets)
+        controller.archiver.recordstep(step=self.step, stats=info, psets=getattr(controller.model, "psets", None))
         # all done
         return self
 
@@ -185,7 +185,7 @@ class LangevinMethod:
         # ask it to render itself to the screen
         step.print(channel=controller.info)
         # ask the recorder to record it
-        controller.archiver.record(step=step, iteration=self.iteration, psets=controller.model.psets)
+        controller.archiver.record(step=step, iteration=self.iteration, psets=getattr(controller.model, "psets", None))
         # all done
         return self
 

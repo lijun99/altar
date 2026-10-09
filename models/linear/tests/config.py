@@ -86,7 +86,9 @@ def settings(files, *args):
             (scratch / name).write_text(text)
         status = subprocess.run([sys.executable, "-c", DUMP, *args], cwd=scratch,
                                 capture_output=True, text=True, check=True)
-        return dict(line.split(" = ", 1) for line in status.stdout.splitlines())
+        # the settings, without any journal output, e.g. the warning that there is no gpu
+        return dict(line.split(" = ", 1) for line in status.stdout.splitlines()
+                    if line.startswith("linear") and " = " in line)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 

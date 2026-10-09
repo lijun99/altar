@@ -74,7 +74,7 @@ class MPIAnnealing(AnnealingMethod):
         self.step = self.collect()
         # notify the archiver on the manager
         if self.rank == self.manager:
-            annealer.archiver.start(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+            annealer.archiver.start(step=self.step, iteration=self.iteration, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
 
