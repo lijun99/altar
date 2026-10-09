@@ -73,4 +73,12 @@ def catmip_mala():
     __doc__ = CatmipMala.__doc__
     return CatmipMala
 
+@altar.foundry(
+    implements=controller,
+    tip="cross-fade CATMIP: from the conjugate posterior of the model to its posterior")
+def cf_catmip():
+    from .CfCatmip import CfCatmip
+    __doc__ = CfCatmip.__doc__
+    return CfCatmip
+
 # end of file

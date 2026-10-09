@@ -63,11 +63,11 @@ def scripts(directory, names, needs=()):
                  command=[sys.executable, name], cwd=directory, needs=needs) for name in names]
 
 
-def example(app, model, config, gpus, *settings, needs=(), synthetic=None):
+def example(app, model, config, gpus, *settings, needs=(), synthetic=None, variant=None):
     """
     A short run of an example, with few chains and steps, in a scratch copy of its directory
     """
-    name = f"example:{model}:{config.rsplit('.', 1)[0]}"
+    name = f"example:{model}:{config.rsplit('.', 1)[0]}" + (f":{variant}" if variant else "")
     command = [app, f"--config={config}", f"--job.gpus={gpus}", "--job.tasks=1",
                "--job.chains=64", "--job.steps=10", "--controller.archiver.output_dir=results",
                *settings]
@@ -96,6 +96,8 @@ def cpu():
         example("altar-reverso", "reverso", "reverso.pfg", 0, synthetic="reverso.py"),
         example("gaussian", "gaussian", "gaussian.pfg", 0),
         example("slipmodel", "seismic", "static.pfg", 0, needs=("seismic-data",)),
+        example("slipmodel", "seismic", "static.pfg", 0, "--controller=altar.bayesian.cf_catmip",
+                needs=("seismic-data",), variant="cf_catmip"),
     ]
     tests.append(Test(name="example:linear:mpi", needs=("mpi",), examples="linear", anneals=True,
                       command=["altar-linear", "--config=linear.pfg", "--job.gpus=0", "--job.tasks=2",
@@ -123,6 +125,8 @@ def gpu():
         example("altar-cdm", "cdm", "cdm.pfg", 1, synthetic="cdm.py", needs=("cutile",)),
         example("altar-reverso", "reverso", "reverso.pfg", 1, synthetic="reverso.py", needs=("cutile",)),
         example("slipmodel", "seismic", "static.pfg", 1, needs=("seismic-data",)),
+        example("slipmodel", "seismic", "static.pfg", 1, "--controller=altar.bayesian.cf_catmip",
+                needs=("seismic-data",), variant="cf_catmip"),
         example("slipmodel", "seismic", "kinematic.pfg", 1, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi-2gpus", needs=("mpi", "2gpus"), examples="linear",

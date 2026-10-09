@@ -16,7 +16,8 @@ truncation being negligible there; the cases with a tight uniform prior, which c
 posterior, compare against its moments within the support, from rejection sampling.
 
 Each case runs {altar-linear} in a scratch directory and compares the mean, the standard
-deviations and the correlations of its final samples with the exact ones.
+deviations and the correlations of its final samples with the exact ones, and the evidence,
+for the controllers that estimate it, with the exact log p(d).
 
     python posterior.py                 # every case, on the cpu
     python posterior.py mala hmc        # some of them
@@ -71,7 +72,7 @@ linear:
     job.chains = 2**8
 """
 
-def uniform(support, reparameterize=True):
+def uniform(support, reparameterize=True, prep=None):
     """
     The settings of a uniform prior on {support}; a tight one also starts the chains from it
     """
@@ -80,12 +81,18 @@ def uniform(support, reparameterize=True):
         f"--model.psets.all.prior.support=({support[0]},{support[1]})",
         f"--model.psets.all.prior.reparameterize={reparameterize}",
     ]
-    if support == TIGHT:
+    if prep or (prep is None and support == TIGHT):
         settings += [
             "--model.psets.all.prep=uniform",
             f"--model.psets.all.prep.support=({support[0]},{support[1]})",
         ]
     return settings
+
+# the logistic-edged uniform prior on the wide support
+SOFT = [
+    "--model.psets.all.prior=softuniform",
+    f"--model.psets.all.prior.support=({SUPPORT[0]},{SUPPORT[1]})",
+]
 
 # the prior of each case: the gaussian, the wide uniform or the tight uniform one
 GAUSSIAN, WIDE, TIGHTLY = "gaussian", "wide", "tight"
@@ -98,7 +105,9 @@ CASES = {
     "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], GAUSSIAN),
     "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], GAUSSIAN),
     "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], GAUSSIAN),
-    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
+    "cf_catmip": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),
+    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256",
+                        *uniform(SUPPORT, prep=True)], WIDE),
     "mcmc-uniform": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256",
                       *uniform(SUPPORT)], WIDE),
     "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200", *uniform(SUPPORT)], WIDE),
@@ -106,6 +115,10 @@ CASES = {
     "catmip-tight": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(TIGHT)], TIGHTLY),
     "catmip-tight-physical": (["--controller=altar.bayesian.catmip", "--job.steps=256",
                                *uniform(TIGHT, reparameterize=False)], TIGHTLY),
+    "cf_catmip-uniform": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
+    "cf_catmip-soft": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *SOFT], WIDE),
+    "cf_catmip-tight": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256",
+                         *uniform(TIGHT, reparameterize=False)], TIGHTLY),
 }
 
 # the tolerances, for 256 chains: the mean within this many posterior standard deviations,
@@ -114,38 +127,60 @@ CASES = {
 MEAN = 0.3
 SD = (0.8, 1.25)
 CORRELATION = 0.3
+# and the evidence, for the controllers that estimate it, within this many nats: annealing from
+# the prior, CATMIP's estimate is noisy, about a nat, and low with 256 chains; it also needs its
+# initial samples drawn from the prior; cross-fading is exact here
+EVIDENCE = 3.0
 
 
 def exact(prior):
     """
-    The mean and the covariance of the posterior, with the gaussian prior, without a prior, or
-    with the tight uniform one
+    The mean and the covariance of the posterior, and the evidence log p(d), with the gaussian
+    prior, with the wide uniform one, flat over the posterior, or with the tight uniform one
     """
     folder = EXAMPLES / CASE
     G = numpy.loadtxt(folder / "green.txt")
     d = numpy.loadtxt(folder / "data.txt")
     Cd = numpy.loadtxt(folder / "cd.txt")
+    observations, parameters = G.shape
     W = numpy.linalg.inv(Cd)
     A = G.T @ W @ G
     if prior == GAUSSIAN:
-        A += numpy.eye(A.shape[0]) / SIGMA**2
+        A += numpy.eye(parameters) / SIGMA**2
     cov = numpy.linalg.inv(A)
     mean = cov @ (G.T @ W @ d)
-    if prior != TIGHTLY:
-        return mean, cov
-    # the draws of the posterior without a prior that land in the support
-    draws = numpy.random.default_rng(1).multivariate_normal(mean, cov, size=2_000_000)
+    if prior == GAUSSIAN:
+        # log N(d; 0, C_d + σ² G G^T)
+        C = Cd + SIGMA**2 * G @ G.T
+        evidence = -0.5 * (d @ numpy.linalg.solve(C, d) + numpy.linalg.slogdet(C)[1]
+                           + observations * numpy.log(2 * numpy.pi))
+        return mean, cov, evidence
+    # the integral of N(d; G θ, C_d) over θ, times the density of the prior, 1 / (b - a)
+    low, high = SUPPORT if prior == WIDE else TIGHT
+    r = d - G @ mean
+    evidence = (-0.5 * (observations - parameters) * numpy.log(2 * numpy.pi)
+                - 0.5 * numpy.linalg.slogdet(Cd)[1] + 0.5 * numpy.linalg.slogdet(cov)[1]
+                - 0.5 * r @ W @ r - parameters * numpy.log(high - low))
+    if prior == WIDE:
+        return mean, cov, evidence
+    # the draws of the posterior without a prior that land in the support, a fraction q of them,
+    # which the integral over the support picks up
+    total = 2_000_000
+    draws = numpy.random.default_rng(1).multivariate_normal(mean, cov, size=total)
     draws = draws[((draws > TIGHT[0]) & (draws < TIGHT[1])).all(axis=1)]
-    return draws.mean(axis=0), numpy.cov(draws, rowvar=False)
+    evidence += numpy.log(draws.shape[0] / total)
+    return draws.mean(axis=0), numpy.cov(draws, rowvar=False), evidence
 
 
 def samples(results):
     """
-    The physical samples of the final step
+    The physical samples of the final step, and its evidence, if it has one
     """
-    parameters = h5py.File(results / "step_final.h5")["ParameterSets"]
+    final = h5py.File(results / "step_final.h5")
+    parameters = final["ParameterSets"]
     name = "all_physical" if "all_physical" in parameters else "all_sampling"
-    return numpy.asarray(parameters[name])
+    evidence = final["Annealer"].get("log_evidence")
+    return numpy.asarray(parameters[name]), None if evidence is None else float(numpy.asarray(evidence))
 
 
 def compare(theta, mean, cov):
@@ -179,11 +214,15 @@ def run(name, gpu, precision, keep):
             (scratch / "run.log").write_text(status.stdout + status.stderr)
             keep = True
             return False, f"{name:22s} FAILED to run ({status.returncode}); see {scratch}/run.log"
-        mean, cov = exact(prior=prior)
-        good, shift, low, high, drift = compare(samples(scratch / "results"), mean, cov)
+        mean, cov, evidence = exact(prior=prior)
+        theta, estimate = samples(scratch / "results")
+        good, shift, low, high, drift = compare(theta, mean, cov)
+        line = f"mean {shift:.2f} sd  sd ratio [{low:.2f}, {high:.2f}]  correlation {drift:.2f}"
+        if estimate is not None:
+            good = good and abs(estimate - evidence) <= EVIDENCE
+            line += f"  log evidence {estimate:.2f} (exact {evidence:.2f})"
         verdict = "ok" if good else "FAIL"
-        return good, (f"{name:22s} {verdict:4s} {elapsed:6.0f}s  mean {shift:.2f} sd  "
-                      f"sd ratio [{low:.2f}, {high:.2f}]  correlation {drift:.2f}")
+        return good, f"{name:22s} {verdict:4s} {elapsed:6.0f}s  {line}"
     finally:
         if keep:
             print(f"  kept {scratch}")
@@ -213,7 +252,7 @@ def main():
         return 1
 
     print(f"tolerances: mean within {MEAN} sd, sd ratio in [{SD[0]}, {SD[1]}], "
-          f"correlation within {CORRELATION}")
+          f"correlation within {CORRELATION}, log evidence within {EVIDENCE}")
     failures = 0
     for name in options.cases or CASES:
         good, line = run(name, gpu=options.gpu, precision=options.precision, keep=options.keep)

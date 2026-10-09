@@ -55,6 +55,7 @@ The controller samples the posterior. The choice of controller is the choice of 
 | `altar.bayesian.hmc` | Hamiltonian Monte Carlo at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.catmip_mala` | CATMIP annealing, with Metropolis-adjusted Langevin sampling |
 | `altar.bayesian.mala` | the Metropolis-adjusted Langevin algorithm at a fixed $\beta = 1$, without annealing |
+| `altar.bayesian.cf_catmip` | {ref}`cross-fade CATMIP <cross-fade>`: from the conjugate posterior of a linear model to its posterior |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD) |
 | `altar.bayesian.annealer` | the base of the annealing controllers, with the sampler and the scheduler left to configure |
 
@@ -98,6 +99,42 @@ The annealing controllers are built from these components, each configurable:
 The controller also runs on a *worker* that matches the job: one process on the cpu, one on a
 GPU, or several processes under MPI. The worker is chosen from the job configuration, not
 configured itself.
+
+(cross-fade)=
+### Cross-fade CATMIP
+
+`altar.bayesian.cf_catmip` implements cross-fade sampling
+([Minson, 2024](https://doi.org/10.1093/gji/ggae353)), for models with a conjugate prior
+$P_c(\boldsymbol\theta)$, one whose posterior $P_c(\boldsymbol\theta|\mathbf d)$ is known in
+closed form, e.g. a Gaussian prior for a linear model with Gaussian errors, whose posterior is
+Gaussian. Instead of annealing from the prior to the posterior, it anneals from the conjugate
+posterior, fading the prior in and the conjugate prior out,
+
+$$
+P_m(\boldsymbol\theta|\mathbf d) \propto P_c(\boldsymbol\theta|\mathbf d)
+\left[\frac{P(\boldsymbol\theta)}{P_c(\boldsymbol\theta)}\right]^{\beta_m},
+$$
+
+which is the posterior at $\beta = 1$. The chains start from the models that already fit the
+data, so it needs far fewer $\beta$ steps, often a single one, and it never evaluates the data
+likelihood: the cost of each sample doesn't grow with the number of observations. It is otherwise
+CATMIP, with its COV scheduler and Metropolis sampler.
+
+The conjugate prior doesn't change the result, only the number of steps; it is a normal
+distribution matched to the mean and the variance of the prior of each parameter set. The linear
+model and the static slip model provide their conjugate posterior. The data covariance must stay
+fixed during the run: no `adaptive` $C_p$.
+
+With a bounded prior, e.g. a uniform one, the initial samples are drawn from the conjugate
+posterior within the support of the prior, the limit of the annealed distribution as
+$\beta \to 0$. When too little of the conjugate posterior lies within the support, i.e. when the
+data pull the parameters far outside it, the run stops with a message; use `catmip` then. The
+{ref}`soft uniform <softuniform>` distribution is positive everywhere, and needs no such start.
+
+```none
+linear:
+    controller = altar.bayesian.cf_catmip
+```
 
 (samplers)=
 ## Samplers
@@ -287,6 +324,15 @@ $$
 which sets the effective sample size of the resampling,
 $\mathrm{ESS} = N_s / (1 + \mathrm{COV}(w)^2)$, with $\mathrm{COV}(w) = \sigma_w / \bar w$. A COV
 of 1 keeps half of the samples effective. The samples are then resampled by their weights.
+
+The weights also give the evidence of the model, $\log P(\mathbf d) \approx \sum_m \log \bar w_m$
+([Ching and Chen, 2007](https://doi.org/10.1061/(ASCE)0733-9399(2007)133:7(816))), with
+$\log P_c(\mathbf d)$ added for cross-fade CATMIP. It is printed at the end of the run, as
+`log evidence`, and saved with each step, as `Annealer/log_evidence`. It is an estimate: with a
+few hundred chains, it is typically within a nat or two, and on the low side. It assumes that the
+initial samples come from the prior, i.e. that the `prep` of each parameter set is its prior, and,
+for cross-fade CATMIP, that the priors are normalized: the magnitude penalty of the `moment` prior,
+for one, is not.
 
 `target`
 : the COV to aim at; default 1.
