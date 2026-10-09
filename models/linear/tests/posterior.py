@@ -22,7 +22,6 @@ deviations and the correlations of its final samples with the exact ones.
     python posterior.py mala hmc        # some of them
     python posterior.py --gpu           # on the gpu
     python posterior.py --precision=float32   # in single precision, cpu or gpu
-    python posterior.py --gpu --jax     # with the forward model and gradient in jax
     python posterior.py --list          # the cases
 """
 
@@ -162,7 +161,7 @@ def compare(theta, mean, cov):
     return good, shift.max(), ratio.min(), ratio.max(), drift
 
 
-def run(name, gpu, precision, keep, model=None):
+def run(name, gpu, precision, keep):
     """
     Run one case and compare it with the exact posterior
     """
@@ -173,8 +172,6 @@ def run(name, gpu, precision, keep, model=None):
         (scratch / "posterior.pfg").write_text(BASE)
         command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}",
                    f"--job.precision={precision}", *settings]
-        if model:
-            command.append(f"--model={model}")
         start = time.perf_counter()
         status = subprocess.run(command, cwd=scratch, capture_output=True, text=True, errors="replace")
         elapsed = time.perf_counter() - start
@@ -200,7 +197,6 @@ def main():
     parser.add_argument("--gpu", action="store_true", help="run on the gpu")
     parser.add_argument("--precision", default="float64", help="the precision, cpu or gpu")
     parser.add_argument("--keep", action="store_true", help="keep the scratch directories")
-    parser.add_argument("--jax", action="store_true", help="the linear model with its forward model and gradient in jax")
     parser.add_argument("--list", action="store_true", help="list the cases")
     options = parser.parse_args()
 
@@ -220,8 +216,7 @@ def main():
           f"correlation within {CORRELATION}")
     failures = 0
     for name in options.cases or CASES:
-        good, line = run(name, gpu=options.gpu, precision=options.precision, keep=options.keep,
-                         model="altar.models.linear.jax" if options.jax else None)
+        good, line = run(name, gpu=options.gpu, precision=options.precision, keep=options.keep)
         print(line, flush=True)
         failures += not good
     return 1 if failures else 0

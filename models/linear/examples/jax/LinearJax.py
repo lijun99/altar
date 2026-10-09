@@ -9,9 +9,9 @@
 
 # the package
 import altar
-# my parts: the jax forward model and gradient, and the linear model for everything else
-from altar.models.JaxModel import JaxModel
-from .Linear import Linear
+# my parts: the jax forward model and gradient, next to me, and the linear model for the rest
+from JaxModel import JaxModel
+from altar.models.linear.Linear import Linear
 
 
 # declaration

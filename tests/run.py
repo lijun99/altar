@@ -104,9 +104,6 @@ def cpu():
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:cpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", f"--precision={precision}"]))
-        tests.append(Test(name=f"posterior:linear:cpu:jax:{precision}", cwd=MODELS / "linear/tests",
-                          command=[sys.executable, "posterior.py", "--jax", f"--precision={precision}"],
-                          needs=("jax",)))
     return tests
 
 
@@ -136,10 +133,6 @@ def gpu():
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:gpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", "--gpu", f"--precision={precision}"]))
-        tests.append(Test(name=f"posterior:linear:gpu:jax:{precision}", cwd=MODELS / "linear/tests",
-                          command=[sys.executable, "posterior.py", "--gpu", "--jax",
-                                   f"--precision={precision}"],
-                          needs=("jax",)))
         tests.append(Test(name=f"kinematic:gradient-vs-jax:{precision}", examples="seismic",
                           needs=("jax", "seismic-data"),
                           command=[sys.executable, str(MODELS / "seismic/tests/kinematic_jax.py"),
