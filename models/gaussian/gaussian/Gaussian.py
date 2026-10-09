@@ -75,7 +75,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def initialize_sample(self, step: BayesianState) -> typing.Self:
+    def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.θ} with an initial random sample from my prior distribution.
         """
@@ -88,7 +88,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def eval_prior(self, step: BayesianState) -> typing.Self:
+    def eval_prior(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.prior} with the likelihoods of the samples in {step.theta} in the prior
         distribution
@@ -108,7 +108,7 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def data_likelihood(self, step: BayesianState) -> typing.Self:
+    def data_likelihood(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
         Fill {step.data} with the likelihoods of the samples in {step.theta} given the available
         data. This is what is usually referred to as the "forward model"
@@ -124,7 +124,8 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
 
 
     @altar.export
-    def verify(self, step: BayesianState, mask: numpy.ndarray) -> numpy.ndarray:
+    def verify(self, step: BayesianState, mask: numpy.ndarray,
+               batch: int | None = None) -> numpy.ndarray:
         """
         Check whether the samples in {step.theta} are consistent with the model requirements and
         update the {mask}, a vector with zeroes for valid samples and non-zero for invalid ones

@@ -108,7 +108,7 @@ class AnnealingMethod:
         # notify the model
         annealer.model.top(annealer=annealer)
         # notify the archiver
-        annealer.archiver.top(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+        annealer.archiver.top(step=self.step, iteration=self.iteration, psets=getattr(annealer.model, "psets", None))
 
         # all done
         return self
@@ -179,7 +179,7 @@ class AnnealingMethod:
         channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
-        annealer.archiver.recordstep(step=self.step, stats=info, psets=annealer.model.psets)
+        annealer.archiver.recordstep(step=self.step, stats=info, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
 
@@ -200,7 +200,7 @@ class AnnealingMethod:
             step.print(channel=annealer.info)
 
         # notify the archiver
-        annealer.archiver.bottom(step=self.step, iteration=self.iteration, psets=annealer.model.psets)
+        annealer.archiver.bottom(step=self.step, iteration=self.iteration, psets=getattr(annealer.model, "psets", None))
 
         # all done
         return self
@@ -215,7 +215,7 @@ class AnnealingMethod:
         # ask it to render itself to the screen
         step.print(channel=annealer.info)
         # ask the recorder to record it
-        annealer.archiver.final(step=step, iteration=None, psets=annealer.model.psets)
+        annealer.archiver.final(step=step, iteration=None, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
 
