@@ -5,6 +5,7 @@
 
 # general imports
 import io
+import os
 from time import perf_counter
 from copy import copy, deepcopy
 from contextlib import redirect_stdout
@@ -83,6 +84,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "at the end of each beta step, run the mean model of the population and record, in the "
         "SEAS group of the step files, its parameters, its slip rates at t = 0, which restarts "
         "and reruns can spin up from, its predicted data and its data log-likelihood"
+    )
+    record_posterior = altar.properties.int(default=0)
+    record_posterior.doc = (
+        "at the end of the run, run this many samples drawn without replacement from the final "
+        "population, and write their parameters, data log-likelihoods, predicted data, and slip "
+        "and slip rate histories at the observation times to posterior_runs.h5 in the "
+        "archiver's output directory"
     )
     ref_station_indices = altar.properties.list(default=None)
     velocity_reference_index = altar.properties.int(default=-1)
@@ -752,6 +760,22 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             self.run_mean(theta=np.asarray(annealer.worker.step.theta))
         return self
 
+    @altar.export
+    def posterior(self, application):
+        """
+        Sample my posterior distribution; then run a subsample of it, if asked
+        """
+        status = super().posterior(application=application)
+        # the final population is on the manager, which runs the subsample
+        worker = self.controller.worker
+        if self.record_posterior > 0 and getattr(worker, "rank", 0) == getattr(worker, "manager", 0):
+            output = self.controller.archiver.output_dir
+            self.run_posterior(
+                theta=np.array(worker.step.theta, dtype=float),
+                path=os.path.join(str(getattr(output, "path", output)), "posterior_runs.h5"),
+            )
+        return status
+
     def run_mean(self, theta):
         """
         Run the mean of the samples {theta}, and keep its slip rates at t = 0, its predicted
@@ -789,6 +813,57 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             "forward_ode": self.forward_ode})
         archiver.write("SEAS/prediction", self._mean["prediction"])
         archiver.write("SEAS/likelihood", self._mean["likelihood"])
+        return self
+
+    def run_posterior(self, theta, path):
+        """
+        Run {record_posterior} samples drawn without replacement from the population {theta}, so
+        that they keep its distribution, and write them to the hdf5 file {path}
+        """
+        import h5py
+        n = min(self.record_posterior, theta.shape[0])
+        rng = getattr(getattr(self, "rng", None), "rng", None)
+        rng = rng if isinstance(rng, np.random.Generator) else np.random.default_rng()
+        rows = np.sort(rng.choice(theta.shape[0], size=n, replace=False))
+        patches = self.fault.inner_num_patches
+        steps = self.sim.t_obs.size
+        start = perf_counter()
+        runs = {"likelihood": [], "prediction": [], "slip": [], "slip_rate": [], "failed": []}
+        for first in range(0, n, self.cuda_batch_size):
+            batch = min(self.cuda_batch_size, n - first)
+            self.forward_model_batched(
+                theta=theta[rows[first : first + batch]], prediction=self.obs_disp, batch=batch
+            )
+            self.dataobs.eval_likelihood(
+                prediction=self.obs_disp, likelihood=self.likelihood_batch,
+                residual=False, whitened=False, batch=batch,
+            )
+            runs["likelihood"].append(np.asarray(self.likelihood_batch)[:batch].astype(float))
+            runs["prediction"].append(np.asarray(self.obs_disp)[:batch].astype(float))
+            # [systems, steps, slip or slip rate, components, patches], the slip rates linear
+            state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
+                batch, steps, 2, 2, patches
+            )
+            runs["slip"].append(state[:, :, 0].astype(float))
+            runs["slip_rate"].append(state[:, :, 1].astype(float))
+            runs["failed"].append(
+                np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:batch]
+            )
+        with h5py.File(path, "w") as f:
+            f.attrs["forward_ode"] = self.forward_ode
+            f.attrs["description"] = (
+                "forward runs of samples drawn without replacement from the final population: "
+                "slip [m] and slip_rate [m/s] are [samples, t_obs, components, patches]"
+            )
+            f["theta"] = theta[rows]
+            f["rows"] = rows
+            f["t_obs"] = self.sim.t_obs
+            for key, values in runs.items():
+                f[key] = np.concatenate(values)
+        self.info.log(
+            f"Device {self.device.id}: ran {n} posterior samples in "
+            f"{perf_counter() - start:.1f}s, written to {path}"
+        )
         return self
 
     def load_spin_up(self, application):
