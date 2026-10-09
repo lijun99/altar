@@ -87,6 +87,12 @@ class Job(altar.component, family="altar.simulations.runs.job", implements=run):
         if self.gpus > 0 and altar.backends.cuda_available():
             altar.backends.activate_cuda()
         else:
+            # asked for gpus that aren't there: say so, rather than quietly use the cpu
+            if self.gpus > 0:
+                import journal
+                channel = journal.warning("altar.job")
+                channel.log(f"job.gpus = {self.gpus}, but the cuda backend isn't available "
+                            f"(are cuda-python and altar.cuda installed?); running on the cpu")
             altar.backends.activate_cpu()
         return []
 
