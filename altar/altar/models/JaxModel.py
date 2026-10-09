@@ -92,16 +92,23 @@ class JaxModel:
             r = forward(theta) - data
             return -0.5 * jnp.sum(c * r * r)
 
-        def full(theta, data, factor, before, after):
-            # r @ factor whitens the residual; the mask applies before (cpu) or after (cuda)
-            r = (forward(theta) - data) * before
-            w = r @ factor.astype(r.dtype)
-            return -0.5 * jnp.sum(after * w * w)
+        def upper(theta, data, cd, mask):
+            # the gpu: Cd_inv = U^T U, U in the upper triangle of {cd}; the mask weighs U r
+            r = forward(theta) - data
+            w = jnp.triu(cd).astype(r.dtype) @ r
+            return -0.5 * jnp.sum(mask * w * w)
+
+        def lower(theta, data, cd, mask):
+            # the cpu: Cd_inv = L L^T, L in the lower triangle of {cd}; the mask weighs r first
+            r = (forward(theta) - data) * jnp.sqrt(mask)
+            w = r @ jnp.tril(cd).astype(r.dtype)
+            return -0.5 * jnp.sum(w * w)
 
         self._forward = jax.jit(jax.vmap(forward))
         self._gradients = {
             "diagonal": jax.jit(jax.vmap(jax.grad(diagonal), in_axes=(0, None, None))),
-            "full": jax.jit(jax.vmap(jax.grad(full), in_axes=(0, None, None, None, None))),
+            "upper": jax.jit(jax.vmap(jax.grad(upper), in_axes=(0, None, None, None))),
+            "lower": jax.jit(jax.vmap(jax.grad(lower), in_axes=(0, None, None, None))),
         }
         self._compiled = True
         return jax
@@ -114,27 +121,37 @@ class JaxModel:
         """
         import jax.numpy as jnp
         impl = self.dataobs._impl
-        n = self.observations
-        ones = numpy.ones(n)
         if altar.backends.active() == "cuda":
+            # in place: the raw data, and the covariance factor or the scaled weights
             data = jnp.asarray(impl._dataobs_raw)
             cd = impl.cd_inv
             if isinstance(cd, float):
                 return data, "diagonal", (jnp.asarray(impl._weight_scaled),)
-            # Cd_inv = U^T U, U in the upper triangle of {cd_inv}: the rows of r @ U^T are U r
-            mask = impl._weight
-            after = jnp.asarray(mask) if mask is not None else jnp.asarray(ones, dtype=data.dtype)
-            factor = jnp.triu(jnp.asarray(cd)).T
-            return data, "full", (factor, jnp.asarray(ones, dtype=data.dtype), after)
-        # the cpu: raw data, and Cd_inv = L L^T with L in the lower triangle of {cd_inv}
-        data = jnp.asarray(numpy.asarray(impl._observed, dtype=float))
-        mask = impl.mask
-        weight = ones if mask is None else numpy.asarray(mask, dtype=float)
+            return data, "upper", (jnp.asarray(cd), self._mask(impl._weight, data.dtype))
+        # the cpu: copies, made again only when {dataobs} replaces its covariance
         cd = impl.cd_inv
-        if isinstance(cd, float):
-            return data, "diagonal", (jnp.asarray(weight * cd * cd),)
-        factor = jnp.tril(jnp.asarray(numpy.asarray(cd.ndarray(), dtype=float)))
-        return data, "full", (factor, jnp.asarray(numpy.sqrt(weight)), jnp.asarray(ones))
+        if self._host is None or self._host[0] is not cd:
+            data = jnp.asarray(numpy.asarray(impl._observed, dtype=float))
+            mask = numpy.ones(self.observations) if impl.mask is None else numpy.asarray(impl.mask, dtype=float)
+            if isinstance(cd, float):
+                terms = "diagonal", (jnp.asarray(mask * cd * cd),)
+            else:
+                terms = "lower", (jnp.asarray(numpy.asarray(cd.ndarray(), dtype=float)), jnp.asarray(mask))
+            self._host = (cd, data, terms)
+        _, data, (kind, terms) = self._host
+        return data, kind, terms
+
+
+    def _mask(self, weight, dtype):
+        """
+        The weights of the observations on the gpu: the mask of {dataobs}, or ones, made once
+        """
+        import jax.numpy as jnp
+        if weight is not None:
+            return jnp.asarray(weight)
+        if self._ones is None:
+            self._ones = jnp.ones(self.observations, dtype=dtype)
+        return self._ones
 
 
     def _to_jax(self, array):
@@ -169,6 +186,8 @@ class JaxModel:
     _compiled = False # whether my jax functions are built
     _forward = None # the batched, compiled forward model
     _gradients = None # the batched, compiled data gradients, by covariance kind
+    _ones = None # unit weights, when {dataobs} has no mask
+    _host = None # the cpu copies of the data terms, with the covariance they came from
 
 
 # end of file
