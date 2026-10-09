@@ -103,6 +103,8 @@ def cpu():
                       command=["altar-linear", "--config=linear.pfg", "--job.gpus=0", "--job.tasks=2",
                                "--shell=mpi.shells.mpirun", "--job.chains=64", "--job.steps=10",
                                "--controller.archiver.output_dir=results"]))
+    tests.append(Test(name="analysis:linear:cpu", cwd=MODELS / "linear/tests",
+                      command=[sys.executable, "analysis.py"]))
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:cpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", f"--precision={precision}"]))
@@ -134,6 +136,8 @@ def gpu():
                       command=["altar-linear", "--config=linear.pfg", "--job.gpus=1", "--job.tasks=2",
                                "--shell=mpi.shells.mpirun", "--job.chains=64", "--job.steps=10",
                                "--controller.archiver.output_dir=results"]))
+    tests.append(Test(name="analysis:linear:gpu", cwd=MODELS / "linear/tests",
+                      command=[sys.executable, "analysis.py", "--gpu"]))
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:gpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", "--gpu", f"--precision={precision}"]))

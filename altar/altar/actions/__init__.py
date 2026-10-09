@@ -42,4 +42,14 @@ def forward():
     # and  return the panel
     return Forward
 
+# measure how well the data resolve the parameters
+@altar.foundry(implements=altar.action, tip="measure how well the data resolve the parameters")
+def resolution():
+    # get the command panel
+    from .Resolution import Resolution
+    # attach the docstring
+    __doc__ = Resolution.__doc__
+    # and  return the panel
+    return Resolution
+
 # end of file

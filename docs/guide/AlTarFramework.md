@@ -501,13 +501,33 @@ slipmodel.plexus forward --config=static.pfg
 ```
 
 It reads the posterior from an archived step, runs the forward model on the posterior mean and on
-each sample, and reports
+each sample, and measures how well they fit the data. With $\mathbf r = \mathbf d - \mathbf p$ the
+residual of a prediction $\mathbf p$ of the $N$ observations $\mathbf d$, and $C_\chi$ the
+covariance the likelihood uses, $C_d$ or $C_d + C_p$:
 
-- the RMS residual of the posterior mean model, and its $\chi^2/N$;
-- the share of the observations that lie within one and two standard deviations of the
-  predicted data, where the standard deviation combines the spread of the predictions over the
-  posterior samples with the uncertainty of the data (and that of the model, $C_p$, if the model
-  has one; see {doc}`StaticCp`).
+- $\chi^2/N = \mathbf r^T C_\chi^{-1} \mathbf r / N$, with the full covariance;
+- the variance reduction, $\mathrm{VR} = 1 - \sum r_i^2 / \sum d_i^2$, which ignores the
+  covariance: 1 is a perfect fit, 0 no better than predicting zeros, and the large observations
+  dominate it;
+- the RMS residual, in the units of the data;
+- the data log likelihood, $\log L = -\chi^2/2 - \frac12 \log |2\pi C_\chi|$, as the sampler
+  sees it.
+
+It reports them for three predictions: of the mean model, the predictions averaged over the
+samples (the posterior predictive mean), and the best-fitting sample. Over the samples, it reports
+the mean and the standard deviation of $\log L$, and the median of $\chi^2/N$. For a model that
+fits within the stated uncertainties, $\chi^2/N$ is about 1 for a posterior sample, and about
+$1 - P_{\mathrm{eff}}/N$ for the mean model, $P_{\mathrm{eff}}$ being the number of parameters the
+data constrain; much less than 1 means $C_\chi$ is larger than the misfit, much more that the data
+are not fit within it. For a posterior close to a gaussian, $2\,\mathrm{var}(\log L) \approx
+P_{\mathrm{eff}}$. Finally, it reports the share of the observations that lie within one and two
+standard deviations of the predicted data, where the standard deviation combines the spread of the
+predictions over the samples with $\sqrt{\operatorname{diag} C_\chi}$ (see {doc}`StaticCp`).
+
+With a `reference`, another posterior of the same model, it measures that one too, with the same
+data and $C_\chi$, and reports the difference of their mean $\log L$. Two runs that sample the
+same posterior have the same distribution of $\log L$; a run whose samples fit worse and spread
+less than another's has likely not converged.
 
 For an {doc}`ensemble of models <Kinematic>`, it reports each model separately. Its settings go in
 a `forward` section of the configuration:
@@ -522,11 +542,16 @@ a `forward` section of the configuration:
 `samples`
 : use at most this many of the samples; by default all of them.
 
+`reference`
+: another posterior to compare with, in the same forms as `theta`; none by default.
+
 `output`
 : the HDF5 file for the results; default `forward.h5`. It holds `theta/mean` and `theta/std`;
   the observed data, their uncertainties with and without $C_p$, and the residual of the mean
-  model, in `data/`; and, for each quantity the model predicts, e.g. `data`, its value for the mean
-  model and its mean and standard deviation over the samples.
+  model and its whitened form, $L^T \mathbf r$ with $C_\chi^{-1} = L L^T$, in `data/`; for each
+  quantity the model predicts, e.g. `data`, its value for the mean model and its mean and standard
+  deviation over the samples; and in `fit/`, the measures above, and $\chi^2$ and $\log L$ of each
+  sample. The measures of the reference go in `reference/fit/`.
 
 ```none
 slipmodel:
@@ -534,6 +559,69 @@ slipmodel:
         theta = results/static/step_final.h5
         output = results/static/forward.h5
 ```
+
+(resolution)=
+## How well the data resolve the parameters
+
+The `resolution` action of a plexus application measures how much the data constrain each
+parameter, from the Fisher information of the data,
+
+$$
+F = J^T C_\chi^{-1} J ,
+$$
+
+with $J$ the jacobian of the forward model at the posterior mean, by central finite differences,
+all the perturbed parameters run as one batch. With the prior approximated by a gaussian
+$N(\mathbf m, C_m)$, matched to the mean and the variance of each parameter set's prior, as in
+{ref}`cross-fade CATMIP <cross-fade>`, the linearized posterior covariance is
+$(F + C_m^{-1})^{-1}$, and the resolution matrix
+
+$$
+R = (F + C_m^{-1})^{-1} F
+$$
+
+tells how a change of each parameter would be recovered: its diagonal is near 1 for a parameter
+the data resolve, and near 0 for one only the prior constrains. Its trace, $P_{\mathrm{eff}}$, is
+the effective number of parameters the data constrain.
+
+```bash
+slipmodel.plexus resolution --config=static.pfg
+```
+
+For each parameter set, it reports the mean and the range of the diagonal of $R$, its share of
+$P_{\mathrm{eff}}$, and the median ratio of the sampled standard deviations to the linearized ones,
+$\sqrt{\operatorname{diag}(F + C_m^{-1})^{-1}}$. That ratio is near 1 for a linear model with a
+gaussian prior; it departs from 1 where the prior is not gaussian, e.g. bounds cut into the
+posterior, where the model is nonlinear over the posterior, or where the run has not converged:
+a sampler that has not mixed tends to give too narrow a posterior. For an ensemble of models, $F$
+is the sum of each model's, on its own parameters and data. The resolution is local, at the
+posterior mean, and ignores the bounds of the priors; see the {ref}`forward check <forward-check>`
+for the fit. Its settings go in a `resolution` section:
+
+`theta`
+: the posterior: an archived step, e.g. `results/step_final.h5`, the default, or a `.txt` or
+  `.h5` file with one sample per row; its standard deviations set the finite-difference steps.
+
+`dataset`
+: the dataset of the samples in a plain `.h5` file; by default the first one.
+
+`samples`
+: average $F$ over this many posterior samples instead, for nonlinear models; each takes two
+  forward runs per parameter.
+
+`step`
+: the finite-difference step of each parameter, relative to its posterior standard deviation;
+  default 0.001.
+
+`modes`
+: the number of the best-resolved patterns to save; default 10.
+
+`output`
+: the HDF5 file for the results; default `resolution.h5`. It holds $F$ (`fisher`), the prior
+  variances, the diagonal of $R$ (`resolution`), $P_{\mathrm{eff}}$ (`effective_parameters`),
+  the linearized standard deviations, the eigenvalues of the prior-whitened
+  $C_m^{1/2} F C_m^{1/2}$, each above 1 a direction the data constrain more than the prior, and
+  the leading `patterns`, those directions in parameter space, normalized.
 
 (job)=
 ## Job

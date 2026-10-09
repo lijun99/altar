@@ -29,7 +29,10 @@ Under the hood:
   CUDA-enabled pyre are found;
 - the linear and seismic models (static, static with C_p, kinematic, and joint static + kinematic
   as an ensemble of models) are ported. A new `forward` action runs the model on the posterior
-  samples and compares the predictions with the observed data;
+  samples and compares the predictions with the observed data: χ²/N with the full covariance,
+  the variance reduction and the data log likelihood, and, given a reference posterior, how the
+  two compare. A `resolution` action computes the Fisher information of the data, how well they
+  resolve each parameter, and the effective number of parameters they constrain;
 - the volcano models, Mogi, CDM and Reverso, are ported, with the fixes of their open pull
   requests; their GPU forward models are python kernels, written with NVIDIA's cuTile.
 
