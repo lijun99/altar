@@ -72,4 +72,14 @@ def recover():
     # and  return the panel
     return Recover
 
+# check the annealing schedule of a run, and its posterior against a reference
+@altar.foundry(implements=altar.action, tip="check the annealing schedule of a run")
+def diagnose():
+    # get the command panel
+    from .Diagnose import Diagnose
+    # attach the docstring
+    __doc__ = Diagnose.__doc__
+    # and  return the panel
+    return Diagnose
+
 # end of file

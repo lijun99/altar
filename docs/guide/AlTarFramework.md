@@ -703,6 +703,40 @@ model, by default `synthetic/truth.txt`; and `output`, the HDF5 file for the tru
 mean and standard deviation, $z$ and whether the truth lies within each interval, for each
 parameter, by default `recover.h5`.
 
+(diagnose)=
+## Checking how a run went
+
+The fit to the data doesn't tell whether the sampler drew from the posterior: a run stuck around
+a good model fits well, with too narrow a posterior. The `diagnose` action reads the steps a run
+archived, with `altar.bayesian.h5recorder`, and reports its annealing schedule, step by step:
+
+```bash
+slipmodel.plexus diagnose --config=static.pfg
+```
+
+- $\beta$;
+- the acceptance rate of the moves of the step, and the scaling of the proposal, or the step
+  size; a rate far from the sampler's target, by default 0.234 for Metropolis, 0.574 for MALA and
+  0.7 for HMC, means the proposal didn't adapt;
+- the coefficient of variation of the importance weights that led to the step, and their
+  effective sample size as a share of the chains, $\mathrm{ESS}/N = 1/(1 + \mathrm{cov}^2)$; COV
+  keeps the coefficient of variation at its target, 1, so $\mathrm{ESS}/N \approx 0.5$, but for the
+  last step, which reaches $\beta = 1$;
+- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it.
+
+Given a `reference` posterior, e.g. from a longer run, with more chains or steps, or from another
+sampler, it also reports, for each parameter set, how far the means are from the reference's,
+in standard deviations of the reference, and the ratio of the standard deviations. Two runs that
+sample the same posterior agree within the Monte Carlo error, e.g. a few hundredths of a standard
+deviation with thousands of chains; a ratio below 1 means the run is too narrow, the usual sign of
+a run that has not converged.
+
+Its settings, in a `diagnose` section: `theta`, the final step of the run, by default
+`results/step_final.h5`, whose directory holds the other archived steps; `reference`, an archived
+step, or a `.txt` or `.h5` file with one sample per row, and `dataset`, its dataset in a plain
+`.h5` file; and `output`, the HDF5 file for the schedule and the comparison, by default
+`diagnose.h5`.
+
 (job)=
 ## Job
 

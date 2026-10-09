@@ -33,7 +33,8 @@ Under the hood:
   the variance reduction and the data log likelihood, and, given a reference posterior, how the
   two compare. A `resolution` action computes the Fisher information of the data, how well they
   resolve each parameter, and the effective number of parameters they constrain; `synthetic`
-  and `recover` run recovery and checkerboard tests;
+  and `recover` run recovery and checkerboard tests; `diagnose` reports the annealing schedule of
+  a run and compares its posterior with a reference;
 - the volcano models, Mogi, CDM and Reverso, are ported, with the fixes of their open pull
   requests; their GPU forward models are python kernels, written with NVIDIA's cuTile.
 

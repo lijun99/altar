@@ -19,7 +19,8 @@ catmip samples the mean log likelihood of the exact ones. The {resolution} actio
 its tr R and its linearized standard deviations must be those of the exact posterior. The
 {synthetic} action makes data for a checkerboard true model, whose noise must have χ²/N near 1;
 the {recover} action, given exact samples of the posterior for those data, must find the z
-scores of the truth under that posterior.
+scores of the truth under that posterior. The {diagnose} action compares the catmip posterior
+with the exact samples: their means and standard deviations must agree.
 
     python analysis.py
     python analysis.py --gpu
@@ -47,6 +48,8 @@ VARIANCE = 0.15
 RESOLUTION = 1e-4
 NOISE = (0.6, 1.5)
 Z = 0.1
+SHIFT = 0.3
+SD = (0.8, 1.25)
 
 CONFIG = f"""
 linear:
@@ -84,6 +87,10 @@ linear:
         checkerboard = [all]
         grid = [6, 3]
         output = synthetic
+    diagnose:
+        theta = results/step_final.h5
+        reference = exact.txt
+        output = diagnose.h5
     recover:
         theta = synthetic.txt
         truth = synthetic/truth.txt
@@ -128,6 +135,7 @@ def main():
         for command in [["altar-linear", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "forward", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "resolution", "--config=linear.pfg", gpus],
+                        [sys.executable, "-c", PLEXUS, "diagnose", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "synthetic", "--config=linear.pfg", gpus],
                         "exact samples of the synthetic data",
                         [sys.executable, "-c", PLEXUS, "recover", "--config=linear.pfg", gpus]]:
@@ -151,6 +159,10 @@ def main():
         with h5py.File(scratch / "resolution.h5") as h5:
             effective = float(numpy.asarray(h5["effective_parameters"]))
             linearized = numpy.asarray(h5["linearized_std"])
+        with h5py.File(scratch / "diagnose.h5") as h5:
+            shift = numpy.asarray(h5["reference/shift"]).max()
+            ratio = numpy.asarray(h5["reference/sd_ratio"])
+            final_beta = numpy.asarray(h5["schedule/beta"])[-1]
         with h5py.File(scratch / "recover.h5") as h5:
             z = numpy.asarray(h5["z"])
         truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
@@ -174,6 +186,10 @@ def main():
              abs(effective / numpy.trace(FC) - 1) <= RESOLUTION),
             ("resolution, linearized sd", numpy.abs(linearized / numpy.sqrt(numpy.diag(cov)) - 1).max(),
              0.0, numpy.abs(linearized / numpy.sqrt(numpy.diag(cov)) - 1).max() <= RESOLUTION),
+            ("diagnose, final beta", final_beta, 1.0, final_beta == 1.0),
+            ("diagnose, max |dmean|/sd", shift, 0.0, shift <= SHIFT),
+            ("diagnose, sd ratio, worst", ratio[numpy.abs(ratio - 1).argmax()], 1.0,
+             SD[0] <= ratio.min() and ratio.max() <= SD[1]),
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
