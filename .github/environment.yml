@@ -1,0 +1,20 @@
+# the conda environment of the cpu tests: pyre, then AlTar, are built into it
+name: altar
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy
+  - h5py
+  - hdf5
+  - pybind11
+  - pyyaml
+  - cmake
+  - make
+  - git
+  - openmpi
+  - c-compiler
+  - cxx-compiler
+  - pip
+  - pip:
+      - jax

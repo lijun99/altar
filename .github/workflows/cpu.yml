@@ -1,0 +1,83 @@
+# the cpu tests of AlTar: build pyre (cached) and AlTar without cuda, then run tests/run.py
+name: cpu tests
+
+on:
+  push:
+    branches: [numpy]
+  pull_request:
+    branches: [numpy]
+  workflow_dispatch:
+
+jobs:
+  cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: bash -el {0}
+    env:
+      ENV_PREFIX: ${{ github.workspace }}/../altar-env
+      # two mpi tasks may share a core on the runner
+      OMPI_MCA_rmaps_base_oversubscribe: "true"
+      PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: pyre's altar2 commit
+        id: pyre
+        run: echo "sha=$(git ls-remote https://github.com/lijun99/pyre.git refs/heads/altar2 | cut -f1)" >> "$GITHUB_OUTPUT"
+
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest
+          auto-activate-base: true
+          activate-environment: ""
+
+      # the environment with pyre installed, made once per environment file and pyre commit
+      - name: restore the environment
+        id: cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.ENV_PREFIX }}
+          key: env-${{ hashFiles('.github/environment.yml') }}-pyre-${{ steps.pyre.outputs.sha }}
+
+      - name: make the environment and build pyre
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: |
+          conda env create -p "$ENV_PREFIX" -f .github/environment.yml
+          conda activate "$ENV_PREFIX"
+          # pyre and AlTar install their python packages into $CONDA_PREFIX/packages
+          ln -sf "$(python -c 'import site; print(site.getsitepackages()[0])')" "$CONDA_PREFIX/packages"
+          git clone --depth 1 -b altar2 https://github.com/lijun99/pyre.git ../pyre
+          cmake -S ../pyre -B ../pyre/build -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+              -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DPYRE_BUILD_TESTING=OFF
+          cmake --build ../pyre/build -j 4
+          cmake --install ../pyre/build
+
+      - name: save the environment
+        if: steps.cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.ENV_PREFIX }}
+          key: env-${{ hashFiles('.github/environment.yml') }}-pyre-${{ steps.pyre.outputs.sha }}
+
+      - name: build AlTar
+        run: |
+          conda activate "$ENV_PREFIX"
+          cmake -S . -B build -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+              -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DWITH_CUDA=OFF
+          cmake --build build -j 4
+          cmake --install build
+
+      - name: run the cpu tests
+        run: |
+          conda activate "$ENV_PREFIX"
+          python tests/run.py --logs test-logs
+
+      - name: keep the logs of failed tests
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-logs
+          path: test-logs
+          if-no-files-found: ignore
