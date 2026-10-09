@@ -16,7 +16,6 @@ evaluated, and the evidence is p(d) = p_conj(d) Π_m <w_m>
 
 # externals
 from __future__ import annotations
-import math
 import typing
 import numpy
 # the package
@@ -24,86 +23,8 @@ import altar
 
 if typing.TYPE_CHECKING:
     from altar.arrays import Array
+    from altar.distributions.native.MultivariateGaussian import MultivariateGaussian
     from altar.models.BayesianL2 import BayesianL2
-
-
-class Gaussian:
-    """
-    A multivariate normal distribution over the parameters of a model, whose log density is
-    evaluated for a batch of samples at once, on the cpu or the gpu
-    """
-
-    def log_density(self, theta: Array, out: Array, batch: int | None = None) -> Array:
-        """
-        Fill the first {batch} entries of {out} with log N(θ_s; mean, covariance), for each
-        row θ_s of {theta}
-        """
-        batch = theta.shape[0] if batch is None else batch
-        if self.cuda:
-            return self._log_density_cuda(theta=theta, out=out, batch=batch)
-        x = numpy.asarray(theta[:batch], dtype=numpy.float64)
-        z = (x - self.mean) @ self.whitener.T
-        out[:batch] = self.constant - 0.5 * (z * z).sum(axis=1)
-        return out
-
-
-    def sample(self, rows: int, rng: numpy.random.Generator) -> numpy.ndarray:
-        """
-        A (rows x parameters) array of random samples, drawn with {rng}
-        """
-        z = rng.standard_normal(size=(rows, self.mean.size))
-        return self.mean + z @ self.factor.T
-
-
-    # implementation details
-    def _log_density_cuda(self, theta: Array, out: Array, batch: int) -> Array:
-        """
-        z = L^-1 (θ - mean) by one gemm, then the l2 log likelihood of its rows
-        """
-        rows, parameters = theta.shape
-        # the scratch rows, filled with -L^-1 mean, the offset of the whitened samples
-        if self._shift is None or self._shift.shape[0] != rows:
-            offset = -(self.whitener @ self.mean)
-            self._shift = altar.cuda.matrix(
-                source=numpy.tile(offset, (rows, 1)), dtype=self.precision)
-            self._work = altar.cuda.matrix(shape=(rows, parameters), dtype=self.precision)
-        work = self._work
-        work.copy(self._shift)
-        # the row-major rows of θ are the column-major columns of θ^T: work^T += L^-1 θ^T
-        cublas = altar.cuda.cublas
-        gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
-        gemm(altar.cuda.cublas_handle(), cublas.Operation.N, cublas.Operation.N,
-             parameters, batch, parameters, 1.0,
-             self._whitener.grid, parameters, theta.grid, parameters,
-             1.0, work.grid, parameters)
-        altar.cuda.libcudaaltar.norms.cudaL2_normllk(work.grid, out.grid, batch, self.constant)
-        return out
-
-
-    # meta-methods
-    def __init__(self, mean: numpy.ndarray, covariance: numpy.ndarray,
-                 precision: str = "float64", **kwds) -> None:
-        super().__init__(**kwds)
-        self.mean = numpy.asarray(mean, dtype=float)
-        covariance = numpy.asarray(covariance, dtype=float)
-        # covariance = L L^T, and its inverse factor L^-1
-        self.factor = numpy.linalg.cholesky(covariance)
-        self.whitener = numpy.linalg.inv(self.factor)
-        # the normalization, -P/2 log 2π - log |L|
-        self.constant = (-0.5 * self.mean.size * math.log(2 * math.pi)
-                         - numpy.log(numpy.diag(self.factor)).sum())
-        self.precision = precision
-        self.cuda = altar.backends.active() == "cuda"
-        if self.cuda:
-            # stored row-major as (L^-1)^T, which a column-major gemm reads as L^-1
-            self._whitener = altar.cuda.matrix(source=self.whitener.T.copy(), dtype=precision)
-        return
-
-
-    # private data
-    _shift: Array | None = None
-    _work: Array | None = None
-    _whitener: Array | None = None
 
 
 class CrossFade:
@@ -211,10 +132,11 @@ class CrossFade:
 
 
     # meta-methods
-    def __init__(self, prior: Gaussian, posterior: Gaussian, log_evidence: float,
+    def __init__(self, prior: MultivariateGaussian, posterior: MultivariateGaussian,
+                 log_evidence: float,
                  rng: numpy.random.Generator, precision: str = "float64", **kwds) -> None:
         super().__init__(**kwds)
-        # the conjugate prior N(m, C_m) and posterior N(m*, C*), as {Gaussian} instances
+        # the conjugate prior N(m, C_m) and posterior N(m*, C*), on my backend
         self.prior = prior
         self.posterior = posterior
         # log p_conj(d)

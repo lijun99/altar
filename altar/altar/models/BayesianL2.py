@@ -10,6 +10,7 @@
 # externals
 from __future__ import annotations
 import typing
+from importlib import import_module
 import numpy
 # the package
 import altar
@@ -496,15 +497,20 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         evidence of the conjugate model within the support, log p_conj(d) + log q, with q the
         fraction of the conjugate posterior within the support
         """
-        from .CrossFade import CrossFade, Gaussian
+        from .CrossFade import CrossFade
+        # the multivariate normal distribution of my backend
+        backend = "cuda" if altar.backends.active() == "cuda" else "native"
+        MultivariateGaussian = import_module(
+            f"altar.distributions.{backend}.MultivariateGaussian").MultivariateGaussian
         if self.embedded:
             raise NotImplementedError("cross-fade sampling of a model in an ensemble")
         mean, variance = self.conjugate_prior()
         mstar, cstar, log_evidence = self.conjugate_posterior(mean=mean, variance=variance)
         precision = self.precision
         self._crossfade = CrossFade(
-            prior=Gaussian(mean=mean, covariance=numpy.diag(variance), precision=precision),
-            posterior=Gaussian(mean=mstar, covariance=cstar, precision=precision),
+            prior=MultivariateGaussian(
+                mean=mean, covariance=numpy.diag(variance), precision=precision),
+            posterior=MultivariateGaussian(mean=mstar, covariance=cstar, precision=precision),
             log_evidence=log_evidence, rng=self.rng.rng, precision=precision)
         coverage = self._crossfade.draw(model=self, rows=self.samples)
         return log_evidence + float(numpy.log(coverage))
