@@ -61,8 +61,8 @@ class LangevinMethod:
     def estimate_rate(self, controller, scale=1.0):
         """
         Estimate the initial sampling rate from the spread of the samples and the size of the
-        posterior gradient, both in sampling space: {scale} * min(4 sd/|g|, sd^2), with sd
-        the largest per-parameter standard deviation and |g| the largest gradient component
+        posterior gradient, both in sampling space: {scale} * min(4 sd/abs(g), sd^2), with sd
+        the largest per-parameter standard deviation and abs(g) the largest gradient component
         """
         # the sample statistics, pooled over every chain i (and my peers) hold
         n, sum_x, sum_x2, max_gradient = self.rate_statistics(controller=controller)

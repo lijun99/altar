@@ -58,9 +58,13 @@ conda create -n altar2 -c conda-forge python=3.13 numpy h5py hdf5 pybind11 pyyam
 # optional, for MPI runs
 conda install -n altar2 -c conda-forge openmpi
 conda activate altar2
+# for GPU support: pyre finds the GPUs with cuda-python
+pip install cuda-python
 # optional, for the GPU kernels of the volcano models
 pip install cuda-tile
 ```
+
+Without `cuda-python`, AlTar runs on the cpu, even with `job.gpus = 1`.
 
 The C++ and CUDA compilers come from your system: a GCC 13 or newer on the `PATH`, and, for GPU
 support, the CUDA toolkit's `nvcc` (e.g. `/usr/local/cuda/bin`). Check them with
@@ -69,6 +73,9 @@ support, the CUDA toolkit's `nvcc` (e.g. `/usr/local/cuda/bin`). Check them with
 g++ --version
 nvcc --version   # for GPU support
 ```
+
+If the system's GCC is older, e.g. on an older Linux distribution, install a newer one into the
+environment, `conda install -n altar2 -c conda-forge gxx=14`, which then comes first on the `PATH`.
 
 pyre and AlTar install their python packages under `$CONDA_PREFIX/packages`; make that a link to
 the environment's `site-packages`, so that python finds them:
