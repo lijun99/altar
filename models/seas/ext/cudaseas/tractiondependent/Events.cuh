@@ -46,8 +46,9 @@ struct __ALIGNED__ SEASEvents {
         system_size = patches * units;
         nevents = num_slips + 2;
         cudaSafeCall(cudaMalloc(&spun_up, systems * sizeof(bool)));
-        // the spin-up uses the final events too, not whatever the allocation held
-        cudaSafeCall(cudaMemset(spun_up, true, systems * sizeof(bool)));
+        // the spin-up cycles use delta_tau_ix, which recovers the plate rate; the final period,
+        // once spun up, delta_tau_ix_final, which leaves the system out of balance on purpose
+        cudaSafeCall(cudaMemset(spun_up, false, systems * sizeof(bool)));
     }
 
     void deallocate()
