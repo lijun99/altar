@@ -34,10 +34,9 @@ class LinearJax(JaxModel, Linear, family="altar.models.linear.jax"):
         """
         super().initialize(application=application)
         import jax.numpy as jnp
-        # the raw Green functions, in the precision of the chains (float64 on the cpu)
+        # the raw Green functions, in the precision of the chains
         self._jax()
-        dtype = self.precision if altar.backends.active() == "cuda" else "float64"
-        self._G = jnp.asarray(self._impl.green(), dtype=dtype)
+        self._G = jnp.asarray(self._impl.green(), dtype=self.precision)
         return self
 
 

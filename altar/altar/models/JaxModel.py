@@ -82,7 +82,7 @@ class JaxModel:
         import jax
         import jax.numpy as jnp
         # float64 chains need jax's 64-bit mode, before any array is made
-        if self.precision == "float64" or altar.backends.active() != "cuda":
+        if self.precision == "float64":
             jax.config.update("jax_enable_x64", True)
         forward = self.jax_forward
 
@@ -131,12 +131,12 @@ class JaxModel:
         # the cpu: copies, made again only when {dataobs} replaces its covariance
         cd = impl.cd_inv
         if self._host is None or self._host[0] is not cd:
-            data = jnp.asarray(numpy.asarray(impl._observed, dtype=float))
-            mask = numpy.ones(self.observations) if impl.mask is None else numpy.asarray(impl.mask, dtype=float)
+            data = jnp.asarray(impl._raw)
+            mask = numpy.ones(self.observations) if impl.mask is None else impl.mask.astype(impl._raw.dtype)
             if isinstance(cd, float):
-                terms = "diagonal", (jnp.asarray(mask * cd * cd),)
+                terms = "diagonal", (jnp.asarray(mask * cd * cd, dtype=impl._raw.dtype),)
             else:
-                terms = "lower", (jnp.asarray(numpy.asarray(cd.ndarray(), dtype=float)), jnp.asarray(mask))
+                terms = "lower", (jnp.asarray(cd), jnp.asarray(mask, dtype=impl._raw.dtype))
             self._host = (cd, data, terms)
         _, data, (kind, terms) = self._host
         return data, kind, terms
@@ -159,9 +159,7 @@ class JaxModel:
         A jax view of {array}: in place for managed gpu memory, a copy of the host values otherwise
         """
         import jax.numpy as jnp
-        if altar.backends.active() == "cuda":
-            return jnp.asarray(array)
-        return jnp.asarray(numpy.asarray(array.ndarray() if hasattr(array, "ndarray") else array))
+        return jnp.asarray(array)
 
 
     def _store(self, value, target):
@@ -177,8 +175,7 @@ class JaxModel:
             if status != cudart.cudaError_t.cudaSuccess:
                 raise RuntimeError(f"jax model: copying the results back failed: {status}")
             return target
-        out = target.ndarray() if hasattr(target, "ndarray") else numpy.asarray(target)
-        out[...] = numpy.asarray(value)
+        target[...] = numpy.asarray(value)
         return target
 
 
