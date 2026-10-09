@@ -65,6 +65,31 @@ prior:
     support = (0, 1)
 ```
 
+(softuniform)=
+### Soft uniform
+
+`softuniform`: a uniform distribution with logistic edges
+([Minson, 2024](https://doi.org/10.1093/gji/ggae353)), the normalized difference of two logistic
+functions of sharpness $k$,
+
+$$
+f(x; a, b, k) = \frac{1}{b-a} \left[\frac{1}{1 + e^{-k(x-a)}} - \frac{1}{1 + e^{-k(x-b)}}\right],
+$$
+
+which approaches the uniform distribution on $[a, b]$ as $k$ grows, but is smooth and positive
+everywhere, and so changes shape when raised to a power, as {ref}`cross-fade CATMIP <cross-fade>`
+does to the prior. Its initial samples are uniform on $[a, b]$.
+
+`support`
+: the interval $(a, b)$; default `(0, 1)`.
+
+`sharpness`
+: $k$, in inverse units of the parameter; by default $100 / (b - a)$, edges about a hundredth of
+  the interval wide.
+
+Outside $[a, b]$, its log density falls by $k$ per unit, so strongly informative data can pull a
+parameter across an edge: a bound the data disagree with needs a larger $k$, or a `uniform` prior.
+
 ### Gaussian
 
 `gaussian`: the normal distribution,

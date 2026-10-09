@@ -29,6 +29,12 @@ def uniform():
     return uniform
 
 
+@altar.foundry(implements=distribution, tip="a uniform distribution with logistic edges, smooth everywhere")
+def softuniform():
+    from .SoftUniform import SoftUniform as softuniform
+    return softuniform
+
+
 @altar.foundry(implements=distribution, tip="samples read from a file, for initializing a parameter set")
 def preset():
     from .Preset import Preset as preset

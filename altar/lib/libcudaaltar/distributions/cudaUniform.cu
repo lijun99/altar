@@ -101,6 +101,61 @@ namespace cudaUniform_kernels {
         }
     }
 
+    // softplus(z) = log(1 + exp(z)), without overflow
+    template <typename real_type>
+    __device__ real_type
+    _softplus(const real_type z)
+    {
+        return fmax(z, real_type(0)) + log1p(exp(-fabs(z)));
+    }
+
+    // the logistic function
+    template <typename real_type>
+    __device__ real_type
+    _sigmoid(const real_type z)
+    {
+        return real_type(1) / (real_type(1) + exp(-z));
+    }
+
+    // the logistic-edged uniform (Minson, 2024, eq. 16), summed over [idx_begin, idx_end):
+    // log p(x) = -log(high - low) + log(1 - exp(-k (high - low))) - softplus(-k (x - low)) - softplus(k (x - high))
+    template <typename real_type>
+    __global__ void
+    _soft_logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+        const size_t idx_begin, const size_t idx_end,
+        const real_type low, const real_type high, const real_type sharpness)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        auto constant = -log(high - low) + log1p(-exp(-sharpness * (high - low)));
+        real_type sum = 0;
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto x = theta[{ sample, static_cast<int>(i) }];
+            sum += constant - _softplus(-sharpness * (x - low)) - _softplus(sharpness * (x - high));
+        }
+        probability[{ sample }] += sum;
+    }
+
+    // its gradient: gradient[:, idx_begin:idx_end] = k (sigmoid(-k (x - low)) - sigmoid(k (x - high)))
+    template <typename real_type>
+    __global__ void
+    _soft_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+        const size_t idx_begin, const size_t idx_end,
+        const real_type low, const real_type high, const real_type sharpness)
+    {
+        int sample = blockIdx.x*blockDim.x + threadIdx.x;
+        auto samples = theta.packing().shape()[0];
+        if (sample >= samples) return;
+
+        for (auto i = idx_begin; i < idx_end; ++i) {
+            auto x = theta[{ sample, static_cast<int>(i) }];
+            gradient[{ sample, static_cast<int>(i) }] =
+                sharpness * (_sigmoid(-sharpness * (x - low)) - _sigmoid(sharpness * (x - high)));
+        }
+    }
+
 } // of namespace cudaUniform_kernels
 
 // launch {cudaUniform_kernels::_sample}
@@ -207,5 +262,54 @@ template void altar::cuda::distributions::cudaUniform::logpdf_unique<float>(
 template void altar::cuda::distributions::cudaUniform::logpdf_unique<double>(
     matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t,
     vector_view_t<double, true>, vector_view_t<double, true>, cudaStream_t);
+
+// launch {cudaUniform_kernels::_soft_logpdf}
+template <typename real_type>
+void altar::cuda::distributions::cudaUniform::
+soft_logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type low, const real_type high, const real_type sharpness,
+    cudaStream_t stream)
+{
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
+    cudaUniform_kernels::_soft_logpdf<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, probability, idx_begin, idx_end, low, high, sharpness);
+    cudaCheckError("cudaUniform::soft_logpdf error");
+}
+
+template void altar::cuda::distributions::cudaUniform::soft_logpdf<float>(
+    matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t,
+    const float, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaUniform::soft_logpdf<double>(
+    matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t,
+    const double, const double, const double, cudaStream_t);
+
+
+// launch {cudaUniform_kernels::_soft_gradient}
+template <typename real_type>
+void altar::cuda::distributions::cudaUniform::
+soft_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+    const size_t idx_begin, const size_t idx_end,
+    const real_type low, const real_type high, const real_type sharpness,
+    cudaStream_t stream)
+{
+    auto samples = theta.packing().shape()[0];
+    auto blockSize = NTHREADS;
+    auto gridSize = IDIVUP(samples, blockSize);
+
+    cudaUniform_kernels::_soft_gradient<real_type><<<gridSize, blockSize, 0, stream>>>(
+        theta, gradient, idx_begin, idx_end, low, high, sharpness);
+    cudaCheckError("cudaUniform::soft_gradient error");
+}
+
+template void altar::cuda::distributions::cudaUniform::soft_gradient<float>(
+    matrix_view_t<float>, matrix_view_t<float, false>, const size_t, const size_t,
+    const float, const float, const float, cudaStream_t);
+template void altar::cuda::distributions::cudaUniform::soft_gradient<double>(
+    matrix_view_t<double>, matrix_view_t<double, false>, const size_t, const size_t,
+    const double, const double, const double, cudaStream_t);
 
 // end of file

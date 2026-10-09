@@ -53,6 +53,21 @@ namespace altar {
                     vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
                     cudaStream_t stream=0);
 
+                // the logistic-edged uniform of sharpness {sharpness}: add each sample's log
+                // pdf, summed over [idx_begin, idx_end), into {probability}
+                template <typename real_type>
+                void soft_logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type low, const real_type high, const real_type sharpness,
+                    cudaStream_t stream=0);
+
+                // and fill {gradient}[:, idx_begin:idx_end] with the gradient of its log pdf
+                template <typename real_type>
+                void soft_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type low, const real_type high, const real_type sharpness,
+                    cudaStream_t stream=0);
+
             } // of namespace cudaUniform
         } // of namespace distributions
     } // of namespace cuda
