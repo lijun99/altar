@@ -201,6 +201,8 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         checkpoint = Checkpoint(path=self.restart, model=self.model)
         # let my worker rebuild its state from it
         worker.restart(annealer=self, checkpoint=checkpoint)
+        # the statistics of the population, which a fresh start's bottom computes for the summaries
+        worker.step.statistics()
         # carry on with the proposal scaling it reached
         if checkpoint.scaling is not None:
             self.sampler.restore(scaling=checkpoint.scaling)
