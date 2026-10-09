@@ -52,4 +52,24 @@ def resolution():
     # and  return the panel
     return Resolution
 
+# make synthetic data from a true model
+@altar.foundry(implements=altar.action, tip="make synthetic data from a true model")
+def synthetic():
+    # get the command panel
+    from .Synthetic import Synthetic
+    # attach the docstring
+    __doc__ = Synthetic.__doc__
+    # and  return the panel
+    return Synthetic
+
+# compare a posterior with a true model
+@altar.foundry(implements=altar.action, tip="compare a posterior with a true model")
+def recover():
+    # get the command panel
+    from .Recover import Recover
+    # attach the docstring
+    __doc__ = Recover.__doc__
+    # and  return the panel
+    return Recover
+
 # end of file

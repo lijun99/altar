@@ -16,7 +16,10 @@ tr((F C)²) / 2 + gᵀ C g, with g = Gᵀ C_d⁻¹ (d - G μ); the resolution ma
 A catmip run samples the posterior. The {forward} action measures its fit, with exact samples
 drawn from N(μ, C) as its reference: the exact samples must match the moments above, and the
 catmip samples the mean log likelihood of the exact ones. The {resolution} action computes F:
-its tr R and its linearized standard deviations must be those of the exact posterior.
+its tr R and its linearized standard deviations must be those of the exact posterior. The
+{synthetic} action makes data for a checkerboard true model, whose noise must have χ²/N near 1;
+the {recover} action, given exact samples of the posterior for those data, must find the z
+scores of the truth under that posterior.
 
     python analysis.py
     python analysis.py --gpu
@@ -42,6 +45,8 @@ SAMPLES = 4096
 MEAN = 4
 VARIANCE = 0.15
 RESOLUTION = 1e-4
+NOISE = (0.6, 1.5)
+Z = 0.1
 
 CONFIG = f"""
 linear:
@@ -74,17 +79,26 @@ linear:
     resolution:
         theta = results/step_final.h5
         output = resolution.h5
+    synthetic:
+        theta = results/step_final.h5
+        checkerboard = [all]
+        grid = [6, 3]
+        output = synthetic
+    recover:
+        theta = synthetic.txt
+        truth = synthetic/truth.txt
+        output = recover.h5
 """
 
 # an action of the linear app, run by the altar plexus under the app's name
 PLEXUS = "import altar, altar.models.linear; raise SystemExit(altar.shells.altar(name='linear').run())"
 
 
-def exact():
+def exact(folder=EXAMPLES / CASE):
     """
-    The mean and the covariance of the posterior, F, g and the normalization of the likelihood
+    The mean and the covariance of the posterior for the data in {folder}, F, g and the
+    normalization of the likelihood
     """
-    folder = EXAMPLES / CASE
     G = numpy.loadtxt(folder / "green.txt")
     d = numpy.loadtxt(folder / "data.txt")
     Cd = numpy.loadtxt(folder / "cd.txt")
@@ -113,7 +127,15 @@ def main():
                       numpy.random.default_rng(1).multivariate_normal(mean, cov, size=SAMPLES))
         for command in [["altar-linear", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "forward", "--config=linear.pfg", gpus],
-                        [sys.executable, "-c", PLEXUS, "resolution", "--config=linear.pfg", gpus]]:
+                        [sys.executable, "-c", PLEXUS, "resolution", "--config=linear.pfg", gpus],
+                        [sys.executable, "-c", PLEXUS, "synthetic", "--config=linear.pfg", gpus],
+                        "exact samples of the synthetic data",
+                        [sys.executable, "-c", PLEXUS, "recover", "--config=linear.pfg", gpus]]:
+            if isinstance(command, str):
+                synthetic, synthetic_cov = exact(folder=scratch / "synthetic")[:2]
+                numpy.savetxt(scratch / "synthetic.txt", numpy.random.default_rng(2)
+                              .multivariate_normal(synthetic, synthetic_cov, size=SAMPLES))
+                continue
             status = subprocess.run(command, cwd=scratch, capture_output=True, text=True,
                                     errors="replace")
             if status.returncode != 0:
@@ -129,6 +151,14 @@ def main():
         with h5py.File(scratch / "resolution.h5") as h5:
             effective = float(numpy.asarray(h5["effective_parameters"]))
             linearized = numpy.asarray(h5["linearized_std"])
+        with h5py.File(scratch / "recover.h5") as h5:
+            z = numpy.asarray(h5["z"])
+        truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
+        expected_z = (truth - synthetic) / numpy.sqrt(numpy.diag(synthetic_cov))
+        G = numpy.loadtxt(EXAMPLES / CASE / "green.txt")
+        Cd = numpy.loadtxt(EXAMPLES / CASE / "cd.txt")
+        noise = numpy.loadtxt(scratch / "synthetic" / "data.txt") - G @ truth
+        noise = noise @ numpy.linalg.solve(Cd, noise) / noise.size
         FC = F @ cov
         expected = at_mean - 0.5 * numpy.trace(FC)
         variance = 0.5 * numpy.trace(FC @ FC) + g @ cov @ g
@@ -144,10 +174,13 @@ def main():
              abs(effective / numpy.trace(FC) - 1) <= RESOLUTION),
             ("resolution, linearized sd", numpy.abs(linearized / numpy.sqrt(numpy.diag(cov)) - 1).max(),
              0.0, numpy.abs(linearized / numpy.sqrt(numpy.diag(cov)) - 1).max() <= RESOLUTION),
+            ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
+            ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
+             numpy.abs(z - expected_z).max() <= Z),
         ]
         failures = 0
         for name, value, target, good in checks:
-            print(f"{name:28s} {'ok' if good else 'FAIL':4s} {value:12.4f}  (expected {target:.4f})")
+            print(f"{name:32s} {'ok' if good else 'FAIL':4s} {value:12.4f}  (expected {target:.4f})")
             failures += not good
         return 1 if failures else 0
     finally:

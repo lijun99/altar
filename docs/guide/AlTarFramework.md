@@ -623,6 +623,86 @@ for the fit. Its settings go in a `resolution` section:
   $C_m^{1/2} F C_m^{1/2}$, each above 1 a direction the data constrain more than the prior, and
   the leading `patterns`, those directions in parameter space, normalized.
 
+(recovery-tests)=
+## Recovery and checkerboard tests
+
+A recovery test samples synthetic data made from a known, true model, and checks whether the
+posterior finds it: whether the truth lies within its uncertainties as often as it should, and
+which features come back. Unlike the {ref}`resolution <resolution>`, it includes the noise, the
+priors, their bounds, the nonlinearity of the model and the sampler itself. A checkerboard test
+makes the true model, over some parameter sets laid out on a grid, e.g. the slips of a fault,
+alternate between two values in squares of a given size; where the squares come back, the data
+resolve features of that size. Repeat with a few sizes. A recovered checkerboard doesn't prove
+the resolution at every scale: small squares may come back where larger features don't, and the
+other way around (Lévêque, Rivera and Wittlinger, *On the use of the checker-board test to assess
+the resolution of tomographic inversions*, Geophysical Journal International, 115, 313, 1993).
+
+The `synthetic` action makes the data:
+
+```bash
+slipmodel.plexus synthetic --config=static.pfg
+```
+
+It takes the true model from the mean of a posterior, replaces the chosen parameter sets by a
+checkerboard, runs the forward model on it, adds noise drawn from $C_d$, and writes a copy of the
+input directory of the model, with these data in place of the observations, and the true model
+in `truth.txt`. A run on the copy, e.g. with `--slipmodel.model.case=synthetic`, samples the
+synthetic data with everything else unchanged; for an ensemble of models, each model's data are
+replaced. The `recover` action then compares the posterior with the truth:
+
+```bash
+slipmodel --config=static.pfg --slipmodel.model.case=synthetic \
+          --controller.archiver.output_dir=results/synthetic
+slipmodel.plexus recover --config=static.pfg --slipmodel.recover.theta=results/synthetic/step_final.h5
+```
+
+For each parameter set, it reports the root mean square and the largest of
+$z = (\theta_{\mathrm{true}} - \bar\theta)/\sigma_\theta$, the shares of the parameters whose true
+value lies within the central 68% and 95% intervals of the samples, and the correlation of the
+posterior mean with the truth. A calibrated posterior has an RMS $z$ near 1 and holds the truth
+about 68% and 95% of the time; a posterior that is too narrow, e.g. from a run that has not
+converged, has larger $z$ and lower shares.
+
+The settings of `synthetic`:
+
+`theta`
+: the true model is the mean of these samples: an archived step, by default
+  `results/step_final.h5`, or a `.txt` or `.h5` file with one sample per row.
+
+`dataset`
+: the dataset of the samples in a plain `.h5` file; by default the first one.
+
+`checkerboard`
+: the parameter sets to replace by a checkerboard; none by default.
+
+`grid`
+: the rows and the columns of their parameters, e.g. `[along strike, down dip]` for the slips
+  of a fault, the columns running fastest; by default a single column.
+
+`block`
+: the size of the squares, in parameters; default 1.
+
+`values`
+: the two values of the checkerboard; default `[0, 1]`.
+
+`noise`
+: whether to add noise; default `True`.
+
+`cp`
+: draw the noise from $C_\chi = C_d + C_p$ at the true model instead, for a model with a $C_p$;
+  default `False`.
+
+`seed`
+: the seed of the noise; default 0.
+
+`output`
+: the directory for the copy of the inputs; default `synthetic`.
+
+The settings of `recover`: `theta` and `dataset`, the posterior, as above; `truth`, the true
+model, by default `synthetic/truth.txt`; and `output`, the HDF5 file for the truth, the posterior
+mean and standard deviation, $z$ and whether the truth lies within each interval, for each
+parameter, by default `recover.h5`.
+
 (job)=
 ## Job
 
