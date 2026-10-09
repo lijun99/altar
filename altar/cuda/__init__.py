@@ -7,16 +7,12 @@
 #
 
 
-# device management, and the thin cublas/cusolver/curand bindings, all from pyre; imported
-# here only, first, so that my modules reach them through me, as {pyrecuda}
-from pyre import cuda as pyrecuda
-
-manager = pyrecuda.manager
-cusolver = pyrecuda.cusolver
-# wait for the current device to finish its work
-synchronize = pyrecuda.synchronize
-# allocate a grid over a fresh block of managed memory
-managed = pyrecuda.managed
+# from pyre, imported here only, first, so that my modules reach them through me: the device
+# manager, the cusolver bindings, {synchronize} to wait for the current device to finish its
+# work, and {managed} to allocate a grid over a fresh block of managed memory
+from pyre.cuda import manager, cusolver, synchronize, managed
+# and the cublas/curand bindings, which my own {cublas}/{curand} extend
+from pyre.cuda import cublas as pyrecublas, curand as pyrecurand
 
 # my compiled extension
 from . import ext

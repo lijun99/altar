@@ -13,11 +13,7 @@ one level-1 convenience wrapper the bayesian state layer's {compute_posterior} n
 {pyre.cuda.cublas} itself, so pyre's own namespace stays exactly what pyre published.
 """
 
-from . import pyrecuda
-
-
-# the real thing, everything below is layered on top of
-_cublas = pyrecuda.cublas
+from . import pyrecublas as _cublas
 
 
 def axpy(alpha, x, y, batch=None, handle=None):
