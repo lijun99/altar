@@ -22,7 +22,7 @@ there was for the old capsule-based buffers, {copy_from_host}/{copy_to_host} inc
 from __future__ import annotations
 import typing
 import numpy
-import pyre.cuda
+from . import managed
 
 
 # the declaration
@@ -49,7 +49,7 @@ class Array:
         """
         if isinstance(shape, int):
             shape = (shape,)
-        return cls(pyre.cuda.managed(shape=tuple(shape), cell=_cell(dtype)), dtype=dtype)
+        return cls(managed(shape=tuple(shape), cell=_cell(dtype)), dtype=dtype)
 
 
     @classmethod
@@ -214,9 +214,9 @@ class Array:
         potrf = cusolver.dpotrf if double else cusolver.spotrf
         potrf_buffer_size = cusolver.dpotrf_buffer_size if double else cusolver.spotrf_buffer_size
 
-        dev_info = pyre.cuda.managed(shape=(1,), cell="int32")
+        dev_info = managed(shape=(1,), cell="int32")
         lwork = potrf_buffer_size(handle, cublas.FillMode.LOWER, n, self._grid, n)
-        workspace = pyre.cuda.managed(shape=(max(lwork, 1),), cell=self.dtype)
+        workspace = managed(shape=(max(lwork, 1),), cell=self.dtype)
         potrf(handle, cublas.FillMode.LOWER, n, self._grid, n, workspace, lwork, dev_info)
         return self
 

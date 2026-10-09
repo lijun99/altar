@@ -7,6 +7,17 @@
 #
 
 
+# device management, and the thin cublas/cusolver/curand bindings, all from pyre; imported
+# here only, first, so that my modules reach them through me, as {pyrecuda}
+from pyre import cuda as pyrecuda
+
+manager = pyrecuda.manager
+cusolver = pyrecuda.cusolver
+# wait for the current device to finish its work
+synchronize = pyrecuda.synchronize
+# allocate a grid over a fresh block of managed memory
+managed = pyrecuda.managed
+
 # export my parts
 from . import (
     # norms
@@ -17,19 +28,6 @@ from . import (
     data,
     ext,
     )
-
-# device management, and the thin cublas/cusolver/curand bindings, all from pyre now; the old
-# top-level "cuda" package (a hand rolled device manager sharing its name with nvidia's own
-# cuda-python) is gone -- see pyre's own "cuda: replace the hand-rolled device management
-# extension with cuda-python" and the cublas/cusolver/curand work that followed it
-import pyre.cuda
-
-manager = pyre.cuda.manager
-cusolver = pyre.cuda.cusolver
-# wait for the current device to finish its work
-synchronize = pyre.cuda.synchronize
-# allocate a grid over a fresh block of managed memory
-managed = pyre.cuda.managed
 
 # altar's own {cublas}/{curand}: everything pyre's own has, plus a couple of convenience
 # wrappers the bayesian sampler layer needs (see cublas.py/curand.py)
