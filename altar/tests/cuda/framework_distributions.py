@@ -55,7 +55,8 @@ def test():
     theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     gaussian.initialize_sample(theta)
-    arr = numpy.asarray(theta)
+    # a host copy: a view read after the next kernel launch would race it
+    arr = numpy.asarray(theta).copy()
     assert numpy.all(arr[:, 0] == 0.0) and numpy.all(arr[:, 3] == 0.0)
     sub = arr[:, 1:3]
     assert abs(sub.mean() - 2.0) < 0.05 and abs(sub.std() - 1.5) < 0.05
@@ -87,7 +88,7 @@ def test():
     theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
     numpy.asarray(theta)[:, :] = 0.0
     uniform.initialize_sample(theta)
-    arr = numpy.asarray(theta)
+    arr = numpy.asarray(theta).copy()
     assert numpy.all(arr[:, 2] == 0.0) and numpy.all(arr[:, 3] == 0.0)
     sub = arr[:, 0:2]
     assert sub.min() >= -2.0 and sub.max() < 5.0
@@ -99,7 +100,7 @@ def test():
 
     mask = altar.cuda.managed(shape=(samples,), cell="int32")
     numpy.asarray(mask)[:] = 0
-    arr[0, 0] = 100.0  # push one sample out of range
+    numpy.asarray(theta)[0, 0] = 100.0  # push one sample out of range, through a fresh view
     uniform.verify(theta, mask)
     assert numpy.asarray(mask)[0] == 1
 
