@@ -18,16 +18,8 @@ synchronize = pyrecuda.synchronize
 # allocate a grid over a fresh block of managed memory
 managed = pyrecuda.managed
 
-# export my parts
-from . import (
-    # norms
-    norms,
-    # probability distribution functions
-    distributions,
-    models,
-    data,
-    ext,
-    )
+# my compiled extension
+from . import ext
 
 # altar's own {cublas}/{curand}: everything pyre's own has, plus a couple of convenience
 # wrappers the bayesian sampler layer needs (see cublas.py/curand.py)

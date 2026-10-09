@@ -50,7 +50,7 @@ def activate_cpu() -> None:
 
 def activate_cuda() -> None:
     """
-    Activate the CUDA backend by importing the CUDA overlay packages.
+    Activate the CUDA backend by importing the cuda package.
     """
     global _active
     # avoid work if already active
@@ -61,11 +61,6 @@ def activate_cuda() -> None:
         return
     # import the core cuda package
     import_module("altar.cuda")
-    # register CUDA implementations that override the cpu defaults
-    import_module("altar.cuda.distributions")
-    import_module("altar.cuda.norms")
-    import_module("altar.cuda.data")
-    import_module("altar.cuda.models")
     # mark active
     _active = "cuda"
 

@@ -103,9 +103,6 @@ autoapi_follow_symlinks = True
 autoapi_root = 'api'
 autoapi_add_toctree_entry = False # {index} lists api/index itself
 autoapi_options = ['members', 'undoc-members', 'show-inheritance', 'show-module-summary']
-# the pre-2.0 cuda layer, superseded by the native/cuda implementations in each package
-autoapi_ignore = [f'*/_autoapi_src/altar/cuda/{legacy}/*'
-                  for legacy in ('bayesian', 'data', 'distributions', 'models', 'norms')]
 # compiled extension modules have no python source to resolve imports into
 suppress_warnings = ['autoapi.python_import_resolution']
 
