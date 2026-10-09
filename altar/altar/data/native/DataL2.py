@@ -16,7 +16,6 @@ import altar
 
 if typing.TYPE_CHECKING:
     import journal
-    import pyre
     from altar.norms.L2 import L2
     from altar.shells.Application import Application
 
@@ -259,7 +258,7 @@ class DataL2:
 
     # local variables
     normalization: float = 0
-    ifs: pyre.filesystem.Filesystem.Filesystem
+    ifs: altar.filesystem.Filesystem.Filesystem
     io: altar.io.FileIO  # my file reader/writer
     samples: int
     dataobs: numpy.ndarray  # the observed data, with the covariance merged in if asked to

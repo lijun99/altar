@@ -19,7 +19,6 @@ from .Model import Model as model
 
 if typing.TYPE_CHECKING:
     import journal
-    import pyre
     from altar.arrays import Array
     from altar.bayesian.controllers.Annealer import Annealer
     from altar.bayesian.states.BayesianState import BayesianState
@@ -220,8 +219,8 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
             f"model '{type(self).__name__}' must implement 'forward_problem'")
 
     # implementation details
-    def mount_input_dataspace(self, pfs: pyre.filesystem.Filesystem.Filesystem
-                              ) -> pyre.filesystem.Filesystem.Filesystem:
+    def mount_input_dataspace(self, pfs: altar.filesystem.Filesystem.Filesystem
+                              ) -> altar.filesystem.Filesystem.Filesystem:
         """
         Mount the directory with my input files
         """

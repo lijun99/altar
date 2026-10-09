@@ -19,7 +19,6 @@ from .Bayesian import Bayesian
 from .cp import cp as uncertainty
 
 if typing.TYPE_CHECKING:
-    import pyre
     from altar.arrays import Array
     from altar.bayesian.controllers.Annealer import Annealer
     from altar.bayesian.states.BayesianState import BayesianState
@@ -549,7 +548,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     observations: int
     device: typing.Any = None
     precision: str
-    ifs: pyre.filesystem.Filesystem.Filesystem # the filesystem with the input files
+    ifs: altar.filesystem.Filesystem.Filesystem # the filesystem with the input files
     io: altar.io.FileIO # my file reader/writer
     samples: int
     checked_unbounded_priors: bool = False # whether {gradient} has already verified all priors are unbounded

@@ -15,7 +15,7 @@ import numpy
 
 if typing.TYPE_CHECKING:
     import journal
-    import pyre
+    import altar
 
 
 class FileIO:
@@ -25,7 +25,7 @@ class FileIO:
     """
 
     # meta-methods
-    def __init__(self, ifs: pyre.filesystem.Filesystem.Filesystem | None = None,
+    def __init__(self, ifs: altar.filesystem.Filesystem.Filesystem | None = None,
                  error: journal.error | None = None, precision: str | None = None,
                  **kwds) -> None:
         super().__init__(**kwds)
