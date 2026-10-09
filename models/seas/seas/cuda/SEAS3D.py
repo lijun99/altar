@@ -615,8 +615,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             ticks.append(self.sync_and_time())
             self.cmodel.forward_model_batch(state_init=self.state_init.grid, **args)
 
-        # the next batch can start from the slip rates this one reached
+        # the next batch can start from the slip rates this one reached, except in the slots of
+        # systems that failed, which start cold
         self._warm = True
+        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:batch_size_run]
+        if failed.any():
+            slots = failed[np.arange(self.cuda_batch_size) % batch_size_run]
+            self.cool(slots=slots)
 
         # log timings
         ticks.append(self.sync_and_time())
@@ -775,6 +780,19 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
                 path=os.path.join(str(getattr(output, "path", output)), "posterior_runs.h5"),
             )
         return status
+
+    def cool(self, slots):
+        """
+        Start the systems in {slots}, a mask over the batch, from v_init again
+        """
+        patches = self.fault.inner_num_patches
+        state = np.asarray(self.state_init)
+        if self.forward_ode == "ratedependent":
+            state[slots] = self.state_init_cold[slots]
+        else:
+            # the traction model keeps the slip rates themselves
+            state[slots, 2 * patches :] = self.sim.v_init.T.ravel().astype(self.gpuprec)
+        return self
 
     def run_mean(self, theta):
         """
