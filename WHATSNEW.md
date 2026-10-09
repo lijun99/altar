@@ -82,6 +82,7 @@ class (`AdaptiveMetropolis`).
 | `altar.bayesian.hmc` | HMC at β = 1 *(new)* |
 | `altar.bayesian.catmip_mala` | CATMIP annealing with the Metropolis-adjusted Langevin algorithm *(new)* |
 | `altar.bayesian.mala` | MALA at β = 1 *(new)* |
+| `altar.bayesian.cf_catmip` | cross-fade CATMIP, from the conjugate posterior of a linear model (section 9) *(new)* |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD), now also on the cpu and under MPI |
 
 - **Samplers are components.** Every annealing controller combines three parts: a sampler
@@ -105,6 +106,12 @@ class (`AdaptiveMetropolis`).
   It costs one gradient per proposal and is a good first choice when gradients are expensive.
 - **mcmc** runs Metropolis at β = 1 in `rounds`, `job.steps` steps each, and re-estimates the
   proposal covariance and scaling between rounds, as CATMIP does between β steps.
+- **hmc** also walks in `rounds`, with the mass matrix re-estimated between them, and its
+  scheduler can replace the outlier chains during a burn-in (`scheduler.burnin`, after ter Braak,
+  2006). Chains that start deep in the logit space of a bounded prior can otherwise stay stuck
+  there, and shrink everyone's step size. On the Illapel static inversion, `hmc` with 5 rounds of
+  100 trajectories and a 3-round burn-in matches a long `catmip_hmc` run in 8 s, against 22 s for
+  the shortest `catmip_hmc` that does.
 - **SGLD** now runs on the cpu, single-process and MPI, as well as on the GPU.
 - **Gradients for the seismic models:** the static model, the moment-magnitude prior and the
   kinematic model have gradients. The kinematic gradient is computed by the chain rule through
@@ -319,12 +326,44 @@ solver, the covariance conditioning and the resampling.
   posteriors, and the Python COV solvers were replayed against the C++ ones on recorded seismic
   and linear runs.
 
+## 9. Cross-fade CATMIP and the evidence
+
+**Why.** CATMIP anneals from the prior, where the chains know nothing of the data, to the
+posterior. For a model that is linear in its parameters with Gaussian errors, the posterior under
+a Gaussian prior is known exactly. Cross-fade sampling (Minson, 2024, GJI 239, 1629) starts from
+that conjugate posterior instead, fades the actual prior in and the Gaussian one out, and never
+evaluates the forward model while doing so. The same weights that drive the annealing also give
+the evidence of the model, p(d), which is what model comparison needs.
+
+**What has been implemented.**
+- **`altar.bayesian.cf_catmip`**, the cross-fade controller: CATMIP's COV scheduler and Metropolis
+  sampler, with the model wrapped in a cross-fade model, `altar.models.crossfade`, which starts the
+  chains from the conjugate posterior and fills the two densities of the annealing. The linear and
+  the static slip models support it; another linear model does once it provides its conjugate
+  posterior (see the Programming Guide). Configurations change by one line,
+  `controller = altar.bayesian.cf_catmip`.
+- **The evidence** is estimated by the COV scheduler, for CATMIP and cross-fade CATMIP alike,
+  printed at the end of a run as `log evidence`, and saved with each step as
+  `Annealer/log_evidence`. It assumes that the chains start from the prior (`prep` = `prior`).
+- **`softuniform`**, a uniform prior with logistic edges (Minson, 2024, eq. 16): smooth and
+  positive everywhere, so that cross-fading needs no special start.
+- **Validation.** On the linear example, cross-fade CATMIP reaches the exact posterior in one or two
+  β steps, with its evidence within 0.03 nats of the exact value, Gaussian, uniform and soft
+  uniform priors alike; CATMIP's evidence comes within 2.5 nats. The 9-patch static example
+  takes two β steps instead of about twenty.
+- **Where it doesn't pay.** When the bounds of the prior bind, cross-fading loses its edge. The
+  Illapel static inversion has about 70 slips at their lower bound: with hard bounds cross-fade
+  can't start, and with soft ones it takes 55 s to come within 2% of the posterior spread, where
+  `hmc` with a burn-in takes 8 s. It is a tool for data-dominated linear problems.
+
 ## What changes for existing runs
 
 - **Configurations need updating.** The old component names are gone, with no aliases:
   - `plainhmc` is now `hmc`, and `catmiphmc` is now `catmip_hmc`;
   - samplers are selected as `altar.bayesian.samplers.<name>`;
-  - `altar.cuda.bayesian.metropolis` is replaced by `metropolis` with `job.gpus = 1`.
+  - `altar.cuda.bayesian.metropolis` is replaced by `metropolis` with `job.gpus = 1`;
+  - `altar.cuda.data.datal2`, `altar.cuda.models.parameterset` and `altar.cuda.distributions.*`
+    are replaced by `datal2`, `contiguous` and the distributions' plain names.
 
   The example `.pfg` files in `models/*/examples` show the current syntax.
 - Reparameterized runs archive physical values directly, so drop any `tophysical` step.

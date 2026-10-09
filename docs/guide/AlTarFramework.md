@@ -165,6 +165,21 @@ linear:
     controller = altar.bayesian.cf_catmip
 ```
 
+Cross-fading pays when the data dominate the posterior and the bounds of the prior barely matter:
+the 9-patch static example takes two $\beta$ steps instead of about twenty. When the bounds bind,
+e.g. the positivity of the slip on many patches of an underdetermined slip inversion, the
+conjugate posterior is far from the posterior: the start fails with a hard bound, and with a soft
+one the annealing still takes many $\beta$ steps, each a Metropolis walk, which needs thousands of
+steps with hundreds of parameters. For such problems `catmip_hmc`, or `hmc` with a burn-in, is
+faster: on the Illapel static inversion, 342 parameters with about 70 slips at their lower bound,
+`hmc` matched the reference in 8 s and `catmip_hmc` in 22 s, where `cf_catmip`, with soft bounds,
+needed 55 s to come within 2% of its spread.
+
+The archive of a cross-fade run keeps the samples as usual, but its `prior` and `likelihood` hold
+the two densities of the annealing, $\log P_c(\boldsymbol\theta|\mathbf d)$ and
+$\log P(\boldsymbol\theta) - \log P_c(\boldsymbol\theta)$, not the prior and the data
+likelihood.
+
 (samplers)=
 ## Samplers
 

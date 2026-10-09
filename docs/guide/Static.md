@@ -165,7 +165,8 @@ on the GPU. `static_logit.pfg` samples with HMC instead, which needs the bounded
 reparameterized (`reparameterize = True`, see {doc}`Priors`). The static model is linear in
 the slips, so it can also be sampled by {ref}`cross-fade CATMIP <cross-fade>`,
 `--controller=altar.bayesian.cf_catmip`: the 9-patch example then reaches the same posterior in
-one $\beta$ step instead of about twenty. See {doc}`AlTarFramework` for the controllers, and for
+two $\beta$ steps instead of about twenty. That's not so for inversions whose bounds bind, e.g.
+with many slips at their lower bound; see {ref}`cross-fade CATMIP <cross-fade>`. See {doc}`AlTarFramework` for the controllers, and for
 running on several processes or GPUs.
 
 (moment-distribution)=

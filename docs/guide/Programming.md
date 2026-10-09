@@ -149,6 +149,24 @@ A model that can estimate its uncertainty $C_p$ (see {doc}`StaticCp`) provides
 The model's `cp` component decides when to call them; `update_covariance(cp)` sets the new
 covariance.
 
+### Cross-fade sampling
+
+A model that is linear in its parameters, with Gaussian errors, can be sampled by
+{ref}`cross-fade CATMIP <cross-fade>` once it provides
+
+`conjugate_posterior(mean, variance)`
+: the mean $\mathbf m_*$ and the covariance $\mathbf C_*$ of its posterior under the Gaussian prior
+  $N(\mathbf m, \operatorname{diag}(\mathbf v))$, and the evidence of that model,
+  $\log P_c(\mathbf d)$; with the covariance $\mathbf C$ in effect, $\mathbf C_* = (\mathbf C_m^{-1}
+  + \mathbf G^T \mathbf C^{-1} \mathbf G)^{-1}$ and $\mathbf m_* = \mathbf C_* (\mathbf C_m^{-1}
+  \mathbf m + \mathbf G^T \mathbf C^{-1} \mathbf d)$.
+
+`Linear.conjugate_posterior` is the example; the static slip model inherits it. `BayesianL2`
+supplies the conjugate prior, `conjugate_prior()`, matched to the mean and the variance of the
+prior of each parameter set; a model overrides it for a different one. The cross-fade model,
+`altar.models.crossfade`, does the rest: the initial samples, the two densities, and the
+evidence of the conjugate model.
+
 ## cpu and GPU implementations
 
 A model that runs on both the cpu and the GPU keeps its numerics apart from its component: the
@@ -268,7 +286,8 @@ python posterior.py mala --gpu      # one, on the GPU
 
 The tolerances allow for the noise of 256 chains; they catch errors of the size of a wrongly
 handled prior, not biases much below 0.3 posterior standard deviations. A new sampler should
-pass it, on both backends, with and without a reparameterized prior.
+pass it, on both backends, with and without a reparameterized prior. The controllers that estimate
+the evidence, CATMIP's and the cross-fade one, are also checked against its exact value.
 
 ## Code organization
 
