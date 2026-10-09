@@ -30,6 +30,8 @@ public:
 
     pyTractionDependent () {_cmodel = new model_type();}
 
+    // accelerate the spin-up with anderson mixing of the last {depth} cycles, 0 turns it off
+    void set_anderson(int depth, T beta) { _cmodel->anderson_depth = depth; _cmodel->anderson_beta = beta; }
     // the step statistics of the last batch
     py::dict step_statistics() { return statistics_dict(_cmodel->statistics); }
 
@@ -146,6 +148,7 @@ bind(py::module & m, const char * name)
     py::class_<P>(m, name)
         .def(py::init())
         .def("step_statistics", &P::step_statistics)
+        .def("set_anderson", &P::set_anderson, py::arg("depth"), py::arg("beta") = 1)
         .def("initialize", &P::initialize,
              py::arg("cuda_batch_size"), py::arg("max_cycles"), py::arg("num_t_obs"), py::arg("t_obs_sec"),
              py::arg("num_ix_eq"), py::arg("num_eq"), py::arg("t_events"), py::arg("i_slips_obs"),

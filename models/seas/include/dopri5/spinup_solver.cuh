@@ -40,11 +40,12 @@ struct SpinupSolver : public Solver<real_type, ode_system_type, event_type, meth
     SpinupSolver(ode_system_type & ode_, event_type & events_,
         const real_type atol_=1e-8, const real_type rtol_=1e-6,
         const real_type spinup_atol_ = 1e-6, const real_type spinup_rtol_ = 1e-3,
-        const int systems_batch_=8192, const int threads_=0)
+        const int systems_batch_=8192, const int threads_=0,
+        const int anderson_depth_=0, const real_type anderson_beta_=1)
         : single_solver_type(ode_, events_, atol_, rtol_, systems_batch_, threads_)
     {
         spinup_controller_holder = new spinup_controller_holder_type(this->systems_batch, this->system_size,
-            spinup_atol_, spinup_rtol_);
+            spinup_atol_, spinup_rtol_, anderson_depth_, anderson_beta_);
         // printf("SpinupSolver initialized with %i threads\n", this->threads);
     };
 
@@ -113,6 +114,8 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
     bool dense_out_run = false;
     // record y0 as an initial value for yn for convergence check
     spinup_controller.record(cta, stepper.y0, index_start, index_end);
+    // and start the acceleration afresh
+    spinup_controller.anderson_reset(cta);
 
     // repeat cycles until convergence or max_cycles reached
     bool converged = false;
@@ -136,6 +139,10 @@ __global__ void solve_ivp_cycles_kernel(const int system_offset,
         // check for convergence
         converged = spinup_controller.check_convergence2(cta, stepper.yn, index_start, index_end);
         icycle++;
+        // extrapolate the start of the next cycle from the last ones, if accelerating
+        if(!converged && !controller.failed && spinup_controller.depth > 0)
+            spinup_controller.accelerate(cta, stepper.y0 + index_start, stepper.yn + index_start,
+                index_end - index_start + 1);
         // keep record of the final y(tn) for next convergence check
         spinup_controller.record(cta, stepper.yn, index_start, index_end);
         cta.sync();

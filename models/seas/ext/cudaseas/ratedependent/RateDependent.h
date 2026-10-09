@@ -92,6 +92,10 @@ class RateDependent {
         std::vector<::cuda::ode::dopri5::StepStatistics> statistics;
 
     // parameters
+        // anderson acceleration of the spin-up: the cycles kept, 0 turns it off, and the mixing
+        int anderson_depth = 0;
+        T anderson_beta = 1;
+
     private:
 
         OdeType* odefunc;

@@ -125,7 +125,7 @@ void TractionDependent<T, MethodType>::forward_model_batch(
     // create the solver
     solver = new SolverType{*odefunc, *events, atol, rtol,
                             spinup_atol, spinup_rtol,
-                            num_forward_batch, num_threads};
+                            num_forward_batch, num_threads, anderson_depth, anderson_beta};
     solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
     int system_offset = 0;

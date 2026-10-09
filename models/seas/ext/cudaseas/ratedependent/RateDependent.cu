@@ -123,7 +123,8 @@ void RateDependent<T, MethodType>::forward_model_batch(
                            delta_tau_bounded_indices_final, num_forward_batch, num_inner_patches, UNITS, v_ratio_max};
 
     // create the solver
-    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, num_forward_batch, num_threads};
+    solver = new SolverType{*odefunc, *events, atol, rtol, spinup_atol, spinup_rtol, num_forward_batch, num_threads,
+                            anderson_depth, anderson_beta};
     solver->set_dense_output(num_t_obs, t_obs_sec, sim_state);
 
     int system_offset = 0;
