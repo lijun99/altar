@@ -32,6 +32,7 @@ jobs:
           miniforge-version: latest
           auto-activate-base: true
           activate-environment: ""
+          conda-remove-defaults: "true"
 
       # the environment with pyre installed, made once per environment file and pyre commit
       - name: restore the environment
@@ -48,7 +49,8 @@ jobs:
           conda activate "$ENV_PREFIX"
           # pyre and AlTar install their python packages into $CONDA_PREFIX/packages
           ln -sf "$(python -c 'import site; print(site.getsitepackages()[0])')" "$CONDA_PREFIX/packages"
-          git clone --depth 1 -b altar2 https://github.com/lijun99/pyre.git ../pyre
+          # the whole history, without the file contents: pyre takes its version from its tags
+          git clone --filter=blob:none -b altar2 https://github.com/lijun99/pyre.git ../pyre
           cmake -S ../pyre -B ../pyre/build -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
               -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" -DPYRE_BUILD_TESTING=OFF
           cmake --build ../pyre/build -j 4
