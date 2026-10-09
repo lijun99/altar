@@ -16,7 +16,8 @@ jobs:
       run:
         shell: bash -el {0}
     env:
-      ENV_PREFIX: ${{ github.workspace }}/../altar-env
+      # an absolute path: the cache refuses paths with ..
+      ENV_PREFIX: ${{ runner.temp }}/altar-env
       # two mpi tasks may share a core on the runner
       OMPI_MCA_rmaps_base_oversubscribe: "true"
       PRTE_MCA_rmaps_default_mapping_policy: ":oversubscribe"
