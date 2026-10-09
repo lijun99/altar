@@ -7,16 +7,8 @@
 #
 
 
-# export my parts
-from . import (
-    # norms
-    norms,
-    # probability distribution functions
-    distributions,
-    models,
-    data,
-    ext,
-    )
+# my compiled extension
+from . import ext
 
 # device management, and the thin cublas/cusolver/curand bindings, all from pyre now; the old
 # top-level "cuda" package (a hand rolled device manager sharing its name with nvidia's own
