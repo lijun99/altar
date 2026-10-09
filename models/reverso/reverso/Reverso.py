@@ -10,6 +10,7 @@
 
 
 # externals
+from importlib.util import find_spec
 import numpy
 # the package
 import altar
@@ -189,6 +190,11 @@ class Reverso(BayesianL2, family="altar.models.reverso"):
         Build my implementation: cuda for the cuda backend, python or c++ on the cpu
         """
         if altar.backends.active() == "cuda":
+            # the gpu kernels are cuTile's, an optional package
+            if find_spec("cuda.tile") is None:
+                self.error.log("the reverso gpu kernels need cuTile, pip install 'cuda-tile[tileiras]'; "
+                               "or run on the cpu, with job.gpus = 0")
+                raise SystemExit(1)
             from .CUDA import CUDA as strategy
         elif self.mode == "native":
             from .Native import Native as strategy

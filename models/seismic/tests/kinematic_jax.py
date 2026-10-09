@@ -258,12 +258,15 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         jax_time = time.perf_counter() - start
         mb_jax = numpy.asarray(Mb_jax(Θ))
 
-        # report
+        # report; the tolerances leave room above what float64 and float32 reach
+        tolerance = 1e-10 if m.precision == "float64" else 1e-3
+        errors = {}
         print(f"fast sweeping coverage: {', '.join(f'{c:.1%}' for c in history.coverage())}")
         scale = numpy.abs(Mb).max()
-        print(f"Mb, max |cuda - jax| / max |Mb|: {numpy.abs(Mb - mb_jax).max() / scale:.2e}")
-        print(f"llk, max |cuda - jax| / |llk|: "
-              f"{(numpy.abs(llk - numpy.asarray(llk_jax)) / numpy.abs(llk)).max():.2e}")
+        errors["Mb"] = numpy.abs(Mb - mb_jax).max() / scale
+        errors["llk"] = (numpy.abs(llk - numpy.asarray(llk_jax)) / numpy.abs(llk)).max()
+        print(f"Mb, max |cuda - jax| / max |Mb|: {errors['Mb']:.2e}")
+        print(f"llk, max |cuda - jax| / |llk|: {errors['llk']:.2e}")
         groups = {"strike slips": idx[:Np], "dip slips": idx[Np:2 * Np],
                   "rise times": idx[2 * Np:3 * Np], "rupture velocities": idx[3 * Np:4 * Np],
                   "hypocenter": idx[4 * Np:]}
@@ -272,6 +275,7 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         for name, cols in groups.items():
             norm = numpy.abs(exact[:, cols]).max(axis=1)
             error = (numpy.abs(gradient[:, cols] - exact[:, cols]).max(axis=1) / norm).max()
+            errors[name] = error
             print(f"  {name:20s}{error:10.2e}")
         print("hypocenter gradient per sample: altar | jax")
         for k in range(n):
@@ -281,7 +285,12 @@ class Check(altar.shells.application, family="altar.applications.kinematicjax"):
         if self.output:
             numpy.savez(self.output, theta=theta, llk=llk, llk_jax=numpy.asarray(llk_jax),
                         Mb=Mb, Mb_jax=mb_jax, gradient=gradient, gradient_jax=exact)
-        return 0
+        # the verdict
+        failed = {name: error for name, error in errors.items() if not error <= tolerance}
+        for name, error in failed.items():
+            print(f"FAIL: {name} differs from jax by {error:.2e}, above {tolerance:.0e}")
+        print(f"against jax, within {tolerance:.0e}: {'FAIL' if failed else 'ok'}")
+        return 1 if failed else 0
 
 
     def thetas(self, n, Np, idx):

@@ -44,6 +44,11 @@ class Linear(BayesianL2, family="altar.models.regression.linear"):
         """
         Initialize the state of the model given an {application} context
         """
+        # cpu only: my forward model and gradient are numpy's
+        if altar.backends.active() == "cuda":
+            application.error.log(
+                "the regression model has only a cpu implementation; run it with job.gpus = 0")
+            raise SystemExit(1)
         # chain up; mounts my input dataspace, loads the observations and lays out my psets
         super().initialize(application=application)
         # load the x
