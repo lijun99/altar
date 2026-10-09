@@ -136,6 +136,22 @@ linear:
     controller = altar.bayesian.cf_catmip
 ```
 
+The controller wraps the model in a cross-fade model, `altar.models.crossfade`, which fills the
+two densities and draws the initial samples, and leaves everything else, e.g. the parameter sets,
+to the model. The cross-fade model can also be configured directly, with the model nested in it,
+still under `cf_catmip`:
+
+```none
+linear:
+    model = altar.models.crossfade
+    model:
+        model = altar.models.linear
+        model:
+            case = patch-9
+            ...
+    controller = altar.bayesian.cf_catmip
+```
+
 (samplers)=
 ## Samplers
 

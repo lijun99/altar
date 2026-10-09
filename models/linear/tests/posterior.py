@@ -72,6 +72,17 @@ linear:
     job.chains = 2**8
 """
 
+def crossfaded(base):
+    """
+    {base} with the linear model nested in a crossfade model, which a run then selects directly
+    """
+    head, rest = base.split("    model = altar.models.linear\n    model:\n", 1)
+    block, tail = rest.split("    controller:\n", 1)
+    nested = "".join(f"    {line}" if line.strip() else line for line in block.splitlines(True))
+    nested = nested.replace("{linear.model.parameters}", "{linear.model.model.parameters}")
+    return (f"{head}    model = altar.models.crossfade\n    model:\n"
+            f"        model = altar.models.linear\n        model:\n{nested}    controller:\n{tail}")
+
 def uniform(support, reparameterize=True, prep=None):
     """
     The settings of a uniform prior on {support}; a tight one also starts the chains from it
@@ -117,6 +128,7 @@ CASES = {
                                *uniform(TIGHT, reparameterize=False)], TIGHTLY),
     "cf_catmip-uniform": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
     "cf_catmip-soft": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *SOFT], WIDE),
+    "cf_catmip-model": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),
     "cf_catmip-tight": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256",
                          *uniform(TIGHT, reparameterize=False)], TIGHTLY),
 }
@@ -204,7 +216,9 @@ def run(name, gpu, precision, keep):
     scratch = pathlib.Path(tempfile.mkdtemp(prefix=f"altar-posterior-{name}-"))
     try:
         shutil.copytree(EXAMPLES / CASE, scratch / CASE)
-        (scratch / "posterior.pfg").write_text(BASE)
+        # the crossfade model selected directly, around the linear one
+        base = crossfaded(BASE) if name == "cf_catmip-model" else BASE
+        (scratch / "posterior.pfg").write_text(base)
         command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}",
                    f"--job.precision={precision}", *settings]
         start = time.perf_counter()

@@ -42,6 +42,16 @@ def ensemble():
     # and publish it
     return ensemble
 
+@altar.foundry(implements=model, tip="cross-fade sampling of a model with a conjugate posterior")
+def crossfade():
+    # grab the factory
+    from .CrossFade import CrossFade as crossfade
+    # attach its docstring
+    __doc__ = crossfade.__doc__
+    # and publish it
+    return crossfade
+
+
 @altar.foundry(implements=model, tip="a models that implements psets and dataobs with l2 norm")
 def bayesianl2():
     # grab the factory

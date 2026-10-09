@@ -10,7 +10,6 @@
 # externals
 from __future__ import annotations
 import typing
-from importlib import import_module
 import numpy
 # the package
 import altar
@@ -115,21 +114,10 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
     @altar.export
     def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
-        Fill {step.θ} with an initial random sample from my prior distribution, or, in
-        cross-fade sampling, from my conjugate posterior
+        Fill {step.θ} with an initial random sample from my prior distribution.
         """
         # grab the portion of the sample that's mine
         θ = self.restrict(theta=step.theta)
-        if self._crossfade is not None:
-            rows = θ.shape[0] if batch is None else batch
-            # more than were drawn, e.g. a pooled population
-            if self._crossfade.pool.shape[0] < rows:
-                self._crossfade.draw(model=self, rows=rows)
-            numpy.asarray(θ)[:rows] = self._crossfade.pool[:rows]
-            if self.has_reparametrization:
-                step.theta_sampling[...] = step.theta
-                self.to_sampling(theta=step.theta_sampling, batch=batch)
-            return self
         # go through each parameter set, in {psets_list} order -- {psets} is a dict and may
         # carry extra entries merged in from other configuration sources
         for name in self.psets_list:
@@ -372,16 +360,6 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         # grab the dispatcher
         dispatcher = annealer.dispatcher
 
-        # cross-fade sampling: the conjugate posterior, and the ratio of my prior to the
-        # conjugate prior, in place of my prior and my data likelihood
-        if self._crossfade is not None:
-            dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
-            self._crossfade.log_densities(model=self, theta=self.restrict(theta=step.theta),
-                                          prior=step.prior, data=step.data, batch=batch)
-            dispatcher.notify(event=dispatcher.prior_finish, controller=annealer)
-            self.eval_posterior(step=step, batch=batch)
-            return self
-
         # notify we are about to compute the prior likelihood
         dispatcher.notify(event=dispatcher.prior_start, controller=annealer)
         # compute the prior likelihood
@@ -488,34 +466,7 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         self.checked_unbounded_priors = True
         return self
 
-    # cross-fade sampling (Minson, 2024)
-    def crossfade(self) -> float:
-        """
-        Switch to cross-fade sampling: draw the initial samples from my conjugate posterior,
-        within the support of my prior, and evaluate the conjugate posterior and the ratio of my
-        prior to the conjugate prior in place of my prior and my data likelihood; return the
-        evidence of the conjugate model within the support, log p_conj(d) + log q, with q the
-        fraction of the conjugate posterior within the support
-        """
-        from .CrossFade import CrossFade
-        # the multivariate normal distribution of my backend
-        backend = "cuda" if altar.backends.active() == "cuda" else "native"
-        MultivariateGaussian = import_module(
-            f"altar.distributions.{backend}.MultivariateGaussian").MultivariateGaussian
-        if self.embedded:
-            raise NotImplementedError("cross-fade sampling of a model in an ensemble")
-        mean, variance = self.conjugate_prior()
-        mstar, cstar, log_evidence = self.conjugate_posterior(mean=mean, variance=variance)
-        precision = self.precision
-        self._crossfade = CrossFade(
-            prior=MultivariateGaussian(
-                mean=mean, covariance=numpy.diag(variance), precision=precision),
-            posterior=MultivariateGaussian(mean=mstar, covariance=cstar, precision=precision),
-            log_evidence=log_evidence, rng=self.rng.rng, precision=precision)
-        coverage = self._crossfade.draw(model=self, rows=self.samples)
-        return log_evidence + float(numpy.log(coverage))
-
-
+    # cross-fade sampling (Minson, 2024), see {altar.models.CrossFade}
     def conjugate_prior(self) -> tuple[numpy.ndarray, numpy.ndarray]:
         """
         The mean and the variance of each of my parameters under the conjugate prior, a normal
@@ -550,7 +501,6 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
 
 
     # private data
-    _crossfade: typing.Any = None # my cross-fade state, when sampled by cross-fading
     observations: int
     device: typing.Any = None
     precision: str
