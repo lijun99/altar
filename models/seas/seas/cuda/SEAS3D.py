@@ -150,8 +150,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             )
         if self.verbose:
             channel.log(
-                f"Device {self.device.id}: Simulation object initialization output"
-                f"\n{init_output.getvalue()}"
+                f"Device {self.device.id}: Simulation object defined in "
+                f"{self.config_file} printed:\n"
+                f"{init_output.getvalue()}"
             )
 
         # create deep copies of sim that can later be easily modified for the forward runs
@@ -912,6 +913,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             f["theta"] = theta[rows]
             f["rows"] = rows
             f["t_obs"] = self.sim.t_obs
+            f["ix_estim_row"] = self.ix_estim_row
+            f["ix_estim_col"] = self.ix_estim_col
+            f["psets_list"] = self.psets_list
+            f["mask"] = self.dataobs.mask
             for key, values in runs.items():
                 f[key] = np.concatenate(values)
         self.info.log(
