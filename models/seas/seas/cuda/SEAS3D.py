@@ -258,16 +258,18 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         state_init_arr = np.concatenate(
             [np.zeros(2 * patches), np.log(self.sim.v_init / self.rheo.v_0).T.ravel()]
         )
-        self.state_init_cold = np.tile(state_init_arr, (self.cuda_batch_size, 1)).astype(
-            self.gpuprec
-        )
+        self.state_init_cold = np.tile(
+            state_init_arr, (self.cuda_batch_size, 1)
+        ).astype(self.gpuprec)
         self.state_init = altar.cuda.matrix(source=self.state_init_cold.copy())
         # a restart spins up from the state its step recorded, if it did
         self.load_spin_up(application=application)
 
         # record the mean model with the steps
         if self.record_mean:
-            archiver = getattr(getattr(application, "controller", None), "archiver", None)
+            archiver = getattr(
+                getattr(application, "controller", None), "archiver", None
+            )
             if archiver is not None:
                 archiver.register(self)
 
@@ -592,9 +594,11 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # reached at t = 0 in the previous batch, else v_init
             state_init = np.asarray(self.state_init)
             if self.warm_start and self._warm:
-                v = state_init[:batch_size_run, 2 * patches :].reshape(
-                    batch_size_run, 2, patches
-                ).transpose(0, 2, 1)
+                v = (
+                    state_init[:batch_size_run, 2 * patches :]
+                    .reshape(batch_size_run, 2, patches)
+                    .transpose(0, 2, 1)
+                )
             else:
                 v = np.broadcast_to(self.sim.v_init, (batch_size_run, patches, 2))
             v_norm = np.linalg.norm(v, axis=2)  # is [batch_size_run, patches]
@@ -618,7 +622,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         # the next batch can start from the slip rates this one reached, except in the slots of
         # systems that failed, which start cold
         self._warm = True
-        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:batch_size_run]
+        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[
+            :batch_size_run
+        ]
         if failed.any():
             slots = failed[np.arange(self.cuda_batch_size) % batch_size_run]
             self.cool(slots=slots)
@@ -671,7 +677,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         if self.warm_start and self.warm_up and not self._warm:
             start = perf_counter()
             self.forward_model_batched(
-                theta=theta[:batch].mean(axis=0, keepdims=True), prediction=predictions, batch=1
+                theta=theta[:batch].mean(axis=0, keepdims=True),
+                prediction=predictions,
+                batch=1,
             )
             cycles = int(np.asarray(self.cmodel.step_statistics()["cycles"])[0])
             self.info.log(
@@ -717,8 +725,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         """
         # the differences need the likelihood to many more digits than float32 keeps
         if self.precision != "float64":
-            self.error.log("the seas3d gradient needs double precision: job.precision = float64, "
-                           "and job.gpuprecision unset or float64")
+            self.error.log(
+                "the seas3d gradient needs double precision: job.precision = float64, "
+                "and job.gpuprecision unset or float64"
+            )
             raise SystemExit(1)
         # in an ensemble, the ensemble owns the parameter sets and their priors
         if not self.embedded and not self.checked_unbounded_priors:
@@ -773,11 +783,15 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         status = super().posterior(application=application)
         # the final population is on the manager, which runs the subsample
         worker = self.controller.worker
-        if self.record_posterior > 0 and getattr(worker, "rank", 0) == getattr(worker, "manager", 0):
+        if self.record_posterior > 0 and getattr(worker, "rank", 0) == getattr(
+            worker, "manager", 0
+        ):
             output = self.controller.archiver.output_dir
             self.run_posterior(
                 theta=np.array(worker.step.theta, dtype=float),
-                path=os.path.join(str(getattr(output, "path", output)), "posterior_runs.h5"),
+                path=os.path.join(
+                    str(getattr(output, "path", output)), "posterior_runs.h5"
+                ),
             )
         return status
 
@@ -803,8 +817,11 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         mean = theta.mean(axis=0, keepdims=True).astype(float)
         self.forward_model_batched(theta=mean, prediction=self.obs_disp, batch=1)
         self.dataobs.eval_likelihood(
-            prediction=self.obs_disp, likelihood=self.likelihood_batch,
-            residual=False, whitened=False, batch=1,
+            prediction=self.obs_disp,
+            likelihood=self.likelihood_batch,
+            residual=False,
+            whitened=False,
+            batch=1,
         )
         # the slip rates the forward model left in the first slot, logarithmic for the
         # rate-dependent model
@@ -826,9 +843,14 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         if self._mean is None:
             return self
         archiver.write("SEAS/theta_mean", self._mean["theta_mean"])
-        archiver.write("SEAS/v_t0", self._mean["v_t0"], {
-            "description": "slip rates of the mean model at t = 0 [m/s], [2, patches]",
-            "forward_ode": self.forward_ode})
+        archiver.write(
+            "SEAS/v_t0",
+            self._mean["v_t0"],
+            {
+                "description": "slip rates of the mean model at t = 0 [m/s], [2, patches]",
+                "forward_ode": self.forward_ode,
+            },
+        )
         archiver.write("SEAS/prediction", self._mean["prediction"])
         archiver.write("SEAS/likelihood", self._mean["likelihood"])
         return self
@@ -839,6 +861,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         that they keep its distribution, and write them to the hdf5 file {path}
         """
         import h5py
+
         n = min(self.record_posterior, theta.shape[0])
         rng = getattr(getattr(self, "rng", None), "rng", None)
         rng = rng if isinstance(rng, np.random.Generator) else np.random.default_rng()
@@ -846,17 +869,30 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         patches = self.fault.inner_num_patches
         steps = self.sim.t_obs.size
         start = perf_counter()
-        runs = {"likelihood": [], "prediction": [], "slip": [], "slip_rate": [], "failed": []}
+        runs = {
+            "likelihood": [],
+            "prediction": [],
+            "slip": [],
+            "slip_rate": [],
+            "failed": [],
+        }
         for first in range(0, n, self.cuda_batch_size):
             batch = min(self.cuda_batch_size, n - first)
             self.forward_model_batched(
-                theta=theta[rows[first : first + batch]], prediction=self.obs_disp, batch=batch
+                theta=theta[rows[first : first + batch]],
+                prediction=self.obs_disp,
+                batch=batch,
             )
             self.dataobs.eval_likelihood(
-                prediction=self.obs_disp, likelihood=self.likelihood_batch,
-                residual=False, whitened=False, batch=batch,
+                prediction=self.obs_disp,
+                likelihood=self.likelihood_batch,
+                residual=False,
+                whitened=False,
+                batch=batch,
             )
-            runs["likelihood"].append(np.asarray(self.likelihood_batch)[:batch].astype(float))
+            runs["likelihood"].append(
+                np.asarray(self.likelihood_batch)[:batch].astype(float)
+            )
             runs["prediction"].append(np.asarray(self.obs_disp)[:batch].astype(float))
             # [systems, steps, slip or slip rate, components, patches], the slip rates linear
             state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
@@ -892,6 +928,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         if path is None or not self.warm_start:
             return self
         import h5py
+
         with h5py.File(str(path), "r") as f:
             if "SEAS/v_t0" not in f:
                 return self
@@ -902,7 +939,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         state = np.log(v / self.rheo.v_0) if self.forward_ode == "ratedependent" else v
         np.asarray(self.state_init)[:, 2 * patches :] = state.astype(self.gpuprec)
         self._warm = True
-        self.info.log(f"Device {self.device.id}: spinning up from the mean model of {path}")
+        self.info.log(
+            f"Device {self.device.id}: spinning up from the mean model of {path}"
+        )
         return self
 
     def reject_failed(self, llk):
@@ -921,9 +960,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             )
         return self
 
-
     # private data
-    _warm = False  # whether {state_init} holds the slip rates of a batch, for a warm start
+    _warm = (
+        False  # whether {state_init} holds the slip rates of a batch, for a warm start
+    )
     _mean = None  # the mean model of the last beta step, for the archiver
 
 
