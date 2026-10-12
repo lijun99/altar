@@ -28,4 +28,11 @@ class Mala(Annealer, family="altar.controllers.mala"):
     sampler.doc = "the sampler of the posterior distribution"
 
 
+    # implementation details
+    def continuing(self, worker, iteration, tolerance):
+        """
+        Whether to walk the chains: once, spending the whole {job.steps}, also after a restart
+        """
+        return iteration == self.start_iteration
+
 # end of file
