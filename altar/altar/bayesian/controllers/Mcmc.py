@@ -40,9 +40,10 @@ class Mcmc(Annealer, family="altar.controllers.mcmc"):
     # implementation details
     def continuing(self, worker, iteration, tolerance):
         """
-        Whether to walk the chains again, after {iteration} walks: for {rounds} walks
+        Whether to walk the chains again, after {iteration} walks: for {rounds} walks, counted
+        from where this run started, so a restart walks them too
         """
-        return iteration < self.rounds
+        return iteration - self.start_iteration < self.rounds
 
 
 # end of file

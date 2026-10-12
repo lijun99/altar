@@ -139,6 +139,8 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
             worker.bottom(annealer=self)
             # nothing done yet
             iteration = 0
+        # where this run started counting, for the controllers that walk a set number of times
+        self.start_iteration = iteration
 
         # iterate until done, by default until β is sufficiently close to one; the count of
         # iterations is kept here, since under mpi only the manager's worker counts them
@@ -302,6 +304,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
     # private data
     model = None  # the model i'm sampling
     production_walk = None # the length of the walk under way, if it is the production walk
+    start_iteration = 0 # the iteration this run started from: 0, or a restart's
     worker = None # the annealing method
     # journal channels shared with the application
     info = None
