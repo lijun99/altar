@@ -79,6 +79,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "start every slot from its state: the long cold spin-up then runs on one system "
         "rather than on the whole batch"
     )
+    spinup_file = altar.properties.path(default=None)
+    spinup_file.doc = (
+        "a step file of an earlier run on the same mesh, e.g. its step_final.h5, whose recorded "
+        "mean model the spin-ups start from; only its spin-up state is used, not its samples; "
+        "a restart starts from its own step's, if it recorded one"
+    )
     record_mean = altar.properties.bool(default=True)
     record_mean.doc = (
         "at the end of each beta step, run the mean model of the population and record, in the "
@@ -927,20 +933,42 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
     def load_spin_up(self, application):
         """
-        Start every slot from the slip rates of the mean model a restart's step recorded
+        Start every slot from the slip rates of the mean model recorded in {spinup_file}, else in
+        a restart's step; a {spinup_file} that can't be used is an error, a restart's step that
+        can't is just a cold start
         """
-        path = getattr(getattr(application, "controller", None), "restart", None)
-        if path is None or not self.warm_start:
+        given = self.spinup_file is not None
+        path = (
+            self.spinup_file
+            if given
+            else getattr(getattr(application, "controller", None), "restart", None)
+        )
+        if path is None:
             return self
+
+        def unusable(reason):
+            message = f"{path}: {reason}"
+            if given:
+                self.error.log(message)
+                raise SystemExit(1)
+            self.info.log(f"Device {self.device.id}: {message}; spinning up cold")
+            return self
+
+        if not self.warm_start:
+            return unusable("spin-up states need warm_start") if given else self
         import h5py
 
         with h5py.File(str(path), "r") as f:
             if "SEAS/v_t0" not in f:
-                return self
+                return unusable(
+                    "no recorded spin-up state; runs record it with record_mean"
+                )
             v = np.asarray(f["SEAS/v_t0"], dtype=float)
         patches = self.fault.inner_num_patches
         if v.size != 2 * patches:
-            return self
+            return unusable(
+                f"a spin-up state of {v.size // 2} patches, the model has {patches}"
+            )
         state = np.log(v / self.rheo.v_0) if self.forward_ode == "ratedependent" else v
         np.asarray(self.state_init)[:, 2 * patches :] = state.astype(self.gpuprec)
         self._warm = True
