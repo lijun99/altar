@@ -55,8 +55,7 @@ The sources of the documentation are in `docs/`. The documentation of the previo
 version of AlTar 2.0 remains at [altar.readthedocs.io](https://altar.readthedocs.io).
 
 ## Tutorials
-Jupyter notebooks, in their own repository, [altar2-tutorials](https://github.com/lijun99/altar2-tutorials),
-and rendered at [altar2-tutorials.readthedocs.io](https://altar2-tutorials.readthedocs.io).
+Jupyter notebooks, in their own repository, [altar2-tutorials](https://github.com/lijun99/altar2-tutorials).
 
 ## Support
 

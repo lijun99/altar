@@ -10,7 +10,7 @@ We use the linear model to show how to run a Bayesian inversion with AlTar. The 
 4. collect and analyze the results.
 
 The example comes with AlTar, in `models/linear/examples`; the
-[linear model tutorial](https://altar2-tutorials.readthedocs.io/en/latest/linear/linear.html) walks through it as a notebook.
+[linear model tutorial](https://github.com/lijun99/altar2-tutorials/blob/main/linear/linear.ipynb) walks through it as a notebook.
 
 ## Prepare the configuration file
 

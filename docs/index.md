@@ -20,7 +20,7 @@ guide/Issues
 :maxdepth: 1
 :caption: Tutorials
 
-AlTar 2 tutorials <https://altar2-tutorials.readthedocs.io/en/latest/>
+AlTar 2 tutorials <https://github.com/lijun99/altar2-tutorials>
 ```
 
 ```{toctree}
