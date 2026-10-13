@@ -483,6 +483,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     def forward_model_batched(self, theta, prediction, batch=None):
         """
         SEAS forward model for the first {batch} samples
+
         :param theta: array (batch, parameters), physical parameters, on the host
         :param prediction: matrix (cuda_batch_size, observations), filled with the
                            predicted data of the first {batch} rows
@@ -666,9 +667,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     def eval_data_likelihood(self, theta, likelihood, batch=None):
         """
         Compute the likelihood from my forward problem, in batches of {cuda_batch_size}
-        :param: theta - physical parameters, matrix of (samples, parameters)
-        :param: likelihood - computed likelihood, vector of (samples)
-        :param: batch - number of samples to be computed
+
+        :param theta: physical parameters, matrix of (samples, parameters)
+        :param likelihood: computed likelihood, vector of (samples)
+        :param batch: number of samples to be computed
         """
         batch = theta.shape[0] if batch is None else batch
         # theta and the likelihood live in managed memory, so the host can see them
