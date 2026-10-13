@@ -41,7 +41,7 @@ seas:
 
 seas.model:
   case: .
-  config_file: fault_subduction_honshu.ini
+  config_file: fault_subduction.ini
   forward_ode: tractiondependent
   integrator: dopri5
   estimate_row_indices: [0, 1, 2, 3]
@@ -52,7 +52,7 @@ seas.model:
   record_posterior: 128
   dataobs:
     observations: 17424
-    data_file: japan_jpl_ds_timeseries_1eq_jap_honshu4_mask1.h5
+    data_file: timeseries.h5
     cd_std: 0.05
     datafile_dataset: flat
     mask_dataset: mask
@@ -120,11 +120,11 @@ The settings of the spin-up and the outputs, described in the sections below:
 | setting | default | what it does |
 |---|---|---|
 | `spinup_anderson` | 0 | accelerate the spin-up by Anderson mixing of this many of its last cycles, at most 8; 0 is off (`seas-anderson` only) |
-| `spinup_anderson_beta` | 1.0 | the damping of the Anderson step; 1 takes it whole (`seas-anderson` only) |
+| `spinup_anderson_damping` | 1.0 | the damping of each Anderson step: 1 takes it whole, less moves only part of the way (`seas-anderson` only) |
 | `warm_start` | true | start each forward call's spin-up from where its GPU slot's last one ended |
 | `warm_up` | true | before the first forward call, spin up the mean sample alone, and start every slot from it |
 | `spinup_file` | none | a step file of an earlier run whose recorded spin-up state the spin-ups start from |
-| `record_mean` | true | at the end of each beta step, run the mean model and record it in the step file |
+| `record_mean` | true | for each step file the recorder writes, run the mean model and record it there |
 | `record_posterior` | 0 | at the end of the run, run this many samples of the final population and write them to `posterior_runs.h5` |
 
 ## The spin-up
@@ -170,12 +170,12 @@ the final events in the spin-up too.)
 
 ### The starting state
 
-A cold spin-up starts from seqeas's `v_init`. Since seqeas fab1765 that is the plate velocity
+A cold spin-up starts from seqeas's `v_init`. In current seqeas versions that is the plate velocity
 projected on each patch, which is a much better start for the stiff patches, where a fixed high
-$\alpha_h$ makes the slip rate relax very slowly. On the 81 case at `spinup_rtol = 1e-5`, the plain
-spin-up converged in 93 cycles instead of not at all within 300, and the warm-up with Anderson took
-13 cycles. `v_init_file` in the `[simulation]` section of the `.ini` replaces it
-with any velocity of shape `[inner patches, 2]` in m/s, saved with `numpy.save`.
+$\alpha_h$ makes the slip rate relax very slowly. In a traction-dependent test case at
+`spinup_rtol = 1e-5`, the plain spin-up converged in 93 cycles instead of not at all within 300, and
+the warm-up with Anderson took 13 cycles. `v_init_file` in the `[simulation]` section of the `.ini`
+replaces it with any velocity of shape `[inner patches, 2]` in m/s, saved with `numpy.save`.
 
 ### Warm starts and the warm-up
 
@@ -190,8 +190,8 @@ With `warm_up`, the first forward call is preceded by the spin-up of the populat
 alone, whose state then starts every slot: one system runs the long cold spin-up instead of the
 whole batch. A slot whose sample fails to integrate starts its next call cold again.
 
-At the end of every beta step, `record_mean` runs the mean model, and its state then also starts
-every slot's next call.
+For each step file the recorder writes, every `output_freq` beta steps and at the end,
+`record_mean` runs the mean model, and its state then also starts every slot's next call.
 
 ### Anderson acceleration
 
@@ -203,7 +203,7 @@ still integrated in full. The spin-up only counts as converged when a cycle retu
 start, so the result is a steady cycle of the model, whatever path led there. The history restarts
 if the residual grows tenfold, and a failed least-squares solve takes the plain step.
 
-On two samples of the 81 case (traction-dependent, `v_plate` start):
+On two samples of a traction-dependent test case, starting from `v_plate`:
 
 | spinup_rtol | spin-up | cycles, cold | cycles, warm | log-likelihoods |
 |---|---|---|---|---|
@@ -214,8 +214,8 @@ On two samples of the 81 case (traction-dependent, `v_plate` start):
 | 1e-6 | Anderson, 3 | 40-42 | 18-19 | 10800.21, 10794.94 |
 | 1e-7 | Anderson, 5 | 97-99 | 25-27 | 10800.60, 10795.21 |
 
-For x55 (rate-dependent, `spinup_atol = 1e-6`) Anderson converges in 68 cycles cold and 17 warm,
-and a cold and a warm start agree within 0.01.
+In a rate-dependent test case (`spinup_atol = 1e-6`), Anderson converges in 68 cycles cold and 17
+warm, and a cold and a warm start agree within 0.01.
 
 ### Recommended settings
 
@@ -294,9 +294,10 @@ seas.model:
 ```
 
 It needs the same mesh and patch order, and a step file that recorded the state; an unusable file
-stops the run. `v_init_file` in the `.ini` does the same for a velocity from any source, e.g. a seqeas
-spin-up. A state from an earlier, less well spun-up run can be a worse start than `v_plate`: one
-recorded before seqeas fab1765 spun up far more slowly than a fresh `v_plate` start.
+stops the run. `v_init_file` in the `.ini` does the same for a velocity from any source, e.g. a
+seqeas spin-up. A state from an earlier, less well spun-up run can be a worse start than `v_plate`:
+one recorded with an older seqeas, which started from a poorer `v_init`, spun up far more slowly
+than a fresh `v_plate` start.
 
 **Sampling a variant at beta = 1**: when a new case is close to a finished one, plain MCMC can start
 from its posterior instead of annealing from the prior:
@@ -312,15 +313,9 @@ MCMC samples the new posterior from any start. Discard the first rounds as burn-
 the means and spreads stop moving. If the posterior moves a lot, MCMC alone can miss parts of it
 that annealing from the prior would find.
 
-**What not to do:** setting beta to 0 in a step file and restarting from it, or `prep = preset`
-with the samples of a `step_final.h5`. Both start the annealing from an earlier posterior instead of
-a sample of the prior, which biases the result towards it.
-
 ## Notes
 
 - Under MPI only the first task logs, so the integrator's statistics in the log are those of the
   first GPU.
-- Older seqeas versions don't strip inline comments from the `.ini`: `spinup_atol = 1  # [Pa]`
-  fails to parse. Put comments on lines of their own.
 - `job.precision: float64` is needed for inversions: in float32 the likelihood differences between
   nearby samples are much less accurate than the posterior's resolution.
