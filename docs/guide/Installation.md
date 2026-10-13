@@ -42,8 +42,8 @@ Python 3.13 and CMake 4.1, on an NVIDIA RTX 4060.
 | pybind11 | | for the python extension modules |
 | HDF5 | ≥ 1.14.4 | data files |
 | MPI | | optional: for running on several processes or nodes, e.g. Open MPI |
-| CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand` and `cusolver` |
-| cuTile | | optional: `cuda-tile`, for the GPU kernels of the volcano models; with its compiler, `tileiras`, from a CUDA ≥ 13.2 toolkit or `pip install cuda-tile[tileiras]` |
+| CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand`, `cusolver` and `nvrtc` |
+| cuTile | | optional: `cuda-tile`, for the GPU kernels of the volcano models, and the cuTile kernels of the regression model; with its compiler, `tileiras`, from a CUDA ≥ 13.2 toolkit or `pip install cuda-tile[tileiras]` |
 | PyYAML | | optional: for `.yaml` configuration files |
 | PostgreSQL client library | | optional: pyre's database support, not used by AlTar |
 
@@ -60,7 +60,7 @@ conda install -n altar2 -c conda-forge openmpi
 conda activate altar2
 # for GPU support: pyre finds the GPUs with cuda-python
 pip install cuda-python
-# optional, for the GPU kernels of the volcano models
+# optional, for the GPU kernels of the volcano models, and the regression model's cuTile kernels
 pip install cuda-tile
 ```
 

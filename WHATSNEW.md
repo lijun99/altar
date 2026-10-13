@@ -37,6 +37,9 @@ Under the hood:
   a run and compares its posterior with a reference;
 - the volcano models, Mogi, CDM and Reverso, are ported, with the fixes of their open pull
   requests; their GPU forward models are python kernels, written with NVIDIA's cuTile.
+- the regression model runs on the GPU too, as the example of GPU kernels that need no build:
+  CUDA C++ compiled at run time by NVRTC (`model.kernels = nvrtc`, the default) or cuTile
+  (`model.kernels = cutile`).
 
 ## 2. Switching between cpu and GPU
 

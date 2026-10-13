@@ -11,14 +11,16 @@ cpu or GPU.
 
 ## A first model
 
-The simplest model is all python, on the cpu: the linear regression model in `models/regression`,
-which fits data $(x_n, y_n)$ with a line,
+The simplest model is all python: the linear regression model in `models/regression`, which fits
+data $(x_n, y_n)$ with a line,
 
 $$
 y = \text{slope} \times x + \text{intercept} + \epsilon,
 $$
 
-sampling the slope and the intercept.
+sampling the slope and the intercept. It is numpy on the cpu; its GPU kernels, in CUDA C++ compiled
+at run time and in cuTile, are the examples of {ref}`NVRTC kernels <nvrtc-kernels>` and
+{ref}`cuTile kernels <cutile-kernels>` below.
 
 ```{literalinclude} ../../models/regression/regression/Linear.py
 :language: python
@@ -51,6 +53,8 @@ layout of $\boldsymbol\theta$, one row per sample. Run it with
 cd ~/tools/src/altar/models/regression/examples
 altar-regression --config=linear.pfg        # CATMIP
 altar-regression --config=linear_hmc.pfg    # CATMIP with HMC, through the gradient
+altar-regression --config=linear.pfg --job.gpus=1                        # on the GPU, NVRTC kernels
+altar-regression --config=linear.pfg --job.gpus=1 --model.kernels=cutile # cuTile kernels
 ```
 
 ## The model protocol
@@ -208,7 +212,9 @@ binding takes the underlying pyre grid, `θ.grid`.
 
 ### CUDA kernels
 
-A model's kernels live in its `lib/libcuda<model>` (a shared library) and its bindings in
+GPU kernels can be CUDA C++, compiled with the model when AlTar is built, or at run time
+({ref}`NVRTC <nvrtc-kernels>`), or python ({ref}`cuTile <cutile-kernels>`). Compiled with the
+model, its kernels live in its `lib/libcuda<model>` (a shared library) and its bindings in
 `ext/cuda<model>` (a pybind11 module). A kernel receives the samples as pyre grid views, one thread
 per sample, e.g. the log density of the moment magnitude prior:
 
@@ -233,28 +239,37 @@ kernel when the environment variable `ALTAR_CUDA_SYNC` is set, which pins an err
 that caused it. See `models/seismic` for the whole of it: the library, the module, and their
 build.
 
+(cutile-kernels)=
 ### cuTile kernels
 
 A kernel can also be written in python, with NVIDIA's [cuTile](https://docs.nvidia.com/cuda/cutile-python)
 (`cuda.tile`): a kernel works on tiles, blocks of an array of a fixed shape, and cuTile compiles it
-the first time it runs. The volcano models (see {doc}`Volcano`) have their GPU forward models
-written this way, with no C++ and no extension module for the GPU. The Mogi kernel computes a tile
-of samples × observations:
+the first time it runs, with no C++ and no extension module. The regression model's cuTile kernels,
+in `models/regression/regression/CuTile.py` (`model.kernels = cutile`), compute a tile of samples ×
+observations of the predictions:
 
-```{literalinclude} ../../models/mogi/mogi/CUDA.py
+```{literalinclude} ../../models/regression/regression/CuTile.py
 :language: python
-:pyobject: displacements
+:pyobject: predictions
 ```
 
-and `altar.cuda.tile.launch` runs it, with the arrays of the steps:
+and the gradient of a tile of samples, summing over the tiles of the observations:
 
-```{literalinclude} ../../models/mogi/mogi/CUDA.py
+```{literalinclude} ../../models/regression/regression/CuTile.py
 :language: python
-:pyobject: CUDA.forward_model_batched
+:pyobject: gradients
+```
+
+`altar.cuda.tile.launch` runs them, with the arrays of the steps:
+
+```{literalinclude} ../../models/regression/regression/CuTile.py
+:language: python
+:pyobject: CuTile.forward_model_batched
 ```
 
 `launch` hands the arrays to cuTile, and runs the kernel on the default stream, in order with the
-rest of AlTar's kernels. Two things to keep in mind:
+rest of AlTar's kernels. The volcano models (see {doc}`Volcano`) have their GPU forward models
+written this way too. Two things to keep in mind:
 
 - python floats, as arguments of a kernel or literals in it, are single precision in cuTile:
   keep the constants that need double precision in a device vector, and read them with
@@ -262,6 +277,42 @@ rest of AlTar's kernels. Two things to keep in mind:
 - cuTile inlines the functions a kernel calls, and unrolls the loops over python tuples: a large
   kernel can take very long to compile. A loop over `range(n)` stays a loop; the CDM kernel keeps
   the twelve sides of its dislocations in a table, and loops over them.
+
+(nvrtc-kernels)=
+### NVRTC kernels
+
+A kernel in CUDA C++ can also be compiled at run time, by NVRTC through cuda-python's `cuda.core`,
+again with no build step and no extension module. This is the regression model's default
+(`model.kernels = nvrtc`), in `models/regression/regression/NVRTC.py`. Its source is a python
+string, with the kernels templated on the precision, e.g. the predictions, one thread per
+observation of a sample:
+
+```{literalinclude} ../../models/regression/regression/NVRTC.py
+:language: c++
+:start-at: "template <typename real>"
+:end-before: "// the gradient"
+```
+
+`altar.cuda.nvrtc.kernels` compiles the source for the current GPU, once, and returns the kernels
+it is asked for, here in the working precision:
+
+```{literalinclude} ../../models/regression/regression/NVRTC.py
+:language: python
+:pyobject: NVRTC.initialize
+```
+
+and `altar.cuda.nvrtc.launch` runs one on the default stream, over a grid of blocks of threads,
+with the arrays of the steps passed as pointers:
+
+```{literalinclude} ../../models/regression/regression/NVRTC.py
+:language: python
+:pyobject: NVRTC.forward_model_batched
+```
+
+The arrays are row-major: element $(s, o)$ of a (samples × observations) matrix is at
+`s * observations + o`. The scalars must carry their C type, `numpy.int32` for an `int` and
+`numpy.float32` for a `float`, since a python float is passed as a double. The gradient kernel, in
+the same source, sums over the observations of a sample in one block of threads.
 
 ## Ensembles of models
 
@@ -302,14 +353,16 @@ models/regression
 ├── regression              # the python package, installed as altar.models.regression
 │   ├── __init__.py         # its foundries, e.g. altar.models.regression.linear
 │   ├── meta.py.in          # its version, filled in by the build
-│   └── Linear.py           # the model
+│   ├── Linear.py           # the model
+│   ├── NVRTC.py            # its GPU kernels, in CUDA C++ compiled at run time
+│   └── CuTile.py           # and in cuTile
 └── examples
     ├── linear.pfg          # an example configuration
     ├── linear_hmc.pfg      # the same, with HMC
     └── synthetic           # its input files
 ```
 
-A model with cpu and GPU implementations adds, like `models/linear` and `models/seismic`,
+A model whose CUDA kernels are compiled with it adds, like `models/linear` and `models/seismic`,
 
 ```none
 models/seismic
