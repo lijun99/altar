@@ -55,15 +55,8 @@ The sources of the documentation are in `docs/`. The documentation of the previo
 version of AlTar 2.0 remains at [altar.readthedocs.io](https://altar.readthedocs.io).
 
 ## Tutorials
-Tutorials presented with jupyter notebooks, in `docs/tutorials/`:
-
-- [An introduction to AlTar/pyre applications: HelloApp](https://altar2.readthedocs.io/en/latest/tutorials/hello/hello.html)
-- [An overview of the AlTar framework](https://altar2.readthedocs.io/en/latest/tutorials/linear/linear.html)
-
-- Static slip inversion: a toy model with epistemic uncertainties
-
-  - [Step 1: prepare the input files](https://altar2.readthedocs.io/en/latest/tutorials/intro_cp/toymodel_step1.html)
-  - [Step 2: run AlTar2](https://altar2.readthedocs.io/en/latest/tutorials/intro_cp/toymodel_step2.html)
+Jupyter notebooks, in their own repository, [altar2-tutorials](https://github.com/lijun99/altar2-tutorials),
+and rendered at [altar2-tutorials.readthedocs.io](https://altar2-tutorials.readthedocs.io).
 
 ## Support
 

@@ -1,6 +1,0 @@
-
-; application instance name
-hello:
-    ; components configuration
-    who = AlTar users ; no start/end quotes for strings are needed in pfg file
-    times = 3

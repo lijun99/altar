@@ -33,7 +33,6 @@ extensions = [
     'autoapi.extension', # the api reference, generated from the sources
     'sphinx.ext.autodoc', # import the modules
     #'sphinx.ext.autosectionlabel', # auto label sections
-    'nbsphinx', # include jupyter notebooks
     #'recommonmark', # include markdown
     'myst_parser', # markdown support
     'sphinx.ext.mathjax', # render math via JavaScript, another option is sphinx.ext.imgmath
@@ -105,10 +104,6 @@ autoapi_add_toctree_entry = False # {index} lists api/index itself
 autoapi_options = ['members', 'undoc-members', 'show-inheritance', 'show-module-summary']
 # compiled extension modules have no python source to resolve imports into
 suppress_warnings = ['autoapi.python_import_resolution']
-
-# -- jupyter notebooks ------------------------------------------------------------
-# rendered with their saved outputs; running them needs altar, and a gpu for some
-nbsphinx_execute = 'never'
 
 # markdown (MyST): math with $...$ and $$...$$, amsmath environments, definition lists
 myst_enable_extensions = ["dollarmath", "amsmath", "deflist"]
