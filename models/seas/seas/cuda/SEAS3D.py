@@ -72,9 +72,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "accelerate the spin-up with anderson mixing of this many of its last cycles, "
         "at most 8; 0, the default, iterates the cycles plainly"
     )
-    spinup_anderson_beta = altar.properties.float(default=1.0)
-    spinup_anderson_beta.doc = (
-        "the mixing of the anderson step: 1 takes it whole, less damps it"
+    spinup_anderson_damping = altar.properties.float(default=1.0)
+    spinup_anderson_damping.doc = (
+        "the damping of each anderson step: 1, the default, takes it whole, less moves only "
+        "part of the way, for spin-ups whose steps overshoot"
     )
     warm_start = altar.properties.bool(default=True)
     warm_start.doc = (
@@ -406,7 +407,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             self.cmodel.initialize(**args, rho=self.sim.rho)
         # the acceleration of the spin-up
         self.cmodel.set_anderson(
-            depth=self.spinup_anderson, beta=self.spinup_anderson_beta
+            depth=self.spinup_anderson, beta=self.spinup_anderson_damping
         )
 
         # remove precomputed farfield effects on observations
