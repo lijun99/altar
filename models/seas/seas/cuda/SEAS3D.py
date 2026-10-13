@@ -96,9 +96,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     )
     record_mean = altar.properties.bool(default=True)
     record_mean.doc = (
-        "at the end of each beta step, run the mean model of the population and record, in the "
-        "SEAS group of the step files, its parameters, its slip rates at t = 0, which restarts "
-        "and reruns can spin up from, its predicted data and its data log-likelihood"
+        "in each step file the archiver writes, run the mean model of the population and record, "
+        "in its SEAS group, its parameters, its slip rates at t = 0, which restarts and reruns "
+        "can spin up from, its predicted data and its data log-likelihood"
     )
     record_posterior = altar.properties.int(default=0)
     record_posterior.doc = (
@@ -790,11 +790,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     @altar.export
     def bottom(self, annealer):
         """
-        At the end of a beta step, run the mean model of the population, for the archiver
+        At the end of a beta step, keep the population, whose mean model the archiver records
+        if it writes this step
         """
         super().bottom(annealer=annealer)
         if self.record_mean:
-            self.run_mean(theta=np.asarray(annealer.worker.step.theta))
+            self._population = annealer.worker.step.theta
         return self
 
     @altar.export
@@ -860,10 +861,12 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
     def record(self, archiver):
         """
-        Record the mean model of the last beta step via {archiver}
+        Run the mean model of the last beta step and record it via {archiver}, which calls me
+        for the steps it writes
         """
-        if self._mean is None:
+        if self._population is None:
             return self
+        self.run_mean(theta=np.asarray(self._population))
         archiver.write("SEAS/theta_mean", self._mean["theta_mean"])
         archiver.write(
             "SEAS/v_t0",
@@ -1013,6 +1016,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         False  # whether {state_init} holds the slip rates of a batch, for a warm start
     )
     _mean = None  # the mean model of the last beta step, for the archiver
+    _population = None  # the samples of the last beta step, for their mean model
 
 
 # end of file
