@@ -118,6 +118,7 @@ def gpu():
     cuda = sorted(path.name for path in (ROOT / "altar/tests/cuda").glob("*.py"))
     tests = scripts(ROOT / "altar/tests/cuda", cuda)
     tests += scripts(MODELS / "linear/tests", ["config.py"])
+    tests += scripts(MODELS / "seismic/tests", ["kinematic_mesh.py"])
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),

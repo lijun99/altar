@@ -85,6 +85,8 @@ function(altar_seismic_cuda_buildLibrary)
     libcudaseismic PRIVATE
     lib/libcudaseismic/cudaKinematic_kernels.cu
     lib/libcudaseismic/cudaKinematic.cu
+    lib/libcudaseismic/cudaKinematicMesh_kernels.cu
+    lib/libcudaseismic/cudaKinematicMesh.cu
     lib/libcudaseismic/cudaMoment.cu
     lib/libcudaseismic/version.cc
     )
@@ -138,6 +140,7 @@ function(altar_seismic_cuda_buildModule)
     ext/cudaseismic/cudaseismic.cc
     ext/cudaseismic/moment.cc
     ext/cudaseismic/kinematic.cc
+    ext/cudaseismic/kinematicmesh.cc
     )
 
   # install the seismic extension
