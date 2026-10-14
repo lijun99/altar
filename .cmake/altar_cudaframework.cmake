@@ -83,7 +83,6 @@ endfunction(altar_cuda_buildLibrary)
 
 # build the altar cuda extension module
 function(altar_cuda_buildModule)
-  # altar; pybind11 now, not the raw cpython api the old capsule-based bindings used
   Python_add_library(cudaaltarmodule MODULE WITH_SOABI)
   # adjust the name to match what python expects
   set_target_properties(

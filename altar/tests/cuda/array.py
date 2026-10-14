@@ -8,9 +8,8 @@
 
 
 """
-Sanity check: {altar.cuda.matrix}/{altar.cuda.vector} (the {pyre.grid}-backed replacement for
-the old capsule-based buffers, in {altar/cuda/array.py}) and {altar.cuda.cublas.axpy}, against
-a real GPU.
+Sanity check: {altar.cuda.matrix}/{altar.cuda.vector} (the {pyre.grid}-backed arrays in
+{altar/cuda/array.py}) and {altar.cuda.cublas.axpy}, against a real GPU.
 
 Covers every method the bayesian state/sampler layer (BayesianState, HMCState, ...) actually
 calls: {zero}/{fill}/{clone}/{copy}/{copy_from_host}/{copy_to_host}/{mean_sd}, the {source=}
