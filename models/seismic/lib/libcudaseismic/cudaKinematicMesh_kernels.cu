@@ -120,7 +120,10 @@ hypocenter_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int Np,
 // the threads update the active vertices in place, a vertex that changes activates its
 // neighbors, until a pass changes nothing; the shared memory holds the slowness of each patch,
 // the active vertices as two bitsets and, if {inShared}, the arrival times themselves, copied to
-// {gT} at the end
+// {gT} at the end. Only the vertices near the hypocenter, within two spacings past the seeding
+// radius of it or of the closest vertex, start seeded and active; the others start at the cap,
+// since their seeds, steeply above the rupture front, can't win, and the method then only works
+// near the front
 template <typename TYPE>
 __global__ void
 cudaKinematicMesh_kernels::
@@ -142,17 +145,35 @@ eikonal_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int Np, int
     const TYPE * hypo = gHypo + 9*sample;
     volatile TYPE * T = inShared ? s_T : gT + sample*V;
 
+    __shared__ TYPE s_closest[32];
     for (int p = threadIdx.x; p < Np; p += blockDim.x) s_patch[p] = 1/M[gIdx[3*Np + p]];
-    for (int w = threadIdx.x; w < W; w += blockDim.x) {
-        cur[w] = (w < W - 1 || V % 32 == 0) ? 0xffffffffu : ((1u << (V % 32)) - 1);
-        nxt[w] = 0;
+    for (int w = threadIdx.x; w < W; w += blockDim.x) { cur[w] = 0; nxt[w] = 0; }
+    // the distance of the closest vertex to the hypocenter
+    TYPE closest = cap;
+    for (int v = threadIdx.x; v < V; v += blockDim.x) {
+        const TYPE * x = gXYZ + 3*v;
+        TYPE r0 = x[0] - hypo[0], r1 = x[1] - hypo[1], r2 = x[2] - hypo[2];
+        closest = min(closest, sqrt(r0*r0 + r1*r1 + r2*r2));
+    }
+    for (int offset = 16; offset > 0; offset /= 2) {
+        closest = min(closest, __shfl_down_sync(0xffffffffu, closest, offset));
+    }
+    if (threadIdx.x % 32 == 0) s_closest[threadIdx.x / 32] = closest;
+    __syncthreads();
+    if (threadIdx.x == 0) {
+        for (int k = 1; k < (blockDim.x + 31)/32; ++k) s_closest[0] = min(s_closest[0], s_closest[k]);
     }
     __syncthreads();
+    const TYPE near = max(radius + 2, s_closest[0]/spacing + 2)*spacing;
     for (int v = threadIdx.x; v < V; v += blockDim.x) {
+        const TYPE * x = gXYZ + 3*v;
+        TYPE r0 = x[0] - hypo[0], r1 = x[1] - hypo[1], r2 = x[2] - hypo[2];
+        if (sqrt(r0*r0 + r1*r1 + r2*r2) > near) { T[v] = cap; continue; }
         int owner;
         TYPE s = seedSlowness(s_patch, gVPPtr, gVPPatch, v, owner);
         TYPE dh[2], ds;
         T[v] = seed(gXYZ + 3*v, hypo, s, spacing, radius, steepness, cap, dh, ds);
+        atomicOr(cur + (v >> 5), 1u << (v & 31));
     }
     __syncthreads();
 
