@@ -88,6 +88,7 @@ private:
     TYPE * _gpu_Mb = nullptr, * _gpu_T = nullptr, * _gpu_TI0 = nullptr, * _gpu_hypo = nullptr;
     int * _gpu_iterations = nullptr;
     size_t _shared;
+    bool _inShared; ///< whether the eikonal keeps the arrival times in shared memory
     // the gradient's, made on its first use
     mutable TYPE * _gpu_dTI0 = nullptr, * _gpu_dT = nullptr, * _gpu_weight = nullptr;
     mutable TYPE * _gpu_keys = nullptr, * _gpu_gs = nullptr;

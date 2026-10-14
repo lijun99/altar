@@ -85,8 +85,14 @@ cudaKinematicMesh(size_t Np, size_t Nt, double dt, const TYPE * gt0s,
     cudaSafeCall(cudaMalloc((void **)&_gpu_TI0, P*samples*sizeof(TYPE)));
     cudaSafeCall(cudaMalloc((void **)&_gpu_hypo, 9*samples*sizeof(TYPE)));
     cudaSafeCall(cudaMalloc((void **)&_gpu_iterations, samples*sizeof(int)));
-    // the shared memory of the eikonal: the slowness of each patch, then two bitsets
-    _shared = Np*sizeof(TYPE) + 2*((V + 31)/32)*sizeof(unsigned);
+    // the shared memory of the eikonal: the slowness of each patch, the arrival times if they fit,
+    // and two bitsets
+    int device, most;
+    cudaSafeCall(cudaGetDevice(&device));
+    cudaSafeCall(cudaDeviceGetAttribute(&most, cudaDevAttrMaxSharedMemoryPerBlockOptin, device));
+    size_t bitsets = 2*((V + 31)/32)*sizeof(unsigned);
+    _inShared = (Np + V)*sizeof(TYPE) + bitsets <= size_t(most);
+    _shared = (Np + (_inShared ? V : 0))*sizeof(TYPE) + bitsets;
     if (_shared > 48*1024) {
         cudaSafeCall(cudaFuncSetAttribute(cudaKinematicMesh_kernels::eikonal_batched<TYPE>,
             cudaFuncAttributeMaxDynamicSharedMemorySize, int(_shared)));
@@ -125,7 +131,7 @@ _arrivalTimes(const TYPE * theta, size_t parameters, size_t batch, cudaStream_t 
         <<<batch, EIKONAL_THREADS, _shared, stream>>>
         (_gidx_map, theta, parameters, int(_Np), int(_V), _xyz, _incPtr, _incA, _incB, _incPatch,
          _nbPtr, _nb, _vpPtr, _vpPatch, _gpu_hypo, _spacing, _radius, _steepness, _cap, _maxiter,
-         _gpu_T, _gpu_iterations);
+         _inShared, _gpu_T, _gpu_iterations);
     cudaSafeCall(cudaGetLastError());
     size_t points = batch*_P;
     cudaKinematicMesh_kernels::interpolate_batched<TYPE>

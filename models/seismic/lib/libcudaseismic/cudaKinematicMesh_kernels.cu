@@ -118,8 +118,9 @@ hypocenter_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int Np,
 
 // the arrival times on the mesh, one block per sample: the seeds, then the fast iterative method;
 // the threads update the active vertices in place, a vertex that changes activates its
-// neighbors, until a pass changes nothing; the active vertices are bitsets in shared memory,
-// after the slowness of each patch
+// neighbors, until a pass changes nothing; the shared memory holds the slowness of each patch,
+// the active vertices as two bitsets and, if {inShared}, the arrival times themselves, copied to
+// {gT} at the end
 template <typename TYPE>
 __global__ void
 cudaKinematicMesh_kernels::
@@ -127,18 +128,19 @@ eikonal_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int Np, int
     const TYPE * gXYZ, const int * gIncPtr, const int * gIncA, const int * gIncB,
     const int * gIncPatch, const int * gNbPtr, const int * gNb, const int * gVPPtr,
     const int * gVPPatch, const TYPE * gHypo, TYPE spacing, TYPE radius, TYPE steepness,
-    TYPE cap, int maxiter, TYPE * gT, int * gIterations)
+    TYPE cap, int maxiter, bool inShared, TYPE * gT, int * gIterations)
 {
     extern __shared__ __align__(sizeof(double)) unsigned char shared[];
     TYPE * s_patch = reinterpret_cast<TYPE *>(shared);
+    TYPE * s_T = s_patch + Np;
     const int W = (V + 31)/32;
-    unsigned * cur = reinterpret_cast<unsigned *>(s_patch + Np);
+    unsigned * cur = reinterpret_cast<unsigned *>(inShared ? s_T + V : s_T);
     unsigned * nxt = cur + W;
 
     const size_t sample = blockIdx.x;
     const TYPE * M = gM + sample*Nparam;
     const TYPE * hypo = gHypo + 9*sample;
-    volatile TYPE * T = gT + sample*V;
+    volatile TYPE * T = inShared ? s_T : gT + sample*V;
 
     for (int p = threadIdx.x; p < Np; p += blockDim.x) s_patch[p] = 1/M[gIdx[3*Np + p]];
     for (int w = threadIdx.x; w < W; w += blockDim.x) {
@@ -185,6 +187,9 @@ eikonal_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int Np, int
         if (!__syncthreads_or(changed)) break;
         for (int w = threadIdx.x; w < W; w += blockDim.x) { cur[w] = nxt[w]; nxt[w] = 0; }
         __syncthreads();
+    }
+    if (inShared) {
+        for (int v = threadIdx.x; v < V; v += blockDim.x) gT[sample*V + v] = T[v];
     }
     if (threadIdx.x == 0 && gIterations != nullptr) gIterations[sample] = iteration;
 }

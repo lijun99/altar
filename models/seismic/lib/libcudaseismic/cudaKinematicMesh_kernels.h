@@ -26,7 +26,7 @@ namespace cudaKinematicMesh_kernels {
         int V, const TYPE * gXYZ, const int * gIncPtr, const int * gIncA, const int * gIncB,
         const int * gIncPatch, const int * gNbPtr, const int * gNb, const int * gVPPtr,
         const int * gVPPatch, const TYPE * gHypo, TYPE spacing, TYPE radius, TYPE steepness,
-        TYPE cap, int maxiter, TYPE * gT, int * gIterations);
+        TYPE cap, int maxiter, bool inShared, TYPE * gT, int * gIterations);
 
     // the arrival times at the source points
     template <typename TYPE>
