@@ -33,6 +33,17 @@ parser.add_argument("--Nt", type=int, default=60)
 parser.add_argument("--Dt", type=float, default=1.0)
 parser.add_argument("--duration", type=float, default=160.0)
 parser.add_argument("--noise", type=float, default=0.01, help="data noise, m")
+parser.add_argument("--network", choices=["ring", "grid"], default="ring",
+                    help="10 stations around the fault, or a grid over and around it")
+parser.add_argument("--grid", type=int, default=8, help="stations along each side of the grid")
+parser.add_argument("--margin", type=float, default=20.0, help="the grid past the fault, km")
+parser.add_argument("--min-distance", type=float, default=12.0,
+                    help="the least horizontal distance of a station from a source, km")
+parser.add_argument("--points-gf", action="store_true",
+                    help="green's functions from the source points of each patch, not its centroid")
+parser.add_argument("--delta", type=float, default=None, help="the sampling interval of the data, s")
+parser.add_argument("--truth", choices=["v1", "v2"], default="v1",
+                    help="one asperity, or two, with rise times and rupture velocities that vary more")
 options = parser.parse_args()
 
 import csi
@@ -49,38 +60,56 @@ fault.setSourcePoints(options.points)
 Np = len(fault.patch)
 print(f"fault: {Np} patches, {fault.sources_uv.shape[0]} source points")
 
-# the stations, at least 12 km from every patch centroid
+# the stations, at least {min_distance} from every source of the green's functions
 centers = numpy.array([fault.getcenter(p)[:2] for p in fault.patch])
+sources = fault.sources_xyz[:, :2] if options.points_gf else centers
 x0, y0 = fault.Vertices[:, 0].min(), fault.Vertices[:, 1].min()
-xs, ys = numpy.meshgrid(x0 + numpy.array([-25.0, 15.0, 40.0, 80.0]),
-                        y0 + numpy.array([-25.0, 40.0, 105.0]), indexing="ij")
+x1, y1 = fault.Vertices[:, 0].max(), fault.Vertices[:, 1].max()
+if options.network == "ring":
+    xs, ys = numpy.meshgrid(x0 + numpy.array([-25.0, 15.0, 40.0, 80.0]),
+                            y0 + numpy.array([-25.0, 40.0, 105.0]), indexing="ij")
+else:
+    m = options.margin
+    xs, ys = numpy.meshgrid(numpy.linspace(x0 - m, x1 + m, options.grid),
+                            numpy.linspace(y0 - m, y1 + m, options.grid), indexing="ij")
 xs, ys = xs.ravel(), ys.ravel()
-far = numpy.array([numpy.hypot(centers[:, 0] - x, centers[:, 1] - y).min() for x, y in zip(xs, ys)])
-xs, ys = xs[far >= 12.0], ys[far >= 12.0]
+far = numpy.array([numpy.hypot(sources[:, 0] - x, sources[:, 1] - y).min() for x, y in zip(xs, ys)])
+keep = far >= options.min_distance
+xs, ys, far = xs[keep], ys[keep], far[keep]
 names = [f"S{k:02d}" for k in range(len(xs))]
 data = csi.seismic("synthetic", lon0=-71.5, lat0=-31.5)
 # csi's setStat converts XY with ll2xy, so give it lon, lat
 data.setStat(names, *fault.xy2ll(xs, ys), loc_format="LL")
-print(f"stations: {len(names)}, nearest {far[far >= 12.0].min():.1f} km from a patch centroid")
+print(f"stations: {len(names)}, nearest {far.min():.1f} km from a source")
 
 # the green's functions
-engine = csi.pyrockoengine(options.store_id, options.store_dir)
+engine = csi.pyrockoengine(options.store_id, options.store_dir, delta=options.delta)
 npts = int(round(options.duration / engine.delta))
 fault.setMu(engine.material)
 start = time.perf_counter()
-fault.buildKinGFs(data, engine, Dt=options.Dt, npts=npts)
+fault.buildKinGFs(data, engine, Dt=options.Dt, npts=npts, points=options.points_gf)
 fault.buildBigGD(data, Nt=options.Nt, Dt=options.Dt)
 print(f"green's functions: {time.perf_counter() - start:.1f} s; big G {fault.bigG.shape},"
       f" mu {fault.mu.min() / 1e9:.1f}-{fault.mu.max() / 1e9:.1f} GPa")
 
 # the true model: a dip-slip asperity, a little strike slip, rise times, rupture velocities
 uvc = numpy.array([fault.uv[f].mean(0) for f in fault.Faces])
-asperity = numpy.exp(-((uvc - [45.0, 30.0]) ** 2).sum(1) / (2 * 15.0 ** 2))
-strikeslip = 0.3 * asperity * numpy.sin(uvc[:, 0] / 20.0)
-dipslip = 0.2 + 4.0 * asperity
-risetime = 6.0 + 4.0 * asperity
-velocity = 2.6 + 0.4 * numpy.cos(uvc[:, 1] / 25.0)
-hypocenter = numpy.array([25.0, 35.0])
+if options.truth == "v1":
+    asperity = numpy.exp(-((uvc - [45.0, 30.0]) ** 2).sum(1) / (2 * 15.0 ** 2))
+    strikeslip = 0.3 * asperity * numpy.sin(uvc[:, 0] / 20.0)
+    dipslip = 0.2 + 4.0 * asperity
+    risetime = 6.0 + 4.0 * asperity
+    velocity = 2.6 + 0.4 * numpy.cos(uvc[:, 1] / 25.0)
+    hypocenter = numpy.array([25.0, 35.0])
+else:
+    # two asperities; the rise times follow the slip; the rupture slows along strike
+    a = numpy.exp(-((uvc - [22.0, 22.0]) ** 2).sum(1) / (2 * 12.0 ** 2))
+    b = numpy.exp(-((uvc - [58.0, 38.0]) ** 2).sum(1) / (2 * 12.0 ** 2))
+    strikeslip = 0.5 * (a - b)
+    dipslip = 0.3 + 3.0 * a + 4.0 * b
+    risetime = 4.0 + 7.0 * (dipslip - dipslip.min()) / (dipslip.max() - dipslip.min())
+    velocity = 3.2 - 1.2 * uvc[:, 0] / 80.0 + 0.2 * numpy.sin(uvc[:, 1] / 10.0)
+    hypocenter = numpy.array([15.0, 30.0])
 θ = numpy.concatenate([strikeslip, dipslip, risetime, velocity, hypocenter])
 fault.setHypoOnFault(*hypocenter)
 
@@ -113,7 +142,7 @@ stations = {"name": names, "lon": data.lon, "lat": data.lat}
 for label, xyz in [("source points at their patch centroids", centers[p]),
                    ("source points where they are", fault.sources_xyz)]:
     depth = (numpy.array([fault.getcenter(q)[2] for q in fault.patch])[p]
-             if xyz is centers[p] else fault.sources_xyz[:, 2])
+             if label.startswith("source points at") else fault.sources_xyz[:, 2])
     lon, lat = fault.xy2ll(xyz[:, 0], xyz[:, 1])
     sources = []
     for k in range(p.size):
@@ -124,7 +153,7 @@ for label, xyz in [("source points at their patch centroids", centers[p]),
                         "time": TI0[k], "duration": risetime[p[k]], "anchor": -1.0})
     start = time.perf_counter()
     # with the same lead as the green's functions, cropped to the data
-    pre = int(round(10.0 / engine.delta))
+    pre = int(round(40.0 / engine.delta))
     direct = engine.synthetics(sources, stations, npts + pre, tstart=-pre * engine.delta)
     direct = direct[..., pre:].sum(0).ravel()
     rel = numpy.linalg.norm(direct - clean) / numpy.linalg.norm(direct)
