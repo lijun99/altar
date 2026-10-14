@@ -29,14 +29,6 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // the same, but with per-parameter bounds: {low[j]}/{high[j]} apply to
-                // parameter {idx_begin + j}
-                template <typename real_type>
-                void sample_unique(matrix_view_t<real_type, false> theta,
-                    const size_t idx_begin, const size_t idx_end,
-                    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
-                    cudaStream_t stream=0);
-
                 // add each sample's log pdf, summed over [idx_begin, idx_end), into
                 // {probability} (samples,) -- constant per sample, since a uniform's log pdf
                 // doesn't depend on {theta} itself, only on the range
@@ -44,13 +36,6 @@ namespace altar {
                 void logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
                     const size_t idx_begin, const size_t idx_end,
                     const real_type low, const real_type high,
-                    cudaStream_t stream=0);
-
-                // the per-parameter-bounds counterpart of {logpdf}
-                template <typename real_type>
-                void logpdf_unique(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
-                    const size_t idx_begin, const size_t idx_end,
-                    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
                     cudaStream_t stream=0);
 
                 // the logistic-edged uniform of sharpness {sharpness}: add each sample's log

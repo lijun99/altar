@@ -22,13 +22,12 @@ altar-cuda.pkg.root := altar/cuda/
 altar-cuda.pkg.stem := cuda
 altar-cuda.pkg.pycdir := $(builder.dest.pyc)altar/cuda/
 
-# the kernels, with their headers in {include/altar/cuda}; {cudaRandom.cu} is not built
+# the kernels, with their headers in {include/altar/cuda}
 altar-cuda.lib.root := altar/lib/libcudaaltar/
 altar-cuda.lib.stem := cudaaltar
 altar-cuda.lib.incdir := $(builder.dest.inc)altar/cuda/
 altar-cuda.lib.languages := c++ cuda
 altar-cuda.lib.extern := pyre cuda
-altar-cuda.lib.sources.exclude = $(altar-cuda.lib.prefix)distributions/cudaRandom.cu
 altar-cuda.lib.c++.flags += $($(compiler.c++).std.c++23)
 altar-cuda.lib.cuda.flags += $(nvcc.std.c++20) --expt-relaxed-constexpr
 

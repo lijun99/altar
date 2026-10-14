@@ -59,7 +59,6 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaGaussian.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaRanged.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniform.cu
-    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogistic.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogitTransform.cu
     )
 
@@ -123,7 +122,6 @@ function(altar_cuda_buildModule)
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/uniform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/ranged.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/tgaussian.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logistic.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logittransform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc

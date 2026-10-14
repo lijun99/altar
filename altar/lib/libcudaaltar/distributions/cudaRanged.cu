@@ -42,28 +42,6 @@ namespace cudaRanged_kernels {
         }
     }
 
-    // the per-parameter-bounds counterpart of {_verify}
-    template <typename real_type>
-    __global__ void
-    _verify_unique(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
-        const size_t idx_begin, const size_t idx_end,
-        vector_view_t<real_type, true> low, vector_view_t<real_type, true> high)
-    {
-        int sample = blockIdx.x*blockDim.x + threadIdx.x;
-        auto samples = theta.packing().shape()[0];
-        if (sample >= samples) return;
-        if (invalid[{ sample }]) return;
-
-        int j = 0;
-        for (auto i = idx_begin; i < idx_end; ++i, ++j) {
-            auto value = theta[{ sample, static_cast<int>(i) }];
-            if (value < low[{ j }] || value > high[{ j }]) {
-                invalid[{ sample }] = 1;
-                return;
-            }
-        }
-    }
-
     // one thread per sample: clamp {theta[sample, idx_begin:idx_end]} into [low, high]
     template <typename real_type>
     __global__ void
@@ -108,31 +86,6 @@ template void altar::cuda::distributions::cudaRanged::verify<float>(
     matrix_view_t<float>, vector_view_t<int>, const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaRanged::verify<double>(
     matrix_view_t<double>, vector_view_t<int>, const size_t, const size_t, const double, const double, cudaStream_t);
-
-
-// launch {cudaRanged_kernels::_verify_unique}
-template <typename real_type>
-void altar::cuda::distributions::cudaRanged::
-verify_unique(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
-    const size_t idx_begin, const size_t idx_end,
-    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
-    cudaStream_t stream)
-{
-    auto samples = theta.packing().shape()[0];
-    auto blockSize = NTHREADS;
-    auto gridSize = IDIVUP(samples, blockSize);
-
-    cudaRanged_kernels::_verify_unique<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, invalid, idx_begin, idx_end, low, high);
-    cudaCheckError("cudaRanged::verify_unique error");
-}
-
-template void altar::cuda::distributions::cudaRanged::verify_unique<float>(
-    matrix_view_t<float>, vector_view_t<int>, const size_t, const size_t,
-    vector_view_t<float, true>, vector_view_t<float, true>, cudaStream_t);
-template void altar::cuda::distributions::cudaRanged::verify_unique<double>(
-    matrix_view_t<double>, vector_view_t<int>, const size_t, const size_t,
-    vector_view_t<double, true>, vector_view_t<double, true>, cudaStream_t);
 
 
 // launch {cudaRanged_kernels::_constrain}

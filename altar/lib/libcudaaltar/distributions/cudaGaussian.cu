@@ -70,26 +70,9 @@ namespace cudaGaussian_kernels {
         probability[{ sample }] += log_pdf;
     }
 
-    // one thread per sample: add the log pdf gradient with respect to parameter {index}
-    // into {probability[sample]}; a no-op when {index} falls outside [idx_begin, idx_end)
-    template <typename real_type>
-    __global__ void
-    _logpdfgradient_index(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
-        const size_t idx_begin, const size_t idx_end, const int index,
-        const real_type mean, const real_type sigma)
-    {
-        int sample = blockIdx.x*blockDim.x + threadIdx.x;
-        auto samples = theta.packing().shape()[0];
-        if (sample >= samples) return;
-        if (index < static_cast<int>(idx_begin) || index >= static_cast<int>(idx_end)) return;
-
-        auto log_pdf_gradient = (mean - theta[{ sample, index }]) / (sigma*sigma);
-        probability[{ sample }] += log_pdf_gradient;
-    }
-
     // one thread per sample: fill {probability[sample, idx_begin:idx_end]} with the log pdf
     // gradient with respect to every parameter in that range (a plain assignment, not an
-    // accumulation, unlike {_logpdfgradient_index} above)
+    // accumulation)
     template <typename real_type>
     __global__ void
     _logpdfgradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> probability,
@@ -158,31 +141,6 @@ template void altar::cuda::distributions::cudaGaussian::logpdf<float>(
     matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t, const float, const float, cudaStream_t);
 template void altar::cuda::distributions::cudaGaussian::logpdf<double>(
     matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t, const double, const double, cudaStream_t);
-
-
-// launch {cudaGaussian_kernels::_logpdfgradient_index}
-template <typename real_type>
-void altar::cuda::distributions::cudaGaussian::
-logpdfgradient_i(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
-    const size_t idx_begin, const size_t idx_end, const size_t index,
-    const real_type mean, const real_type sigma,
-    cudaStream_t stream)
-{
-    auto samples = theta.packing().shape()[0];
-    auto blockSize = NTHREADS;
-    auto gridSize = IDIVUP(samples, blockSize);
-
-    cudaGaussian_kernels::_logpdfgradient_index<real_type><<<gridSize, blockSize, 0, stream>>>(
-        theta, probability, idx_begin, idx_end, static_cast<int>(index), mean, sigma);
-    cudaCheckError("cudaGaussian::logpdfgradient_i error");
-}
-
-template void altar::cuda::distributions::cudaGaussian::logpdfgradient_i<float>(
-    matrix_view_t<float>, vector_view_t<float>, const size_t, const size_t, const size_t,
-    const float, const float, cudaStream_t);
-template void altar::cuda::distributions::cudaGaussian::logpdfgradient_i<double>(
-    matrix_view_t<double>, vector_view_t<double>, const size_t, const size_t, const size_t,
-    const double, const double, cudaStream_t);
 
 
 // launch {cudaGaussian_kernels::_logpdfgradient}

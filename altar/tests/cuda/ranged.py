@@ -12,7 +12,7 @@ Sanity check: altar.cuda.libcudaaltar.distributions's cudaRanged bindings, again
 
 Covers {verify} (flags samples outside [low, high], leaves an already-flagged sample alone
 even if its parameters are now in range), {constrain} (clamps in place, only within the
-requested column range), and the per-parameter-bounds counterpart {verify_unique}.
+requested column range).
 """
 
 
@@ -59,23 +59,6 @@ def test():
     expected = numpy.clip(arr[:, idx_begin:idx_end], low, high)
     assert numpy.allclose(c[:, idx_begin:idx_end], expected)
     assert numpy.array_equal(c[:, 0], arr[:, 0]) and numpy.array_equal(c[:, 3], arr[:, 3])
-
-    # per-parameter bounds
-    n = idx_end - idx_begin
-    lows = altar.cuda.managed(shape=(n,), cell="float64")
-    highs = altar.cuda.managed(shape=(n,), cell="float64")
-    numpy.asarray(lows)[:] = [-0.5, -1.5]
-    numpy.asarray(highs)[:] = [0.5, 1.5]
-    invalid = altar.cuda.managed(shape=(samples,), cell="int32")
-    numpy.asarray(invalid)[:] = 0
-    distributions.cudaRanged_verify_unique(theta, invalid, idx_begin, idx_end, lows, highs)
-    inv = numpy.asarray(invalid)
-    lo_arr, hi_arr = numpy.asarray(lows), numpy.asarray(highs)
-    expected = numpy.zeros(samples, dtype="int32")
-    for j in range(n):
-        col = arr[:, idx_begin + j]
-        expected |= ((col < lo_arr[j]) | (col > hi_arr[j])).astype("int32")
-    assert numpy.array_equal(inv, expected)
 
     # all done
     return
