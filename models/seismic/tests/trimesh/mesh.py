@@ -86,6 +86,33 @@ class Mesh:
         return X, E @ numpy.linalg.inv(M)
 
 
+def subdivide(vertices, triangles, patch, uv, m):
+    """
+    The mesh of {triangles}, each cut into m x m triangles, which keep its patch; the shared
+    vertices of neighboring triangles merged
+    """
+    vertices, uv = numpy.asarray(vertices, dtype=float), numpy.asarray(uv, dtype=float)
+    lattice = [(i, j) for i in range(m + 1) for j in range(m + 1 - i)]
+    index = {ij: k for k, ij in enumerate(lattice)}
+    L = numpy.array(lattice, dtype=float) / m
+    w = numpy.column_stack([1 - L.sum(1), L])
+    small = []
+    for i in range(m):
+        for j in range(m - i):
+            small.append((index[i, j], index[i + 1, j], index[i, j + 1]))
+            if i + j < m - 1:
+                small.append((index[i + 1, j], index[i + 1, j + 1], index[i, j + 1]))
+    small = numpy.array(small)
+    points = numpy.concatenate([w @ vertices[t] for t in triangles])
+    coords = numpy.concatenate([w @ uv[t] for t in triangles])
+    faces = numpy.concatenate([small + k * len(lattice) for k in range(len(triangles))])
+    # merge the copies of the vertices on shared edges
+    key = numpy.round(points / (1e-6 * numpy.abs(points).max()))
+    _, first, inverse = numpy.unique(key, axis=0, return_index=True, return_inverse=True)
+    return Mesh(vertices=points[first], triangles=inverse.ravel()[faces],
+                patch=numpy.repeat(numpy.asarray(patch), len(small)), uv=coords[first])
+
+
 def rectangle_fault(Nas, Ndd, dsp, n, shape=None):
     """
     The fault of {Nas} x {Ndd} square patches of side {dsp}, each cut into {n} x {n} squares and
