@@ -96,11 +96,6 @@ function(altar_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
-    # {CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} doesn't reliably carry the toolkit's bundled
-    # CCCL (libcu++) headers -- e.g. <cuda/std/mdspan> -- across cmake versions, so add it
-    # explicitly; these .cc files are compiled by the host compiler, not nvcc, so they don't
-    # get nvcc's own implicit "-isystem .../include/cccl" the way .cu files do
-    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
     )
   # set the linker
   set_target_properties(cudaaltarmodule PROPERTIES LINKER_LANGUAGE CUDA)

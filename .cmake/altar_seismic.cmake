@@ -118,7 +118,6 @@ function(altar_seismic_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
-    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda
     )
   # set the linker
