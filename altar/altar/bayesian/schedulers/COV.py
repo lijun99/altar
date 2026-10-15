@@ -99,6 +99,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         β = self.update_temperature(step=step)
         # the samples the weights belong to, for the proposal covariance: those before resampling
         step.weighted_theta = None
+        # the rows the resampling keeps, if it happens
+        step.ancestors = None
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
             step.weighted_theta = getattr(step, "theta_sampling", step.theta).copy()
@@ -205,6 +207,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # the index of the old sample behind each new one, duplicated by its count, shuffled
         rows = numpy.repeat(numpy.arange(counts.size), counts)
         self.rng.shuffle(rows)
+        # publish them, for the diagnostics of the run
+        step.ancestors = rows
 
         self.info.log(f"resampling: unique samples {numpy.count_nonzero(counts)} out of {counts.size}")
 

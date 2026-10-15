@@ -44,6 +44,8 @@ class Pool:
         """
         if self.last != self.count:
             self._keep(keep)
+        # the slot of the final state
+        self.final = (self.slot - 1) % self.size
         while self.kept < self.size:
             self._keep(keep)
         return self
@@ -56,6 +58,7 @@ class Pool:
         self.interval = interval
         self.chains = chains
         self.slot = 0
+        self.final = 0
         self.begin()
         return
 
