@@ -15,6 +15,10 @@ import altar
 from .Forward import load_samples
 
 
+# the diagnostics of the walks, as the annealing methods archive them
+WALKS = ["parents", "lineages", "correlation", "correlation_max", "states"]
+
+
 # declaration
 class Diagnose(altar.panel(), family='altar.actions.diagnose'):
     """
@@ -52,16 +56,23 @@ class Diagnose(altar.panel(), family='altar.actions.diagnose'):
         schedule = self.schedule(final=final)
         channel.line(f"diagnose: '{final}', {len(schedule['beta'])} archived steps")
         channel.line(f"  {'step':>5s}{'beta':>12s}{'acceptance':>12s}{'scaling':>10s}"
-                     f"{'cov(w)':>9s}{'ESS/N':>8s}{'log evidence':>16s}")
+                     f"{'cov(w)':>9s}{'ESS/N':>8s}{'log evidence':>16s}"
+                     f"{'parents':>9s}{'lineages':>10s}{'corr':>7s}{'max':>7s}{'states':>8s}")
         for i, step in enumerate(schedule["step"]):
             channel.line(f"  {step:>5s}{schedule['beta'][i]:12.4g}{schedule['acceptance'][i]:12.3f}"
                          f"{schedule['scaling'][i]:10.4g}{schedule['cov'][i]:9.3f}"
-                         f"{schedule['ess'][i]:8.3f}{schedule['evidence'][i]:16.6g}")
+                         f"{schedule['ess'][i]:8.3f}{schedule['evidence'][i]:16.6g}"
+                         f"{schedule['parents'][i]:9.0f}{schedule['lineages'][i]:10.0f}"
+                         f"{schedule['correlation'][i]:7.3f}{schedule['correlation_max'][i]:7.3f}"
+                         f"{schedule['states'][i]:8.2f}")
         channel.line("  (acceptance: of the moves in the step; cov(w), ESS/N: of the importance"
-                     " weights that led to it)")
+                     " weights that led to it; parents: the distinct samples its resampling kept;"
+                     " lineages: the initial samples its population descends from; corr, max:"
+                     " the median and largest correlation, across the chains, of the end of its"
+                     " walk with the start; states: the effective states per chain of a pool)")
 
         with h5py.File(str(self.output), "w") as h5:
-            for key in ["beta", "acceptance", "scaling", "cov", "ess", "evidence"]:
+            for key in ["beta", "acceptance", "scaling", "cov", "ess", "evidence", *WALKS]:
                 h5[f"schedule/{key}"] = numpy.asarray(schedule[key], dtype=float)
             if self.reference is not None:
                 self.compare(model=model, final=final, h5=h5, channel=channel)
@@ -79,10 +90,13 @@ class Diagnose(altar.panel(), family='altar.actions.diagnose'):
         if not files or self.beta(files[-1]) != self.beta(final):
             files.append(final)
         schedule = {key: [] for key in ["step", "beta", "acceptance", "scaling", "cov", "ess",
-                                        "evidence"]}
+                                        "evidence", *WALKS]}
         # the moves of each iteration, (iteration, beta, scaling, accepted, invalid, rejected)
         with h5py.File(final, "r") as h5:
             moves = numpy.asarray(h5["Statistics/mc_updates"]) if "Statistics/mc_updates" in h5 else None
+            # the diagnostics of the walks, by iteration, from a run that keeps them
+            walks = ({key: numpy.asarray(h5[f"Diagnostics/{key}"]) for key in ["iteration", *WALKS]}
+                     if "Diagnostics/iteration" in h5 else None)
         for path in files:
             with h5py.File(path, "r") as h5:
                 β = float(numpy.asarray(h5["Annealer/beta"]))
@@ -108,6 +122,13 @@ class Diagnose(altar.panel(), family='altar.actions.diagnose'):
                 schedule["cov"].append(numpy.nan)
                 schedule["ess"].append(numpy.nan)
             schedule["evidence"].append(evidence)
+            # the walk at this temperature; the final step's is the last
+            match = []
+            if walks is not None:
+                iteration = int(label) if label != "final" else walks["iteration"][-1]
+                match = numpy.flatnonzero(walks["iteration"] == iteration)
+            for key in WALKS:
+                schedule[key].append(walks[key][match[0]] if len(match) else numpy.nan)
         return schedule
 
 

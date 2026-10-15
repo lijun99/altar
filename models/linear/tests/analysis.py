@@ -20,7 +20,9 @@ its tr R and its linearized standard deviations must be those of the exact poste
 {synthetic} action makes data for a checkerboard true model, whose noise must have χ²/N near 1;
 the {recover} action, given exact samples of the posterior for those data, must find the z
 scores of the truth under that posterior. The {diagnose} action compares the catmip posterior
-with the exact samples: their means and standard deviations must agree.
+with the exact samples: their means and standard deviations must agree; it also reports the
+diagnostics of the walks: every resampling keeps some parents, and the last walk forgets most of
+its start.
 
     python analysis.py
     python analysis.py --gpu
@@ -50,6 +52,7 @@ NOISE = (0.6, 1.5)
 Z = 0.1
 SHIFT = 0.3
 SD = (0.8, 1.25)
+CORRELATION = 0.5
 
 CONFIG = f"""
 linear:
@@ -163,6 +166,8 @@ def main():
             shift = numpy.asarray(h5["reference/shift"]).max()
             ratio = numpy.asarray(h5["reference/sd_ratio"])
             final_beta = numpy.asarray(h5["schedule/beta"])[-1]
+            parents = numpy.asarray(h5["schedule/parents"])[1:]
+            correlation = numpy.asarray(h5["schedule/correlation"])[-1]
         with h5py.File(scratch / "recover.h5") as h5:
             z = numpy.asarray(h5["z"])
         truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
@@ -190,6 +195,9 @@ def main():
             ("diagnose, max |dmean|/sd", shift, 0.0, shift <= SHIFT),
             ("diagnose, sd ratio, worst", ratio[numpy.abs(ratio - 1).argmax()], 1.0,
              SD[0] <= ratio.min() and ratio.max() <= SD[1]),
+            ("diagnose, parents, fewest", parents.min(), SAMPLES,
+             0 < parents.min() and parents.max() <= SAMPLES),
+            ("diagnose, final walk correlation", correlation, 0.0, 0 <= correlation <= CORRELATION),
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
