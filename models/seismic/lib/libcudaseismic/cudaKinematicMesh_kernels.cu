@@ -412,10 +412,12 @@ eikonal_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, int
         }
         gs[parent[2]] += weight[2]*l;
     }
+    // patches may share a velocity, a column of theta: accumulate into it
     TYPE * grad = gGrad + sample*Nparam;
+    for (int p = 0; p < Np; ++p) grad[gIdx[3*Np + p]] = 0;
     for (int p = 0; p < Np; ++p) {
         TYPE vr = M[gIdx[3*Np + p]];
-        grad[gIdx[3*Np + p]] = -gs[p]/(vr*vr);
+        grad[gIdx[3*Np + p]] += -gs[p]/(vr*vr);
     }
     grad[gIdx[4*Np]] = gh0;
     grad[gIdx[4*Np+1]] = gh1;
