@@ -826,6 +826,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         patches = self.fault.inner_num_patches
         mean = theta.mean(axis=0, keepdims=True).astype(float)
         self.forward_model_batched(theta=mean, prediction=self.obs_disp, batch=1)
+        # the prediction, before the likelihood subtracts the data from it in place
+        prediction = np.asarray(self.obs_disp)[0].astype(float)
         self.dataobs.eval_likelihood(
             prediction=self.obs_disp,
             likelihood=self.likelihood_batch,
@@ -841,7 +843,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         self._mean = {
             "theta_mean": mean[0],
             "v_t0": v,
-            "prediction": np.asarray(self.obs_disp)[0].astype(float),
+            "prediction": prediction,
             "likelihood": float(np.asarray(self.likelihood_batch)[0]),
         }
         return self
@@ -895,6 +897,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
                 prediction=self.obs_disp,
                 batch=batch,
             )
+            # the predictions, before the likelihood subtracts the data from them in place
+            runs["prediction"].append(np.asarray(self.obs_disp)[:batch].astype(float))
             self.dataobs.eval_likelihood(
                 prediction=self.obs_disp,
                 likelihood=self.likelihood_batch,
@@ -905,7 +909,6 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             runs["likelihood"].append(
                 np.asarray(self.likelihood_batch)[:batch].astype(float)
             )
-            runs["prediction"].append(np.asarray(self.obs_disp)[:batch].astype(float))
             # [systems, steps, slip or slip rate, components, patches], the slip rates linear
             state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
                 batch, steps, 2, 2, patches
