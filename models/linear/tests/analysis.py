@@ -52,7 +52,7 @@ NOISE = (0.6, 1.5)
 Z = 0.1
 SHIFT = 0.3
 SD = (0.8, 1.25)
-CORRELATION = 0.5
+CORRELATION = 0.6
 
 CONFIG = f"""
 linear:

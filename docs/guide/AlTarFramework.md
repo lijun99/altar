@@ -722,7 +722,22 @@ slipmodel.plexus diagnose --config=static.pfg
   effective sample size as a share of the chains, $\mathrm{ESS}/N = 1/(1 + \mathrm{cov}^2)$; COV
   keeps the coefficient of variation at its target, 1, so $\mathrm{ESS}/N \approx 0.5$, but for the
   last step, which reaches $\beta = 1$;
-- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it.
+- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it;
+- how well the walk of the step mixed, from runs that archive it (`Diagnostics` in the step
+  files): `parents`, the distinct samples its resampling kept; `lineages`, the initial samples the
+  population descends from; `corr` and `max`, the median and largest, over the parameters, of the
+  correlation across the chains between the end of each chain's walk and its start; and, with a pool
+  (`controller.pool` > 1), `states`, the effective states per chain, the variance of the population
+  over that of the means of the chains.
+
+A walk that leaves the correlation near 1 hasn't moved the chains away from the copies the
+resampling made; their spread then shrinks step by step, and the posterior comes out too narrow.
+More steps per $\beta$, a better proposal or HMC lower it; the
+{ref}`decorrelating step counter <stepcounters>` walks until it is below a target. Few lineages are
+expected after many steps and harmless when the walks decorrelate. The effective states per chain
+tell how much a pool adds: about 1 when the states a chain keeps are as good as one, up to `pool`
+when they are independent; it reads low when sibling chains, copies of one parent, haven't
+separated.
 
 Given a `reference` posterior, e.g. from a longer run, with more chains or steps, or from another
 sampler, it also reports, for each parameter set, how far the means are from the reference's,
