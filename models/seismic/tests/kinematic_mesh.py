@@ -25,6 +25,8 @@ sys.path.insert(0, str(HERE / "trimesh"))
 # the fault: 4 x 3 squares of 10 km, each cut into two triangles, dipping 30 degrees
 NS, ND, SIZE, DIP = 4, 3, 10.0, 30.0
 REFINE, POINTS, NT, DT, OBS = 6, 2, 40, 1.0, 300
+# the patches that share a velocity, in the grouped case
+GROUP = 4
 CONFIG = """
 slipmodel:
     model = altar.models.seismic.kinematicmesh
@@ -106,12 +108,13 @@ def fault():
     return xyz, uv, faces, sources, owners
 
 
-def theta(rng, Np, count):
+def theta(rng, Np, count, velocities=None):
     """
-    {count} random models
+    {count} random models, with a velocity per patch or per group
     """
+    velocities = Np if velocities is None else velocities
     return numpy.column_stack([rng.normal(0, 0.5, (count, Np)), rng.uniform(0.5, 4, (count, Np)),
-                               rng.uniform(3, 10, (count, Np)), rng.uniform(1.8, 3.5, (count, Np)),
+                               rng.uniform(3, 10, (count, Np)), rng.uniform(1.8, 3.5, (count, velocities)),
                                rng.uniform(5, 30, (count, 1)), rng.uniform(5, 25, (count, 1))])
 
 
@@ -126,27 +129,34 @@ def main():
         with h5py.File(scratch / "mesh.h5", "w") as h5:
             h5["vertices"], h5["uv"], h5["faces"] = xyz, uv, faces
             h5["sources/uv"], h5["sources/patch"] = sources, owners
+            h5["groups/velocity"] = numpy.arange(Np) // GROUP
         with h5py.File(scratch / "kinematicG.gf.h5", "w") as h5:
             h5["kinematicG.gf"] = rng.standard_normal((2 * Np * NT, OBS)) * 1e-2
         with h5py.File(scratch / "kinematicG.data.h5", "w") as h5:
             h5["kinematicG.data"] = rng.standard_normal(OBS) * 1e-2
-        (scratch / "slipmodel.pfg").write_text(
-            CONFIG.format(refine=REFINE, patches=Np, obs=OBS, nt=NT, dt=DT))
+        config = CONFIG.format(refine=REFINE, patches=Np, obs=OBS, nt=NT, dt=DT)
+        (scratch / "slipmodel.pfg").write_text(config)
+        # the same, with a velocity for each group of {GROUP} patches
+        grouped = config.replace(f"        refine = {REFINE}\n",
+                                 f"        refine = {REFINE}\n        velocity_groups = groups/velocity\n")
+        grouped = grouped.replace("            rupturevelocity:\n                count = " + str(Np),
+                                  "            rupturevelocity:\n                count = " + str(Np // GROUP))
+        (scratch / "grouped.pfg").write_text(grouped)
         os.chdir(scratch)
 
         # each precision in its own process, since pyre reads the command line once
         import subprocess
         results = {}
-        for precision in ["float64", "float32"]:
-            status = subprocess.run([sys.executable, str(HERE / "kinematic_mesh.py"), "--run", precision,
+        for label in ["float64", "float32", "grouped"]:
+            status = subprocess.run([sys.executable, str(HERE / "kinematic_mesh.py"), "--run", label,
                                      str(Np)], cwd=scratch, capture_output=True, text=True)
-            lines = [l for l in (status.stdout + status.stderr).splitlines() if l.startswith(precision)]
+            lines = [l for l in (status.stdout + status.stderr).splitlines() if l.startswith(label)]
             print("\n".join(lines) if status.returncode == 0 else status.stdout + status.stderr)
             if status.returncode != 0:
                 return 1
-            saved = numpy.load(scratch / f"{precision}.npz", allow_pickle=True)
-            results[precision] = (saved["theta"], saved["Mb"], saved["dMb"], saved["grad"],
-                                  saved["fd"].item())
+            saved = numpy.load(scratch / f"{label}.npz", allow_pickle=True)
+            results[label] = (saved["theta"], saved["Mb"], saved["dMb"], saved["grad"],
+                              saved["fd"].item())
         # the prototype, on the same mesh
         from altar.models.seismic import mesh as meshes
         from mesh import Mesh
@@ -172,28 +182,51 @@ def main():
             ("gradient, single against double precision",
              numpy.abs(grad32 - grad).max() / numpy.abs(grad).max(), 1e-3),
         ]
+        # the grouped velocities: the prototype on theta with each patch's velocity its group's, the
+        # velocity gradients summed over each group
+        θg, Mbg, dMbg, gradg, fdg = results["grouped"]
+        groups = numpy.arange(Np) // GROUP
+        G = Np // GROUP
+        expand = lambda t: numpy.concatenate([t[:3 * Np], t[3 * Np:3 * Np + G][groups], t[3 * Np + G:]])
+        mbg, pgg = [], []
+        for t, d in zip(θg, dMbg):
+            mbg.append(proto(expand(t)))
+            g = proto.adjoint(d)
+            pgg.append(numpy.concatenate([g[:3 * Np], numpy.bincount(groups, weights=g[3 * Np:4 * Np]),
+                                          g[4 * Np:]]))
+        mbg, pgg = numpy.array(mbg), numpy.array(pgg)
+        checks += [
+            ("grouped velocities: Mb against the prototype",
+             numpy.abs(Mbg - mbg).max() / numpy.abs(mbg).max(), 1e-10),
+            ("grouped velocities: gradient against the prototype",
+             numpy.abs(gradg - pgg).max() / numpy.abs(pgg).max(), 1e-9),
+            ("grouped velocities: against central differences", fdg, 1e-6),
+        ]
         for name, value, tolerance in checks:
             good = value <= tolerance
             failures += not good
-            print(f"{name:46s} {'ok' if good else 'FAIL':4s} {value:.2e} (tolerance {tolerance:.0e})")
+            print(f"{name:52s} {'ok' if good else 'FAIL':4s} {value:.2e} (tolerance {tolerance:.0e})")
     finally:
         os.chdir(HERE)
         shutil.rmtree(scratch, ignore_errors=True)
     return 1 if failures else 0
 
 
-def run(precision, Np, rng):
+def run(label, Np, rng):
     """
     Mb, the gradient of r.Mb for random r, and its worst relative difference from central
-    differences, for random models, in {precision}
+    differences, for random models: in double or single precision, or in double with the
+    velocities of groups of patches
     """
+    precision = "float32" if label == "float32" else "float64"
+    config = "grouped.pfg" if label == "grouped" else "slipmodel.pfg"
     # pyre reads the command line when altar is first imported
-    sys.argv = [sys.argv[0], "--config=slipmodel.pfg", f"--job.precision={precision}"]
+    sys.argv = [sys.argv[0], f"--config={config}", f"--job.precision={precision}"]
     import altar, altar.cuda, altar.models.seismic
     app = altar.shells.altar(name="slipmodel").initialize()
     model = app.model
     count = model.samples
-    θ = theta(rng, Np, count)
+    θ = theta(rng, Np, count, velocities=Np // GROUP if label == "grouped" else None)
     dMb = rng.standard_normal((count, model.NGbparameters))
     gθ = altar.cuda.matrix(source=θ, dtype=precision)
     gMb = altar.cuda.matrix(shape=(count, model.NGbparameters), dtype=precision)
@@ -204,7 +237,7 @@ def run(precision, Np, rng):
     model.cmodel.gradient(theta=gθ.grid, dmb=gdMb.grid, gradient=gGrad.grid, batch=count)
     grad = numpy.array(numpy.asarray(gGrad), dtype=float)
     fd = None
-    if precision == "float64":
+    if label != "float32":
         # central differences of r.Mb, all the parameters of all the samples at once
         def f(x):
             g = altar.cuda.matrix(source=x, dtype=precision)
@@ -217,9 +250,9 @@ def run(precision, Np, rng):
             e[:, k] = ε
             fds[:, k] = (f(θ + e) - f(θ - e)) / (2 * ε)
         fd = (numpy.abs(grad - fds).max(axis=1) / numpy.abs(fds).max(axis=1)).max()
-    print(f"{precision}: {count} samples, {model.vertices} vertices,"
+    print(f"{label}: {count} samples, {model.vertices} vertices,"
           f" eikonal passes {model.cmodel.iterations(count)}")
-    numpy.savez(f"{precision}.npz", theta=θ, Mb=Mb, dMb=dMb, grad=grad, fd=numpy.array(fd, dtype=object))
+    numpy.savez(f"{label}.npz", theta=θ, Mb=Mb, dMb=dMb, grad=grad, fd=numpy.array(fd, dtype=object))
     return 0
 
 
