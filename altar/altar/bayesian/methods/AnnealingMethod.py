@@ -14,6 +14,7 @@ from datetime import datetime
 
 if typing.TYPE_CHECKING:
     from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.methods.Diagnostics import Diagnostics
     from altar.shells.Application import Application
 
 # declaration
@@ -104,6 +105,12 @@ class AnnealingMethod:
         scheduler.update(step=self.step)
         # update the iteration counter
         self.iteration += 1
+        # the population the chains walk from, and the rows it was resampled from
+        diagnostics = self.diagnose(annealer=annealer)
+        if diagnostics is not None:
+            if self.step.ancestors is not None:
+                diagnostics.resampled(rows=self.step.ancestors)
+            diagnostics.begin(θ=getattr(self.step, "theta_sampling", self.step.theta))
         # all done
         return self
 
@@ -159,10 +166,38 @@ class AnnealingMethod:
         channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
+        # how well the walk mixed
+        diagnostics = self.diagnose(annealer=annealer)
+        if diagnostics is not None and diagnostics.start is not None:
+            pool = getattr(self, "pool", None)
+            walk = diagnostics.end(θ=getattr(self.step, "theta_sampling", self.step.theta),
+                final=0 if pool is None else pool.final, iteration=self.iteration, beta=self.beta)
+            channel.log(f"diagnostics: parents {walk['parents']}, lineages {walk['lineages']}, "
+                        f"correlation with the start median {walk['correlation']:.3f}, "
+                        f"max {walk['correlation_max']:.3f}"
+                        + (f", effective states per chain {walk['states']:.2f}"
+                           if diagnostics.pool > 1 else ""))
         self.step.log_evidence = getattr(annealer.scheduler, "log_evidence", None)
         annealer.archiver.recordstep(step=self.step, stats=info, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
+
+
+    def diagnose(self, annealer: Annealer) -> Diagnostics | None:
+        """
+        My diagnostics of the walks, made on first use, on the manager; none if my population is
+        not the chains of every task, {pool} states each
+        """
+        if self.diagnostics is None:
+            tasks = getattr(self, "tasks", 1)
+            chains = annealer.model.job.chains
+            pool, remainder = divmod(self.step.samples, tasks * chains)
+            if remainder or pool != getattr(annealer, "pool", 1):
+                return None
+            from .Diagnostics import Diagnostics
+            self.diagnostics = Diagnostics(tasks=tasks, chains=chains, pool=pool)
+            annealer.archiver.register(self.diagnostics)
+        return self.diagnostics
 
 
     def bottom(self, annealer: Annealer) -> typing.Self:
@@ -207,6 +242,8 @@ class AnnealingMethod:
 
     # whether i keep a pool of the states of the chains
     pools: bool = False
+    # how well the walks mix, kept by the manager
+    diagnostics: Diagnostics | None = None
 
 
     # meta-methods
