@@ -42,8 +42,17 @@ parser.add_argument("--min-distance", type=float, default=12.0,
 parser.add_argument("--points-gf", action="store_true",
                     help="green's functions from the source points of each patch, not its centroid")
 parser.add_argument("--delta", type=float, default=None, help="the sampling interval of the data, s")
-parser.add_argument("--truth", choices=["v1", "v2"], default="v1",
-                    help="one asperity, or two, with rise times and rupture velocities that vary more")
+parser.add_argument("--truth", choices=["v1", "v2", "v3"], default="v1",
+                    help="one asperity; two, with rise times and rupture velocities that vary more; "
+                         "or v2's with a velocity per group")
+parser.add_argument("--nudge", action="store_true",
+                    help="move the stations too close to a source to the nearest place far enough, "
+                         "rather than drop them")
+parser.add_argument("--groups", default=None,
+                    help="velocity groups, blocks of patches along strike x down dip, e.g. 4x3")
+parser.add_argument("--static-grid", type=int, default=0,
+                    help="static stations along each side of a grid, besides the kinematic ones")
+parser.add_argument("--static-noise", type=float, default=0.005, help="static data noise, m")
 options = parser.parse_args()
 
 import csi
@@ -62,7 +71,7 @@ print(f"fault: {Np} patches, {fault.sources_uv.shape[0]} source points")
 
 # the stations, at least {min_distance} from every source of the green's functions
 centers = numpy.array([fault.getcenter(p)[:2] for p in fault.patch])
-sources = fault.sources_xyz[:, :2] if options.points_gf else centers
+points_xy = fault.sources_xyz[:, :2] if options.points_gf else centers
 x0, y0 = fault.Vertices[:, 0].min(), fault.Vertices[:, 1].min()
 x1, y1 = fault.Vertices[:, 0].max(), fault.Vertices[:, 1].max()
 if options.network == "ring":
@@ -72,10 +81,30 @@ else:
     m = options.margin
     xs, ys = numpy.meshgrid(numpy.linspace(x0 - m, x1 + m, options.grid),
                             numpy.linspace(y0 - m, y1 + m, options.grid), indexing="ij")
-xs, ys = xs.ravel(), ys.ravel()
-far = numpy.array([numpy.hypot(sources[:, 0] - x, sources[:, 1] - y).min() for x, y in zip(xs, ys)])
-keep = far >= options.min_distance
-xs, ys, far = xs[keep], ys[keep], far[keep]
+def place(xs, ys):
+    """
+    The stations at {xs}, {ys} at least {min_distance} from every source: the others dropped, or
+    moved to the closest place on rings around them that is far enough
+    """
+    distance = lambda x, y: numpy.hypot(points_xy[:, 0] - x, points_xy[:, 1] - y).min()
+    kept = []
+    for x, y in zip(xs.ravel(), ys.ravel()):
+        if distance(x, y) >= options.min_distance:
+            kept.append((x, y))
+            continue
+        if not options.nudge:
+            continue
+        for r in numpy.arange(0.25, 4.01, 0.25):
+            ring = [(x + r * numpy.cos(a), y + r * numpy.sin(a)) for a in numpy.linspace(0, 2 * numpy.pi, 24, endpoint=False)]
+            good = [c for c in ring if distance(*c) >= options.min_distance]
+            if good:
+                kept.append(good[0])
+                break
+    kept = numpy.array(kept)
+    return kept[:, 0], kept[:, 1], numpy.array([distance(x, y) for x, y in kept])
+
+
+xs, ys, far = place(xs, ys)
 names = [f"S{k:02d}" for k in range(len(xs))]
 data = csi.seismic("synthetic", lon0=-71.5, lat0=-31.5)
 # csi's setStat converts XY with ll2xy, so give it lon, lat
@@ -102,7 +131,8 @@ if options.truth == "v1":
     velocity = 2.6 + 0.4 * numpy.cos(uvc[:, 1] / 25.0)
     hypocenter = numpy.array([25.0, 35.0])
 else:
-    # two asperities; the rise times follow the slip; the rupture slows along strike
+    # two asperities; the rise times follow the slip; the rupture slows along strike; v3: a velocity
+    # for each group, at its center
     a = numpy.exp(-((uvc - [22.0, 22.0]) ** 2).sum(1) / (2 * 12.0 ** 2))
     b = numpy.exp(-((uvc - [58.0, 38.0]) ** 2).sum(1) / (2 * 12.0 ** 2))
     strikeslip = 0.5 * (a - b)
@@ -110,6 +140,20 @@ else:
     risetime = 4.0 + 7.0 * (dipslip - dipslip.min()) / (dipslip.max() - dipslip.min())
     velocity = 3.2 - 1.2 * uvc[:, 0] / 80.0 + 0.2 * numpy.sin(uvc[:, 1] / 10.0)
     hypocenter = numpy.array([15.0, 30.0])
+# the velocity groups
+groups = None
+if options.groups:
+    na, nd = (int(n) for n in options.groups.split("x"))
+    width, depth = fault.uv[:, 0].max(), fault.uv[:, 1].max()
+    gi = numpy.clip((uvc[:, 0] / (width / na)).astype(int), 0, na - 1)
+    gj = numpy.clip((uvc[:, 1] / (depth / nd)).astype(int), 0, nd - 1)
+    groups = gi * nd + gj
+    print(f"velocity groups: {na} x {nd}, {numpy.bincount(groups).min()}-{numpy.bincount(groups).max()} patches each")
+if options.truth == "v3":
+    assert groups is not None, "the v3 truth needs --groups"
+    centers_uv = numpy.array([uvc[groups == g].mean(0) for g in range(groups.max() + 1)])
+    per_group = 3.2 - 1.2 * centers_uv[:, 0] / 80.0 + 0.2 * numpy.sin(centers_uv[:, 1] / 10.0)
+    velocity = per_group[groups]
 θ = numpy.concatenate([strikeslip, dipslip, risetime, velocity, hypocenter])
 fault.setHypoOnFault(*hypocenter)
 
@@ -160,8 +204,44 @@ for label, xyz in [("source points at their patch centroids", centers[p]),
     print(f"direct simulation, {label}: {time.perf_counter() - start:.1f} s,"
           f" |direct - G Mb| / |direct| = {rel:.4f}; noise / signal {options.noise * numpy.sqrt(clean.size) / numpy.linalg.norm(direct):.4f}")
 
+# the static data: the kinematic stations and a grid, from the same store, at 1 s
+if options.static_grid:
+    m = options.margin
+    gx, gy = numpy.meshgrid(numpy.linspace(x0 - m, x1 + m, options.static_grid),
+                            numpy.linspace(y0 - m, y1 + m, options.static_grid), indexing="ij")
+    gx, gy, gfar = place(gx, gy)
+    sx, sy = numpy.concatenate([xs, gx]), numpy.concatenate([ys, gy])
+    snames = names + [f"G{k:03d}" for k in range(len(gx))]
+    static = csi.seismic("static", lon0=-71.5, lat0=-31.5)
+    static.setStat(snames, *fault.xy2ll(sx, sy), loc_format="LL")
+    sengine = csi.pyrockoengine(options.store_id, options.store_dir, delta=1.0)
+    start = time.perf_counter()
+    Gs = fault.buildStaticGFs(static, sengine, points=options.points_gf)
+    sclean = Gs @ numpy.concatenate([strikeslip, dipslip])
+    sobserved = sclean + options.static_noise * rng.standard_normal(sclean.size)
+    # the kinematic data settle to the static offsets of their stations
+    final = clean.reshape(len(names), 3, -1)[:, :, -1].ravel()
+    settle = numpy.linalg.norm(final - sclean[:final.size]) / numpy.linalg.norm(sclean[:final.size])
+    print(f"static: {len(snames)} stations ({len(gx)} on the grid, nearest {gfar.min():.1f} km),"
+          f" {sclean.size} observations in {time.perf_counter() - start:.1f} s; max |d| {numpy.abs(sclean).max():.3f} m,"
+          f" noise {options.static_noise} m; kinematic data at 160 s against the static offsets: {settle:.4f}")
+    import h5py
+    with h5py.File("static.gf.h5", "w") as h5:
+        h5["static.gf"] = Gs
+    with h5py.File("static.data.h5", "w") as h5:
+        h5["static.data"] = sobserved
+    numpy.savetxt("static_stations.txt", numpy.column_stack(fault.xy2ll(sx, sy)), header=" ".join(snames))
+
 # save
 fault.saveKinematic("mesh.h5")
+if groups is not None:
+    import h5py
+    with h5py.File("mesh.h5", "a") as h5:
+        h5["groups/velocity"] = groups
+    # the true model as the grouped inversions see it, a velocity per group
+    velocities = numpy.array([velocity[groups == g].mean() for g in range(groups.max() + 1)])
+    numpy.savetxt("theta_true_grouped.txt",
+                  numpy.concatenate([strikeslip, dipslip, risetime, velocities, hypocenter])[None, :])
 numpy.savetxt("theta_true.txt", θ[None, :])
 numpy.save("Mb_true.npy", Mb)
 numpy.savetxt("stations.txt", numpy.column_stack([data.lon, data.lat]), header=" ".join(names))
