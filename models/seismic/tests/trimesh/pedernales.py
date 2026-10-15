@@ -28,8 +28,8 @@ parser.add_argument("--output", default="pedernales")
 parser.add_argument("--cells", type=int, default=8, help="cells along strike and down dip")
 parser.add_argument("--refine", type=int, default=10)
 parser.add_argument("--points", type=int, default=3)
-parser.add_argument("--Nt", type=int, default=70)
-parser.add_argument("--duration", type=float, default=150.0)
+parser.add_argument("--Nt", type=int, default=85)
+parser.add_argument("--duration", type=float, default=160.0)
 parser.add_argument("--bandpass", type=float, nargs=2, default=[0.015, 0.08])
 parser.add_argument("--noise", type=float, default=0.005, help="waveform noise, m")
 parser.add_argument("--gps-noise", type=float, default=0.005, help="static gps noise, m")
@@ -161,8 +161,6 @@ for name, values in [("kinematicG.data", waveforms), ("static.gf", numpy.vstack(
                      ("static.data", static)]:
     with h5py.File(f"{name}.h5", "w") as h5:
         h5[name] = values
-with h5py.File("kinematicG.data.h5", "w") as h5:
-    h5["kinematicG.data"] = waveforms
 numpy.savetxt("static.sigma.txt", sigma)
 numpy.save("static.Cd.npy", numpy.diag(sigma ** 2))
 with h5py.File("static.Cd.h5", "w") as h5:
