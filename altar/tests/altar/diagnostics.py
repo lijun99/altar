@@ -11,7 +11,8 @@
 Check the diagnostics of the walks on a pooled population over two tasks: the rows of the
 chains, the parents and lineages through a resampling and a walk, the correlation of a walk that
 doesn't move and of one that forgets its start, and the effective states per chain of a pool of
-independent states and of one of copies; and that a pool knows the slot of the final states
+independent states and of one of copies; and that a pool knows the slot of the final states, and
+spreads its slots over the previous walk when asked
 """
 
 
@@ -76,6 +77,22 @@ def test():
         p.advance(kept.append)
     p.end(kept.append)
     assert kept == [10, 20, 0] and p.final == 1
+
+    # spread over the previous walk: the first walk of 12 keeps its last states, every step; the
+    # next keeps every 12 // 3 = 4 steps, at 4, 8 and 12, the last one its final state
+    kept = []
+    p = Pool(size=3, interval=0, chains=10)
+    p.begin()
+    for _ in range(12):
+        p.advance(kept.append)
+    p.end(kept.append)
+    assert len(kept) == 12 and p.walked == 12
+    steps = []
+    p.begin()
+    for step in range(1, 13):
+        p.advance(lambda offset: steps.append(step))
+    p.end(lambda offset: steps.append(step))
+    assert p.interval == 4 and steps == [4, 8, 12]
 
     # all done
     return

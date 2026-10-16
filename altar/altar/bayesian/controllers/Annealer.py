@@ -47,8 +47,10 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
                "final states only, which turns pooling off"
 
     pool_interval = altar.properties.int(default=1)
-    pool_interval.validators = altar.constraints.isGreaterEqual(value=1)
-    pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps"
+    pool_interval.validators = altar.constraints.isGreaterEqual(value=0)
+    pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps; 0 " \
+                        "spreads them over the length of the previous walk, for walks whose " \
+                        "length varies, as with the decorrelating step counter"
 
 
     # protocol obligations
