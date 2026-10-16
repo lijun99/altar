@@ -20,6 +20,7 @@ def test():
     import altar.cuda
     from altar.bayesian.samplers.cuda.HMC import HMC
     from altar.bayesian.stepsizers.StepSizer import FixedStepSize
+    from altar.bayesian.stepcounters.StepCounter import FixedSteps
 
     samples = 2000
     parameters = 3
@@ -91,6 +92,7 @@ def test():
     def sampler(mass):
         hmc = HMC()
         hmc.stepsizer = FixedStepSize()
+        hmc.stepcounter = FixedSteps()
         hmc.mass_matrix = mass
         hmc.mass_shrinkage = 0.0
         hmc.initialize(application=_Application())

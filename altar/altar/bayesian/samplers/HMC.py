@@ -44,6 +44,10 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
     stepsizer = altar.bayesian.stepsizer()
     stepsizer.doc = "the step size regulator that adjusts {step_size} based on acceptance statistics"
 
+    # step count regulator: how many trajectories to run per β step
+    stepcounter = altar.bayesian.stepcounter()
+    stepcounter.doc = "the step count regulator that decides how many trajectories to run per β step"
+
     adapt_mass_matrix = altar.properties.bool(default=True)
     adapt_mass_matrix.doc = \
         "whether to precondition the leapfrog dynamics with a diagonal mass matrix estimated " \
@@ -83,6 +87,7 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         self._impl.leapfrog_steps = self.leapfrog_steps
         self._impl.step_size = self.step_size
         self._impl.stepsizer = self.stepsizer
+        self._impl.stepcounter = self.stepcounter
         self._impl.adapt_mass_matrix = self.adapt_mass_matrix
         self._impl.mass_matrix = self.mass_matrix
         self._impl.mass_shrinkage = self.mass_shrinkage

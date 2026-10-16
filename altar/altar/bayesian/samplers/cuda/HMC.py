@@ -19,6 +19,7 @@ from altar.cuda import cublas, libcudaaltar
 
 from altar.bayesian.states.cuda.HMCState import HMCState
 from altar.bayesian.statistics import effective_size, shrunk_correlation, weighted_variance
+from altar.bayesian.stepcounters.StepCounter import walk
 
 # acceptance statistics container, the same shape {Metropolis}/{HMC} (cpu) use; hmc has no
 # notion of an invalid (out of support) candidate, so the middle field is always 0
@@ -42,9 +43,8 @@ class HMC:
         self.info = application.info
         self.samples = application.job.chains
         self.dtype = application.job.gpuprecision
-        # the number of trajectories per call to {sample_posterior}, matching cpu
-        # {altar.bayesian.samplers.native.HMC}'s own {self.steps}
-        self.steps = application.job.steps
+        # the trajectories per β step, by default {job.steps}
+        self.stepcounter.initialize(application=application)
         # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
         # to 0.8), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
@@ -96,7 +96,7 @@ class HMC:
 
     def _walk(self, annealer, step):
         """
-        Advance all chains using {self.steps} leapfrog trajectories (matching cpu
+        Advance all chains using the leapfrog trajectories {stepcounter} asks for (matching cpu
         {altar.bayesian.samplers.native.HMC}'s own outer loop), each with {self.leapfrog_steps}
         leapfrog substeps; the potential and its gradient carry over from one trajectory to the
         next, so they are evaluated once per substep, plus once per walk
@@ -120,9 +120,12 @@ class HMC:
         if pool is not None:
             pool.begin()
 
-        accepted_total = 0
+        accepted_total = walked = 0
         dispatcher = annealer.dispatcher
-        for trajectory in range(self.steps):
+        # as many trajectories as the step counter asks for
+        trajectories = walk(self.stepcounter, theta=state.phi if state.reparameterization else state.theta,
+                            beta=step.beta, annealer=annealer)
+        for trajectory in trajectories:
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
             self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
@@ -132,6 +135,7 @@ class HMC:
             accepted = self._trajectory(annealer, self.leapfrog_steps)
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
+            walked += 1
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
             if pool is not None:
                 pool.advance(keep)
@@ -140,7 +144,7 @@ class HMC:
         else:
             self._copy_accepted_to_step(step)
 
-        attempts = state.samples * self.steps
+        attempts = state.samples * walked
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
         # all done
         return

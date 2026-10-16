@@ -7,7 +7,7 @@
 #
 
 """
-Protocol and implementations for regulating how many MC steps a Metropolis-family sampler
+Protocol and implementations for regulating how many MC steps, or HMC trajectories, a sampler
 runs per β step -- paired with {altar.bayesian.stepsizers.StepSizer}: {stepsizer} regulates
 the size of each step/jump, {stepcounter} regulates how many of them to take.
 
@@ -170,5 +170,20 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
     info: journal.info | None = None
     _theta_start: numpy.ndarray | None = None
     _max_steps: int | None = None
+
+def walk(counter: StepCounter, theta: Array, beta: float | None = None,
+         annealer: Annealer | None = None) -> typing.Iterator[int]:
+    """
+    The steps of a walk of the chains {theta}, numbered from 0, in the blocks {counter} asks for,
+    until it is done; {theta} is the sample matrix the walk updates in place
+    """
+    counter.start(theta=theta, beta=beta)
+    steps = 0
+    while not counter.done(mcsteps=steps, theta=theta, annealer=annealer):
+        for _ in range(counter.block_size()):
+            yield steps
+            steps += 1
+    return
+
 
 # end of file

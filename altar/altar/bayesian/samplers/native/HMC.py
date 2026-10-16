@@ -15,11 +15,13 @@ import numpy
 from altar.bayesian.states.HMCState import HMCState
 # acceptance statistics container
 from .Metropolis import Statistics
+from altar.bayesian.stepcounters.StepCounter import walk
 
 if typing.TYPE_CHECKING:
     import journal
     from altar.bayesian.controllers.Annealer import Annealer
     from altar.bayesian.states.CoolingStep import CoolingStep
+    from altar.bayesian.stepcounters.StepCounter import StepCounter
     from altar.bayesian.stepsizers.StepSizer import StepSizer
     from altar.models.Bayesian import Bayesian
     from altar.shells.Application import Application
@@ -58,8 +60,8 @@ class HMC:
         # a dense mass matrix needs a pool of states, which only the cuda annealing keeps
         if self.mass_matrix == "dense":
             raise NotImplementedError("hmc: a dense mass matrix is supported on the gpu only")
-        # pull the chain length (number of trajectories per outer step) from the job spec
-        self.steps = application.job.steps
+        # the trajectories per β step, by default {job.steps}
+        self.stepcounter.initialize(application=application)
         # the random number generator, for the momenta and the acceptance dice
         self.rng = application.rng.rng
 
@@ -116,7 +118,7 @@ class HMC:
 
     def walk_chains(self, annealer: Annealer, step: CoolingStep) -> None:
         """
-        Run {self.steps} Hamiltonian trajectories, each ending in a Metropolis-Hastings
+        Run the Hamiltonian trajectories {stepcounter} asks for, each ending in a Metropolis-Hastings
         accept/reject decision; the likelihoods and gradients at the current chains carry over
         from one trajectory to the next, so they are evaluated once per leapfrog substep, plus
         once per walk
@@ -146,8 +148,11 @@ class HMC:
         # candidate -- bounded priors are reparameterized
         accepted = rejected = 0
 
-        # step all chains together, one full trajectory per iteration
-        for trajectory in range(self.steps):
+        # step all chains together, one full trajectory per iteration, as many as the step
+        # counter asks for
+        trajectories = walk(self.stepcounter, theta=current.phi if reparameterized else current.theta,
+                            beta=β, annealer=annealer)
+        for trajectory in trajectories:
             # the position the dynamics move
             position = current.phi if reparameterized else current.theta
             # (re)estimate the mass matrix from the current population every
@@ -323,7 +328,7 @@ class HMC:
     min_variance: float = 1e-8
     max_variance: float = 1e8
 
-    steps: int = 1                  # the number of trajectories per call to {sample_posterior}
+    stepcounter: StepCounter        # the step count regulator
     info: journal.info | None = None  # the application info channel
     rng: numpy.random.Generator     # the generator of the momenta and the dice
     statistics: Statistics | None = None  # from the last walk_chains call
