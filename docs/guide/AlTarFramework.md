@@ -326,7 +326,8 @@ for HMC, 0.574 for MALA.
 (stepcounters)=
 ### Step counts
 
-A step counter decides how many Metropolis steps each chain takes at each $\beta$:
+A step counter decides how many Metropolis steps, or HMC trajectories, each chain takes at each
+$\beta$:
 
 `altar.bayesian.fixedsteps`
 : a fixed number, `steps`, by default `job.steps`; the default.
@@ -348,6 +349,26 @@ linear:
                 max_mc_steps = 10000
                 target_correlation = 0.6
 ```
+
+HMC decorrelates in tens of trajectories rather than thousands of steps, so its counts are smaller:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        sampler:
+            stepcounter = altar.bayesian.decorrelating
+            stepcounter:
+                min_mc_steps = 5
+                corr_check_steps = 5
+                max_mc_steps = 200
+                target_correlation = 0.3
+```
+
+The correlation is that of the chains with where they started, the largest over the parameters, as
+{ref}`diagnose <diagnose>` reports it. It is measured against the spread of the chains, so it
+can't tell a population that is too narrow: with fewer chains than parameters, the Metropolis
+proposal misses directions, which a warning in the journal points out.
 
 (schedulers)=
 ## Schedulers
