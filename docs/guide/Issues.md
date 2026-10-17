@@ -74,14 +74,6 @@ Use CATMIP/Metropolis for this model, or set reparameterize=True on the prior.
 HMC, MALA and SGLD need priors defined on the whole real line. Reparameterize the bounded priors it
 names (`reparameterize = True`, see {doc}`Priors`), or sample with Metropolis.
 
-### The kinematic model needs a GPU
-
-```none
-the kinematic model has only a cuda implementation; run it with job.gpus >= 1
-```
-
-Run it with `--job.gpus=1`, on a machine with an NVIDIA GPU and an AlTar built with GPU support.
-
 ### The covariance is not positive definite
 
 ```none
