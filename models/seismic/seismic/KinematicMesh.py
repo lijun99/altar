@@ -22,7 +22,7 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
     the fast iterative method on a mesh refined from the patches, the slips of each patch over
     time, then data = Gb Mb
 
-    cuda only. The patches and their source points come from {mesh}, as csi's
+    On the cuda backend, or on the cpu. The patches and their source points come from {mesh}, as csi's
     TriangularPatchesKin saves them; my parameters, in {idx_map} order, are the strike slips, dip
     slips, rise times and rupture velocities of the patches, then the hypocenter along strike and
     down dip, in the surface coordinates of the mesh. The settings of the rectangular model, Nas,
@@ -48,16 +48,10 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         """
         Initialize the state of the model given a {problem} specification
         """
-        # cuda only
-        if altar.backends.active() != "cuda":
-            application.error.log(
-                "the kinematic mesh model has only a cuda implementation; run it with job.gpus >= 1")
-            raise SystemExit(1)
-
+        self.native = altar.backends.active() != "cuda"
         # mounts my inputs, loads the data and its covariance, lays out my psets
         BayesianL2.initialize(self, application=application)
 
-        from altar.models.seismic.ext import cudaseismic
         from . import mesh as meshes
         import h5py
 
@@ -101,9 +95,8 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
             raise SystemExit(1)
         layout = numpy.concatenate([numpy.arange(3 * patches), 3 * patches + groups,
                                     3 * patches + velocities + numpy.arange(2)])
-        self.gidx_map = altar.cuda.vector(source=columns[layout].astype("int64"))
+        idx_map = columns[layout].astype("int64")
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
-        self.gt0s = altar.cuda.vector(source=t0s, dtype=self.precision)
 
         # the mesh of the arrival times, and its tables
         xyz, coords, triangles, patch = meshes.refine(vertices, faces, uv, self.refine)
@@ -115,15 +108,29 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         application.info.log(f"kinematic mesh: {patches} patches, {self.vertices} vertices,"
                              f" spacing {spacing:.3g} km, {counts[0]} source points per patch")
 
-        # the green's functions, kept raw for the forward problem, and premerged with the data
-        # covariance for sampling
+        # the green's functions, kept raw for the forward problem
         self.GF = self.io.load(filename=self.green, shape=(self.NGbparameters, self.observations))
+        geometry = meshes.patch_geometry(vertices, faces, uv)
+
+        if self.native:
+            from altar.models.seismic.ext import seismic
+            self._native_green()
+            self.cmodel = seismic.KinematicMesh(
+                Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, xyz=xyz, patchGeometry=geometry,
+                spacing=spacing, Nsp=int(counts[0]), corners=corners, weights=weights,
+                idx_map=idx_map, precision=self.precision, **tables)
+            return self
+
+        from altar.models.seismic.ext import cudaseismic
+        self.gidx_map = altar.cuda.vector(source=idx_map)
+        self.gt0s = altar.cuda.vector(source=t0s, dtype=self.precision)
+        # premerged with the data covariance for sampling
         self.gGF = altar.cuda.matrix(source=self.GF, dtype=self.precision)
         self._premerge_covariance()
 
         self.cmodel = cudaseismic.cudaKinematicMesh(
             Np=patches, Nt=self.Nt, dt=self.dt, t0s=self.gt0s.grid, xyz=xyz,
-            patchGeometry=meshes.patch_geometry(vertices, faces, uv), spacing=spacing,
+            patchGeometry=geometry, spacing=spacing,
             Nsp=int(counts[0]), corners=corners, weights=weights, samples=self.samples,
             parameters=self.parameters, observations=self.observations,
             idx_map=self.gidx_map.grid, **tables)
