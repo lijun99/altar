@@ -10,7 +10,8 @@
 # check the cuda kinematic model on a triangulated fault against the numpy prototype in trimesh/:
 # the slips over time Mb, and the gradient of a function of Mb, which must agree to round-off in
 # double precision; the gradient against central differences of the cuda forward model; and
-# single precision against double. Needs a gpu; makes its own small fault and green's functions:
+# single precision against double; on a planar fault, and on two that meet, a splay ending on a
+# main fault (T) or crossing it (X). Needs a gpu; makes its own faults and green's functions:
 #     python kinematic_mesh.py
 import os
 import pathlib
@@ -76,11 +77,16 @@ slipmodel:
 """
 
 
-def fault():
+def fault(geometry):
     """
     The vertices, surface coordinates and faces of the fault, and the source points of each patch,
     as csi's TriangularPatchesKin saves them
     """
+    from mesh import junction_fault, source_points
+    if geometry != "planar":
+        xyz, uv, faces, _ = junction_fault(geometry, size=5.0, main=(6, 3), splay=3)
+        sources, owners = source_points(uv, faces, POINTS)
+        return xyz, uv, faces, sources, owners
     u = numpy.arange(NS + 1) * SIZE
     v = numpy.arange(ND + 1) * SIZE
     U, V = numpy.meshgrid(u, v, indexing="ij")
@@ -94,42 +100,56 @@ def fault():
             a, b, c, d = index(i, j), index(i + 1, j), index(i + 1, j + 1), index(i, j + 1)
             faces += [(a, b, c), (a, c, d)] if (i + j) % 2 else [(a, b, d), (b, c, d)]
     faces = numpy.array(faces)
-    # the centroids of the n x n sub-triangles of each face
-    n = POINTS
-    bary = []
-    for i in range(n):
-        for j in range(n - i):
-            bary.append(((i + 1 / 3) / n, (j + 1 / 3) / n))
-            if i + j < n - 1:
-                bary.append(((i + 2 / 3) / n, (j + 2 / 3) / n))
-    w = numpy.column_stack([1 - numpy.sum(bary, 1), bary])
-    sources = numpy.concatenate([w @ uv[f] for f in faces])
-    owners = numpy.repeat(numpy.arange(len(faces)), len(w))
+    sources, owners = source_points(uv, faces, POINTS)
     return xyz, uv, faces, sources, owners
 
 
-def theta(rng, Np, count, velocities=None):
+def hypocenters(rng, geometry, count):
+    """
+    {count} hypocenters in surface coordinates: on the planar fault, or alternately on the main
+    fault and the splay, whose coordinates start 200 km along strike
+    """
+    if geometry == "planar":
+        return numpy.column_stack([rng.uniform(5, 30, count), rng.uniform(5, 25, count)])
+    on_splay = numpy.arange(count) % 2 == 1
+    u = numpy.where(on_splay, rng.uniform(203, 213, count), rng.uniform(3, 27, count))
+    return numpy.column_stack([u, rng.uniform(2, 13, count)])
+
+
+def theta(rng, Np, count, geometry, velocities=None):
     """
     {count} random models, with a velocity per patch or per group
     """
     velocities = Np if velocities is None else velocities
     return numpy.column_stack([rng.normal(0, 0.5, (count, Np)), rng.uniform(0.5, 4, (count, Np)),
                                rng.uniform(3, 10, (count, Np)), rng.uniform(1.8, 3.5, (count, velocities)),
-                               rng.uniform(5, 30, (count, 1)), rng.uniform(5, 25, (count, 1))])
+                               hypocenters(rng, geometry, count)])
 
 
 def main():
+    failures = 0
+    for geometry in ["planar", "T", "X"]:
+        failures += check(geometry)
+    return 1 if failures else 0
+
+
+def check(geometry):
+    """
+    The checks on the fault of {geometry}; the number that failed
+    """
     import h5py
     rng = numpy.random.default_rng(7)
-    xyz, uv, faces, sources, owners = fault()
+    xyz, uv, faces, sources, owners = fault(geometry)
     Np = len(faces)
+    groups = numpy.arange(Np) // GROUP
+    G = int(groups.max()) + 1
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="altar-kinematic-mesh-"))
     failures = 0
     try:
         with h5py.File(scratch / "mesh.h5", "w") as h5:
             h5["vertices"], h5["uv"], h5["faces"] = xyz, uv, faces
             h5["sources/uv"], h5["sources/patch"] = sources, owners
-            h5["groups/velocity"] = numpy.arange(Np) // GROUP
+            h5["groups/velocity"] = groups
         with h5py.File(scratch / "kinematicG.gf.h5", "w") as h5:
             h5["kinematicG.gf"] = rng.standard_normal((2 * Np * NT, OBS)) * 1e-2
         with h5py.File(scratch / "kinematicG.data.h5", "w") as h5:
@@ -140,7 +160,7 @@ def main():
         grouped = config.replace(f"        refine = {REFINE}\n",
                                  f"        refine = {REFINE}\n        velocity_groups = groups/velocity\n")
         grouped = grouped.replace("            rupturevelocity:\n                count = " + str(Np),
-                                  "            rupturevelocity:\n                count = " + str(Np // GROUP))
+                                  "            rupturevelocity:\n                count = " + str(G))
         (scratch / "grouped.pfg").write_text(grouped)
         os.chdir(scratch)
 
@@ -149,9 +169,10 @@ def main():
         results = {}
         for label in ["float64", "float32", "grouped"]:
             status = subprocess.run([sys.executable, str(HERE / "kinematic_mesh.py"), "--run", label,
-                                     str(Np)], cwd=scratch, capture_output=True, text=True)
+                                     str(Np), geometry], cwd=scratch, capture_output=True, text=True)
             lines = [l for l in (status.stdout + status.stderr).splitlines() if l.startswith(label)]
-            print("\n".join(lines) if status.returncode == 0 else status.stdout + status.stderr)
+            print("\n".join(f"{geometry} {l}" for l in lines) if status.returncode == 0
+                  else status.stdout + status.stderr)
             if status.returncode != 0:
                 return 1
             saved = numpy.load(scratch / f"{label}.npz", allow_pickle=True)
@@ -185,8 +206,6 @@ def main():
         # the grouped velocities: the prototype on theta with each patch's velocity its group's, the
         # velocity gradients summed over each group
         θg, Mbg, dMbg, gradg, fdg = results["grouped"]
-        groups = numpy.arange(Np) // GROUP
-        G = Np // GROUP
         expand = lambda t: numpy.concatenate([t[:3 * Np], t[3 * Np:3 * Np + G][groups], t[3 * Np + G:]])
         mbg, pgg = [], []
         for t, d in zip(θg, dMbg):
@@ -205,14 +224,14 @@ def main():
         for name, value, tolerance in checks:
             good = value <= tolerance
             failures += not good
-            print(f"{name:52s} {'ok' if good else 'FAIL':4s} {value:.2e} (tolerance {tolerance:.0e})")
+            print(f"{geometry:6s} {name:52s} {'ok' if good else 'FAIL':4s} {value:.2e} (tolerance {tolerance:.0e})")
     finally:
         os.chdir(HERE)
         shutil.rmtree(scratch, ignore_errors=True)
-    return 1 if failures else 0
+    return failures
 
 
-def run(label, Np, rng):
+def run(label, Np, geometry, rng):
     """
     Mb, the gradient of r.Mb for random r, and its worst relative difference from central
     differences, for random models: in double or single precision, or in double with the
@@ -226,7 +245,8 @@ def run(label, Np, rng):
     app = altar.shells.altar(name="slipmodel").initialize()
     model = app.model
     count = model.samples
-    θ = theta(rng, Np, count, velocities=Np // GROUP if label == "grouped" else None)
+    G = (Np + GROUP - 1) // GROUP
+    θ = theta(rng, Np, count, geometry, velocities=G if label == "grouped" else None)
     dMb = rng.standard_normal((count, model.NGbparameters))
     gθ = altar.cuda.matrix(source=θ, dtype=precision)
     gMb = altar.cuda.matrix(shape=(count, model.NGbparameters), dtype=precision)
@@ -258,7 +278,7 @@ def run(label, Np, rng):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--run":
-        sys.exit(run(sys.argv[2], int(sys.argv[3]), rng=numpy.random.default_rng(11)))
+        sys.exit(run(sys.argv[2], int(sys.argv[3]), sys.argv[4], rng=numpy.random.default_rng(11)))
     sys.exit(main())
 
 

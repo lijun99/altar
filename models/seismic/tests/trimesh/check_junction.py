@@ -32,7 +32,7 @@ def edges(mesh):
     t = mesh.triangles
     e = numpy.sort(numpy.concatenate([t[:, [0, 1]], t[:, [1, 2]], t[:, [2, 0]]]), axis=1)
     _, counts = numpy.unique(e, axis=0, return_counts=True)
-    return dict(zip(*numpy.unique(counts, return_counts=True)))
+    return {int(k): int(n) for k, n in zip(*numpy.unique(counts, return_counts=True))}
 
 
 def exact(mesh, H, on_splay):
