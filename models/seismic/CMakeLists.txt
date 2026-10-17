@@ -8,10 +8,8 @@ include(altar_seismic)
 
 # build the package
 altar_seismic_buildPackage()
-# build the library
-# altar_seismic_buildLibrary()
-# build the extension
-# altar_seismic_buildModule()
+# build the cpu extension
+altar_seismic_buildModule()
 # copy the driver
 altar_seismic_buildDriver()
 
@@ -20,6 +18,5 @@ if(WITH_CUDA)
   altar_seismic_cuda_buildPackage()
   altar_seismic_cuda_buildLibrary()
   altar_seismic_cuda_buildModule()
-  altar_seismic_cuda_buildDriver()
 endif()
 # end of file

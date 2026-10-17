@@ -28,11 +28,41 @@ function(altar_seismic_buildPackage)
   # all done
 endfunction(altar_seismic_buildPackage)
 
+# build the seismic cpu extension module, the kinematic models compiled in
+function(altar_seismic_buildModule)
+  # pybind11, like {altar_seismic_cuda_buildModule}
+  Python_add_library(seismicmodule MODULE WITH_SOABI)
+  # adjust the name to match what python expects
+  set_target_properties(
+    seismicmodule PROPERTIES
+    LIBRARY_OUTPUT_NAME seismic
+    )
+  # the libraries to link against; openmp runs the samples in parallel, if there is one
+  target_link_libraries(seismicmodule PRIVATE pybind11::module)
+  find_package(OpenMP COMPONENTS CXX)
+  if(OpenMP_CXX_FOUND)
+    target_link_libraries(seismicmodule PRIVATE OpenMP::OpenMP_CXX)
+  endif()
+  # add the sources
+  target_sources(seismicmodule PRIVATE
+    lib/libseismic/Kinematic.cc
+    lib/libseismic/KinematicMesh.cc
+    ext/seismic/seismic.cc
+    )
+
+  # install the seismic extension
+  install(
+    TARGETS seismicmodule
+    LIBRARY
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/seismic/ext
+    )
+endfunction(altar_seismic_buildModule)
+
 # the scripts
 function(altar_seismic_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/seismic
+    PROGRAMS bin/seismic bin/slipmodel bin/slipmodel.plexus
     DESTINATION bin
     )
   # all done
@@ -151,14 +181,5 @@ function(altar_seismic_cuda_buildModule)
     )
 endfunction(altar_seismic_cuda_buildModule)
 
-# the scripts
-function(altar_seismic_cuda_buildDriver)
-  # install the scripts
-  install(
-    PROGRAMS bin/slipmodel bin/slipmodel.plexus
-    DESTINATION bin
-    )
-  # all done
-endfunction(altar_seismic_cuda_buildDriver)
 
 # end of file
