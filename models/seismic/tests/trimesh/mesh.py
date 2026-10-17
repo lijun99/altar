@@ -16,14 +16,18 @@ import numpy
 class Mesh:
     """
     A triangulated fault surface: {vertices} (V x 3), {triangles} (T x 3), the parameter patch of
-    each triangle, and the surface coordinates (along strike, down dip) of each vertex
+    each triangle, and the surface coordinates (along strike, down dip) of each vertex (V x 2), or
+    of the corners of each triangle (T x 3 x 2), where faults meet and a vertex has one per fault
     """
 
     def __init__(self, vertices, triangles, patch, uv):
         self.vertices = numpy.asarray(vertices, dtype=float)
         self.triangles = numpy.asarray(triangles, dtype=int)
         self.patch = numpy.asarray(patch, dtype=int)
-        self.uv = numpy.asarray(uv, dtype=float)
+        uv = numpy.asarray(uv, dtype=float)
+        per_vertex = uv.ndim == 2
+        self.uv = uv if per_vertex else None
+        self.corner_uv = uv[self.triangles] if per_vertex else uv
         V = self.vertices.shape[0]
         # the corners: each vertex of each triangle, with the other two, as the update reads them
         t = self.triangles
@@ -60,7 +64,7 @@ class Mesh:
         The triangle containing each of the (P x 2) surface {points}, and its barycentric weights
         """
         P = numpy.atleast_2d(points)
-        a, b, c = (self.uv[self.triangles[:, k]] for k in range(3))
+        a, b, c = (self.corner_uv[:, k] for k in range(3))
         v0, v1 = b - a, c - a
         d = P[:, None, :] - a[None, :, :]
         den = v0[:, 0] * v1[:, 1] - v0[:, 1] * v1[:, 0]
@@ -81,15 +85,17 @@ class Mesh:
         tri, w = self.locate(numpy.asarray(uv, dtype=float)[None, :])
         a, b, c = self.triangles[tri[0]]
         X = w[0] @ self.vertices[[a, b, c]]
-        M = numpy.column_stack([self.uv[b] - self.uv[a], self.uv[c] - self.uv[a]])
+        ua, ub, uc = self.corner_uv[tri[0]]
+        M = numpy.column_stack([ub - ua, uc - ua])
         E = numpy.column_stack([self.vertices[b] - self.vertices[a], self.vertices[c] - self.vertices[a]])
         return X, E @ numpy.linalg.inv(M)
 
 
 def subdivide(vertices, triangles, patch, uv, m):
     """
-    The mesh of {triangles}, each cut into m x m triangles, which keep its patch; the shared
-    vertices of neighboring triangles merged
+    The mesh of {triangles}, each cut into m x m triangles, which keep its patch; the vertices at
+    the same point merged, so faults that meet share them, each triangle keeping its own surface
+    coordinates
     """
     vertices, uv = numpy.asarray(vertices, dtype=float), numpy.asarray(uv, dtype=float)
     lattice = [(i, j) for i in range(m + 1) for j in range(m + 1 - i)]
@@ -110,7 +116,7 @@ def subdivide(vertices, triangles, patch, uv, m):
     key = numpy.round(points / (1e-6 * numpy.abs(points).max()))
     _, first, inverse = numpy.unique(key, axis=0, return_index=True, return_inverse=True)
     return Mesh(vertices=points[first], triangles=inverse.ravel()[faces],
-                patch=numpy.repeat(numpy.asarray(patch), len(small)), uv=coords[first])
+                patch=numpy.repeat(numpy.asarray(patch), len(small)), uv=coords[faces])
 
 
 def rectangle_fault(Nas, Ndd, dsp, n, shape=None):
@@ -136,6 +142,58 @@ def rectangle_fault(Nas, Ndd, dsp, n, shape=None):
                 triangles += [(a, b, d), (b, c, d)]
             patch += [(i // n) * Ndd + j // n] * 2
     return Mesh(vertices=vertices, triangles=triangles, patch=patch, uv=uv)
+
+
+def junction_fault(kind="T", size=5.0, main=(6, 3), splay=3, angle=30.0, offset=0.0):
+    """
+    Two vertical faults that meet along a vertical line, as csi saves them: a main fault in the
+    plane x = 0, {main} squares of {size} along strike (y) and down dip, and a splay at {angle}
+    to it from the line at the middle of the main fault, {splay} squares long, ending on it ("T")
+    or crossing it ("X"); each square cut into two triangles, the diagonals alternating. Each fault
+    keeps its own copy of the vertices on the line, with its own surface coordinates, the splay's
+    from 200 km along strike so the two don't overlap; {offset} (km) moves the splay off the line,
+    disconnecting the faults. Returns the vertices, uv, faces and the fault of each face (0, 1)
+    """
+    ns, nd = main
+    yj = (ns // 2) * size
+    α = numpy.radians(angle)
+    lo = -splay if kind == "X" else 0
+    sheets = [
+        # the main fault: along strike y, down dip z
+        (lambda i, j: ((0.0, i * size, 1.0 + j * size), (i * size, j * size)), ns),
+        # the splay: s from the line, at {angle} to the main fault's strike
+        (lambda i, j: ((offset + (lo + i) * size * numpy.sin(α), yj - (lo + i) * size * numpy.cos(α),
+                        1.0 + j * size), (200.0 + (lo + i) * size, j * size)), splay - lo),
+    ]
+    vertices, uv, faces, fault = [], [], [], []
+    for k, (at, n) in enumerate(sheets):
+        base = len(vertices)
+        for i in range(n + 1):
+            for j in range(nd + 1):
+                x, w = at(i, j)
+                vertices.append(x)
+                uv.append(w)
+        index = lambda i, j: base + i * (nd + 1) + j
+        for i in range(n):
+            for j in range(nd):
+                a, b, c, d = index(i, j), index(i + 1, j), index(i + 1, j + 1), index(i, j + 1)
+                faces += [(a, b, c), (a, c, d)] if (i + j) % 2 else [(a, b, d), (b, c, d)]
+                fault += [k, k]
+    return numpy.array(vertices), numpy.array(uv), numpy.array(faces), numpy.array(fault)
+
+
+def source_points(uv, faces, n):
+    """
+    The centroids of the n x n sub-triangles of each face, in surface coordinates, and their face
+    """
+    bary = []
+    for i in range(n):
+        for j in range(n - i):
+            bary.append(((i + 1 / 3) / n, (j + 1 / 3) / n))
+            if i + j < n - 1:
+                bary.append(((i + 2 / 3) / n, (j + 2 / 3) / n))
+    w = numpy.column_stack([1 - numpy.sum(bary, 1), bary])
+    return numpy.concatenate([w @ uv[f] for f in faces]), numpy.repeat(numpy.arange(len(faces)), len(w))
 
 
 def update(TA, TB, A, B, C, s):

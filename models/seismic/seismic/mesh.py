@@ -16,8 +16,9 @@ import numpy
 def refine(vertices, faces, uv, m):
     """
     Each triangle of {faces} cut into m x m triangles, which keep its index as their patch; the
-    shared vertices of neighboring triangles merged. Returns the vertices, their surface
-    coordinates, the triangles and the patch of each
+    vertices at the same point merged, so faults that meet share them. Returns the vertices, the
+    surface coordinates of the corners of each triangle (a vertex where faults meet has those of
+    each), the triangles and the patch of each
     """
     vertices, uv = numpy.asarray(vertices, dtype=float), numpy.asarray(uv, dtype=float)
     lattice = [(i, j) for i in range(m + 1) for j in range(m + 1 - i)]
@@ -38,7 +39,7 @@ def refine(vertices, faces, uv, m):
     key = numpy.round(points / (1e-6 * numpy.abs(points).max()))
     _, first, inverse = numpy.unique(key, axis=0, return_index=True, return_inverse=True)
     patch = numpy.repeat(numpy.arange(len(faces)), len(small))
-    return points[first], coords[first], inverse.ravel()[triangles], patch
+    return points[first], coords[triangles], inverse.ravel()[triangles], patch
 
 
 def csr(rows, values, count):
@@ -88,13 +89,13 @@ def patch_geometry(vertices, faces, uv):
 def locate(points, patches, uv, triangles, patch):
     """
     The triangle of the refined mesh holding each source point, among those of its patch, and its
-    barycentric weights
+    barycentric weights; {uv} the surface coordinates of the corners of each triangle
     """
     corners = numpy.zeros((len(points), 3), dtype=numpy.int32)
     weights = numpy.zeros((len(points), 3))
     for p in numpy.unique(patches):
         mine = numpy.flatnonzero(patch == p)
-        A, B, C = (uv[triangles[mine, k]] for k in range(3))
+        A, B, C = (uv[mine, k] for k in range(3))
         v0, v1 = B - A, C - A
         den = v0[:, 0] * v1[:, 1] - v0[:, 1] * v1[:, 0]
         for q in numpy.flatnonzero(patches == p):
