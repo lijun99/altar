@@ -38,16 +38,9 @@ class Hmc(Annealer, family="altar.controllers.hmc"):
     # implementation details
     def continuing(self, worker, iteration, tolerance):
         """
-        Whether to walk the chains again, after {iteration} walks: for {rounds} walks
+        Whether to walk the chains again, after {iteration} walks: for {rounds} walks, counted
+        from where this run started, so a restart walks them too
         """
-        return iteration < self.rounds
-
-
-    # implementation details
-    def continuing(self, worker, iteration, tolerance):
-        """
-        Whether to walk the chains: once, spending the whole {job.steps}, also after a restart
-        """
-        return iteration == self.start_iteration
+        return iteration - self.start_iteration < self.rounds
 
 # end of file
