@@ -19,7 +19,6 @@ from .Bayesian import Bayesian
 from .cp import cp as uncertainty
 
 if typing.TYPE_CHECKING:
-    import pyre
     from altar.arrays import Array
     from altar.bayesian.controllers.Annealer import Annealer
     from altar.bayesian.states.BayesianState import BayesianState
@@ -467,11 +466,45 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         self.checked_unbounded_priors = True
         return self
 
+    # cross-fade sampling (Minson, 2024), see {altar.models.CrossFade}
+    def conjugate_prior(self) -> tuple[numpy.ndarray, numpy.ndarray]:
+        """
+        The mean and the variance of each of my parameters under the conjugate prior, a normal
+        distribution matched to the mean and the variance of the prior of its parameter set
+        """
+        mean = numpy.zeros(self.parameters)
+        variance = numpy.zeros(self.parameters)
+        for name in self.psets_list:
+            pset = self.psets[name]
+            prior = pset.prior
+            columns = slice(pset.offset, pset.offset + pset.count)
+            if hasattr(prior, "mean") and hasattr(prior, "sigma"):
+                mean[columns], variance[columns] = prior.mean, prior.sigma ** 2
+            elif hasattr(prior, "support"):
+                low, high = prior.support
+                mean[columns], variance[columns] = (low + high) / 2, (high - low) ** 2 / 12
+            else:
+                raise NotImplementedError(
+                    f"no conjugate prior for the {type(prior).__name__} prior of '{name}'")
+        return mean, variance
+
+
+    def conjugate_posterior(self, mean: numpy.ndarray,
+                            variance: numpy.ndarray) -> tuple[numpy.ndarray, numpy.ndarray, float]:
+        """
+        The mean m* and the covariance C* of my posterior under the conjugate prior N(mean,
+        diag(variance)), and the evidence of that model, log p_conj(d); models that support
+        cross-fade sampling provide them
+        """
+        raise NotImplementedError(
+            f"'{type(self).__name__}' has no conjugate posterior, for cross-fade sampling")
+
+
     # private data
     observations: int
     device: typing.Any = None
     precision: str
-    ifs: pyre.filesystem.Filesystem.Filesystem # the filesystem with the input files
+    ifs: altar.filesystem.Filesystem.Filesystem # the filesystem with the input files
     io: altar.io.FileIO # my file reader/writer
     samples: int
     checked_unbounded_priors: bool = False # whether {gradient} has already verified all priors are unbounded

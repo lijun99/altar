@@ -39,18 +39,9 @@ namespace altar {
                     const real_type mean, const real_type sigma,
                     cudaStream_t stream=0);
 
-                // add the log pdf gradient with respect to parameter {index} into
-                // {probability} (samples,); a no-op for samples where {index} falls outside
-                // [idx_begin, idx_end)
-                template <typename real_type>
-                void logpdfgradient_i(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
-                    const size_t idx_begin, const size_t idx_end, const size_t index,
-                    const real_type mean, const real_type sigma,
-                    cudaStream_t stream=0);
-
                 // fill {probability} (samples x parameters) with the log pdf gradient with
                 // respect to every parameter in [idx_begin, idx_end) (a plain assignment, not
-                // an accumulation -- unlike {logpdfgradient_i} above)
+                // an accumulation)
                 template <typename real_type>
                 void logpdfgradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> probability,
                     const size_t idx_begin, const size_t idx_end,

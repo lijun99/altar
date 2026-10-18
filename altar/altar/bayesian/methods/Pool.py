@@ -12,7 +12,8 @@ class Pool:
     """
     The states the chains keep while they walk: every {interval} steps, into the next of {size}
     slots of {chains} rows of the population, round robin, and their final state always; slots a
-    short walk leaves unfilled get the final state too
+    short walk leaves unfilled get the final state too; an {interval} of 0 spreads the slots over
+    the length of the previous walk
     """
 
 
@@ -24,6 +25,9 @@ class Pool:
         self.count = 0
         self.kept = 0
         self.last = None
+        # spread over the length of the previous walk
+        if self.spread and self.walked:
+            self.interval = max(1, self.walked // self.size)
         return self
 
 
@@ -44,6 +48,9 @@ class Pool:
         """
         if self.last != self.count:
             self._keep(keep)
+        # the slot of the final state
+        self.final = (self.slot - 1) % self.size
+        self.walked = self.count
         while self.kept < self.size:
             self._keep(keep)
         return self
@@ -53,9 +60,12 @@ class Pool:
     def __init__(self, size, interval, chains, **kwds):
         super().__init__(**kwds)
         self.size = size
-        self.interval = interval
+        self.spread = interval == 0
+        self.interval = interval or 1
+        self.walked = 0
         self.chains = chains
         self.slot = 0
+        self.final = 0
         self.begin()
         return
 

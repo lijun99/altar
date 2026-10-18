@@ -61,14 +61,19 @@ class Gaussian(altar.models.bayesian, family="altar.models.gaussian"):
         """
         Initialize the state of the model given a {problem} specification
         """
+        # cpu only: my numerics index the host arrays of the samples
+        if altar.backends.active() == "cuda":
+            application.error.log(
+                "the gaussian model has only a cpu implementation; run it with job.gpus = 0")
+            raise SystemExit(1)
         # chain up
         super().initialize(application=application)
         # get my random number generator
         rng = self.rng
 
         # initialize my distributions
-        self.prep.initialize(rng=rng)
-        self.prior.initialize(rng=rng)
+        self.prep.initialize(rng=rng, application=application)
+        self.prior.initialize(rng=rng, application=application)
 
         # all done
         return self

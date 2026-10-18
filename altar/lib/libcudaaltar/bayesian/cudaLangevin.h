@@ -19,16 +19,6 @@ namespace altar { namespace cuda {
     namespace bayesian {
         namespace cudaLangevin {
 
-            // the SGLD update, one parameter at a time:
-            // theta[:, index] += half_epsilon_t * (prior_gradient + datalikelihood_gradient) + eta_t
-            template <typename realtype_t>
-            void updateTheta(matrix_view_t<realtype_t, false> theta,
-                vector_view_t<realtype_t, true> prior_gradient,
-                vector_view_t<realtype_t, true> datalikelihood_gradient,
-                const realtype_t half_epsilon_t, vector_view_t<realtype_t, true> eta_t,
-                const size_t index,
-                cudaStream_t stream=0);
-
             // the batched SGLD update, every parameter at once:
             // theta += half_epsilon_t * (alpha1*prior_gradient + alpha2*datalikelihood_gradient) + eta_t
             template <typename realtype_t>

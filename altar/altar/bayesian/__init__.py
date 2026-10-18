@@ -26,7 +26,7 @@ from .stepcounters.StepCounter import StepCounter as stepcounter
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace; the
 # samplers stay in theirs, e.g. altar.bayesian.samplers.hmc, apart from the controllers that
 # share their names, e.g. altar.bayesian.hmc
-from .controllers import annealer, catmip, langevin, mcmc, hmc, catmip_hmc, mala, catmip_mala
+from .controllers import annealer, catmip, langevin, mcmc, hmc, catmip_hmc, mala, catmip_mala, cf_catmip
 from .schedulers import constanttemperature, cov
 from .solvers import brent, grid
 from .proposals import gaussianproposal

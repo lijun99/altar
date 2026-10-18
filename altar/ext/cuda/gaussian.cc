@@ -66,33 +66,8 @@ altar::cuda::extensions::distributions::gaussian::__init__(py::module & distribu
         "theta"_a, "probability"_a, "idx_begin"_a, "idx_end"_a, "mean"_a, "sigma"_a,
         "probability[s] += sum(logpdf(theta[s, idx_begin:idx_end]))");
 
-    // add the log pdf gradient with respect to parameter {index} into {probability}
-    // (samples,); a no-op for samples where {index} falls outside [idx_begin, idx_end)
-    distributions.def(
-        "cudaGaussian_logpdfgradient_i",
-        [](grid_t & theta, grid_t & probability, std::size_t idx_begin, std::size_t idx_end,
-           std::size_t index, double mean, double sigma) -> void {
-            auto format = theta.view().format;
-            if (format.size() == 1 && format[0] == 'd') {
-                altar::cuda::distributions::cudaGaussian::logpdfgradient_i<double>(
-                    regrid<const double, 2>(theta), regrid<double, 1>(probability),
-                    idx_begin, idx_end, index, mean, sigma);
-            } else if (format.size() == 1 && format[0] == 'f') {
-                altar::cuda::distributions::cudaGaussian::logpdfgradient_i<float>(
-                    regrid<const float, 2>(theta), regrid<float, 1>(probability),
-                    idx_begin, idx_end, index, static_cast<float>(mean), static_cast<float>(sigma));
-            } else {
-                throw py::value_error("cudaGaussian_logpdfgradient_i: unsupported grid cell type '" + format + "'");
-            }
-            cudaCheckError("cudaGaussian_logpdfgradient_i");
-            synchronize("cudaGaussian_logpdfgradient_i");
-        },
-        "theta"_a, "probability"_a, "idx_begin"_a, "idx_end"_a, "index"_a, "mean"_a, "sigma"_a,
-        "probability[s] += d logpdf(theta[s, index]) / d theta[s, index]");
-
     // fill {probability} (samples x parameters) with the log pdf gradient with respect to
-    // every parameter in [idx_begin, idx_end) -- a plain assignment, not an accumulation,
-    // unlike {cudaGaussian_logpdfgradient_i} above
+    // every parameter in [idx_begin, idx_end) -- a plain assignment, not an accumulation
     distributions.def(
         "cudaGaussian_logpdfgradient",
         [](grid_t & theta, grid_t & probability, std::size_t idx_begin, std::size_t idx_end,

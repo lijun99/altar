@@ -23,14 +23,4 @@ def linear():
     return linear
 
 
-@altar.foundry(implements=altar.models.model, tip="the linear model, with its forward model and gradient in jax")
-def jax():
-    # grab the factory
-    from .LinearJax import LinearJax as jax
-    # attach its docstring
-    __doc__ = jax.__doc__
-    # and return it
-    return jax
-
-
 # end of file

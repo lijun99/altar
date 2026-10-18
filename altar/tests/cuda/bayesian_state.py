@@ -9,10 +9,8 @@
 
 """
 Sanity check: {altar.bayesian.states.cuda.BayesianState}/{HMCState}, against a real GPU -- these are
-the actual state classes the bayesian sampler layer allocates its buffers with, exercised here
-completely unchanged, to confirm the {altar.cuda.matrix}/{altar.cuda.vector} alias
-(altar/cuda/array.py) is a genuine drop-in for the old capsule-based buffers those classes
-were written against.
+the actual state classes the bayesian sampler layer allocates its buffers with, on the
+{altar.cuda.matrix}/{altar.cuda.vector} arrays (altar/cuda/array.py).
 
 Covers {start}/{alloc} (buffer allocation), {compute_posterior} (posterior = prior +
 beta*data, via {altar.cuda.cublas.axpy}), {clone} (independent memory), and

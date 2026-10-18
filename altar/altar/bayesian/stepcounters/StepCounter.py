@@ -7,7 +7,7 @@
 #
 
 """
-Protocol and implementations for regulating how many MC steps a Metropolis-family sampler
+Protocol and implementations for regulating how many MC steps, or HMC trajectories, a sampler
 runs per β step -- paired with {altar.bayesian.stepsizers.StepSizer}: {stepsizer} regulates
 the size of each step/jump, {stepcounter} regulates how many of them to take.
 
@@ -98,8 +98,9 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
                          implements=StepCounter):
     """
     Run in blocks of {corr_check_steps} MC steps until the Pearson correlation between the
-    starting and current sample positions drops below {target_correlation} (the chains are
-    considered effectively de-correlated), or {max_mc_steps} is reached.
+    starting and current sample positions, the largest or the median over the parameters
+    ({statistic}), drops below {target_correlation} (the chains are considered effectively
+    de-correlated), or {max_mc_steps} is reached.
     """
 
     max_mc_steps = altar.properties.int(default=10000)
@@ -113,6 +114,11 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
 
     target_correlation = altar.properties.float(default=0.6)
     target_correlation.doc = 'correlation threshold below which the chain is considered de-correlated'
+
+    statistic = altar.properties.str(default="max")
+    statistic.validators = altar.constraints.isMember("max", "median")
+    statistic.doc = "the correlation over the parameters that must fall below {target_correlation}: " \
+                    "the largest, or the median, which a few slow parameters don't hold back"
 
     max_mc_steps_stage2 = altar.properties.int(default=None)
     max_mc_steps_stage2.doc = 'max steps when β > beta_stage2 (defaults to max_mc_steps)'
@@ -155,13 +161,16 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
         denom = numpy.sqrt((ts ** 2).sum(axis=0) * (tc ** 2).sum(axis=0))
         # guard against zero variance (constant column)
         safe_denom = numpy.where(denom > 0, denom, 1.0)
-        correlation = float(numpy.abs(numer / safe_denom).max())
+        correlations = numpy.abs(numer / safe_denom)
+        correlation = float(correlations.max() if self.statistic == "max" else numpy.median(correlations))
 
-        # under MPI, every worker must agree on when to stop
+        # under MPI, every worker must agree on when to stop: on the largest, or the mean of the
+        # medians of the workers
         workers = getattr(getattr(annealer, "worker", None), "workers", 1)
         if annealer is not None and workers > 1:
             import mpi
-            correlation = mpi.world.max(item=correlation)
+            correlation = (mpi.world.max(item=correlation) if self.statistic == "max"
+                           else mpi.world.sum(item=correlation) / workers)
 
         self.info.log(f"{type(self).__name__}: correlation {correlation:.4f} at {mcsteps} steps")
         return correlation <= self.target_correlation
@@ -170,5 +179,25 @@ class DecorrelatingSteps(altar.component, family="altar.bayesian.stepcounters.de
     info: journal.info | None = None
     _theta_start: numpy.ndarray | None = None
     _max_steps: int | None = None
+
+def walk(counter: StepCounter, theta: Array, beta: float | None = None,
+         annealer: Annealer | None = None) -> typing.Iterator[int]:
+    """
+    The steps of a walk of the chains {theta}, numbered from 0, in the blocks {counter} asks for,
+    until it is done; {theta} is the sample matrix the walk updates in place; a production walk
+    is as long as its controller says
+    """
+    length = getattr(annealer, "production_walk", None)
+    if length:
+        yield from range(length)
+        return
+    counter.start(theta=theta, beta=beta)
+    steps = 0
+    while not counter.done(mcsteps=steps, theta=theta, annealer=annealer):
+        for _ in range(counter.block_size()):
+            yield steps
+            steps += 1
+    return
+
 
 # end of file

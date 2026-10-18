@@ -7,39 +7,22 @@
 #
 
 
-# export my parts
-from . import (
-    # norms
-    norms,
-    # probability distribution functions
-    distributions,
-    models,
-    data,
-    ext,
-    )
+# from pyre, imported here only, first, so that my modules reach them through me: the device
+# manager, the cusolver bindings, {synchronize} to wait for the current device to finish its
+# work, and {managed} to allocate a grid over a fresh block of managed memory
+from pyre.cuda import manager, cusolver, synchronize, managed
+# and the cublas/curand bindings, which my own {cublas}/{curand} extend
+from pyre.cuda import cublas as pyrecublas, curand as pyrecurand
 
-# device management, and the thin cublas/cusolver/curand bindings, all from pyre now; the old
-# top-level "cuda" package (a hand rolled device manager sharing its name with nvidia's own
-# cuda-python) is gone -- see pyre's own "cuda: replace the hand-rolled device management
-# extension with cuda-python" and the cublas/cusolver/curand work that followed it
-import pyre.cuda
-
-manager = pyre.cuda.manager
-cusolver = pyre.cuda.cusolver
-# wait for the current device to finish its work
-synchronize = pyre.cuda.synchronize
-# allocate a grid over a fresh block of managed memory
-managed = pyre.cuda.managed
+# my compiled extension
+from . import ext
 
 # altar's own {cublas}/{curand}: everything pyre's own has, plus a couple of convenience
 # wrappers the bayesian sampler layer needs (see cublas.py/curand.py)
 from . import cublas
 from . import curand
 
-# the pyre.grid-backed replacement for the old capsule-based cuda.Matrix/cuda.Vector (see
-# array.py); the cuda extension's own kernels (norms, distributions, the samplers) take
-# pyre.grid grids directly with no wrapper needed on that side -- {vector}/{matrix} exist for
-# the bayesian state/sampler layer, which still calls them the way it always has
+# managed-grid vectors and matrices for the bayesian state/sampler layer (see array.py)
 from .array import vector, matrix
 
 # my extension modules

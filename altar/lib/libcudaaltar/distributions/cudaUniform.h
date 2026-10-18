@@ -29,14 +29,6 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // the same, but with per-parameter bounds: {low[j]}/{high[j]} apply to
-                // parameter {idx_begin + j}
-                template <typename real_type>
-                void sample_unique(matrix_view_t<real_type, false> theta,
-                    const size_t idx_begin, const size_t idx_end,
-                    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
-                    cudaStream_t stream=0);
-
                 // add each sample's log pdf, summed over [idx_begin, idx_end), into
                 // {probability} (samples,) -- constant per sample, since a uniform's log pdf
                 // doesn't depend on {theta} itself, only on the range
@@ -46,11 +38,19 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // the per-parameter-bounds counterpart of {logpdf}
+                // the logistic-edged uniform of sharpness {sharpness}: add each sample's log
+                // pdf, summed over [idx_begin, idx_end), into {probability}
                 template <typename real_type>
-                void logpdf_unique(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
+                void soft_logpdf(matrix_view_t<real_type> theta, vector_view_t<real_type> probability,
                     const size_t idx_begin, const size_t idx_end,
-                    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
+                    const real_type low, const real_type high, const real_type sharpness,
+                    cudaStream_t stream=0);
+
+                // and fill {gradient}[:, idx_begin:idx_end] with the gradient of its log pdf
+                template <typename real_type>
+                void soft_gradient(matrix_view_t<real_type> theta, matrix_view_t<real_type, false> gradient,
+                    const size_t idx_begin, const size_t idx_end,
+                    const real_type low, const real_type high, const real_type sharpness,
                     cudaStream_t stream=0);
 
             } // of namespace cudaUniform

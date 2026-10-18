@@ -16,7 +16,6 @@ import altar
 
 if typing.TYPE_CHECKING:
     import journal
-    import pyre
     from altar.norms.L2 import L2
     from altar.shells.Application import Application
 
@@ -164,6 +163,18 @@ class DataL2:
         return self.sigma() if self._chi_variance is None else numpy.sqrt(self._chi_variance)
 
 
+    def covariance(self) -> float | numpy.ndarray:
+        """
+        The covariance in effect, C_d or C_chi = C_d + C_p: an (observations x observations)
+        array, or a float, the common variance, when it is a constant times the identity
+        """
+        if self._covariance is not None:
+            return self._covariance
+        if isinstance(self.cd, float):
+            return self.cd * self.cd
+        return numpy.array(self.cd, dtype=float)
+
+
     def initialize_covariance(self, cd: float | numpy.ndarray) -> typing.Self:
         """
         For a given data covariance {cd}, a standard deviation or a full matrix, compute the
@@ -203,6 +214,7 @@ class DataL2:
         """
         if cp is None:
             self._chi_variance = None
+            self._covariance = None
             return self.initialize_covariance(cd=self.cd)
         # a full C_chi mixes the masked observations into the valid ones
         if self.mask is not None:
@@ -215,6 +227,7 @@ class DataL2:
             cchi = numpy.array(cd, dtype=float)
         cchi += numpy.asarray(cp, dtype=float)
         self._chi_variance = numpy.diag(cchi).copy()
+        self._covariance = cchi
         return self.initialize_covariance(cd=cchi)
 
 
@@ -245,13 +258,14 @@ class DataL2:
 
     # local variables
     normalization: float = 0
-    ifs: pyre.filesystem.Filesystem.Filesystem
+    ifs: altar.filesystem.Filesystem.Filesystem
     io: altar.io.FileIO  # my file reader/writer
     samples: int
     dataobs: numpy.ndarray  # the observed data, with the covariance merged in if asked to
     cd: float | numpy.ndarray
     cd_inv: float | numpy.ndarray  # 1/sigma, or L with cd^{-1} = L L^T
     _chi_variance: numpy.ndarray | None = None # diag(C_chi), when a C_p is part of it
+    _covariance: numpy.ndarray | None = None # C_chi, when a C_p is part of it
     _observed: numpy.ndarray  # the raw observed data, in double precision
     _raw: numpy.ndarray  # the raw observed data, in my precision
     precision: str = "float64"  # the precision of the residuals

@@ -55,6 +55,7 @@ The controller samples the posterior. The choice of controller is the choice of 
 | `altar.bayesian.hmc` | Hamiltonian Monte Carlo at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.catmip_mala` | CATMIP annealing, with Metropolis-adjusted Langevin sampling |
 | `altar.bayesian.mala` | the Metropolis-adjusted Langevin algorithm at a fixed $\beta = 1$, without annealing |
+| `altar.bayesian.cf_catmip` | {ref}`cross-fade CATMIP <cross-fade>`: from the conjugate posterior of a linear model to its posterior |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD) |
 | `altar.bayesian.annealer` | the base of the annealing controllers, with the sampler and the scheduler left to configure |
 
@@ -78,7 +79,20 @@ linear:
 ```
 
 `hmc` spends `job.steps` HMC trajectories at $\beta = 1$, and `mala` `job.steps` MALA proposals,
-adapting their step size after each.
+adapting their step size after each. `hmc` can also walk in `rounds` of `job.steps` trajectories,
+re-estimating the mass matrix from the samples between them. Chains that start far from the
+others, e.g. deep in the logit space of a bounded prior, can stay stuck there, and slow every
+chain down by shrinking the step size; a burn-in replaces them between the first walks (see
+{ref}`the constant scheduler <constant-scheduler>`):
+
+```none
+linear:
+    controller = altar.bayesian.hmc
+    controller:
+        rounds = 5
+        scheduler.burnin = 3 ; replace the outlier chains after the first 3 walks
+    job.steps = 100 ; trajectories per round
+```
 
 The annealing controllers are built from these components, each configurable:
 
@@ -98,6 +112,111 @@ The annealing controllers are built from these components, each configurable:
 The controller also runs on a *worker* that matches the job: one process on the cpu, one on a
 GPU, or several processes under MPI. The worker is chosen from the job configuration, not
 configured itself.
+
+(pooling)=
+### Pooling and the production walk
+
+On the GPU, each chain can keep several of the states it walks through at each $\beta$, not only
+the last one, after Dau and Chopin's waste-free SMC. They make up the population the scheduler,
+the resampling and the proposal work on, and the archiver records, without more model evaluations:
+
+`pool`
+: the states each chain keeps from a walk; default 1, the last one only, which turns pooling off;
+
+`pool_interval`
+: the steps or trajectories between them; default 1; 0 spreads them over the length of the
+  previous walk, for walks whose length varies, as with the
+  {ref}`decorrelating step counter <stepcounters>`.
+
+The states a chain keeps count as more samples only if they are far enough apart to be nearly
+independent; `diagnose` reports how many they are worth (see {ref}`diagnose`). Kept from short
+walks, they add little.
+
+The annealing ends at the first walk at $\beta = 1$. Its samples share their ancestry, from the
+resampling, and a run of thousands of chains can be worth far fewer independent samples. A
+*production walk* continues at $\beta = 1$, without resampling and with the sampler as it is, its
+step size and mass matrix no longer adapting, for `production` steps or trajectories; with a pool,
+the chains keep their states evenly spread over it, and these are the samples of the final step:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        pool = 16
+        pool_interval = 0
+        production = 400 ; trajectories at beta = 1, a state kept every 25
+```
+
+The production walk makes up the samples for the analysis: e.g. 1024 chains keeping 16 states a
+decorrelation time apart give about 16000 nearly independent samples. It can't move weight between
+modes, which only the annealing does.
+
+(cross-fade)=
+### Cross-fade CATMIP
+
+`altar.bayesian.cf_catmip` implements cross-fade sampling
+([Minson, 2024](https://doi.org/10.1093/gji/ggae353)), for models with a conjugate prior
+$P_c(\boldsymbol\theta)$, one whose posterior $P_c(\boldsymbol\theta|\mathbf d)$ is known in
+closed form, e.g. a Gaussian prior for a linear model with Gaussian errors, whose posterior is
+Gaussian. Instead of annealing from the prior to the posterior, it anneals from the conjugate
+posterior, fading the prior in and the conjugate prior out,
+
+$$
+P_m(\boldsymbol\theta|\mathbf d) \propto P_c(\boldsymbol\theta|\mathbf d)
+\left[\frac{P(\boldsymbol\theta)}{P_c(\boldsymbol\theta)}\right]^{\beta_m},
+$$
+
+which is the posterior at $\beta = 1$. The chains start from the models that already fit the
+data, so it needs far fewer $\beta$ steps, often a single one, and it never evaluates the data
+likelihood: the cost of each sample doesn't grow with the number of observations. It is otherwise
+CATMIP, with its COV scheduler and Metropolis sampler.
+
+The conjugate prior doesn't change the result, only the number of steps; it is a normal
+distribution matched to the mean and the variance of the prior of each parameter set. The linear
+model and the static slip model provide their conjugate posterior. The data covariance must stay
+fixed during the run: no `adaptive` $C_p$.
+
+With a bounded prior, e.g. a uniform one, the initial samples are drawn from the conjugate
+posterior within the support of the prior, the limit of the annealed distribution as
+$\beta \to 0$. When too little of the conjugate posterior lies within the support, i.e. when the
+data pull the parameters far outside it, the run stops with a message; use `catmip` then. The
+{ref}`soft uniform <softuniform>` distribution is positive everywhere, and needs no such start.
+
+```none
+linear:
+    controller = altar.bayesian.cf_catmip
+```
+
+The controller wraps the model in a cross-fade model, `altar.models.crossfade`, which fills the
+two densities and draws the initial samples, and leaves everything else, e.g. the parameter sets,
+to the model. The cross-fade model can also be configured directly, with the model nested in it,
+still under `cf_catmip`:
+
+```none
+linear:
+    model = altar.models.crossfade
+    model:
+        model = altar.models.linear
+        model:
+            case = patch-9
+            ...
+    controller = altar.bayesian.cf_catmip
+```
+
+Cross-fading pays when the data dominate the posterior and the bounds of the prior barely matter:
+the 9-patch static example takes two $\beta$ steps instead of about twenty. When the bounds bind,
+e.g. the positivity of the slip on many patches of an underdetermined slip inversion, the
+conjugate posterior is far from the posterior: the start fails with a hard bound, and with a soft
+one the annealing still takes many $\beta$ steps, each a Metropolis walk, which needs thousands of
+steps with hundreds of parameters. For such problems `catmip_hmc`, or `hmc` with a burn-in, is
+faster: on the Illapel static inversion, 342 parameters with about 70 slips at their lower bound,
+`hmc` matched the reference in 8 s and `catmip_hmc` in 22 s, where `cf_catmip`, with soft bounds,
+needed 55 s to come within 2% of its spread.
+
+The archive of a cross-fade run keeps the samples as usual, but its `prior` and `likelihood` hold
+the two densities of the annealing, $\log P_c(\boldsymbol\theta|\mathbf d)$ and
+$\log P(\boldsymbol\theta) - \log P_c(\boldsymbol\theta)$, not the prior and the data
+likelihood.
 
 (samplers)=
 ## Samplers
@@ -158,12 +277,20 @@ the acceptance rate adjusts $\alpha$.
 
 `altar.bayesian.samplers.hmc` moves each chain along a trajectory of the Hamiltonian dynamics on the
 potential $U = -\log P_m(\boldsymbol\theta|\mathbf d)$, integrated with leapfrog steps, and accepts
-or rejects its end point. It runs `job.steps` trajectories at each $\beta$. It needs the gradient of
+or rejects its end point. It runs `job.steps` trajectories at each $\beta$, or as many as its
+`stepcounter` asks for (see {ref}`step counts <stepcounters>`). It needs the gradient of
 the model's data likelihood, and priors defined on the whole real line: reparameterize bounded
 priors (see {doc}`Priors`).
 
 `leapfrog_steps`
 : the leapfrog steps of each trajectory; default 10.
+
+`trajectory_length`
+: the length of each trajectory, step size times leapfrog steps, in posterior standard deviations
+  under the mass matrix; the leapfrog steps then follow the step size, up to `max_leapfrog_steps`
+  (default 200); 0, the default, keeps `leapfrog_steps`. HMC moves a chain ballistically along a
+  trajectory but diffusively from one trajectory to the next, so a few long trajectories decorrelate
+  the chains for fewer gradients than many short ones; a length of order 1 suits most problems.
 
 `step_size`
 : the initial leapfrog step size; default 0.01.
@@ -245,7 +372,8 @@ for HMC, 0.574 for MALA.
 (stepcounters)=
 ### Step counts
 
-A step counter decides how many Metropolis steps each chain takes at each $\beta$:
+A step counter decides how many Metropolis steps, or HMC trajectories, each chain takes at each
+$\beta$:
 
 `altar.bayesian.fixedsteps`
 : a fixed number, `steps`, by default `job.steps`; the default.
@@ -268,6 +396,27 @@ linear:
                 target_correlation = 0.6
 ```
 
+HMC decorrelates in tens of trajectories rather than thousands of steps, so its counts are smaller:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        sampler:
+            stepcounter = altar.bayesian.decorrelating
+            stepcounter:
+                min_mc_steps = 5
+                corr_check_steps = 5
+                max_mc_steps = 200
+                target_correlation = 0.3
+```
+
+The correlation is that of the chains with where they started, the largest over the parameters, as
+{ref}`diagnose <diagnose>` reports it, or the median, with `statistic = median`, which a few slow
+parameters among many don't hold back. It is measured against the spread of the chains, so it
+can't tell a population that is too narrow: with fewer chains than parameters, the Metropolis
+proposal misses directions, which a warning in the journal points out.
+
 (schedulers)=
 ## Schedulers
 
@@ -287,6 +436,15 @@ $$
 which sets the effective sample size of the resampling,
 $\mathrm{ESS} = N_s / (1 + \mathrm{COV}(w)^2)$, with $\mathrm{COV}(w) = \sigma_w / \bar w$. A COV
 of 1 keeps half of the samples effective. The samples are then resampled by their weights.
+
+The weights also give the evidence of the model, $\log P(\mathbf d) \approx \sum_m \log \bar w_m$
+([Ching and Chen, 2007](https://doi.org/10.1061/(ASCE)0733-9399(2007)133:7(816))), with
+$\log P_c(\mathbf d)$ added for cross-fade CATMIP. It is printed at the end of the run, as
+`log evidence`, and saved with each step, as `Annealer/log_evidence`. It is an estimate: with a
+few hundred chains, it is typically within a nat or two, and on the low side. It assumes that the
+initial samples come from the prior, i.e. that the `prep` of each parameter set is its prior, and,
+for cross-fade CATMIP, that the priors are normalized: the magnitude penalty of the `moment` prior,
+for one, is not.
 
 `target`
 : the COV to aim at; default 1.
@@ -317,10 +475,21 @@ linear:
             solver = grid
 ```
 
+(constant-scheduler)=
 ### Constant
 
 `altar.bayesian.constanttemperature`, the default of the base annealer, keeps $\beta$ at
 `beta_start`, 1 by default: the chains sample the posterior directly.
+
+`burnin`
+: the walks after which the outlier chains are replaced, as in DE-MC
+  ([ter Braak, 2006](https://doi.org/10.1007/s11222-006-8769-1)); 0, none, by default. A chain is
+  an outlier when its log posterior is more than `outlier_iqr` interquartile ranges below the
+  first quartile of the chains'; it becomes a copy of a randomly chosen other chain. After the
+  burn-in the chains are left alone, so the walks that follow sample the posterior.
+
+`outlier_iqr`
+: 2 by default.
 
 (sgld)=
 ## Stochastic gradient Langevin dynamics
@@ -431,13 +600,33 @@ slipmodel.plexus forward --config=static.pfg
 ```
 
 It reads the posterior from an archived step, runs the forward model on the posterior mean and on
-each sample, and reports
+each sample, and measures how well they fit the data. With $\mathbf r = \mathbf d - \mathbf p$ the
+residual of a prediction $\mathbf p$ of the $N$ observations $\mathbf d$, and $C_\chi$ the
+covariance the likelihood uses, $C_d$ or $C_d + C_p$:
 
-- the RMS residual of the posterior mean model, and its $\chi^2/N$;
-- the share of the observations that lie within one and two standard deviations of the
-  predicted data, where the standard deviation combines the spread of the predictions over the
-  posterior samples with the uncertainty of the data (and that of the model, $C_p$, if the model
-  has one; see {doc}`StaticCp`).
+- $\chi^2/N = \mathbf r^T C_\chi^{-1} \mathbf r / N$, with the full covariance;
+- the variance reduction, $\mathrm{VR} = 1 - \sum r_i^2 / \sum d_i^2$, which ignores the
+  covariance: 1 is a perfect fit, 0 no better than predicting zeros, and the large observations
+  dominate it;
+- the RMS residual, in the units of the data;
+- the data log likelihood, $\log L = -\chi^2/2 - \frac12 \log |2\pi C_\chi|$, as the sampler
+  sees it.
+
+It reports them for three predictions: of the mean model, the predictions averaged over the
+samples (the posterior predictive mean), and the best-fitting sample. Over the samples, it reports
+the mean and the standard deviation of $\log L$, and the median of $\chi^2/N$. For a model that
+fits within the stated uncertainties, $\chi^2/N$ is about 1 for a posterior sample, and about
+$1 - P_{\mathrm{eff}}/N$ for the mean model, $P_{\mathrm{eff}}$ being the number of parameters the
+data constrain; much less than 1 means $C_\chi$ is larger than the misfit, much more that the data
+are not fit within it. For a posterior close to a gaussian, $2\,\mathrm{var}(\log L) \approx
+P_{\mathrm{eff}}$. Finally, it reports the share of the observations that lie within one and two
+standard deviations of the predicted data, where the standard deviation combines the spread of the
+predictions over the samples with $\sqrt{\operatorname{diag} C_\chi}$ (see {doc}`StaticCp`).
+
+With a `reference`, another posterior of the same model, it measures that one too, with the same
+data and $C_\chi$, and reports the difference of their mean $\log L$. Two runs that sample the
+same posterior have the same distribution of $\log L$; a run whose samples fit worse and spread
+less than another's has likely not converged.
 
 For an {doc}`ensemble of models <Kinematic>`, it reports each model separately. Its settings go in
 a `forward` section of the configuration:
@@ -452,11 +641,16 @@ a `forward` section of the configuration:
 `samples`
 : use at most this many of the samples; by default all of them.
 
+`reference`
+: another posterior to compare with, in the same forms as `theta`; none by default.
+
 `output`
 : the HDF5 file for the results; default `forward.h5`. It holds `theta/mean` and `theta/std`;
   the observed data, their uncertainties with and without $C_p$, and the residual of the mean
-  model, in `data/`; and, for each quantity the model predicts, e.g. `data`, its value for the mean
-  model and its mean and standard deviation over the samples.
+  model and its whitened form, $L^T \mathbf r$ with $C_\chi^{-1} = L L^T$, in `data/`; for each
+  quantity the model predicts, e.g. `data`, its value for the mean model and its mean and standard
+  deviation over the samples; and in `fit/`, the measures above, and $\chi^2$ and $\log L$ of each
+  sample. The measures of the reference go in `reference/fit/`.
 
 ```none
 slipmodel:
@@ -464,6 +658,198 @@ slipmodel:
         theta = results/static/step_final.h5
         output = results/static/forward.h5
 ```
+
+(resolution)=
+## How well the data resolve the parameters
+
+The `resolution` action of a plexus application measures how much the data constrain each
+parameter, from the Fisher information of the data,
+
+$$
+F = J^T C_\chi^{-1} J ,
+$$
+
+with $J$ the jacobian of the forward model at the posterior mean, by central finite differences,
+all the perturbed parameters run as one batch. With the prior approximated by a gaussian
+$N(\mathbf m, C_m)$, matched to the mean and the variance of each parameter set's prior, as in
+{ref}`cross-fade CATMIP <cross-fade>`, the linearized posterior covariance is
+$(F + C_m^{-1})^{-1}$, and the resolution matrix
+
+$$
+R = (F + C_m^{-1})^{-1} F
+$$
+
+tells how a change of each parameter would be recovered: its diagonal is near 1 for a parameter
+the data resolve, and near 0 for one only the prior constrains. Its trace, $P_{\mathrm{eff}}$, is
+the effective number of parameters the data constrain.
+
+```bash
+slipmodel.plexus resolution --config=static.pfg
+```
+
+For each parameter set, it reports the mean and the range of the diagonal of $R$, its share of
+$P_{\mathrm{eff}}$, and the median ratio of the sampled standard deviations to the linearized ones,
+$\sqrt{\operatorname{diag}(F + C_m^{-1})^{-1}}$. That ratio is near 1 for a linear model with a
+gaussian prior; it departs from 1 where the prior is not gaussian, e.g. bounds cut into the
+posterior, where the model is nonlinear over the posterior, or where the run has not converged:
+a sampler that has not mixed tends to give too narrow a posterior. For an ensemble of models, $F$
+is the sum of each model's, on its own parameters and data. The resolution is local, at the
+posterior mean, and ignores the bounds of the priors; see the {ref}`forward check <forward-check>`
+for the fit. Its settings go in a `resolution` section:
+
+`theta`
+: the posterior: an archived step, e.g. `results/step_final.h5`, the default, or a `.txt` or
+  `.h5` file with one sample per row; its standard deviations set the finite-difference steps.
+
+`dataset`
+: the dataset of the samples in a plain `.h5` file; by default the first one.
+
+`samples`
+: average $F$ over this many posterior samples instead, for nonlinear models; each takes two
+  forward runs per parameter.
+
+`step`
+: the finite-difference step of each parameter, relative to its posterior standard deviation;
+  default 0.001.
+
+`modes`
+: the number of the best-resolved patterns to save; default 10.
+
+`output`
+: the HDF5 file for the results; default `resolution.h5`. It holds $F$ (`fisher`), the prior
+  variances, the diagonal of $R$ (`resolution`), $P_{\mathrm{eff}}$ (`effective_parameters`),
+  the linearized standard deviations, the eigenvalues of the prior-whitened
+  $C_m^{1/2} F C_m^{1/2}$, each above 1 a direction the data constrain more than the prior, and
+  the leading `patterns`, those directions in parameter space, normalized.
+
+(recovery-tests)=
+## Recovery and checkerboard tests
+
+A recovery test samples synthetic data made from a known, true model, and checks whether the
+posterior finds it: whether the truth lies within its uncertainties as often as it should, and
+which features come back. Unlike the {ref}`resolution <resolution>`, it includes the noise, the
+priors, their bounds, the nonlinearity of the model and the sampler itself. A checkerboard test
+makes the true model, over some parameter sets laid out on a grid, e.g. the slips of a fault,
+alternate between two values in squares of a given size; where the squares come back, the data
+resolve features of that size. Repeat with a few sizes. A recovered checkerboard doesn't prove
+the resolution at every scale: small squares may come back where larger features don't, and the
+other way around (Lévêque, Rivera and Wittlinger, *On the use of the checker-board test to assess
+the resolution of tomographic inversions*, Geophysical Journal International, 115, 313, 1993).
+
+The `synthetic` action makes the data:
+
+```bash
+slipmodel.plexus synthetic --config=static.pfg
+```
+
+It takes the true model from the mean of a posterior, replaces the chosen parameter sets by a
+checkerboard, runs the forward model on it, adds noise drawn from $C_d$, and writes a copy of the
+input directory of the model, with these data in place of the observations, and the true model
+in `truth.txt`. A run on the copy, e.g. with `--slipmodel.model.case=synthetic`, samples the
+synthetic data with everything else unchanged; for an ensemble of models, each model's data are
+replaced. The `recover` action then compares the posterior with the truth:
+
+```bash
+slipmodel --config=static.pfg --slipmodel.model.case=synthetic \
+          --controller.archiver.output_dir=results/synthetic
+slipmodel.plexus recover --config=static.pfg --slipmodel.recover.theta=results/synthetic/step_final.h5
+```
+
+For each parameter set, it reports the root mean square and the largest of
+$z = (\theta_{\mathrm{true}} - \bar\theta)/\sigma_\theta$, the shares of the parameters whose true
+value lies within the central 68% and 95% intervals of the samples, and the correlation of the
+posterior mean with the truth. A calibrated posterior has an RMS $z$ near 1 and holds the truth
+about 68% and 95% of the time; a posterior that is too narrow, e.g. from a run that has not
+converged, has larger $z$ and lower shares.
+
+The settings of `synthetic`:
+
+`theta`
+: the true model is the mean of these samples: an archived step, by default
+  `results/step_final.h5`, or a `.txt` or `.h5` file with one sample per row.
+
+`dataset`
+: the dataset of the samples in a plain `.h5` file; by default the first one.
+
+`checkerboard`
+: the parameter sets to replace by a checkerboard; none by default.
+
+`grid`
+: the rows and the columns of their parameters, e.g. `[along strike, down dip]` for the slips
+  of a fault, the columns running fastest; by default a single column.
+
+`block`
+: the size of the squares, in parameters; default 1.
+
+`values`
+: the two values of the checkerboard; default `[0, 1]`.
+
+`noise`
+: whether to add noise; default `True`.
+
+`cp`
+: draw the noise from $C_\chi = C_d + C_p$ at the true model instead, for a model with a $C_p$;
+  default `False`.
+
+`seed`
+: the seed of the noise; default 0.
+
+`output`
+: the directory for the copy of the inputs; default `synthetic`.
+
+The settings of `recover`: `theta` and `dataset`, the posterior, as above; `truth`, the true
+model, by default `synthetic/truth.txt`; and `output`, the HDF5 file for the truth, the posterior
+mean and standard deviation, $z$ and whether the truth lies within each interval, for each
+parameter, by default `recover.h5`.
+
+(diagnose)=
+## Checking how a run went
+
+The fit to the data doesn't tell whether the sampler drew from the posterior: a run stuck around
+a good model fits well, with too narrow a posterior. The `diagnose` action reads the steps a run
+archived, with `altar.bayesian.h5recorder`, and reports its annealing schedule, step by step:
+
+```bash
+slipmodel.plexus diagnose --config=static.pfg
+```
+
+- $\beta$;
+- the acceptance rate of the moves of the step, and the scaling of the proposal, or the step
+  size; a rate far from the sampler's target, by default 0.234 for Metropolis, 0.574 for MALA and
+  0.7 for HMC, means the proposal didn't adapt;
+- the coefficient of variation of the importance weights that led to the step, and their
+  effective sample size as a share of the chains, $\mathrm{ESS}/N = 1/(1 + \mathrm{cov}^2)$; COV
+  keeps the coefficient of variation at its target, 1, so $\mathrm{ESS}/N \approx 0.5$, but for the
+  last step, which reaches $\beta = 1$;
+- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it;
+- how well the walk of the step mixed, from runs that archive it (`Diagnostics` in the step
+  files): `parents`, the distinct samples its resampling kept; `lineages`, the initial samples the
+  population descends from; `corr` and `max`, the median and largest, over the parameters, of the
+  correlation across the chains between the end of each chain's walk and its start; and, with a
+  {ref}`pool <pooling>`, `states`, the effective states per chain, the variance of the population
+  over that of the means of the chains.
+
+A walk that leaves the correlation near 1 hasn't moved the chains away from the copies the
+resampling made; their spread then shrinks step by step, and the posterior comes out too narrow.
+More steps per $\beta$, a better proposal or HMC lower it; the
+{ref}`decorrelating step counter <stepcounters>` walks until it is below a target. Few lineages are
+expected after many steps and harmless when the walks decorrelate. The effective states per chain
+tell how much a pool adds: about 1 when the states a chain keeps are as good as one, up to `pool`
+when they are independent; it reads low when sibling chains, copies of one parent, haven't
+separated.
+
+Given a `reference` posterior, e.g. from a longer run, with more chains or steps, or from another
+sampler, it also reports, for each parameter set, how far the means are from the reference's,
+in standard deviations of the reference, and the ratio of the standard deviations. Two runs that
+sample the same posterior agree within the Monte Carlo error, e.g. a few hundredths of a standard
+deviation with thousands of chains; a ratio below 1 means the run is too narrow, the usual sign of
+a run that has not converged.
+
+Its settings, in a `diagnose` section: `theta`, the final step of the run, by default
+`results/step_final.h5`, whose directory holds the other archived steps; `reference`, an archived
+step, or a `.txt` or `.h5` file with one sample per row, and `dataset`, its dataset in a plain
+`.h5` file; and `output`, the HDF5 file for the schedule and the comparison, by default
+`diagnose.h5`.
 
 (job)=
 ## Job

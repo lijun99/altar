@@ -8,7 +8,7 @@
 
 slipmodel:
 
-    model = altar.models.seismic.cuda.static
+    model = altar.models.seismic.static
     model:
 
         ; the name of the test case
@@ -20,7 +20,6 @@ slipmodel:
         ; green's function (observations, parameters)
         green = static.gf.h5
 
-        dataobs = altar.cuda.data.datal2
         dataobs:
             observations = 108
             data_file = static.data.h5
@@ -31,18 +30,18 @@ slipmodel:
 
         ; define parametersets
         psets:
-            strikeslip = altar.cuda.models.parameterset
-            dipslip = altar.cuda.models.parameterset
+            strikeslip = contiguous
+            dipslip = contiguous
 
             strikeslip:
                 count = {slipmodel.model.patches}
-                prior = altar.cuda.distributions.gaussian
+                prior = gaussian
                 prior.mean = 0
                 prior.sigma = 0.5
 
             dipslip:
                 count = {slipmodel.model.patches}
-                prior = altar.models.seismic.cuda.moment
+                prior = altar.models.seismic.moment
                 prior:
                     support = (-0.5, 20) ; slip range
                     Mw_mean = 7.3
@@ -50,6 +49,7 @@ slipmodel:
                     Mu = [30] ; in GPa
                     area = [400] ; patch area in km^2
 
+    controller = altar.bayesian.catmip
     controller:
         sampler = altar.bayesian.samplers.metropolis
         archiver:
