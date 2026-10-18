@@ -239,12 +239,20 @@ the acceptance rate adjusts $\alpha$.
 
 `altar.bayesian.samplers.hmc` moves each chain along a trajectory of the Hamiltonian dynamics on the
 potential $U = -\log P_m(\boldsymbol\theta|\mathbf d)$, integrated with leapfrog steps, and accepts
-or rejects its end point. It runs `job.steps` trajectories at each $\beta$. It needs the gradient of
+or rejects its end point. It runs `job.steps` trajectories at each $\beta$, or as many as its
+`stepcounter` asks for (see {ref}`step counts <stepcounters>`). It needs the gradient of
 the model's data likelihood, and priors defined on the whole real line: reparameterize bounded
 priors (see {doc}`Priors`).
 
 `leapfrog_steps`
 : the leapfrog steps of each trajectory; default 10.
+
+`trajectory_length`
+: the length of each trajectory, step size times leapfrog steps, in posterior standard deviations
+  under the mass matrix; the leapfrog steps then follow the step size, up to `max_leapfrog_steps`
+  (default 200); 0, the default, keeps `leapfrog_steps`. HMC moves a chain ballistically along a
+  trajectory but diffusively from one trajectory to the next, so a few long trajectories decorrelate
+  the chains for fewer gradients than many short ones; a length of order 1 suits most problems.
 
 `step_size`
 : the initial leapfrog step size; default 0.01.
@@ -366,7 +374,8 @@ linear:
 ```
 
 The correlation is that of the chains with where they started, the largest over the parameters, as
-{ref}`diagnose <diagnose>` reports it. It is measured against the spread of the chains, so it
+{ref}`diagnose <diagnose>` reports it, or the median, with `statistic = median`, which a few slow
+parameters among many don't hold back. It is measured against the spread of the chains, so it
 can't tell a population that is too narrow: with fewer chains than parameters, the Metropolis
 proposal misses directions, which a warning in the journal points out.
 

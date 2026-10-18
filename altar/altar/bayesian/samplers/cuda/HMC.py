@@ -132,7 +132,7 @@ class HMC:
             # p ~ N(0, M): p = L^-T z, for M^-1 = L L^T
             if self._factor is not None:
                 state.momentum.copy(self._scale(self._inverse_factor))
-            accepted = self._trajectory(annealer, self.leapfrog_steps)
+            accepted = self._trajectory(annealer, self._leapfrog_count())
             self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
             walked += 1
@@ -143,12 +143,21 @@ class HMC:
             pool.end(keep)
         else:
             self._copy_accepted_to_step(step)
+        if self.trajectory_length:
+            self.info.log(f"hmc: {self._leapfrog_count()} leapfrog substeps per trajectory, "
+                          f"step size {self.step_size:.4g}")
 
         attempts = state.samples * walked
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
         # all done
         return
 
+
+    def _leapfrog_count(self):
+        # the substeps that make up {trajectory_length} at the current step size, else fixed
+        if not self.trajectory_length:
+            return self.leapfrog_steps
+        return max(1, min(self.max_leapfrog_steps, round(self.trajectory_length / self.step_size)))
 
     def _set_step_size(self, eta):
         eta = float(eta)
@@ -478,6 +487,8 @@ class HMC:
     target_acceptance = 0.7  # the default acceptance rate the stepsizer steers to
     stepsizer = None         # the step size regulator
     leapfrog_steps = 10      # the number of leapfrog substeps per trajectory
+    trajectory_length = 0    # the length of a trajectory, if it sets the substeps
+    max_leapfrog_steps = 200 # the most substeps a {trajectory_length} may take
 
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}

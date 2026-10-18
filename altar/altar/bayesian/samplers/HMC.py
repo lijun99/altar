@@ -40,6 +40,17 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
     step_size = altar.properties.float(default=0.01)
     step_size.doc = "the leapfrog step size epsilon; adapted after each trajectory by {stepsizer}"
 
+    trajectory_length = altar.properties.float(default=0)
+    trajectory_length.validators = altar.constraints.isGreaterEqual(value=0)
+    trajectory_length.doc = \
+        "the length of a trajectory, step size times leapfrog steps, in posterior standard " \
+        "deviations under the mass matrix; the leapfrog steps then follow the step size, up to " \
+        "{max_leapfrog_steps}; 0, the default, keeps {leapfrog_steps}"
+
+    max_leapfrog_steps = altar.properties.int(default=200)
+    max_leapfrog_steps.validators = altar.constraints.isGreaterEqual(value=1)
+    max_leapfrog_steps.doc = "the most leapfrog substeps per trajectory, given {trajectory_length}"
+
     # step size regulator
     stepsizer = altar.bayesian.stepsizer()
     stepsizer.doc = "the step size regulator that adjusts {step_size} based on acceptance statistics"
@@ -85,6 +96,8 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
         self._impl = self._makeImpl()
         # hand it the state every backend shares
         self._impl.leapfrog_steps = self.leapfrog_steps
+        self._impl.trajectory_length = self.trajectory_length
+        self._impl.max_leapfrog_steps = self.max_leapfrog_steps
         self._impl.step_size = self.step_size
         self._impl.stepsizer = self.stepsizer
         self._impl.stepcounter = self.stepcounter

@@ -181,14 +181,17 @@ class HMC:
             # position update does, through M^-1 = diag(variance)
             ε = self.step_size
             half = 0.5 * ε
+            # the substeps that make up {trajectory_length} at this step size, else fixed
+            substeps = (max(1, min(self.max_leapfrog_steps, round(self.trajectory_length / ε)))
+                        if self.trajectory_length else self.leapfrog_steps)
             candidate.momentum += half * candidate.grad_posterior
-            for k in range(self.leapfrog_steps):
+            for k in range(substeps):
                 self._update_position(position, candidate.momentum, ε, variance)
                 if reparameterized:
                     candidate.theta[...] = candidate.phi
                     model.to_physical(theta=candidate.theta)
                 self._evaluate(annealer=annealer, model=model, candidate=candidate, samples=samples)
-                if k < self.leapfrog_steps - 1:
+                if k < substeps - 1:
                     candidate.momentum += ε * candidate.grad_posterior
             candidate.momentum += half * candidate.grad_posterior
 
@@ -321,6 +324,8 @@ class HMC:
     target_acceptance: float = 0.7  # the default acceptance rate the stepsizer steers to
     stepsizer: StepSizer            # the step size regulator
     leapfrog_steps: int = 10        # the number of leapfrog substeps per trajectory
+    trajectory_length: float = 0    # the length of a trajectory, if it sets the substeps
+    max_leapfrog_steps: int = 200   # the most substeps a {trajectory_length} may take
     step_size: float = 0.01         # the leapfrog step size epsilon; adapted after each trajectory
     adapt_mass_matrix: bool = True
     mass_matrix: str = "diagonal"
