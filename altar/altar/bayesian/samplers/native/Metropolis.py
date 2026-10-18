@@ -15,6 +15,7 @@ import typing
 import numpy
 # the package
 from altar.bayesian.states.CoolingStep import CoolingStep
+from altar.bayesian.stepcounters.StepCounter import walk
 
 if typing.TYPE_CHECKING:
     import journal
@@ -145,88 +146,78 @@ class Metropolis:
         # the mask of samples rejected due to model constraint violations
         rejects = numpy.zeros(samples)
 
-        # the step count regulator decides how many MC steps to run, in blocks, before
-        # checking whether this β step is done ({FixedSteps}: one block, the fixed count;
-        # {DecorrelatingSteps}: repeated blocks until decorrelated)
-        self.stepcounter.start(theta=θ, beta=β)
-        mcsteps = 0
+        for _ in walk(self.stepcounter, theta=θ, beta=β, annealer=annealer):
+            # notify we are advancing the chains
+            dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
 
-        while not self.stepcounter.done(mcsteps=mcsteps, theta=θ, annealer=annealer):
-            block = self.stepcounter.block_size()
-            for _ in range(block):
-                # notify we are advancing the chains
-                dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+            # initialize the candidate sample by randomly displacing the current one
+            cθ = self.proposal.propose(sampler=self, step=walker, annealer=annealer)
+            # in sampling space, keep the candidate there and map a copy to physical
+            if reparameterized:
+                cθs = cθ
+                cθ = cθs.copy()
+                model.to_physical(theta=cθ)
+            # initialize the likelihoods
+            for likelihood in (cprior, cdata, cpost):
+                likelihood[...] = 0
+            # build a candidate state
+            candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=(cprior, cdata, cpost))
 
-                # initialize the candidate sample by randomly displacing the current one
-                cθ = self.proposal.propose(sampler=self, step=walker, annealer=annealer)
-                # in sampling space, keep the candidate there and map a copy to physical
-                if reparameterized:
-                    cθs = cθ
-                    cθ = cθs.copy()
-                    model.to_physical(theta=cθ)
-                # initialize the likelihoods
-                for likelihood in (cprior, cdata, cpost):
-                    likelihood[...] = 0
-                # build a candidate state
-                candidate = self.CoolingStep(beta=β, theta=cθ, likelihoods=(cprior, cdata, cpost))
+            # the random displacement may have generated candidates that are outside the
+            # support of the model, so we must give it an opportunity to reject them;
+            # notify we are starting the verification process
+            dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
+            # reset the mask and ask the model to verify the sample validity
+            rejects[...] = 0
+            model.verify(step=candidate, mask=rejects)
+            # make the candidate a consistent set by replacing the rejected samples with
+            # copies of the originals from {θ}
+            invalids = rejects != 0
+            cθ[invalids] = θ[invalids]
+            if reparameterized:
+                cθs[invalids] = θs[invalids]
+            # notify that the verification process is finished
+            dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
 
-                # the random displacement may have generated candidates that are outside the
-                # support of the model, so we must give it an opportunity to reject them;
-                # notify we are starting the verification process
-                dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
-                # reset the mask and ask the model to verify the sample validity
-                rejects[...] = 0
-                model.verify(step=candidate, mask=rejects)
-                # make the candidate a consistent set by replacing the rejected samples with
-                # copies of the originals from {θ}
-                invalids = rejects != 0
-                cθ[invalids] = θ[invalids]
-                if reparameterized:
-                    cθs[invalids] = θs[invalids]
-                # notify that the verification process is finished
-                dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
+            # compute the likelihoods
+            model.likelihoods(annealer=annealer, step=candidate)
 
-                # compute the likelihoods
-                model.likelihoods(annealer=annealer, step=candidate)
+            # the difference of the two posterior likelihoods
+            diff = cpost - posterior
+            # and, in sampling space, the difference of the log-jacobians
+            if reparameterized:
+                cjacobian[...] = 0
+                model.eval_prior_with_physical(step=candidate, likelihood=cjacobian)
+                diff += cjacobian - jacobian
+            # roll the Metropolis dice, in (0, 1]
+            dice = 1.0 - self.rng.random(size=samples)
 
-                # the difference of the two posterior likelihoods
-                diff = cpost - posterior
-                # and, in sampling space, the difference of the log-jacobians
-                if reparameterized:
-                    cjacobian[...] = 0
-                    model.eval_prior_with_physical(step=candidate, likelihood=cjacobian)
-                    diff += cjacobian - jacobian
-                # roll the Metropolis dice, in (0, 1]
-                dice = 1.0 - self.rng.random(size=samples)
+            # notify we are starting accepting samples
+            dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
 
-                # notify we are starting accepting samples
-                dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
+            # accept/reject: a candidate is invalid if the model considered it outside its
+            # support, rejected if it was less likely than the original and it wasn't saved
+            # by the {dice}, and accepted otherwise
+            unlucky = numpy.log(dice) > diff
+            rejections = ~invalids & unlucky
+            accepts = ~invalids & ~unlucky
+            # update the counts
+            invalid += int(invalids.sum())
+            rejected += int(rejections.sum())
+            accepted += int(accepts.sum())
+            # copy the accepted candidates, and their likelihoods
+            θ[accepts] = cθ[accepts]
+            if reparameterized:
+                θs[accepts] = cθs[accepts]
+                jacobian[accepts] = cjacobian[accepts]
+            for current, proposed in ((prior, cprior), (data, cdata), (posterior, cpost)):
+                current[accepts] = proposed[accepts]
 
-                # accept/reject: a candidate is invalid if the model considered it outside its
-                # support, rejected if it was less likely than the original and it wasn't saved
-                # by the {dice}, and accepted otherwise
-                unlucky = numpy.log(dice) > diff
-                rejections = ~invalids & unlucky
-                accepts = ~invalids & ~unlucky
-                # update the counts
-                invalid += int(invalids.sum())
-                rejected += int(rejections.sum())
-                accepted += int(accepts.sum())
-                # copy the accepted candidates, and their likelihoods
-                θ[accepts] = cθ[accepts]
-                if reparameterized:
-                    θs[accepts] = cθs[accepts]
-                    jacobian[accepts] = cjacobian[accepts]
-                for current, proposed in ((prior, cprior), (data, cdata), (posterior, cpost)):
-                    current[accepts] = proposed[accepts]
+            # notify we are done accepting samples
+            dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
 
-                # notify we are done accepting samples
-                dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
-
-                # notify we are done advancing the chains
-                dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
-
-            mcsteps += block
+            # notify we are done advancing the chains
+            dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
 
         # store statistics on self for access by update() and the controller
         self.statistics = Statistics(accepted, invalid, rejected)
