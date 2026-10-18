@@ -156,8 +156,11 @@ class HMC:
             # the position the dynamics move
             position = current.phi if reparameterized else current.theta
             # (re)estimate the mass matrix from the current population every
-            # {mass_update_interval} trajectories, always including the very first
-            if self.adapt_mass_matrix and trajectory % self.mass_update_interval == 0:
+            # {mass_update_interval} trajectories, always including the very first; a production
+            # walk samples with the mass and the step size it starts with
+            producing = getattr(annealer, "production_walk", None)
+            interval = self.mass_update_interval
+            if self.adapt_mass_matrix and trajectory % interval == 0 and not (producing and trajectory):
                 self.mass_variance = self._estimate_mass_variance(theta=position, parameters=parameters)
             variance = self.mass_variance if self.mass_variance is not None else numpy.ones(parameters)
             precision_sqrt = 1.0 / numpy.sqrt(variance)
@@ -232,7 +235,8 @@ class HMC:
             if self.communicator is not None:
                 attempts = int(self.communicator.sum(attempts))
                 trajectory_accepted_total = int(self.communicator.sum(trajectory_accepted_total))
-            self.step_size = self.stepsizer.adjust(attempts=attempts, accepted=trajectory_accepted_total)
+            if not producing:
+                self.step_size = self.stepsizer.adjust(attempts=attempts, accepted=trajectory_accepted_total)
 
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)

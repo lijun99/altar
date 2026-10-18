@@ -127,13 +127,17 @@ class HMC:
                             beta=step.beta, annealer=annealer)
         for trajectory in trajectories:
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
-            self._update_mass(trajectory)
+            # a production walk samples with the mass and the step size it starts with
+            producing = getattr(annealer, "production_walk", None)
+            if not producing:
+                self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
             # p ~ N(0, M): p = L^-T z, for M^-1 = L L^T
             if self._factor is not None:
                 state.momentum.copy(self._scale(self._inverse_factor))
             accepted = self._trajectory(annealer, self._leapfrog_count())
-            self._update_step_size(accepted=accepted, attempts=state.samples)
+            if not producing:
+                self._update_step_size(accepted=accepted, attempts=state.samples)
             accepted_total += accepted
             walked += 1
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)

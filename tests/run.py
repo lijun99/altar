@@ -124,6 +124,8 @@ def gpu():
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
         example("altar-linear", "linear", "linear_mala.pfg", 1),
         example("altar-linear", "linear", "linear_mcmc.pfg", 1),
+        example("altar-linear", "linear", "linear_hmc.pfg", 1, "--controller.pool=8",
+                "--controller.pool_interval=0", "--controller.production=40", variant="production"),
         example("altar-regression", "regression", "linear.pfg", 1),
         example("altar-regression", "regression", "linear_hmc.pfg", 1),
         example("altar-regression", "regression", "linear.pfg", 1, "--model.kernels=cutile",

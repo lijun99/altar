@@ -82,6 +82,26 @@ class AnnealingMethod:
         raise NotImplementedError()
 
 
+    def produce(self, annealer: Annealer) -> typing.Self:
+        """
+        Prepare the production walk, at the current β, without resampling: its pool keeps states
+        evenly spread over its {annealer.production} steps, and the sampler adapts to the current
+        population, not to the importance weights of the last step
+        """
+        pool = getattr(self, "pool", None)
+        if pool is not None:
+            pool.spread = False
+            pool.interval = max(1, annealer.production // pool.size)
+        if self.wid == 0:
+            self.iteration += 1
+            self.step.weights = self.step.weighted_theta = self.step.ancestors = None
+            # the population the chains walk from
+            diagnostics = self.diagnose(annealer=annealer)
+            if diagnostics is not None:
+                diagnostics.begin(θ=getattr(self.step, "theta_sampling", self.step.theta))
+        return self
+
+
     def top(self, annealer: Annealer) -> typing.Self:
         """
         Notification that we are at the beginning of an update

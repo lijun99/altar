@@ -46,6 +46,13 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
                "work on, and that the archiver records (gpu only); 1, the default, keeps the " \
                "final states only, which turns pooling off"
 
+    production = altar.properties.int(default=0)
+    production.validators = altar.constraints.isGreaterEqual(value=0)
+    production.doc = "the MC steps, or HMC trajectories, of a last walk at β = 1, without " \
+                     "resampling and with the sampler fixed, whose states the pool keeps evenly " \
+                     "spread over it: the samples of the final step; 0, the default, stops at " \
+                     "the first β = 1 step"
+
     pool_interval = altar.properties.int(default=1)
     pool_interval.validators = altar.constraints.isGreaterEqual(value=0)
     pool_interval.doc = "the MC steps, or HMC trajectories, between the states a chain keeps; 0 " \
@@ -123,41 +130,12 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
         while self.continuing(worker=worker, iteration=iteration, tolerance=tolerance):
             # count this one
             iteration += 1
-            # notify that we are at the top of the current step
-            dispatcher.notify(event=dispatcher.beta_start, controller=self)
+            # compute a new temperature, resample, and walk the chains
+            self.advance(worker=worker)
 
-            # compute a new temperature
-            # resampling and distribute the samples
-            # compute new covariance matrix for proposal
-            worker.cool(annealer=self)
-
-            # worker procedures before sampling starts
-            worker.top(annealer=self)
-
-            # notify we are about to walk the chains
-            dispatcher.notify(event=dispatcher.walk_chains_start, controller=self)
-            # walk the chains
-            statistics = worker.walk(annealer=self)
-            # notify we are done walking the chains
-            dispatcher.notify(event=dispatcher.walk_chains_finish, controller=self)
-
-            # notify we are about to resample
-            dispatcher.notify(event=dispatcher.resample_start, controller=self)
-            # resample: this only adjusts the scaling factor of proposal matrix
-            # better use another name
-            statistics = worker.resample(annealer=self, statistics=statistics)
-            # notify we are done resampling
-            dispatcher.notify(event=dispatcher.resample_finish, controller=self)
-
-            # ask archiver to record statistics information
-            worker.archive(annealer=self, scaling=self.sampler.scaling, stats=statistics)
-
-            # notify the worker we are at the bottom of the current step
-            # worker procedures after the sampling ends
-            # e.g., print out the statistics, calculate the mean model in Cp
-            worker.bottom(annealer=self)
-            # and dispatch the matching event
-            dispatcher.notify(event=dispatcher.beta_finish, controller=self)
+        # the production walk at β = 1, for the samples of the final step
+        if self.production:
+            self.advance(worker=worker, production=True)
 
         # and finish up
         worker.finish(annealer=self)
@@ -169,6 +147,57 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
         # all done; indicate success
         return 0
+
+
+    def advance(self, worker, production=False):
+        """
+        Take a step: a new temperature, the resampling and a walk of the chains; or, for the
+        {production} walk, the walk alone, at the current temperature
+        """
+        dispatcher = self.dispatcher
+        # notify that we are at the top of the current step
+        dispatcher.notify(event=dispatcher.beta_start, controller=self)
+
+        if production:
+            # no new temperature, no resampling; the sampler as it is
+            worker.produce(annealer=self)
+        else:
+            # compute a new temperature
+            # resampling and distribute the samples
+            # compute new covariance matrix for proposal
+            worker.cool(annealer=self)
+
+        # worker procedures before sampling starts
+        worker.top(annealer=self)
+
+        # notify we are about to walk the chains
+        dispatcher.notify(event=dispatcher.walk_chains_start, controller=self)
+        # walk the chains, for {production} steps if this is the production walk
+        self.production_walk = self.production if production else None
+        statistics = worker.walk(annealer=self)
+        self.production_walk = None
+        # notify we are done walking the chains
+        dispatcher.notify(event=dispatcher.walk_chains_finish, controller=self)
+
+        # notify we are about to resample
+        dispatcher.notify(event=dispatcher.resample_start, controller=self)
+        # resample: this only adjusts the scaling factor of proposal matrix
+        # better use another name
+        statistics = worker.resample(annealer=self, statistics=statistics)
+        # notify we are done resampling
+        dispatcher.notify(event=dispatcher.resample_finish, controller=self)
+
+        # ask archiver to record statistics information
+        worker.archive(annealer=self, scaling=self.sampler.scaling, stats=statistics)
+
+        # notify the worker we are at the bottom of the current step
+        # worker procedures after the sampling ends
+        # e.g., print out the statistics, calculate the mean model in Cp
+        worker.bottom(annealer=self)
+        # and dispatch the matching event
+        dispatcher.notify(event=dispatcher.beta_finish, controller=self)
+        # all done
+        return
 
 
     def continuing(self, worker, iteration, tolerance):
@@ -234,6 +263,7 @@ class Annealer(altar.component, family="altar.controllers.annealer", implements=
 
     # private data
     model = None  # the model i'm sampling
+    production_walk = None # the length of the walk under way, if it is the production walk
     worker = None # the annealing method
     # journal channels shared with the application
     info = None

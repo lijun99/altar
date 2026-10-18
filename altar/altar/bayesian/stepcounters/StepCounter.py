@@ -184,8 +184,13 @@ def walk(counter: StepCounter, theta: Array, beta: float | None = None,
          annealer: Annealer | None = None) -> typing.Iterator[int]:
     """
     The steps of a walk of the chains {theta}, numbered from 0, in the blocks {counter} asks for,
-    until it is done; {theta} is the sample matrix the walk updates in place
+    until it is done; {theta} is the sample matrix the walk updates in place; a production walk
+    is as long as its controller says
     """
+    length = getattr(annealer, "production_walk", None)
+    if length:
+        yield from range(length)
+        return
     counter.start(theta=theta, beta=beta)
     steps = 0
     while not counter.done(mcsteps=steps, theta=theta, annealer=annealer):

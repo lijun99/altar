@@ -113,6 +113,44 @@ The controller also runs on a *worker* that matches the job: one process on the 
 GPU, or several processes under MPI. The worker is chosen from the job configuration, not
 configured itself.
 
+(pooling)=
+### Pooling and the production walk
+
+On the GPU, each chain can keep several of the states it walks through at each $\beta$, not only
+the last one, after Dau and Chopin's waste-free SMC. They make up the population the scheduler,
+the resampling and the proposal work on, and the archiver records, without more model evaluations:
+
+`pool`
+: the states each chain keeps from a walk; default 1, the last one only, which turns pooling off;
+
+`pool_interval`
+: the steps or trajectories between them; default 1; 0 spreads them over the length of the
+  previous walk, for walks whose length varies, as with the
+  {ref}`decorrelating step counter <stepcounters>`.
+
+The states a chain keeps count as more samples only if they are far enough apart to be nearly
+independent; `diagnose` reports how many they are worth (see {ref}`diagnose`). Kept from short
+walks, they add little.
+
+The annealing ends at the first walk at $\beta = 1$. Its samples share their ancestry, from the
+resampling, and a run of thousands of chains can be worth far fewer independent samples. A
+*production walk* continues at $\beta = 1$, without resampling and with the sampler as it is, its
+step size and mass matrix no longer adapting, for `production` steps or trajectories; with a pool,
+the chains keep their states evenly spread over it, and these are the samples of the final step:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        pool = 16
+        pool_interval = 0
+        production = 400 ; trajectories at beta = 1, a state kept every 25
+```
+
+The production walk makes up the samples for the analysis: e.g. 1024 chains keeping 16 states a
+decorrelation time apart give about 16000 nearly independent samples. It can't move weight between
+modes, which only the annealing does.
+
 (cross-fade)=
 ### Cross-fade CATMIP
 
@@ -756,8 +794,8 @@ slipmodel.plexus diagnose --config=static.pfg
 - how well the walk of the step mixed, from runs that archive it (`Diagnostics` in the step
   files): `parents`, the distinct samples its resampling kept; `lineages`, the initial samples the
   population descends from; `corr` and `max`, the median and largest, over the parameters, of the
-  correlation across the chains between the end of each chain's walk and its start; and, with a pool
-  (`controller.pool` > 1), `states`, the effective states per chain, the variance of the population
+  correlation across the chains between the end of each chain's walk and its start; and, with a
+  {ref}`pool <pooling>`, `states`, the effective states per chain, the variance of the population
   over that of the means of the chains.
 
 A walk that leaves the correlation near 1 hasn't moved the chains away from the copies the
