@@ -10,9 +10,8 @@
 """
 Sanity check: altar.cuda.libcudaaltar.langevin's bindings, against a real GPU.
 
-Covers {updateTheta} (updates a single column of theta, leaves the others untouched) and
-{updateThetaBatched} (updates every column at once, with independent alpha1/alpha2 weights on
-the prior/data gradients).
+Covers {updateThetaBatched} (updates every column at once, with independent alpha1/alpha2
+weights on the prior/data gradients).
 """
 
 
@@ -25,28 +24,7 @@ def test():
 
     rng = numpy.random.default_rng(9)
     samples, parameters = 10000, 5
-
-    theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")
-    theta0 = rng.normal(size=(samples, parameters))
-    numpy.asarray(theta)[:, :] = theta0
-
-    prior_gradient = altar.cuda.managed(shape=(samples,), cell="float64")
-    numpy.asarray(prior_gradient)[:] = rng.normal(size=samples)
-    data_gradient = altar.cuda.managed(shape=(samples,), cell="float64")
-    numpy.asarray(data_gradient)[:] = rng.normal(size=samples)
-    eta = altar.cuda.managed(shape=(samples,), cell="float64")
-    numpy.asarray(eta)[:] = rng.normal(size=samples) * 0.01
     half_epsilon = 0.05
-    index = 2
-
-    langevin.cudaLangevin_updateTheta(theta, prior_gradient, data_gradient, half_epsilon, eta, index)
-    th = numpy.asarray(theta)
-    pg, dg, et = numpy.asarray(prior_gradient), numpy.asarray(data_gradient), numpy.asarray(eta)
-    expected = theta0[:, index] + half_epsilon * (pg + dg) + et
-    assert numpy.allclose(th[:, index], expected)
-    for c in range(parameters):
-        if c != index:
-            assert numpy.allclose(th[:, c], theta0[:, c])
 
     # the batched update: every column at once, independent alpha1/alpha2 weights
     theta = altar.cuda.managed(shape=(samples, parameters), cell="float64")

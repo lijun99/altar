@@ -42,4 +42,44 @@ def forward():
     # and  return the panel
     return Forward
 
+# measure how well the data resolve the parameters
+@altar.foundry(implements=altar.action, tip="measure how well the data resolve the parameters")
+def resolution():
+    # get the command panel
+    from .Resolution import Resolution
+    # attach the docstring
+    __doc__ = Resolution.__doc__
+    # and  return the panel
+    return Resolution
+
+# make synthetic data from a true model
+@altar.foundry(implements=altar.action, tip="make synthetic data from a true model")
+def synthetic():
+    # get the command panel
+    from .Synthetic import Synthetic
+    # attach the docstring
+    __doc__ = Synthetic.__doc__
+    # and  return the panel
+    return Synthetic
+
+# compare a posterior with a true model
+@altar.foundry(implements=altar.action, tip="compare a posterior with a true model")
+def recover():
+    # get the command panel
+    from .Recover import Recover
+    # attach the docstring
+    __doc__ = Recover.__doc__
+    # and  return the panel
+    return Recover
+
+# check the annealing schedule of a run, and its posterior against a reference
+@altar.foundry(implements=altar.action, tip="check the annealing schedule of a run")
+def diagnose():
+    # get the command panel
+    from .Diagnose import Diagnose
+    # attach the docstring
+    __doc__ = Diagnose.__doc__
+    # and  return the panel
+    return Diagnose
+
 # end of file

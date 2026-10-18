@@ -15,11 +15,7 @@ module rather than monkey-patching {pyre.cuda.curand} itself, matching {altar.cu
 """
 
 import math
-import pyre.cuda
-
-
-# the real thing, everything below is layered on top of
-_curand = pyre.cuda.curand
+from . import pyrecurand as _curand
 
 
 def uniform(out, generator=None):

@@ -30,14 +30,6 @@ namespace altar {
                     const real_type low, const real_type high,
                     cudaStream_t stream=0);
 
-                // the per-parameter-bounds counterpart of {verify}: {low[j]}/{high[j]} apply
-                // to parameter {idx_begin + j}
-                template <typename real_type>
-                void verify_unique(matrix_view_t<real_type> theta, vector_view_t<int> invalid,
-                    const size_t idx_begin, const size_t idx_end,
-                    vector_view_t<real_type, true> low, vector_view_t<real_type, true> high,
-                    cudaStream_t stream=0);
-
                 // clamp {theta[:, idx_begin:idx_end]} into [low, high], in place
                 template <typename real_type>
                 void constrain(matrix_view_t<real_type, false> theta,

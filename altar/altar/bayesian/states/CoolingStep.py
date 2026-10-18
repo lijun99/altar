@@ -83,6 +83,21 @@ class CoolingStep(BayesianState):
                   has_reparametrization=has_reparametrization)
 
     # interface
+    def reorder(self, rows: numpy.ndarray) -> typing.Self:
+        """
+        Replace each chain {i} by the chain {rows[i]}, in place: its samples, in sampling and
+        physical space, its jacobian, and its densities
+        """
+        self.theta_sampling[...] = self.theta_sampling[rows]
+        # a reparameterized step keeps its physical samples and jacobian apart
+        if self.has_reparametrization:
+            self.theta[...] = self.theta[rows]
+            self.jacobian[...] = self.jacobian[rows]
+        for density in (self.prior, self.data, self.posterior):
+            density[...] = density[rows]
+        return self
+
+
     def clone(self) -> typing.Self:
         """
         Make a new step with a duplicate of my state

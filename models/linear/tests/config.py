@@ -51,7 +51,7 @@ linear.model.psets.all:
 
 # print every setting of the linear app, walking into its components, without running it
 DUMP = """
-import altar, pyre
+import altar
 
 class Linear(altar.shells.application, family="altar.applications.linear"):
     model = altar.models.model(default="linear")
@@ -64,9 +64,9 @@ def walk(component, path, seen):
     for trait in component.pyre_configurables():
         value = getattr(component, trait.name)
         key = f"{path}.{trait.name}"
-        if isinstance(value, pyre.component):
+        if isinstance(value, altar.component):
             walk(value, key, seen)
-        elif hasattr(value, "items") and all(isinstance(v, pyre.component) for _, v in value.items()):
+        elif hasattr(value, "items") and all(isinstance(v, altar.component) for _, v in value.items()):
             for name, v in value.items():
                 walk(v, f"{key}.{name}", seen)
         else:

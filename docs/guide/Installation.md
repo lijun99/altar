@@ -42,8 +42,8 @@ Python 3.13 and CMake 4.1, on an NVIDIA RTX 4060.
 | pybind11 | | for the python extension modules |
 | HDF5 | ≥ 1.14.4 | data files |
 | MPI | | optional: for running on several processes or nodes, e.g. Open MPI |
-| CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand` and `cusolver` |
-| cuTile | | optional: `cuda-tile`, for the GPU kernels of the volcano models; with its compiler, `tileiras`, from a CUDA ≥ 13.2 toolkit or `pip install cuda-tile[tileiras]` |
+| CUDA toolkit | | optional: for GPU computations, with `cublas`, `curand`, `cusolver` and `nvrtc` |
+| cuTile | | optional: `cuda-tile`, for the GPU kernels of the volcano models, and the cuTile kernels of the regression model; with its compiler, `tileiras`, from a CUDA ≥ 13.2 toolkit or `pip install cuda-tile[tileiras]` |
 | PyYAML | | optional: for `.yaml` configuration files |
 | PostgreSQL client library | | optional: pyre's database support, not used by AlTar |
 
@@ -60,7 +60,7 @@ conda install -n altar2 -c conda-forge openmpi
 conda activate altar2
 # for GPU support: pyre finds the GPUs with cuda-python
 pip install cuda-python
-# optional, for the GPU kernels of the volcano models
+# optional, for the GPU kernels of the volcano models, and the regression model's cuTile kernels
 pip install cuda-tile
 ```
 
@@ -254,12 +254,24 @@ altar-linear --config=linear_catmip.pfg --job.gpus=1
 ```
 
 Each run anneals from β = 0 to β = 1, in about 20 steps, and prints the posterior mean and
-standard deviation of each parameter; a few minutes on the cpu, well under a minute on a GPU. The GPU support has its own tests, in `altar/tests/cuda`:
+standard deviation of each parameter; a few minutes on the cpu, well under a minute on a GPU.
+
+The tests check an installation from the source tree, in two suites, the cpu one and the GPU
+one:
 
 ```bash
-cd ~/tools/src/altar/altar/tests/cuda
-for test in *.py; do python $test || echo "FAILED: $test"; done
+cd ~/tools/src/altar
+python tests/run.py                # the cpu suite, a few minutes
+python tests/run.py --gpu          # the GPU suite: the cuda tests, examples, posteriors
+python tests/run.py --list         # the tests, and what each needs
+python tests/run.py linear         # the tests whose names contain "linear"
 ```
+
+Each suite runs the framework and model checks, short runs of the examples, and the exact
+posterior test of the linear model. Tests that need something optional are skipped without it:
+jax, cuTile for the volcano models on the GPU, two GPUs for the MPI one, and the 9patch inputs
+of the seismic examples, which aren't in the repository (`--seismic-data`, or
+`$ALTAR_SEISMIC_DATA`). A failed test leaves its log in `test-logs`.
 
 (installation-mpi)=
 ## MPI

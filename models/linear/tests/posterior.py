@@ -16,13 +16,13 @@ truncation being negligible there; the cases with a tight uniform prior, which c
 posterior, compare against its moments within the support, from rejection sampling.
 
 Each case runs {altar-linear} in a scratch directory and compares the mean, the standard
-deviations and the correlations of its final samples with the exact ones.
+deviations and the correlations of its final samples with the exact ones, and the evidence,
+for the controllers that estimate it, with the exact log p(d).
 
     python posterior.py                 # every case, on the cpu
     python posterior.py mala hmc        # some of them
     python posterior.py --gpu           # on the gpu
     python posterior.py --precision=float32   # in single precision, cpu or gpu
-    python posterior.py --gpu --jax     # with the forward model and gradient in jax
     python posterior.py --list          # the cases
 """
 
@@ -72,7 +72,18 @@ linear:
     job.chains = 2**8
 """
 
-def uniform(support, reparameterize=True):
+def crossfaded(base):
+    """
+    {base} with the linear model nested in a crossfade model, which a run then selects directly
+    """
+    head, rest = base.split("    model = altar.models.linear\n    model:\n", 1)
+    block, tail = rest.split("    controller:\n", 1)
+    nested = "".join(f"    {line}" if line.strip() else line for line in block.splitlines(True))
+    nested = nested.replace("{linear.model.parameters}", "{linear.model.model.parameters}")
+    return (f"{head}    model = altar.models.crossfade\n    model:\n"
+            f"        model = altar.models.linear\n        model:\n{nested}    controller:\n{tail}")
+
+def uniform(support, reparameterize=True, prep=None):
     """
     The settings of a uniform prior on {support}; a tight one also starts the chains from it
     """
@@ -81,15 +92,28 @@ def uniform(support, reparameterize=True):
         f"--model.psets.all.prior.support=({support[0]},{support[1]})",
         f"--model.psets.all.prior.reparameterize={reparameterize}",
     ]
-    if support == TIGHT:
+    if prep or (prep is None and support == TIGHT):
         settings += [
             "--model.psets.all.prep=uniform",
             f"--model.psets.all.prep.support=({support[0]},{support[1]})",
         ]
     return settings
 
+# the logistic-edged uniform prior on the wide support
+SOFT = [
+    "--model.psets.all.prior=softuniform",
+    f"--model.psets.all.prior.support=({SUPPORT[0]},{SUPPORT[1]})",
+]
+
 # the prior of each case: the gaussian, the wide uniform or the tight uniform one
 GAUSSIAN, WIDE, TIGHTLY = "gaussian", "wide", "tight"
+
+# trajectories in blocks of 5 until the chains forget where they started
+DECORRELATING = ["--controller.sampler.stepcounter=altar.bayesian.decorrelating",
+                 "--controller.sampler.stepcounter.min_mc_steps=5",
+                 "--controller.sampler.stepcounter.corr_check_steps=5",
+                 "--controller.sampler.stepcounter.max_mc_steps=100",
+                 "--controller.sampler.stepcounter.target_correlation=0.3"]
 
 # name: (the controller and sampler settings, the prior)
 CASES = {
@@ -97,16 +121,34 @@ CASES = {
     "mcmc": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256"], GAUSSIAN),
     "catmip_hmc": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20"], GAUSSIAN),
     "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], GAUSSIAN),
+    "catmip_hmc-decorrelating": (["--controller=altar.bayesian.catmip_hmc", *DECORRELATING], GAUSSIAN),
+    "catmip_hmc-median": (["--controller=altar.bayesian.catmip_hmc", *DECORRELATING,
+                           "--controller.sampler.stepcounter.statistic=median"], GAUSSIAN),
+    "catmip-production": (["--controller=altar.bayesian.catmip", "--job.steps=256",
+                           "--controller.production=1024"], GAUSSIAN),
+    "catmip_hmc-production": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20",
+                               "--controller.production=100"], GAUSSIAN),
+    "catmip_hmc-length": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20",
+                           "--controller.sampler.trajectory_length=1.5"], GAUSSIAN),
     "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], GAUSSIAN),
     "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], GAUSSIAN),
-    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
+    "cf_catmip": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),
+    "catmip-uniform": (["--controller=altar.bayesian.catmip", "--job.steps=256",
+                        *uniform(SUPPORT, prep=True)], WIDE),
     "mcmc-uniform": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256",
                       *uniform(SUPPORT)], WIDE),
     "hmc-uniform": (["--controller=altar.bayesian.hmc", "--job.steps=200", *uniform(SUPPORT)], WIDE),
     "mala-uniform": (["--controller=altar.bayesian.mala", "--job.steps=4000", *uniform(SUPPORT)], WIDE),
+    "hmc-burnin": (["--controller=altar.bayesian.hmc", "--controller.rounds=4", "--job.steps=50",
+                    "--controller.scheduler.burnin=2"], GAUSSIAN),
     "catmip-tight": (["--controller=altar.bayesian.catmip", "--job.steps=256", *uniform(TIGHT)], TIGHTLY),
     "catmip-tight-physical": (["--controller=altar.bayesian.catmip", "--job.steps=256",
                                *uniform(TIGHT, reparameterize=False)], TIGHTLY),
+    "cf_catmip-uniform": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *uniform(SUPPORT)], WIDE),
+    "cf_catmip-soft": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256", *SOFT], WIDE),
+    "cf_catmip-model": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),
+    "cf_catmip-tight": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256",
+                         *uniform(TIGHT, reparameterize=False)], TIGHTLY),
 }
 
 # the tolerances, for 256 chains: the mean within this many posterior standard deviations,
@@ -115,38 +157,60 @@ CASES = {
 MEAN = 0.3
 SD = (0.8, 1.25)
 CORRELATION = 0.3
+# and the evidence, for the controllers that estimate it, within this many nats: annealing from
+# the prior, CATMIP's estimate is noisy, about a nat, and low with 256 chains; it also needs its
+# initial samples drawn from the prior; cross-fading is exact here
+EVIDENCE = 3.0
 
 
 def exact(prior):
     """
-    The mean and the covariance of the posterior, with the gaussian prior, without a prior, or
-    with the tight uniform one
+    The mean and the covariance of the posterior, and the evidence log p(d), with the gaussian
+    prior, with the wide uniform one, flat over the posterior, or with the tight uniform one
     """
     folder = EXAMPLES / CASE
     G = numpy.loadtxt(folder / "green.txt")
     d = numpy.loadtxt(folder / "data.txt")
     Cd = numpy.loadtxt(folder / "cd.txt")
+    observations, parameters = G.shape
     W = numpy.linalg.inv(Cd)
     A = G.T @ W @ G
     if prior == GAUSSIAN:
-        A += numpy.eye(A.shape[0]) / SIGMA**2
+        A += numpy.eye(parameters) / SIGMA**2
     cov = numpy.linalg.inv(A)
     mean = cov @ (G.T @ W @ d)
-    if prior != TIGHTLY:
-        return mean, cov
-    # the draws of the posterior without a prior that land in the support
-    draws = numpy.random.default_rng(1).multivariate_normal(mean, cov, size=2_000_000)
+    if prior == GAUSSIAN:
+        # log N(d; 0, C_d + σ² G G^T)
+        C = Cd + SIGMA**2 * G @ G.T
+        evidence = -0.5 * (d @ numpy.linalg.solve(C, d) + numpy.linalg.slogdet(C)[1]
+                           + observations * numpy.log(2 * numpy.pi))
+        return mean, cov, evidence
+    # the integral of N(d; G θ, C_d) over θ, times the density of the prior, 1 / (b - a)
+    low, high = SUPPORT if prior == WIDE else TIGHT
+    r = d - G @ mean
+    evidence = (-0.5 * (observations - parameters) * numpy.log(2 * numpy.pi)
+                - 0.5 * numpy.linalg.slogdet(Cd)[1] + 0.5 * numpy.linalg.slogdet(cov)[1]
+                - 0.5 * r @ W @ r - parameters * numpy.log(high - low))
+    if prior == WIDE:
+        return mean, cov, evidence
+    # the draws of the posterior without a prior that land in the support, a fraction q of them,
+    # which the integral over the support picks up
+    total = 2_000_000
+    draws = numpy.random.default_rng(1).multivariate_normal(mean, cov, size=total)
     draws = draws[((draws > TIGHT[0]) & (draws < TIGHT[1])).all(axis=1)]
-    return draws.mean(axis=0), numpy.cov(draws, rowvar=False)
+    evidence += numpy.log(draws.shape[0] / total)
+    return draws.mean(axis=0), numpy.cov(draws, rowvar=False), evidence
 
 
 def samples(results):
     """
-    The physical samples of the final step
+    The physical samples of the final step, and its evidence, if it has one
     """
-    parameters = h5py.File(results / "step_final.h5")["ParameterSets"]
+    final = h5py.File(results / "step_final.h5")
+    parameters = final["ParameterSets"]
     name = "all_physical" if "all_physical" in parameters else "all_sampling"
-    return numpy.asarray(parameters[name])
+    evidence = final["Annealer"].get("log_evidence")
+    return numpy.asarray(parameters[name]), None if evidence is None else float(numpy.asarray(evidence))
 
 
 def compare(theta, mean, cov):
@@ -162,7 +226,7 @@ def compare(theta, mean, cov):
     return good, shift.max(), ratio.min(), ratio.max(), drift
 
 
-def run(name, gpu, precision, keep, model=None):
+def run(name, gpu, precision, keep):
     """
     Run one case and compare it with the exact posterior
     """
@@ -170,11 +234,11 @@ def run(name, gpu, precision, keep, model=None):
     scratch = pathlib.Path(tempfile.mkdtemp(prefix=f"altar-posterior-{name}-"))
     try:
         shutil.copytree(EXAMPLES / CASE, scratch / CASE)
-        (scratch / "posterior.pfg").write_text(BASE)
+        # the crossfade model selected directly, around the linear one
+        base = crossfaded(BASE) if name == "cf_catmip-model" else BASE
+        (scratch / "posterior.pfg").write_text(base)
         command = ["altar-linear", "--config=posterior.pfg", f"--job.gpus={int(gpu)}",
                    f"--job.precision={precision}", *settings]
-        if model:
-            command.append(f"--model={model}")
         start = time.perf_counter()
         status = subprocess.run(command, cwd=scratch, capture_output=True, text=True, errors="replace")
         elapsed = time.perf_counter() - start
@@ -182,11 +246,15 @@ def run(name, gpu, precision, keep, model=None):
             (scratch / "run.log").write_text(status.stdout + status.stderr)
             keep = True
             return False, f"{name:22s} FAILED to run ({status.returncode}); see {scratch}/run.log"
-        mean, cov = exact(prior=prior)
-        good, shift, low, high, drift = compare(samples(scratch / "results"), mean, cov)
+        mean, cov, evidence = exact(prior=prior)
+        theta, estimate = samples(scratch / "results")
+        good, shift, low, high, drift = compare(theta, mean, cov)
+        line = f"mean {shift:.2f} sd  sd ratio [{low:.2f}, {high:.2f}]  correlation {drift:.2f}"
+        if estimate is not None:
+            good = good and abs(estimate - evidence) <= EVIDENCE
+            line += f"  log evidence {estimate:.2f} (exact {evidence:.2f})"
         verdict = "ok" if good else "FAIL"
-        return good, (f"{name:22s} {verdict:4s} {elapsed:6.0f}s  mean {shift:.2f} sd  "
-                      f"sd ratio [{low:.2f}, {high:.2f}]  correlation {drift:.2f}")
+        return good, f"{name:22s} {verdict:4s} {elapsed:6.0f}s  {line}"
     finally:
         if keep:
             print(f"  kept {scratch}")
@@ -200,7 +268,6 @@ def main():
     parser.add_argument("--gpu", action="store_true", help="run on the gpu")
     parser.add_argument("--precision", default="float64", help="the precision, cpu or gpu")
     parser.add_argument("--keep", action="store_true", help="keep the scratch directories")
-    parser.add_argument("--jax", action="store_true", help="the linear model with its forward model and gradient in jax")
     parser.add_argument("--list", action="store_true", help="list the cases")
     options = parser.parse_args()
 
@@ -217,11 +284,10 @@ def main():
         return 1
 
     print(f"tolerances: mean within {MEAN} sd, sd ratio in [{SD[0]}, {SD[1]}], "
-          f"correlation within {CORRELATION}")
+          f"correlation within {CORRELATION}, log evidence within {EVIDENCE}")
     failures = 0
     for name in options.cases or CASES:
-        good, line = run(name, gpu=options.gpu, precision=options.precision, keep=options.keep,
-                         model="altar.models.linear.jax" if options.jax else None)
+        good, line = run(name, gpu=options.gpu, precision=options.precision, keep=options.keep)
         print(line, flush=True)
         failures += not good
     return 1 if failures else 0

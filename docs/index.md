@@ -20,10 +20,7 @@ guide/Issues
 :maxdepth: 1
 :caption: Tutorials
 
-tutorials/hello/hello.ipynb
-tutorials/linear/linear.ipynb
-tutorials/intro_cp/toymodel_step1.ipynb
-tutorials/intro_cp/toymodel_step2.ipynb
+AlTar 2 tutorials <https://github.com/lijun99/altar2-tutorials>
 ```
 
 ```{toctree}

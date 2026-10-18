@@ -59,7 +59,6 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaGaussian.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaRanged.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniform.cu
-    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogistic.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogitTransform.cu
     )
 
@@ -83,7 +82,6 @@ endfunction(altar_cuda_buildLibrary)
 
 # build the altar cuda extension module
 function(altar_cuda_buildModule)
-  # altar; pybind11 now, not the raw cpython api the old capsule-based bindings used
   Python_add_library(cudaaltarmodule MODULE WITH_SOABI)
   # adjust the name to match what python expects
   set_target_properties(
@@ -97,11 +95,6 @@ function(altar_cuda_buildModule)
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}
-    # {CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES} doesn't reliably carry the toolkit's bundled
-    # CCCL (libcu++) headers -- e.g. <cuda/std/mdspan> -- across cmake versions, so add it
-    # explicitly; these .cc files are compiled by the host compiler, not nvcc, so they don't
-    # get nvcc's own implicit "-isystem .../include/cccl" the way .cu files do
-    ${CMAKE_CUDA_COMPILER_TOOLKIT_ROOT}/include/cccl
     )
   # set the linker
   set_target_properties(cudaaltarmodule PROPERTIES LINKER_LANGUAGE CUDA)
@@ -129,7 +122,6 @@ function(altar_cuda_buildModule)
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/uniform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/ranged.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/tgaussian.cc
-    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logistic.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logittransform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/leapfrog.cc

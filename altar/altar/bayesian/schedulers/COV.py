@@ -68,6 +68,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
 
     # public data
     cov: float = 0.0 # the actual value for COV we were able to attain
+    log_evidence: float = 0.0 # the running estimate of log p(d), the sum of log <w_m> over the steps
 
 
     # protocol obligations
@@ -82,6 +83,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         self.solver.initialize(application=application, scheduler=self)
         # grab the info channel
         self.info = application.info
+        # the evidence accumulates from here; a controller may seed it, e.g. cross-fade sampling
+        self.log_evidence = 0.0
         # all done
         return self
 
@@ -96,6 +99,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         β = self.update_temperature(step=step)
         # the samples the weights belong to, for the proposal covariance: those before resampling
         step.weighted_theta = None
+        # the rows the resampling keeps, if it happens
+        step.ancestors = None
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
             step.weighted_theta = getattr(step, "theta_sampling", step.theta).copy()
@@ -140,6 +145,12 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         step.weights = w
         # adjust β if it is too small
         β = max(β, self.beta_min)
+        # the evidence, log p(d) = Σ_m log <w_m> (Ching and Chen, 2007), with the unnormalized
+        # weights w_m = exp(δβ_m llk)
+        δβ = β - step.beta
+        llk = numpy.asarray(step.data, dtype=numpy.float64)
+        top = llk.max()
+        self.log_evidence += δβ * top + numpy.log(numpy.mean(numpy.exp(δβ * (llk - top))))
         # and return the new temperature
         return β
 
@@ -198,6 +209,8 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # the index of the old sample behind each new one, duplicated by its count, shuffled
         rows = numpy.repeat(numpy.arange(counts.size), counts)
         self.rng.shuffle(rows)
+        # publish them, for the diagnostics of the run
+        step.ancestors = rows
 
         self.info.log(f"resampling: unique samples {numpy.count_nonzero(counts)} out of {counts.size}")
 

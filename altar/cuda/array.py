@@ -7,22 +7,18 @@
 #
 
 """
-A thin, {pyre.grid}-backed replacement for the old capsule-based {altar.cuda.matrix}/
-{altar.cuda.vector}: this is the "alias" the bayesian state/sampler layer keeps calling
-{altar.cuda.matrix(...)}/{altar.cuda.vector(...)} against, so that layer's existing
-{.zero()}/{.clone()}/{.copy_from_host(...)}/... call sites keep working unchanged, without
-each of them being rewritten to talk to {pyre.grid} directly.
+{altar.cuda.matrix}/{altar.cuda.vector}: the vectors and matrices the bayesian state/sampler
+layer allocates.
 
-{Array} wraps a {pyre.cuda.managed} grid and adds back the handful of convenience methods
-that layer expects. Managed memory is host-visible, so every method here is just a thin
-{numpy.asarray(grid)} view over it -- there is no separate host/device copy step the way
-there was for the old capsule-based buffers, {copy_from_host}/{copy_to_host} included.
+{Array} wraps a {pyre.cuda.managed} grid and adds the handful of convenience methods that
+layer calls ({zero}/{clone}/{copy_from_host}/...): on the device between managed grids, through
+a host-visible {numpy.asarray(grid)} view to and from the host.
 """
 
 from __future__ import annotations
 import typing
 import numpy
-import pyre.cuda
+from . import managed
 
 
 # the declaration
@@ -49,7 +45,7 @@ class Array:
         """
         if isinstance(shape, int):
             shape = (shape,)
-        return cls(pyre.cuda.managed(shape=tuple(shape), cell=_cell(dtype)), dtype=dtype)
+        return cls(managed(shape=tuple(shape), cell=_cell(dtype)), dtype=dtype)
 
 
     @classmethod
@@ -187,13 +183,12 @@ class Array:
         return _grids().sum(self._grid)
 
 
-    def cholesky(self, uplo: typing.Any = None) -> typing.Self:
+    def cholesky(self) -> typing.Self:
         """
         Factor me in place as a symmetric positive definite matrix, leaving my own Cholesky
         factor U (self = U^T U) in my row-major upper triangle -- the same convention
         {altar.norms.cuda.L2}/{altar.data.cuda.DataL2} already use and validated against real
-        gpu output. {uplo} is accepted, not used: the old capsule api's {uplo=FillModeUpper}
-        callers wanted is exactly this method's only (and already validated) behavior.
+        gpu output.
 
         Only the upper triangle is written -- the lower triangle is left holding whatever was
         there before (my own original, pre-factored cells, not zeros), matching the
@@ -214,9 +209,9 @@ class Array:
         potrf = cusolver.dpotrf if double else cusolver.spotrf
         potrf_buffer_size = cusolver.dpotrf_buffer_size if double else cusolver.spotrf_buffer_size
 
-        dev_info = pyre.cuda.managed(shape=(1,), cell="int32")
+        dev_info = managed(shape=(1,), cell="int32")
         lwork = potrf_buffer_size(handle, cublas.FillMode.LOWER, n, self._grid, n)
-        workspace = pyre.cuda.managed(shape=(max(lwork, 1),), cell=self.dtype)
+        workspace = managed(shape=(max(lwork, 1),), cell=self.dtype)
         potrf(handle, cublas.FillMode.LOWER, n, self._grid, n, workspace, lwork, dev_info)
         return self
 

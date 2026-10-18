@@ -30,6 +30,7 @@ def test():
     import altar
     from altar.bayesian.samplers.cuda.HMC import HMC
     from altar.bayesian.stepsizers.StepSizer import FixedStepSize
+    from altar.bayesian.stepcounters.StepCounter import FixedSteps
 
     samples = 4000
     nparams = 3
@@ -98,6 +99,7 @@ def test():
     # a fixed (non-adaptive) step size, since this test's target is the leapfrog kernels
     # themselves at a fixed, hand-picked-good step, not the stepsizer's own convergence
     sampler.stepsizer = FixedStepSize()
+    sampler.stepcounter = FixedSteps()
     sampler.initialize(application=_Application())
     # the scratch state waits for the model, initialized after the sampler; allocate it now,
     # ahead of the first walk, so the step size set below sticks

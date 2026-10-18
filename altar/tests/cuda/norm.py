@@ -10,11 +10,6 @@
 """
 Sanity check: the pybind11+AnyGrid cudaL2 norm bindings (altar.cuda.libcudaaltar.norms),
 against a real GPU, at both float64 and float32.
-
-This is the first piece of altar.cuda.ext.cudaaltar ported from the old raw-cpython,
-capsule-based bindings to pybind11, operating on altar.cuda.managed() directly. The rest of
-the old extension (distributions, metropolis, leapfrog, langevin) is not yet ported -- see
-the note in altar/ext/cuda/cudaaltar.cc.
 """
 
 
