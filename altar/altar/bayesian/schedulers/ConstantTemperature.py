@@ -65,6 +65,7 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant", i
         Set the temperature of {step}, after replacing its outlier chains during the burn-in
         """
         # the first update comes before any walk
+        step.ancestors = None
         if 0 < self.walks <= self.burnin:
             self.replace_outliers(step=step)
         self.walks += 1
@@ -106,6 +107,7 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant", i
         rows = numpy.arange(posterior.size)
         rows[outliers] = self.rng.choice(numpy.flatnonzero(~outliers), size=count)
         step.reorder(rows=rows)
+        step.ancestors = rows
         self.info.log(f"burn-in: replaced {count} outlier chains, with log posterior below "
                       f"{floor:.6g}, after walk {self.walks} of {self.burnin}")
         return step

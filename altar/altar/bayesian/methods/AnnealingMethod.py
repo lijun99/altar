@@ -14,6 +14,7 @@ from datetime import datetime
 
 if typing.TYPE_CHECKING:
     from altar.bayesian.controllers.Annealer import Annealer
+    from altar.bayesian.methods.Diagnostics import Diagnostics
     from altar.shells.Application import Application
 
 # declaration
@@ -73,12 +74,52 @@ class AnnealingMethod:
         return self
 
 
-    def restart(self, annealer: Annealer) -> typing.Self:
+    def restart(self, annealer: Annealer, checkpoint: typing.Any,
+                share: tuple[int, int] | None = None) -> typing.Self:
         """
-        Start the annealing process from a checkpoint
+        Start the annealing process from a {checkpoint}, a step an earlier run archived; my
+        rows of its population are {share}, (the population size, my first row), all of it
+        by default
         """
-        # NYI
-        raise NotImplementedError()
+        # the same checks as a fresh start
+        AnnealingMethod.start(self, annealer=annealer)
+        # and carry on counting from the step
+        self.iteration = checkpoint.iteration
+        # all done
+        return self
+
+
+    def produce(self, annealer: Annealer) -> typing.Self:
+        """
+        Prepare the production walk, at the current β, without resampling: its pool keeps states
+        evenly spread over its {annealer.production} steps, and the sampler adapts to the current
+        population, not to the importance weights of the last step
+        """
+        pool = getattr(self, "pool", None)
+        if pool is not None:
+            pool.spread = False
+            pool.interval = max(1, annealer.production // pool.size)
+        if self.wid == 0:
+            self.iteration += 1
+            self.step.weights = self.step.weighted_theta = self.step.ancestors = None
+            # the population the chains walk from
+            diagnostics = self.diagnose(annealer=annealer)
+            if diagnostics is not None:
+                diagnostics.begin(θ=getattr(self.step, "theta_sampling", self.step.theta))
+        return self
+
+
+    def compare(self, annealer: Annealer, recorded: typing.Any, data: typing.Any) -> typing.Self:
+        """
+        Log how far the recomputed data likelihoods {data} of a restart are from the {recorded} ones
+        """
+        import numpy
+        diff = numpy.asarray(data) - numpy.asarray(recorded)
+        annealer.info.log(f"restart: recomputed data likelihoods minus the step's: median "
+                          f"{numpy.median(diff):.6g}, 10% {numpy.percentile(diff, 10):.6g}, 90% "
+                          f"{numpy.percentile(diff, 90):.6g}, largest |difference| "
+                          f"{numpy.abs(diff).max():.6g}, over {diff.size} samples")
+        return self
 
 
     def top(self, annealer: Annealer) -> typing.Self:
@@ -104,6 +145,12 @@ class AnnealingMethod:
         scheduler.update(step=self.step)
         # update the iteration counter
         self.iteration += 1
+        # the population the chains walk from, and the rows it was resampled from
+        diagnostics = self.diagnose(annealer=annealer)
+        if diagnostics is not None:
+            if self.step.ancestors is not None:
+                diagnostics.resampled(rows=self.step.ancestors)
+            diagnostics.begin(θ=getattr(self.step, "theta_sampling", self.step.theta))
         # all done
         return self
 
@@ -159,10 +206,38 @@ class AnnealingMethod:
         channel.log(f"time: {datetime.now().isoformat()}")
         channel.log(f"iteration: {info['iteration']}, beta: {info['beta']}, scaling: {info['scaling']}")
         channel.log(f"stats(accepted/invalid/rejected): {info['stats']}")
+        # how well the walk mixed
+        diagnostics = self.diagnose(annealer=annealer)
+        if diagnostics is not None and diagnostics.start is not None:
+            pool = getattr(self, "pool", None)
+            walk = diagnostics.end(θ=getattr(self.step, "theta_sampling", self.step.theta),
+                final=0 if pool is None else pool.final, iteration=self.iteration, beta=self.beta)
+            channel.log(f"diagnostics: parents {walk['parents']}, lineages {walk['lineages']}, "
+                        f"correlation with the start median {walk['correlation']:.3f}, "
+                        f"max {walk['correlation_max']:.3f}"
+                        + (f", effective states per chain {walk['states']:.2f}"
+                           if diagnostics.pool > 1 else ""))
         self.step.log_evidence = getattr(annealer.scheduler, "log_evidence", None)
         annealer.archiver.recordstep(step=self.step, stats=info, psets=getattr(annealer.model, "psets", None))
         # all done
         return self
+
+
+    def diagnose(self, annealer: Annealer) -> Diagnostics | None:
+        """
+        My diagnostics of the walks, made on first use, on the manager; none if my population is
+        not the chains of every task, {pool} states each
+        """
+        if self.diagnostics is None:
+            tasks = getattr(self, "tasks", 1)
+            chains = annealer.model.job.chains
+            pool, remainder = divmod(self.step.samples, tasks * chains)
+            if remainder or pool != getattr(annealer, "pool", 1):
+                return None
+            from .Diagnostics import Diagnostics
+            self.diagnostics = Diagnostics(tasks=tasks, chains=chains, pool=pool)
+            annealer.archiver.register(self.diagnostics)
+        return self.diagnostics
 
 
     def bottom(self, annealer: Annealer) -> typing.Self:
@@ -207,6 +282,8 @@ class AnnealingMethod:
 
     # whether i keep a pool of the states of the chains
     pools: bool = False
+    # how well the walks mix, kept by the manager
+    diagnostics: Diagnostics | None = None
 
 
     # meta-methods

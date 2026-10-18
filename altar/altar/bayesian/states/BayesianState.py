@@ -48,6 +48,8 @@ class BayesianState:
     posterior: numpy.ndarray # (samples,) logs of the posterior
     # (samples,) importance weights w_i ∝ exp(Δβ · data_i), set by the scheduler
     weights: numpy.ndarray | None = None
+    # (samples,) the row each sample was copied from by the last resampling, set by the scheduler
+    ancestors: numpy.ndarray | None = None
     # the running estimate of log p(d), from a scheduler that estimates it
     log_evidence: float | None = None
 

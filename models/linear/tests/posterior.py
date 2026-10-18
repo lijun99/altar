@@ -108,12 +108,28 @@ SOFT = [
 # the prior of each case: the gaussian, the wide uniform or the tight uniform one
 GAUSSIAN, WIDE, TIGHTLY = "gaussian", "wide", "tight"
 
+# trajectories in blocks of 5 until the chains forget where they started
+DECORRELATING = ["--controller.sampler.stepcounter=altar.bayesian.decorrelating",
+                 "--controller.sampler.stepcounter.min_mc_steps=5",
+                 "--controller.sampler.stepcounter.corr_check_steps=5",
+                 "--controller.sampler.stepcounter.max_mc_steps=100",
+                 "--controller.sampler.stepcounter.target_correlation=0.3"]
+
 # name: (the controller and sampler settings, the prior)
 CASES = {
     "catmip": (["--controller=altar.bayesian.catmip", "--job.steps=256"], GAUSSIAN),
     "mcmc": (["--controller=altar.bayesian.mcmc", "--controller.rounds=16", "--job.steps=256"], GAUSSIAN),
     "catmip_hmc": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20"], GAUSSIAN),
     "hmc": (["--controller=altar.bayesian.hmc", "--job.steps=200"], GAUSSIAN),
+    "catmip_hmc-decorrelating": (["--controller=altar.bayesian.catmip_hmc", *DECORRELATING], GAUSSIAN),
+    "catmip_hmc-median": (["--controller=altar.bayesian.catmip_hmc", *DECORRELATING,
+                           "--controller.sampler.stepcounter.statistic=median"], GAUSSIAN),
+    "catmip-production": (["--controller=altar.bayesian.catmip", "--job.steps=256",
+                           "--controller.production=1024"], GAUSSIAN),
+    "catmip_hmc-production": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20",
+                               "--controller.production=100"], GAUSSIAN),
+    "catmip_hmc-length": (["--controller=altar.bayesian.catmip_hmc", "--job.steps=20",
+                           "--controller.sampler.trajectory_length=1.5"], GAUSSIAN),
     "catmip_mala": (["--controller=altar.bayesian.catmip_mala", "--job.steps=200"], GAUSSIAN),
     "mala": (["--controller=altar.bayesian.mala", "--job.steps=4000"], GAUSSIAN),
     "cf_catmip": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),

@@ -22,10 +22,7 @@ from . import ext
 from . import cublas
 from . import curand
 
-# the pyre.grid-backed replacement for the old capsule-based cuda.Matrix/cuda.Vector (see
-# array.py); the cuda extension's own kernels (norms, distributions, the samplers) take
-# pyre.grid grids directly with no wrapper needed on that side -- {vector}/{matrix} exist for
-# the bayesian state/sampler layer, which still calls them the way it always has
+# managed-grid vectors and matrices for the bayesian state/sampler layer (see array.py)
 from .array import vector, matrix
 
 # my extension modules

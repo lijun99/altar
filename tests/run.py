@@ -81,7 +81,8 @@ def cpu():
     """
     tests = scripts(ROOT / "altar/tests/altar", ["sanity.py", "application.py", "application_instance.py",
                                                   "annealer.py", "annealer_instance.py",
-                                                  "weighted_statistics.py", "outliers.py"])
+                                                  "weighted_statistics.py", "outliers.py",
+                                                  "diagnostics.py", "controllers.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
@@ -128,6 +129,8 @@ def gpu():
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
         example("altar-linear", "linear", "linear_mala.pfg", 1),
         example("altar-linear", "linear", "linear_mcmc.pfg", 1),
+        example("altar-linear", "linear", "linear_hmc.pfg", 1, "--controller.pool=8",
+                "--controller.pool_interval=0", "--controller.production=40", variant="production"),
         example("altar-regression", "regression", "linear.pfg", 1),
         example("altar-regression", "regression", "linear_hmc.pfg", 1),
         example("altar-regression", "regression", "linear.pfg", 1, "--model.kernels=cutile",

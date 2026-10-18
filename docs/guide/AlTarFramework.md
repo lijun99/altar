@@ -113,6 +113,44 @@ The controller also runs on a *worker* that matches the job: one process on the 
 GPU, or several processes under MPI. The worker is chosen from the job configuration, not
 configured itself.
 
+(pooling)=
+### Pooling and the production walk
+
+On the GPU, each chain can keep several of the states it walks through at each $\beta$, not only
+the last one, after Dau and Chopin's waste-free SMC. They make up the population the scheduler,
+the resampling and the proposal work on, and the archiver records, without more model evaluations:
+
+`pool`
+: the states each chain keeps from a walk; default 1, the last one only, which turns pooling off;
+
+`pool_interval`
+: the steps or trajectories between them; default 1; 0 spreads them over the length of the
+  previous walk, for walks whose length varies, as with the
+  {ref}`decorrelating step counter <stepcounters>`.
+
+The states a chain keeps count as more samples only if they are far enough apart to be nearly
+independent; `diagnose` reports how many they are worth (see {ref}`diagnose`). Kept from short
+walks, they add little.
+
+The annealing ends at the first walk at $\beta = 1$. Its samples share their ancestry, from the
+resampling, and a run of thousands of chains can be worth far fewer independent samples. A
+*production walk* continues at $\beta = 1$, without resampling and with the sampler as it is, its
+step size and mass matrix no longer adapting, for `production` steps or trajectories; with a pool,
+the chains keep their states evenly spread over it, and these are the samples of the final step:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        pool = 16
+        pool_interval = 0
+        production = 400 ; trajectories at beta = 1, a state kept every 25
+```
+
+The production walk makes up the samples for the analysis: e.g. 1024 chains keeping 16 states a
+decorrelation time apart give about 16000 nearly independent samples. It can't move weight between
+modes, which only the annealing does.
+
 (cross-fade)=
 ### Cross-fade CATMIP
 
@@ -239,12 +277,20 @@ the acceptance rate adjusts $\alpha$.
 
 `altar.bayesian.samplers.hmc` moves each chain along a trajectory of the Hamiltonian dynamics on the
 potential $U = -\log P_m(\boldsymbol\theta|\mathbf d)$, integrated with leapfrog steps, and accepts
-or rejects its end point. It runs `job.steps` trajectories at each $\beta$. It needs the gradient of
+or rejects its end point. It runs `job.steps` trajectories at each $\beta$, or as many as its
+`stepcounter` asks for (see {ref}`step counts <stepcounters>`). It needs the gradient of
 the model's data likelihood, and priors defined on the whole real line: reparameterize bounded
 priors (see {doc}`Priors`).
 
 `leapfrog_steps`
 : the leapfrog steps of each trajectory; default 10.
+
+`trajectory_length`
+: the length of each trajectory, step size times leapfrog steps, in posterior standard deviations
+  under the mass matrix; the leapfrog steps then follow the step size, up to `max_leapfrog_steps`
+  (default 200); 0, the default, keeps `leapfrog_steps`. HMC moves a chain ballistically along a
+  trajectory but diffusively from one trajectory to the next, so a few long trajectories decorrelate
+  the chains for fewer gradients than many short ones; a length of order 1 suits most problems.
 
 `step_size`
 : the initial leapfrog step size; default 0.01.
@@ -326,7 +372,8 @@ for HMC, 0.574 for MALA.
 (stepcounters)=
 ### Step counts
 
-A step counter decides how many Metropolis steps each chain takes at each $\beta$:
+A step counter decides how many Metropolis steps, or HMC trajectories, each chain takes at each
+$\beta$:
 
 `altar.bayesian.fixedsteps`
 : a fixed number, `steps`, by default `job.steps`; the default.
@@ -348,6 +395,27 @@ linear:
                 max_mc_steps = 10000
                 target_correlation = 0.6
 ```
+
+HMC decorrelates in tens of trajectories rather than thousands of steps, so its counts are smaller:
+
+```none
+linear:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        sampler:
+            stepcounter = altar.bayesian.decorrelating
+            stepcounter:
+                min_mc_steps = 5
+                corr_check_steps = 5
+                max_mc_steps = 200
+                target_correlation = 0.3
+```
+
+The correlation is that of the chains with where they started, the largest over the parameters, as
+{ref}`diagnose <diagnose>` reports it, or the median, with `statistic = median`, which a few slow
+parameters among many don't hold back. It is measured against the spread of the chains, so it
+can't tell a population that is too narrow: with fewer chains than parameters, the Metropolis
+proposal misses directions, which a warning in the journal points out.
 
 (schedulers)=
 ## Schedulers
@@ -489,6 +557,37 @@ linear:
             output_dir = results/linear
             output_freq = 3
 ```
+
+(restart)=
+### Restarting a run
+
+An annealing run can continue from any step the HDF5 recorder saved, e.g. after it was stopped or
+ran out of time, by naming the step in the controller's `restart`:
+
+```none
+linear:
+    controller:
+        restart = results/linear/step_015.h5
+        archiver.output_dir = results/linear_restart
+```
+
+The run starts from that step's samples, $\beta$ and data likelihoods, and from the proposal scaling
+it reached; it recomputes the prior, and the sampling space of reparameterized priors, so these may
+change between the runs. It goes on with the next $\beta$ step, numbering its steps after the
+earlier ones, and its `BetaStatistics.txt` covers both runs. The model, its parameter sets and
+`cd_std` must be the same, since the data likelihoods are taken from the file. The number of chains
+may differ: a population of another size is drawn from the step's, with replacement. Writing to a
+fresh `output_dir` keeps the earlier run's files as they were.
+
+Each step file records the statistics of the run so far. Step files of older versions don't; their
+history and scaling come from the `BetaStatistics.txt` next to the file, which a run writes when it
+finishes, and without one the scaling starts from the sampler's configured value.
+
+The data likelihoods in the file are only right for the model and the data that produced them. After
+either changed, e.g. with another version of the model's code, set `controller.restart_recompute =
+yes`: the run computes the likelihoods of the step's samples anew, and logs how far they are from the
+file's. If they are far apart, every proposal would be judged against the file's values, and few or
+none would be accepted.
 
 (forward-check)=
 ## Checking the posterior against the data
@@ -722,7 +821,22 @@ slipmodel.plexus diagnose --config=static.pfg
   effective sample size as a share of the chains, $\mathrm{ESS}/N = 1/(1 + \mathrm{cov}^2)$; COV
   keeps the coefficient of variation at its target, 1, so $\mathrm{ESS}/N \approx 0.5$, but for the
   last step, which reaches $\beta = 1$;
-- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it.
+- the running estimate of the evidence, $\log p(\mathbf d)$, from schedulers that estimate it;
+- how well the walk of the step mixed, from runs that archive it (`Diagnostics` in the step
+  files): `parents`, the distinct samples its resampling kept; `lineages`, the initial samples the
+  population descends from; `corr` and `max`, the median and largest, over the parameters, of the
+  correlation across the chains between the end of each chain's walk and its start; and, with a
+  {ref}`pool <pooling>`, `states`, the effective states per chain, the variance of the population
+  over that of the means of the chains.
+
+A walk that leaves the correlation near 1 hasn't moved the chains away from the copies the
+resampling made; their spread then shrinks step by step, and the posterior comes out too narrow.
+More steps per $\beta$, a better proposal or HMC lower it; the
+{ref}`decorrelating step counter <stepcounters>` walks until it is below a target. Few lineages are
+expected after many steps and harmless when the walks decorrelate. The effective states per chain
+tell how much a pool adds: about 1 when the states a chain keeps are as good as one, up to `pool`
+when they are independent; it reads low when sibling chains, copies of one parent, haven't
+separated.
 
 Given a `reference` posterior, e.g. from a longer run, with more chains or steps, or from another
 sampler, it also reports, for each parameter set, how far the means are from the reference's,

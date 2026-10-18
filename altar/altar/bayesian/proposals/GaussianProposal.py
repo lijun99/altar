@@ -17,7 +17,7 @@ import numpy
 import altar
 # my protocol
 from .Proposal import Proposal as proposal
-from ..statistics import weighted_covariance, condition_covariance
+from ..statistics import weighted_covariance, condition_covariance, effective_size
 
 if typing.TYPE_CHECKING:
     import journal
@@ -67,6 +67,7 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         """
         # grab the info channel
         self.info = application.info
+        self.warning = application.warning
         # and the random number generator
         self.rng = application.rng.rng
 
@@ -182,6 +183,14 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
         if weighted is not None:
             samples, parameters = weighted.shape
             step = types.SimpleNamespace(theta=weighted, samples=samples, parameters=parameters)
+        # fewer effective samples than parameters leave Σ without some directions, where the
+        # conditioning floor allows only tiny steps, so the chains can't spread there
+        size = effective_size(weights)
+        if size <= step.parameters and not self._rank_warned:
+            self._rank_warned = True
+            self.warning.log(f"proposal: Σ from {size:.0f} effective samples for {step.parameters} "
+                             f"parameters misses some directions, and the walks can't explore them; "
+                             f"use more chains, or hmc")
         return self.compute_covariance(step=step, w=weights)
 
 
@@ -254,6 +263,8 @@ class GaussianProposal(altar.component, family="altar.proposals.gaussian", imple
 
     # private data
     info: journal.info | None = None
+    warning: journal.warning | None = None
+    _rank_warned: bool = False # whether i warned about a Σ with fewer samples than parameters
     rng: numpy.random.Generator
 
     # owned proposal covariance and its Cholesky factor

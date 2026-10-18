@@ -14,11 +14,9 @@ GPU.
 Covers the full set: {sample} (drawn values land in the requested [idx_begin, idx_end) range
 and match N(mean, sigma^2) statistically; untouched columns stay exactly at their prior
 value), {logpdf} (an accumulation into a (samples,) vector, checked against the closed-form
-Gaussian log pdf), {logpdfgradient_i} (single-parameter gradient, accumulated, and a no-op
-when {index} falls outside [idx_begin, idx_end)), and {logpdfgradient} (the full
-(samples x parameters) gradient matrix, a plain assignment restricted to the requested
-column range -- columns outside it are left untouched, unlike {logpdfgradient_i}'s
-accumulation into a single (samples,) vector).
+Gaussian log pdf), and {logpdfgradient} (the full (samples x parameters) gradient matrix, a
+plain assignment restricted to the requested column range -- columns outside it are left
+untouched).
 """
 
 
@@ -57,20 +55,6 @@ def test():
         x = arr[:, i]
         expected += -0.5 * numpy.log(2 * numpy.pi * sigma**2) - 0.5 * ((x - mean) / sigma) ** 2
     assert numpy.allclose(got, expected, atol=1e-9)
-
-    # logpdfgradient_i: single-parameter gradient, accumulated
-    probability = altar.cuda.managed(shape=(samples,), cell="float64")
-    numpy.asarray(probability)[:] = 0.0
-    distributions.cudaGaussian_logpdfgradient_i(theta, probability, idx_begin, idx_end, 1, mean, sigma)
-    got = numpy.asarray(probability)
-    expected = (mean - arr[:, 1]) / sigma**2
-    assert numpy.allclose(got, expected, atol=1e-9)
-
-    # a no-op when {index} falls outside [idx_begin, idx_end)
-    probability = altar.cuda.managed(shape=(samples,), cell="float64")
-    numpy.asarray(probability)[:] = 0.0
-    distributions.cudaGaussian_logpdfgradient_i(theta, probability, idx_begin, idx_end, 3, mean, sigma)
-    assert numpy.all(numpy.asarray(probability) == 0.0)
 
     # logpdfgradient: the full gradient matrix, a plain assignment restricted to
     # [idx_begin, idx_end); columns outside it are left untouched

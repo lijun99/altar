@@ -135,6 +135,7 @@ class H5Recorder(
             step.record(archiver=self)
             for component in self._components:
                 component.record(archiver=self)
+            self._record_statistics()
             self._close_file()
         return self
 

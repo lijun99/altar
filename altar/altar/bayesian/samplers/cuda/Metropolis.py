@@ -15,6 +15,7 @@ import altar.cuda
 from altar.cuda import curand
 from altar.cuda import cublas
 from altar.cuda import libcudaaltar
+from altar.bayesian.stepcounters.StepCounter import walk
 
 
 # declaration
@@ -237,12 +238,6 @@ class Metropolis:
             cθs = self.gcandidate_sampling
             cjacobian = self.gcandidate_jacobian
 
-        # the step count regulator decides how many MC steps to run, in blocks, before
-        # checking whether this β step is done ({FixedSteps}: one block, the fixed count;
-        # {DecorrelatingSteps}: repeated blocks until decorrelated)
-        self.stepcounter.start(theta=θ, beta=β)
-        mcsteps = 0
-
         # the states the chains keep as they walk, into the population, when pooling
         pool = getattr(getattr(annealer, "worker", None), "pool", None)
         population = self._population
@@ -256,102 +251,98 @@ class Metropolis:
         if pool is not None:
             pool.begin()
 
-        while not self.stepcounter.done(mcsteps=mcsteps, theta=θ, annealer=annealer):
-            block = self.stepcounter.block_size()
-            for ihop in range(block):
-                # notify we are advancing the chains
-                dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
+        for ihop in walk(self.stepcounter, theta=θ, beta=β, annealer=annealer):
+            # notify we are advancing the chains
+            dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
 
-                # notify we are starting the verification process
-                dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
+            # notify we are starting the verification process
+            dispatcher.notify(event=dispatcher.verify_start, controller=annealer)
 
 
-                # the random displacement may have generated candidates that are outside the
-                # support of the model, so we must give it an opportunity to reject them;
-                # initialize the candidate sample by randomly displacing the current one
-                self.displace(displacement=θproposal)
-                θproposal += θs if reparameterized else θ
-                # in sampling space, map a copy of the proposal to physical
-                if reparameterized:
-                    θphysical.copy(θproposal)
-                    model.to_physical(theta=θphysical, batch=samples)
-                else:
-                    θphysical = θproposal
+            # the random displacement may have generated candidates that are outside the
+            # support of the model, so we must give it an opportunity to reject them;
+            # initialize the candidate sample by randomly displacing the current one
+            self.displace(displacement=θproposal)
+            θproposal += θs if reparameterized else θ
+            # in sampling space, map a copy of the proposal to physical
+            if reparameterized:
+                θphysical.copy(θproposal)
+                model.to_physical(theta=θphysical, batch=samples)
+            else:
+                θphysical = θproposal
 
-                # reset the mask and ask the model to verify the sample validity
-                # note that I have redefined model.verify to use theta as input
+            # reset the mask and ask the model to verify the sample validity
+            # note that I have redefined model.verify to use theta as input
 
-                model.verify_theta(theta=θphysical, mask=invalid_flags.zero(), batch=samples)
+            model.verify_theta(theta=θphysical, mask=invalid_flags.zero(), batch=samples)
 
-                invalid_step = invalid_flags.sum()
-                valid = samples - invalid_step
-                # if valid = 0, continue to next MC step
-                if valid == 0 :
-                    invalid += invalid_step
-                    if pool is not None:
-                        pool.advance(keep)
-                    continue
-
-                # if valid > 0, proceed to Metropolis accept-reject
-                # set indices for valid samples, return valid samples count
-                metropolis.cudaMetropolis_setValidSampleIndices(
-                    valid_indices.grid, invalid_flags.grid, valid_samples.grid)
-
-                # get the invalid samples count
+            invalid_step = invalid_flags.sum()
+            valid = samples - invalid_step
+            # if valid = 0, continue to next MC step
+            if valid == 0 :
                 invalid += invalid_step
-
-                # queue valid samples to first rows of cθ
-                metropolis.cudaMetropolis_queueValidSamples(
-                    cθ.grid, θphysical.grid, valid_indices.grid, valid)
-                if reparameterized:
-                    metropolis.cudaMetropolis_queueValidSamples(
-                        cθs.grid, θproposal.grid, valid_indices.grid, valid)
-
-                # notify that the verification process is finished
-                dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
-
-                # initialize the likelihoods
-                likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
-
-                # compute the probabilities/likelihoods
-                model.likelihoods(annealer=annealer, step=candidate, batch=valid)
-                # in sampling space, add the log-jacobian of the candidates
-                if reparameterized:
-                    model.eval_prior_with_physical(
-                        step=candidate, likelihood=cjacobian.zero(), batch=valid)
-                    cpost += cjacobian
-
-                # randomize the Metropolis acceptance vector
-                curand.uniform(out=dice, generator=self.curng)
-
-                # notify we are starting accepting samples
-                dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
-
-                # accept/reject: go through all the samples
-                metropolis.cudaMetropolis_metropolisUpdate(
-                    θ.grid, prior.grid, data.grid, posterior.grid,      # original
-                    cθ.grid, cprior.grid, cdata.grid, cpost.grid,       # candidate
-                    dice.grid, acceptance_flags.zero().grid, valid_indices.grid, valid)
-                # and bring the sampling space of the accepted candidates along
-                if reparameterized:
-                    metropolis.cudaMetropolis_updateSampling(
-                        θs.grid, jacobian.grid, cθs.grid, cjacobian.grid,
-                        acceptance_flags.grid, valid_indices.grid, valid)
-
-                # counting the acceptance/rejection
-                accepted_step = acceptance_flags.sum()
-                accepted += accepted_step
-                rejected += valid - accepted_step
-
-                # notify we are done accepting samples
-                dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
-
-                # notify we are done advancing the chains
-                dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
                 if pool is not None:
                     pool.advance(keep)
+                continue
 
-            mcsteps += block
+            # if valid > 0, proceed to Metropolis accept-reject
+            # set indices for valid samples, return valid samples count
+            metropolis.cudaMetropolis_setValidSampleIndices(
+                valid_indices.grid, invalid_flags.grid, valid_samples.grid)
+
+            # get the invalid samples count
+            invalid += invalid_step
+
+            # queue valid samples to first rows of cθ
+            metropolis.cudaMetropolis_queueValidSamples(
+                cθ.grid, θphysical.grid, valid_indices.grid, valid)
+            if reparameterized:
+                metropolis.cudaMetropolis_queueValidSamples(
+                    cθs.grid, θproposal.grid, valid_indices.grid, valid)
+
+            # notify that the verification process is finished
+            dispatcher.notify(event=dispatcher.verify_finish, controller=annealer)
+
+            # initialize the likelihoods
+            likelihoods = cprior.zero(), cdata.zero(), cpost.zero()
+
+            # compute the probabilities/likelihoods
+            model.likelihoods(annealer=annealer, step=candidate, batch=valid)
+            # in sampling space, add the log-jacobian of the candidates
+            if reparameterized:
+                model.eval_prior_with_physical(
+                    step=candidate, likelihood=cjacobian.zero(), batch=valid)
+                cpost += cjacobian
+
+            # randomize the Metropolis acceptance vector
+            curand.uniform(out=dice, generator=self.curng)
+
+            # notify we are starting accepting samples
+            dispatcher.notify(event=dispatcher.accept_start, controller=annealer)
+
+            # accept/reject: go through all the samples
+            metropolis.cudaMetropolis_metropolisUpdate(
+                θ.grid, prior.grid, data.grid, posterior.grid,      # original
+                cθ.grid, cprior.grid, cdata.grid, cpost.grid,       # candidate
+                dice.grid, acceptance_flags.zero().grid, valid_indices.grid, valid)
+            # and bring the sampling space of the accepted candidates along
+            if reparameterized:
+                metropolis.cudaMetropolis_updateSampling(
+                    θs.grid, jacobian.grid, cθs.grid, cjacobian.grid,
+                    acceptance_flags.grid, valid_indices.grid, valid)
+
+            # counting the acceptance/rejection
+            accepted_step = acceptance_flags.sum()
+            accepted += accepted_step
+            rejected += valid - accepted_step
+
+            # notify we are done accepting samples
+            dispatcher.notify(event=dispatcher.accept_finish, controller=annealer)
+
+            # notify we are done advancing the chains
+            dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
+            if pool is not None:
+                pool.advance(keep)
         # keep the final states
         if pool is not None:
             pool.end(keep)

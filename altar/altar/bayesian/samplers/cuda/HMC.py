@@ -19,6 +19,7 @@ from altar.cuda import cublas, libcudaaltar
 
 from altar.bayesian.states.cuda.HMCState import HMCState
 from altar.bayesian.statistics import effective_size, shrunk_correlation, weighted_variance
+from altar.bayesian.stepcounters.StepCounter import walk
 
 # acceptance statistics container, the same shape {Metropolis}/{HMC} (cpu) use; hmc has no
 # notion of an invalid (out of support) candidate, so the middle field is always 0
@@ -42,9 +43,8 @@ class HMC:
         self.info = application.info
         self.samples = application.job.chains
         self.dtype = application.job.gpuprecision
-        # the number of trajectories per call to {sample_posterior}, matching cpu
-        # {altar.bayesian.samplers.native.HMC}'s own {self.steps}
-        self.steps = application.job.steps
+        # the trajectories per β step, by default {job.steps}
+        self.stepcounter.initialize(application=application)
         # HMC's theoretically-optimal acceptance rate (Neal/Betancourt; Stan's NUTS defaults
         # to 0.8), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
@@ -64,7 +64,9 @@ class HMC:
         )
         # the buffers of a trajectory follow the new state
         self._backup = self._scratch = self._mask = None
-        self.step_size = self.stepsizer.initialize(self.proposal_state.eta)
+        # from the step size a restarted run reached, else from the configured one
+        eta = self.proposal_state.eta if self._restored is None else self._restored
+        self.step_size = self.stepsizer.initialize(eta)
         self._set_step_size(self.step_size)
         return self
 
@@ -96,7 +98,7 @@ class HMC:
 
     def _walk(self, annealer, step):
         """
-        Advance all chains using {self.steps} leapfrog trajectories (matching cpu
+        Advance all chains using the leapfrog trajectories {stepcounter} asks for (matching cpu
         {altar.bayesian.samplers.native.HMC}'s own outer loop), each with {self.leapfrog_steps}
         leapfrog substeps; the potential and its gradient carry over from one trajectory to the
         next, so they are evaluated once per substep, plus once per walk
@@ -106,6 +108,14 @@ class HMC:
         state = self.proposal_state
         state.beta = step.beta
 
+        # a production walk samples with the step size it starts with: the geometric mean of the
+        # ones the previous walk adapted through, since the last of them may sit at the edge of
+        # stability; the mass stays too
+        producing = getattr(annealer, "production_walk", None)
+        if producing and self._adapted:
+            self.step_size = float(numpy.exp(numpy.mean(numpy.log(self._adapted))))
+        elif not producing:
+            self._adapted = []
         self._set_step_size(self._clamp_step_size(self.step_size))
 
         # the mass matrix, from the population
@@ -120,18 +130,25 @@ class HMC:
         if pool is not None:
             pool.begin()
 
-        accepted_total = 0
+        accepted_total = walked = 0
         dispatcher = annealer.dispatcher
-        for trajectory in range(self.steps):
+        # as many trajectories as the step counter asks for
+        trajectories = walk(self.stepcounter, theta=state.phi if state.reparameterization else state.theta,
+                            beta=step.beta, annealer=annealer)
+        for trajectory in trajectories:
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
-            self._update_mass(trajectory)
+            if not producing:
+                self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
             # p ~ N(0, M): p = L^-T z, for M^-1 = L L^T
             if self._factor is not None:
                 state.momentum.copy(self._scale(self._inverse_factor))
-            accepted = self._trajectory(annealer, self.leapfrog_steps)
-            self._update_step_size(accepted=accepted, attempts=state.samples)
+            accepted = self._trajectory(annealer, self._leapfrog_count())
+            if not producing:
+                self._update_step_size(accepted=accepted, attempts=state.samples)
+                self._adapted.append(self.step_size)
             accepted_total += accepted
+            walked += 1
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
             if pool is not None:
                 pool.advance(keep)
@@ -139,11 +156,33 @@ class HMC:
             pool.end(keep)
         else:
             self._copy_accepted_to_step(step)
+        if self.trajectory_length:
+            self.info.log(f"hmc: {self._leapfrog_count()} leapfrog substeps per trajectory, "
+                          f"step size {self.step_size:.4g}")
 
-        attempts = state.samples * self.steps
+        attempts = state.samples * walked
         self.statistics = Statistics(accepted_total, 0, attempts - accepted_total)
         # all done
         return
+
+
+    def _leapfrog_count(self):
+        # the substeps that make up {trajectory_length} at the current step size, else fixed
+        if not self.trajectory_length:
+            return self.leapfrog_steps
+        return max(1, min(self.max_leapfrog_steps, round(self.trajectory_length / self.step_size)))
+
+    def restore(self, scaling):
+        """
+        Continue with the step size {scaling} an earlier run reached
+        """
+        # my state, allocated on the first walk, starts from it
+        self._restored = scaling
+        # as do the step size regulator and my trajectories, if it is there already
+        if self.proposal_state is not None:
+            self._set_step_size(self.stepsizer.initialize(scaling))
+        # all done
+        return self
 
 
     def _set_step_size(self, eta):
@@ -474,10 +513,14 @@ class HMC:
     target_acceptance = 0.7  # the default acceptance rate the stepsizer steers to
     stepsizer = None         # the step size regulator
     leapfrog_steps = 10      # the number of leapfrog substeps per trajectory
+    trajectory_length = 0    # the length of a trajectory, if it sets the substeps
+    _adapted = []            # the step sizes of the last walk that adapted them
+    max_leapfrog_steps = 200 # the most substeps a {trajectory_length} may take
 
     steps = 1               # the number of trajectories per call to {sample_posterior};
                             # filled in from {application.job.steps} in {initialize}
     proposal_state = None   # my {HMCState} scratch state, allocated once, on first use
+    _restored = None        # the step size a restarted run reached, for my state to start from
     _backup = None          # the state at the start of a trajectory, for the rejected chains
     _scratch = None         # the energies of a trajectory
     _mask = None            # the accepted chains of a trajectory

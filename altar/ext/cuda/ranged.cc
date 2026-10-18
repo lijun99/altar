@@ -41,29 +41,6 @@ altar::cuda::extensions::distributions::ranged::__init__(py::module & distributi
         "theta"_a, "invalid"_a, "idx_begin"_a, "idx_end"_a, "low"_a, "high"_a,
         "invalid[s] = 1 if any of theta[s, idx_begin:idx_end] falls outside [low, high]");
 
-    // the per-parameter-bounds counterpart of {cudaRanged_verify}
-    distributions.def(
-        "cudaRanged_verify_unique",
-        [](grid_t & theta, grid_t & invalid, std::size_t idx_begin, std::size_t idx_end,
-           grid_t & low, grid_t & high) -> void {
-            auto format = theta.view().format;
-            if (format.size() == 1 && format[0] == 'd') {
-                altar::cuda::distributions::cudaRanged::verify_unique<double>(
-                    regrid<const double, 2>(theta), regrid<int, 1>(invalid), idx_begin, idx_end,
-                    regrid<const double, 1>(low), regrid<const double, 1>(high));
-            } else if (format.size() == 1 && format[0] == 'f') {
-                altar::cuda::distributions::cudaRanged::verify_unique<float>(
-                    regrid<const float, 2>(theta), regrid<int, 1>(invalid), idx_begin, idx_end,
-                    regrid<const float, 1>(low), regrid<const float, 1>(high));
-            } else {
-                throw py::value_error("cudaRanged_verify_unique: unsupported grid cell type '" + format + "'");
-            }
-            cudaCheckError("cudaRanged_verify_unique");
-            synchronize("cudaRanged_verify_unique");
-        },
-        "theta"_a, "invalid"_a, "idx_begin"_a, "idx_end"_a, "low"_a, "high"_a,
-        "invalid[s] = 1 if any of theta[s, idx_begin+j] falls outside [low[j], high[j]]");
-
     // clamp {theta[:, idx_begin:idx_end]} into [low, high], in place
     distributions.def(
         "cudaRanged_constrain",

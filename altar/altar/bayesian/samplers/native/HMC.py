@@ -15,11 +15,13 @@ import numpy
 from altar.bayesian.states.HMCState import HMCState
 # acceptance statistics container
 from .Metropolis import Statistics
+from altar.bayesian.stepcounters.StepCounter import walk
 
 if typing.TYPE_CHECKING:
     import journal
     from altar.bayesian.controllers.Annealer import Annealer
     from altar.bayesian.states.CoolingStep import CoolingStep
+    from altar.bayesian.stepcounters.StepCounter import StepCounter
     from altar.bayesian.stepsizers.StepSizer import StepSizer
     from altar.models.Bayesian import Bayesian
     from altar.shells.Application import Application
@@ -58,8 +60,8 @@ class HMC:
         # a dense mass matrix needs a pool of states, which only the cuda annealing keeps
         if self.mass_matrix == "dense":
             raise NotImplementedError("hmc: a dense mass matrix is supported on the gpu only")
-        # pull the chain length (number of trajectories per outer step) from the job spec
-        self.steps = application.job.steps
+        # the trajectories per β step, by default {job.steps}
+        self.stepcounter.initialize(application=application)
         # the random number generator, for the momenta and the acceptance dice
         self.rng = application.rng.rng
 
@@ -83,6 +85,16 @@ class HMC:
         # the diagonal mass matrix, as M^-1 (the per-parameter variance); {walk_chains}
         # supplies the first real estimate before its first trajectory
         self.mass_variance = None
+        # all done
+        return self
+
+
+    def restore(self, scaling):
+        """
+        Continue with the step size {scaling} an earlier run reached
+        """
+        # let the step size regulator start from it
+        self.step_size = self.stepsizer.initialize(value=scaling)
         # all done
         return self
 
@@ -116,7 +128,7 @@ class HMC:
 
     def walk_chains(self, annealer: Annealer, step: CoolingStep) -> None:
         """
-        Run {self.steps} Hamiltonian trajectories, each ending in a Metropolis-Hastings
+        Run the Hamiltonian trajectories {stepcounter} asks for, each ending in a Metropolis-Hastings
         accept/reject decision; the likelihoods and gradients at the current chains carry over
         from one trajectory to the next, so they are evaluated once per leapfrog substep, plus
         once per walk
@@ -142,17 +154,31 @@ class HMC:
             current.log_jacobian = numpy.zeros(samples)
         self._evaluate(annealer=annealer, model=model, candidate=current, samples=samples)
 
+        # a production walk samples with the step size it starts with: the geometric mean of the
+        # ones the previous walk adapted through, since the last of them may sit at the edge of
+        # stability
+        producing = getattr(annealer, "production_walk", None)
+        if producing and self._adapted:
+            self.step_size = float(numpy.exp(numpy.mean(numpy.log(self._adapted))))
+        elif not producing:
+            self._adapted = []
+
         # reset the accept/reject counters; hmc has no notion of an invalid (out of support)
         # candidate -- bounded priors are reparameterized
         accepted = rejected = 0
 
-        # step all chains together, one full trajectory per iteration
-        for trajectory in range(self.steps):
+        # step all chains together, one full trajectory per iteration, as many as the step
+        # counter asks for
+        trajectories = walk(self.stepcounter, theta=current.phi if reparameterized else current.theta,
+                            beta=β, annealer=annealer)
+        for trajectory in trajectories:
             # the position the dynamics move
             position = current.phi if reparameterized else current.theta
             # (re)estimate the mass matrix from the current population every
-            # {mass_update_interval} trajectories, always including the very first
-            if self.adapt_mass_matrix and trajectory % self.mass_update_interval == 0:
+            # {mass_update_interval} trajectories, always including the very first; a production
+            # walk samples with the mass and the step size it starts with
+            interval = self.mass_update_interval
+            if self.adapt_mass_matrix and trajectory % interval == 0 and not (producing and trajectory):
                 self.mass_variance = self._estimate_mass_variance(theta=position, parameters=parameters)
             variance = self.mass_variance if self.mass_variance is not None else numpy.ones(parameters)
             precision_sqrt = 1.0 / numpy.sqrt(variance)
@@ -176,14 +202,17 @@ class HMC:
             # position update does, through M^-1 = diag(variance)
             ε = self.step_size
             half = 0.5 * ε
+            # the substeps that make up {trajectory_length} at this step size, else fixed
+            substeps = (max(1, min(self.max_leapfrog_steps, round(self.trajectory_length / ε)))
+                        if self.trajectory_length else self.leapfrog_steps)
             candidate.momentum += half * candidate.grad_posterior
-            for k in range(self.leapfrog_steps):
+            for k in range(substeps):
                 self._update_position(position, candidate.momentum, ε, variance)
                 if reparameterized:
                     candidate.theta[...] = candidate.phi
                     model.to_physical(theta=candidate.theta)
                 self._evaluate(annealer=annealer, model=model, candidate=candidate, samples=samples)
-                if k < self.leapfrog_steps - 1:
+                if k < substeps - 1:
                     candidate.momentum += ε * candidate.grad_posterior
             candidate.momentum += half * candidate.grad_posterior
 
@@ -224,7 +253,9 @@ class HMC:
             if self.communicator is not None:
                 attempts = int(self.communicator.sum(attempts))
                 trajectory_accepted_total = int(self.communicator.sum(trajectory_accepted_total))
-            self.step_size = self.stepsizer.adjust(attempts=attempts, accepted=trajectory_accepted_total)
+            if not producing:
+                self.step_size = self.stepsizer.adjust(attempts=attempts, accepted=trajectory_accepted_total)
+                self._adapted.append(self.step_size)
 
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
@@ -316,6 +347,9 @@ class HMC:
     target_acceptance: float = 0.7  # the default acceptance rate the stepsizer steers to
     stepsizer: StepSizer            # the step size regulator
     leapfrog_steps: int = 10        # the number of leapfrog substeps per trajectory
+    trajectory_length: float = 0    # the length of a trajectory, if it sets the substeps
+    _adapted: list = []             # the step sizes of the last walk that adapted them
+    max_leapfrog_steps: int = 200   # the most substeps a {trajectory_length} may take
     step_size: float = 0.01         # the leapfrog step size epsilon; adapted after each trajectory
     adapt_mass_matrix: bool = True
     mass_matrix: str = "diagonal"
@@ -323,7 +357,7 @@ class HMC:
     min_variance: float = 1e-8
     max_variance: float = 1e8
 
-    steps: int = 1                  # the number of trajectories per call to {sample_posterior}
+    stepcounter: StepCounter        # the step count regulator
     info: journal.info | None = None  # the application info channel
     rng: numpy.random.Generator     # the generator of the momenta and the dice
     statistics: Statistics | None = None  # from the last walk_chains call
