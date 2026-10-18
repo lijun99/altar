@@ -108,6 +108,14 @@ class HMC:
         state = self.proposal_state
         state.beta = step.beta
 
+        # a production walk samples with the step size it starts with: the geometric mean of the
+        # ones the previous walk adapted through, since the last of them may sit at the edge of
+        # stability; the mass stays too
+        producing = getattr(annealer, "production_walk", None)
+        if producing and self._adapted:
+            self.step_size = float(numpy.exp(numpy.mean(numpy.log(self._adapted))))
+        elif not producing:
+            self._adapted = []
         self._set_step_size(self._clamp_step_size(self.step_size))
 
         # the mass matrix, from the population
@@ -129,8 +137,6 @@ class HMC:
                             beta=step.beta, annealer=annealer)
         for trajectory in trajectories:
             dispatcher.notify(event=dispatcher.chain_advance_start, controller=annealer)
-            # a production walk samples with the mass and the step size it starts with
-            producing = getattr(annealer, "production_walk", None)
             if not producing:
                 self._update_mass(trajectory)
             libcudaaltar.leapfrog.cudaLeapfrog_sampleMomentum(state.momentum.grid)
@@ -140,6 +146,7 @@ class HMC:
             accepted = self._trajectory(annealer, self._leapfrog_count())
             if not producing:
                 self._update_step_size(accepted=accepted, attempts=state.samples)
+                self._adapted.append(self.step_size)
             accepted_total += accepted
             walked += 1
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
@@ -507,6 +514,7 @@ class HMC:
     stepsizer = None         # the step size regulator
     leapfrog_steps = 10      # the number of leapfrog substeps per trajectory
     trajectory_length = 0    # the length of a trajectory, if it sets the substeps
+    _adapted = []            # the step sizes of the last walk that adapted them
     max_leapfrog_steps = 200 # the most substeps a {trajectory_length} may take
 
     steps = 1               # the number of trajectories per call to {sample_posterior};

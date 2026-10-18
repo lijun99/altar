@@ -154,6 +154,15 @@ class HMC:
             current.log_jacobian = numpy.zeros(samples)
         self._evaluate(annealer=annealer, model=model, candidate=current, samples=samples)
 
+        # a production walk samples with the step size it starts with: the geometric mean of the
+        # ones the previous walk adapted through, since the last of them may sit at the edge of
+        # stability
+        producing = getattr(annealer, "production_walk", None)
+        if producing and self._adapted:
+            self.step_size = float(numpy.exp(numpy.mean(numpy.log(self._adapted))))
+        elif not producing:
+            self._adapted = []
+
         # reset the accept/reject counters; hmc has no notion of an invalid (out of support)
         # candidate -- bounded priors are reparameterized
         accepted = rejected = 0
@@ -168,7 +177,6 @@ class HMC:
             # (re)estimate the mass matrix from the current population every
             # {mass_update_interval} trajectories, always including the very first; a production
             # walk samples with the mass and the step size it starts with
-            producing = getattr(annealer, "production_walk", None)
             interval = self.mass_update_interval
             if self.adapt_mass_matrix and trajectory % interval == 0 and not (producing and trajectory):
                 self.mass_variance = self._estimate_mass_variance(theta=position, parameters=parameters)
@@ -247,6 +255,7 @@ class HMC:
                 trajectory_accepted_total = int(self.communicator.sum(trajectory_accepted_total))
             if not producing:
                 self.step_size = self.stepsizer.adjust(attempts=attempts, accepted=trajectory_accepted_total)
+                self._adapted.append(self.step_size)
 
             # notify we are done advancing the chains
             dispatcher.notify(event=dispatcher.chain_advance_finish, controller=annealer)
@@ -339,6 +348,7 @@ class HMC:
     stepsizer: StepSizer            # the step size regulator
     leapfrog_steps: int = 10        # the number of leapfrog substeps per trajectory
     trajectory_length: float = 0    # the length of a trajectory, if it sets the substeps
+    _adapted: list = []             # the step sizes of the last walk that adapted them
     max_leapfrog_steps: int = 200   # the most substeps a {trajectory_length} may take
     step_size: float = 0.01         # the leapfrog step size epsilon; adapted after each trajectory
     adapt_mass_matrix: bool = True
