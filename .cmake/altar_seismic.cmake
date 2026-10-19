@@ -69,8 +69,7 @@ function(altar_seismic_cuda_buildLibrary)
   # set the link directories
   target_link_directories(
     libcudaseismic PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
-    ${PYRE_PREFIX_PATH}/lib
+    ${ALTAR_LINK_LIB}
     )
   # add the dependencies
   target_link_libraries(
@@ -125,7 +124,7 @@ function(altar_seismic_cuda_buildModule)
   # set  the link directories
   target_link_directories(
     cudaseismicmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
+    ${ALTAR_LINK_LIB}
     )
   # set the libraries to link against
   target_link_libraries(

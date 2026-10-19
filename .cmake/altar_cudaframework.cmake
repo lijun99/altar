@@ -101,7 +101,7 @@ function(altar_cuda_buildModule)
   # set  the link directories
   target_link_directories(
     cudaaltarmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/lib
+    ${ALTAR_LINK_LIB}
     )
   # set the libraries to link against
   set(CUDA_LIBRARIES cudart cublas cusolver curand ${PYRE_LIBRARIES})

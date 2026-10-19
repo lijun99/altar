@@ -36,8 +36,10 @@ Source = "https://github.com/lijun99/altar"
 cmake.version = ">=3.20"
 # cmake installs everything, the python packages included
 wheel.packages = []
-# for the build, not the installed packages: the staged headers, and pyre's cmake files
-wheel.exclude = ["include/**", "altar.libs/cmake/**", "share/cmake/**"]
+# for the build, not the installed packages: the staged headers, pyre's cmake files, and pyre's
+# own build tools, mm and merlin, with their data
+wheel.exclude = ["include/**", "altar.libs/cmake/**", "share/**", "*.data/scripts/mm",
+                 "*.data/scripts/merlin", "*.data/scripts/smith.pyre"]
 # the gpus of the machine that builds; set another with -C cmake.define.CMAKE_CUDA_ARCHITECTURES=90
 cmake.define.CMAKE_CUDA_ARCHITECTURES = "native"
 # keep the build, so that rebuilds are incremental

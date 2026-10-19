@@ -80,10 +80,13 @@ function(altar_destinationInit)
     set(ALTAR_DEST_PACKAGES . PARENT_SCOPE)
     set(ALTAR_DEST_LIB altar.libs PARENT_SCOPE)
     set(ALTAR_DEST_BIN ${SKBUILD_SCRIPTS_DIR} PARENT_SCOPE)
+    # nothing to link from the install prefix, a scratch directory that won't exist at run time
+    set(ALTAR_LINK_LIB "" PARENT_SCOPE)
   else()
     set(ALTAR_DEST_PACKAGES packages PARENT_SCOPE)
     set(ALTAR_DEST_LIB lib PARENT_SCOPE)
     set(ALTAR_DEST_BIN bin PARENT_SCOPE)
+    set(ALTAR_LINK_LIB ${CMAKE_INSTALL_PREFIX}/lib ${PYRE_PREFIX_PATH}/lib PARENT_SCOPE)
   endif()
   # all done
 endfunction(altar_destinationInit)

@@ -37,6 +37,11 @@ macro(altar_bundledPyre)
     endforeach()
     # and the libraries from outside the wheel, e.g. the cuda toolkit's, where they were found
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    # but not first: a conda environment puts its own lib in the linker flags, ahead of the wheel,
+    # where it may hold older copies of the very libraries the wheel brings
+    foreach(_flags CMAKE_SHARED_LINKER_FLAGS CMAKE_MODULE_LINKER_FLAGS CMAKE_EXE_LINKER_FLAGS)
+      string(REGEX REPLACE "-Wl,-rpath,[^ ]*" "" ${_flags} "${${_flags}}")
+    endforeach()
   endif()
 
   add_subdirectory(${_pyre} ${CMAKE_CURRENT_BINARY_DIR}/extern/pyre)
@@ -54,7 +59,7 @@ macro(altar_bundledPyre)
   set(PYRE_LIBRARIES pyre::pyre pyre::journal)
   set(PYRE_CUDA_LIBRARIES ${PYRE_LIBRARIES})
   set(PYRE_INCLUDE_DIRS ${CMAKE_CURRENT_BINARY_DIR}/extern/pyre/lib)
-  set(PYRE_PREFIX_PATH ${CMAKE_INSTALL_PREFIX})
+  set(PYRE_PREFIX_PATH ${CMAKE_CURRENT_BINARY_DIR}/extern/pyre)
 endmacro(altar_bundledPyre)
 
 
