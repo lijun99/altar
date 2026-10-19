@@ -45,8 +45,14 @@ class Application(altar.application, family="altar.shells.application"):
         # N.B.: the initialization phase must be respectful of the interdependencies of these
         # components; e.g., both {controller} and {model} expect an initialized {rng}
 
+        # the configuration files that were read
+        files = self.configuration_files()
+        # without one meant for me, there is nothing to run
+        if not self.configured(files=files):
+            # so explain, and show my help screen instead
+            return self.unconfigured()
         # say which configuration files were read, so that stray ones don't go unnoticed
-        self.report_configuration()
+        self.report_configuration(files=files)
         # initialize the job parameters
         self.job.initialize(application=self)
         # activate the appropriate backend (cpu/cuda)
@@ -62,24 +68,19 @@ class Application(altar.application, family="altar.shells.application"):
         return self.model.posterior(application=self)
 
 
-    def report_configuration(self):
+    def configuration_files(self):
         """
-        Log the configuration files that were read, highest precedence first, so that the first
-        one to set a value is the one that counts: the ones named by {--config}, then the ones
-        found by name, e.g. a {<app>.pfg} in the startup directory
+        The configuration files that were read, highest precedence first, as pairs of the name
+        the user knows each one by and how it was found; the defaults pyre ships with its
+        packages are left out
         """
-        # under mpi, one report is enough
-        shell = self.shell
-        if shell.model == "mpi" and shell.world is not None and shell.world.rank != 0:
-            return self
         # the places pyre searches, as the user knows them
         places = {"vfs:/__pyre/startup/": "./", "vfs:/__pyre/user/": "~/.config/pyre/"}
-        # pick a channel
-        channel = self.info
-        channel.line("configuration files, highest precedence first:")
         # by the kind of source, then the later reads of the same kind first
         sources = list(enumerate(self.pyre_executive.configurator.sources))
         sources.sort(key=lambda entry: (entry[1][1].category, entry[0]), reverse=True)
+        # collect the files
+        files = []
         for _, (uri, priority) in sources:
             name = str(uri)
             # skip the defaults pyre ships with its packages
@@ -88,10 +89,70 @@ class Application(altar.application, family="altar.shells.application"):
             for place, alias in places.items():
                 name = name.replace(place, alias)
             how = "--config" if priority.__name__ == "Command" else "found automatically"
+            files.append((name, how))
+        # all done
+        return files
+
+
+    def configured(self, files):
+        """
+        Check whether any of the configuration {files} is meant for me: one named by {--config},
+        or one named after me, e.g. a {<app>.pfg} in the startup directory
+        """
+        # the stem of a file name, without its folder and its encoding
+        stem = lambda name: name.rsplit("/", 1)[-1].rsplit(".", 1)[0]
+        # look for one
+        return any(how == "--config" or stem(name) == self.pyre_name for name, how in files)
+
+
+    def unconfigured(self):
+        """
+        Explain that no configuration file meant for me was read, show my help screen, and
+        report the failure
+        """
+        # under mpi, one explanation is enough
+        if self.reporting():
+            # my name, as my configuration files carry it
+            name = self.pyre_name
+            # pick a channel
+            channel = self.warning
+            channel.line("no configuration file was read")
+            channel.line(f"looked for {name}.pfg or {name}.yaml in ./ and ~/.config/pyre/")
+            channel.line(f"run where {name}.pfg is, or name a file with --config=<file>")
+            channel.log()
+            # and show what i can be told
+            self.help()
+        # a run without a configuration is a failed run
+        return 1
+
+
+    def report_configuration(self, files):
+        """
+        Log the configuration {files} that were read, highest precedence first, so that the first
+        one to set a value is the one that counts: the ones named by {--config}, then the ones
+        found by name, e.g. a {<app>.pfg} in the startup directory
+        """
+        # under mpi, one report is enough
+        if not self.reporting():
+            return self
+        # pick a channel
+        channel = self.info
+        channel.line("configuration files, highest precedence first:")
+        for name, how in files:
             channel.line(f"    {name} ({how})")
         channel.log()
         # all done
         return self
+
+
+    def reporting(self):
+        """
+        Check whether i am the one to report, which under mpi is the task with rank 0
+        """
+        # get my shell
+        shell = self.shell
+        # under mpi, only rank 0 reports
+        return not (shell.model == "mpi" and shell.world is not None and shell.world.rank != 0)
 
 
     # pyre framework hooks

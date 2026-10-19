@@ -84,7 +84,7 @@ def cpu():
                                                   "weighted_statistics.py", "outliers.py",
                                                   "diagnostics.py", "controllers.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
-    tests += scripts(MODELS / "linear/tests", ["config.py"])
+    tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += [
         example("altar-linear", "linear", "linear.pfg", 0),
         example("altar-linear", "linear", "linear_hmc.pfg", 0),
@@ -118,7 +118,7 @@ def gpu():
     """
     cuda = sorted(path.name for path in (ROOT / "altar/tests/cuda").glob("*.py"))
     tests = scripts(ROOT / "altar/tests/cuda", cuda)
-    tests += scripts(MODELS / "linear/tests", ["config.py"])
+    tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
