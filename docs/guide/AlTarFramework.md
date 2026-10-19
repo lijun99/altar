@@ -492,8 +492,17 @@ for cross-fade CATMIP, that the priors are normalized: the magnitude penalty of 
 for one, is not. The bias is not small: on the Illapel static case, the dip slips started from the
 `moment` prep gave an evidence 22-80 nats above the one started from the prior, the more the
 larger the `target`. The posterior doesn't depend on the prep, which the walks forget; for the
-evidence, start from the prior. The run warns, next to the evidence, when a parameter set starts
-from a prep other than its prior.
+evidence, start from the prior.
+
+The evidence matters only to compare models of the same data, e.g. two fault geometries, with or
+without $C_p$, or an algorithm against an exact answer; a single inversion's posterior doesn't
+need it, and the run doesn't check its assumptions. To compare evidences: start every parameter set
+from its prior; keep the likelihood fixed during the run, i.e. a fixed $C_p$, not one updated from
+the samples at each $\beta$; use normalized, deliberately chosen priors, since the evidence pays
+for the prior volume the data rule out; use thousands of chains and a target of 1 or below; and
+repeat the runs, trusting differences well beyond their spread. Cascaded runs, which start from the
+samples of the static stage, have no valid evidence. For linear models, `cf_catmip` gives it
+almost exactly.
 
 `target`
 : the COV to aim at; default 1. A larger target takes fewer, larger $\beta$ steps: each walk then
