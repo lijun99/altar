@@ -33,7 +33,7 @@ function(altar_seismic_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/seismic
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_seismic_buildDriver)
@@ -95,7 +95,7 @@ function(altar_seismic_cuda_buildLibrary)
   # install the library
   install(
     TARGETS libcudaseismic
-    LIBRARY DESTINATION lib
+    LIBRARY DESTINATION ${ALTAR_DEST_LIB}
     )
 
   # all done
@@ -143,7 +143,7 @@ function(altar_seismic_cuda_buildModule)
   install(
     TARGETS cudaseismicmodule
     LIBRARY
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/seismic/ext
+    DESTINATION ${ALTAR_DEST_PACKAGES}/altar/models/seismic/ext
     )
 endfunction(altar_seismic_cuda_buildModule)
 
@@ -152,7 +152,7 @@ function(altar_seismic_cuda_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/slipmodel bin/slipmodel.plexus
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_seismic_cuda_buildDriver)

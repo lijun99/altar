@@ -35,7 +35,7 @@ function(altar_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/altar
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_buildDriver)

@@ -59,7 +59,7 @@ function(altar_cdm_buildModule)
   install(
     TARGETS cdmmodule
     LIBRARY
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/cdm/ext
+    DESTINATION ${ALTAR_DEST_PACKAGES}/altar/models/cdm/ext
     )
 endfunction(altar_cdm_buildModule)
 
@@ -69,7 +69,7 @@ function(altar_cdm_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/altar-cdm
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_cdm_buildDriver)

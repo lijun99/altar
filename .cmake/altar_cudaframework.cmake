@@ -74,7 +74,7 @@ function(altar_cuda_buildLibrary)
   # install the library
   install(
     TARGETS libcudaaltar
-    LIBRARY DESTINATION lib
+    LIBRARY DESTINATION ${ALTAR_DEST_LIB}
     )
   # all done
 endfunction(altar_cuda_buildLibrary)
@@ -133,7 +133,7 @@ function(altar_cuda_buildModule)
   install(
     TARGETS cudaaltarmodule
     LIBRARY
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/cuda/ext
+    DESTINATION ${ALTAR_DEST_PACKAGES}/altar/cuda/ext
     )
 endfunction(altar_cuda_buildModule)
 

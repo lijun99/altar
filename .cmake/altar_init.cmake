@@ -75,7 +75,16 @@ endfunction(altar_stagingInit)
 function(altar_destinationInit)
   # create variables to hold the roots in the install directory
   set(ALTAR_DEST_INCLUDE include PARENT_SCOPE)
-  set(ALTAR_DEST_PACKAGES packages PARENT_SCOPE)
+  if(SKBUILD)
+    # a wheel: the packages at its root, the shared libraries beside them, the scripts on the path
+    set(ALTAR_DEST_PACKAGES . PARENT_SCOPE)
+    set(ALTAR_DEST_LIB altar.libs PARENT_SCOPE)
+    set(ALTAR_DEST_BIN ${SKBUILD_SCRIPTS_DIR} PARENT_SCOPE)
+  else()
+    set(ALTAR_DEST_PACKAGES packages PARENT_SCOPE)
+    set(ALTAR_DEST_LIB lib PARENT_SCOPE)
+    set(ALTAR_DEST_BIN bin PARENT_SCOPE)
+  endif()
   # all done
 endfunction(altar_destinationInit)
 

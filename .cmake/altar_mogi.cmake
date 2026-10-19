@@ -59,7 +59,7 @@ function(altar_mogi_buildModule)
   install(
     TARGETS mogimodule
     LIBRARY
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/mogi/ext
+    DESTINATION ${ALTAR_DEST_PACKAGES}/altar/models/mogi/ext
     )
 endfunction(altar_mogi_buildModule)
 
@@ -69,7 +69,7 @@ function(altar_mogi_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/altar-mogi
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_mogi_buildDriver)

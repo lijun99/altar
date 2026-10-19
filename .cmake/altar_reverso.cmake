@@ -59,7 +59,7 @@ function(altar_reverso_buildModule)
   install(
     TARGETS reversomodule
     LIBRARY
-    DESTINATION ${CMAKE_INSTALL_PREFIX}/packages/altar/models/reverso/ext
+    DESTINATION ${ALTAR_DEST_PACKAGES}/altar/models/reverso/ext
     )
 endfunction(altar_reverso_buildModule)
 
@@ -69,7 +69,7 @@ function(altar_reverso_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/altar-reverso
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_reverso_buildDriver)

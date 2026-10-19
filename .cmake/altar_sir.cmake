@@ -35,7 +35,7 @@ function(altar_sir_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/SIR
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_sir_buildDriver)

@@ -37,7 +37,7 @@ function(altar_emhp_buildDriver)
   # install the scripts
   install(
     PROGRAMS bin/emhp
-    DESTINATION bin
+    DESTINATION ${ALTAR_DEST_BIN}
     )
   # all done
 endfunction(altar_emhp_buildDriver)
