@@ -305,7 +305,20 @@ priors (see {doc}`Priors`).
 : adjusts the step size from the acceptance rate; by default `targetedrate`, aiming at 0.7.
 
 `adapt_mass_matrix`
-: adapt a diagonal mass matrix to the variance of the samples; default `True`.
+: adapt a diagonal mass matrix to the variance of the samples; default `True`. Without it, the
+  unit mass leaves the step size to the narrowest direction of the posterior: on the Illapel
+  kinematic case, 4096 chains collapsed to a tenth of the posterior spread.
+
+`mass_matrix`
+: `diagonal`, the default, or `dense`, from the covariance of the samples (GPU only); the dense mass
+  needs at least twice as many chains as parameters, else the diagonal one is used. Estimated from
+  a population that the walks don't mix, it is biased narrow, even with enough chains: with 20
+  trajectories per $\beta$ step, 4096 chains on the 690 kinematic parameters came out at 0.73-0.87
+  of the posterior spread. Use it with walks that decorrelate.
+
+`mass_shrinkage`
+: the shrinkage of the dense mass's correlations toward the identity, from 0 (none, the default)
+  to 1 (a diagonal mass).
 
 `mass_update_interval`
 : update the mass matrix every this many trajectories; default 20.
@@ -321,6 +334,30 @@ linear:
             leapfrog_steps = 10
             step_size = 0.01
     job.steps = 20 ; trajectories per β step
+```
+
+On a hard posterior, e.g. a kinematic inversion of hundreds of correlated parameters, short walks
+don't mix: 20 trajectories of 10 leapfrog steps left the chains correlated 0.8-0.9 with where they
+started, and runs scattered by 0.3-0.4 posterior standard deviations from each other. What mixed
+best for its cost there: trajectories of a fixed length rather than a fixed number of leapfrog
+steps, walks until the median correlation drops below 0.3, and fewer chains:
+
+```none
+slipmodel:
+    controller = altar.bayesian.catmip_hmc
+    controller:
+        sampler:
+            trajectory_length = 1.0
+            stepcounter = altar.bayesian.decorrelating
+            stepcounter:
+                statistic = median
+                target_correlation = 0.3
+                min_mc_steps = 2
+                corr_check_steps = 2
+                max_mc_steps = 40
+        pool = 16
+        pool_interval = 0
+    job.chains = 2**10
 ```
 
 (mala)=
@@ -389,7 +426,9 @@ $\beta$:
   `corr_check_steps` (default 1000) steps, after at least `min_mc_steps` (default 1000), until the
   correlation between the current and the starting samples falls below `target_correlation`
   (default 0.6), or `max_mc_steps` (default 10000) is reached. With `beta_stage2`, a different
-  maximum, `max_mc_steps_stage2`, applies once $\beta$ exceeds it.
+  maximum, `max_mc_steps_stage2`, applies once $\beta$ exceeds it. These defaults are sized for
+  Metropolis; HMC trajectories decorrelate in tens, not thousands, so with HMC set them, as in the
+  second example below, or each $\beta$ step runs a thousand trajectories.
 
 ```none
 linear:
@@ -450,10 +489,19 @@ $\log P_c(\mathbf d)$ added for cross-fade CATMIP. It is printed at the end of t
 few hundred chains, it is typically within a nat or two, and on the low side. It assumes that the
 initial samples come from the prior, i.e. that the `prep` of each parameter set is its prior, and,
 for cross-fade CATMIP, that the priors are normalized: the magnitude penalty of the `moment` prior,
-for one, is not.
+for one, is not. The bias is not small: on the Illapel static case, the dip slips started from the
+`moment` prep gave an evidence 22-80 nats above the one started from the prior, the more the
+larger the `target`. The posterior doesn't depend on the prep, which the walks forget; for the
+evidence, start from the prior.
 
 `target`
-: the COV to aim at; default 1.
+: the COV to aim at; default 1. A larger target takes fewer, larger $\beta$ steps: each walk then
+  has more copies to separate, but the walks of the Illapel static case took about as long at every
+  step, so that the cost followed the number of steps, and the posterior was the same for 0.5, 1
+  and 2; a target of 2 took 0.7 of the cost of 1. The evidence gets noisier as the target grows,
+  the more so with few chains: 128 chains gave a spread of 1.3, 1.8 and 7 nats between runs for
+  0.5, 1 and 2. With thousands of chains and walks that mix, 1.5-2 saves time; with few chains, or
+  for the evidence, stay at 1 or below.
 
 `solver`
 : the solver for $\beta_{m+1}$: `brent` (Brent's root finding, the default; the COV grows with
