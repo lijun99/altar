@@ -274,13 +274,6 @@ class AnnealingMethod:
         step.log_evidence = getattr(annealer.scheduler, "log_evidence", None)
         if step.log_evidence is not None:
             annealer.info.log(f"log evidence: {step.log_evidence}")
-            # it assumes that the chains started from the prior
-            unlike = getattr(annealer.model, "unlike_prior", lambda: [])()
-            if unlike:
-                annealer.warning.log(
-                    f"the log evidence is biased: it assumes the chains start from the prior, but "
-                    f"the parameter sets {unlike} start from another prep; for the evidence, set "
-                    f"their prep to their prior; the posterior is unaffected")
         # ask the recorder to record it
         annealer.archiver.final(step=step, iteration=None, psets=getattr(annealer.model, "psets", None))
         # all done
