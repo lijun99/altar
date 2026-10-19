@@ -218,6 +218,21 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
         raise NotImplementedError(
             f"model '{type(self).__name__}' must implement 'forward_problem'")
 
+    def unlike_prior(self) -> list[str]:
+        """
+        The parameter sets whose initial samples are not drawn from their prior: a {prep} of another
+        kind, or of the same kind with other settings; the evidence assumes that they all are
+        """
+        names = []
+        for name, pset in getattr(self, "psets", {}).items():
+            prep, prior = getattr(pset, "prep", None), getattr(pset, "prior", None)
+            # no {prep} falls back to the prior
+            if prep is None or prep is prior or _alike(prep, prior):
+                continue
+            names.append(name)
+        return names
+
+
     # implementation details
     def mount_input_dataspace(self, pfs: altar.filesystem.Filesystem.Filesystem
                               ) -> altar.filesystem.Filesystem.Filesystem:
@@ -280,6 +295,29 @@ class Bayesian(altar.component, family="altar.models.bayesian", implements=model
     error: journal.error | None = None
     debug: journal.debug | None = None
     firewall: journal.firewall | None = None
+
+
+def _alike(one: typing.Any, other: typing.Any) -> bool:
+    """
+    Whether the distributions {one} and {other} are of the same kind, with the same settings
+    """
+    import numpy
+    if type(one) is not type(other):
+        return False
+    for trait in type(one).pyre_configurables():
+        a, b = getattr(one, trait.name, None), getattr(other, trait.name, None)
+        # settings that are components themselves, e.g. a transform, by their own settings
+        if isinstance(a, altar.component):
+            if not _alike(a, b):
+                return False
+            continue
+        try:
+            if not numpy.array_equal(numpy.asarray(a, dtype=object), numpy.asarray(b, dtype=object)):
+                return False
+        except (TypeError, ValueError):
+            if a is not b and a != b:
+                return False
+    return True
 
 
 # end of file
