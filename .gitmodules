@@ -1,0 +1,4 @@
+[submodule "extern/pyre"]
+	path = extern/pyre
+	url = https://github.com/lijun99/pyre.git
+	branch = altar2
