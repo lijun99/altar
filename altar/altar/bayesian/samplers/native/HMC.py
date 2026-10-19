@@ -70,10 +70,8 @@ class HMC:
         if getattr(self.stepsizer, "target", None) is None:
             self.stepsizer.target = self.target_acceptance
         # initialize the step size regulator and record the initial step size
-        self.step_size = self.stepsizer.initialize(value=self.step_size)
-        # and let an adaptive regulator start from it, not its own default
-        if hasattr(self.stepsizer, "step_size"):
-            self.stepsizer.step_size = self.step_size
+        if self.step_size is not None:
+            self.step_size = self.stepsizer.initialize(value=self.step_size)
 
         # if i am one of several mpi ranks, my controller's worker is an {MPIAnnealing} with a
         # {communicator}; grab it (None on a single-process run) so per-trajectory step size
@@ -154,6 +152,12 @@ class HMC:
             current.log_jacobian = numpy.zeros(samples)
         self._evaluate(annealer=annealer, model=model, candidate=current, samples=samples)
 
+        # the initial step size, unless given or restored: 1/d^(1/4), or 1/d^(1/3) with a single
+        # leapfrog step (MALA), the scaling with the dimension d of the optimal step on a gaussian
+        # target (Beskos et al., 2013)
+        if self.step_size is None:
+            exponent = 1 / 3 if self.leapfrog_steps == 1 else 1 / 4
+            self.step_size = self.stepsizer.initialize(value=parameters ** -exponent)
         # a production walk samples with the step size it starts with: the geometric mean of the
         # ones the previous walk adapted through, since the last of them may sit at the edge of
         # stability
@@ -350,7 +354,7 @@ class HMC:
     trajectory_length: float = 0    # the length of a trajectory, if it sets the substeps
     _adapted: list = []             # the step sizes of the last walk that adapted them
     max_leapfrog_steps: int = 200   # the most substeps a {trajectory_length} may take
-    step_size: float = 0.01         # the leapfrog step size epsilon; adapted after each trajectory
+    step_size: float | None = None  # the leapfrog step size epsilon; adapted after each trajectory
     adapt_mass_matrix: bool = True
     mass_matrix: str = "diagonal"
     mass_update_interval: int = 20
