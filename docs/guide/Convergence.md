@@ -9,7 +9,6 @@ choose its settings. The numbers come from three cases:
 - the Illapel static inversion: 342 parameters;
 - the Illapel cascaded kinematic inversion of 2022: 690 parameters.
 
-The runs, their scripts and their full results are in `models/seismic/tests/illapel-diagnostics/`.
 Most settings were run two or three times; treat the numbers as indications, not laws.
 
 
