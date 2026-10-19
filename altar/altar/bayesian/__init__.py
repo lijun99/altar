@@ -22,6 +22,7 @@ from .solvers.Solver import Solver as solver
 from .langevin_schedulers.LangevinScheduler import LangevinScheduler as langevinscheduler
 from .stepsizers.StepSizer import StepSizer as stepsizer
 from .stepcounters.StepCounter import StepCounter as stepcounter
+from .resamplers.Resampler import Resampler as resampler
 
 # foundry registrations — re-export from each subpackage into altar.bayesian namespace; the
 # samplers stay in theirs, e.g. altar.bayesian.samplers.hmc, apart from the controllers that
@@ -32,6 +33,7 @@ from .solvers import brent, grid
 from .proposals import gaussianproposal
 from .stepsizers import fixedstep, linearrate, targetedrate, dual
 from .stepcounters import fixedsteps, decorrelating
+from .resamplers import importanceresampler
 from .monitoring import profiler
 from .archivers import recorder, h5recorder
 from .langevin_schedulers import powerdecay, expdecay
