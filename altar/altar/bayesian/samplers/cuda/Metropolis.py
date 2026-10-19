@@ -42,8 +42,10 @@ class Metropolis:
         # (Roberts-Gelman-Gilks), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
             self.stepsizer.target = 0.234
-        # initialize the step size regulator and record the initial scaling
-        self.scaling = self.stepsizer.initialize(value=self.scaling)
+        # initialize the step size regulator and record the initial scaling, if given; else the
+        # first walk sets it from the number of parameters
+        if self.scaling is not None:
+            self.scaling = self.stepsizer.initialize(value=self.scaling)
         # initialize the step count regulator (e.g. {FixedSteps} fills in application.job.steps)
         self.stepcounter.initialize(application=application)
         # initialize the (cpu) proposal mechanism
@@ -73,6 +75,10 @@ class Metropolis:
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_start, controller=annealer)
+        # the initial scaling, unless given: 2.38/√d, the optimal one for a random walk shaped by
+        # the covariance of a gaussian target in d dimensions (Roberts, Gelman and Gilks, 1997)
+        if self.scaling is None:
+            self.scaling = self.stepsizer.initialize(value=2.38 / math.sqrt(step.parameters))
 
         # prepare the sampling pdf, copy step to gpu step
         self.prepare_sampling_pdf(annealer=annealer, step=step)
@@ -420,7 +426,7 @@ class Metropolis:
     proposal = None    # the proposal mechanism used by this sampler
     stepsizer = None   # the step size regulator
     stepcounter = None # the step count regulator
-    scaling = 0.1      # the parameter covariance Σ is scaled by the square of this
+    scaling = None     # the parameter covariance Σ is scaled by the square of this
 
     dispatcher = None  # a reference to the event dispatcher
     ginit = False     # whether gpu data are allocated

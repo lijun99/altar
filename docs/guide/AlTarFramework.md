@@ -254,7 +254,10 @@ them, with the walk in its sampling space (see {ref}`reparameterization`). After
 the acceptance rate adjusts $\alpha$.
 
 `scaling`
-: the initial scaling factor $\alpha$; default 0.1.
+: the initial scaling factor $\alpha$; by default $2.38/\sqrt{d}$, $d$ the number of parameters,
+  the optimal scaling of a random walk shaped by the covariance of a gaussian target (Roberts,
+  Gelman and Gilks, 1997). The scaling adapts once per $\beta$ step, by at most a factor of 2, so a
+  start far from it costs several steps whose walks barely move the chains.
 
 `proposal`
 : the proposal, `altar.bayesian.gaussianproposal`, with
@@ -293,7 +296,10 @@ priors (see {doc}`Priors`).
   the chains for fewer gradients than many short ones; a length of order 1 suits most problems.
 
 `step_size`
-: the initial leapfrog step size; default 0.01.
+: the initial leapfrog step size; by default $d^{-1/4}$, $d$ the number of parameters, or $d^{-1/3}$
+  with a single leapfrog step, as in MALA, how the optimal step scales with the dimension on a
+  gaussian target (Beskos et al., 2013). It adapts after every trajectory, so the start matters less
+  than for Metropolis; a posterior with strongly correlated parameters settles well below it.
 
 `stepsizer`
 : adjusts the step size from the acceptance rate; by default `targetedrate`, aiming at 0.7.
