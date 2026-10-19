@@ -8,6 +8,7 @@ Overview
 QuickStart
 Pyre
 AlTarFramework
+Convergence
 Priors
 Models
 ```
