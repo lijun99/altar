@@ -152,10 +152,31 @@ times the cheapest.
 
 ### The chains
 
-- Enough for the population statistics: at least as many as parameters for Metropolis, twice as
-  many for a dense HMC mass.
-- Enough for the precision you need, at about $1/\sqrt{N_\mathrm{eff}}$ standard deviations.
-- Enough to carry every mode of a multimodal posterior through the resampling.
+There is no agreed minimum. The number of chains a problem needs is the largest of four:
+
+1. **For the sampler to adapt.** The Metropolis proposal is the weighted covariance of the
+   population, whose effective size is about $N/2$ at a COV target of 1: it needs at least
+   $N \ge 2d$ chains, $d$ the parameters, and better several times that. An HMC diagonal mass has
+   no such limit. A dense mass needs $N \ge 2d$, which the run enforces, and walks that mix.
+2. **For the precision.** With walks that mix, a posterior mean is within about
+   $1/\sqrt{N_\mathrm{eff}}$ of its posterior standard deviation: 0.09 for 128 chains, 0.03 for
+   1024. Tails, e.g. a 95% interval, need about a thousand effective samples or more. A pool and a
+   production walk add effective samples without more chains.
+3. **For the modes.** To carry a mode of weight $p$ through the resamplings, $Np$ must stay well
+   above 1: about $N \gtrsim 20/p$-$50/p$, e.g. 500-1000 chains for a mode of 5%.
+4. **For the evidence,** much noisier than the posterior: thousands.
+
+What worked on the cases here:
+
+| problem | chains | limited by |
+|---|---|---|
+| tens of parameters, Metropolis (linear, 18) | 256 | precision |
+| hundreds, Metropolis (static, 342) | 128 failed, 4096 worked; at least $2d \approx 700$ | adaptation |
+| hundreds, HMC with a diagonal mass (static, 342) | 128, at its precision | precision |
+| hundreds, HMC with long walks (kinematic, 690) | 1024 | precision, modes (the hypocenter) |
+| a dense mass | $\ge 2d$, with long walks | adaptation |
+| few parameters, an expensive model | a few hundred, with a pool and a production walk (untested) | precision |
+| comparing evidences | thousands | the evidence's spread |
 
 Beyond that, spend the budget on the walks. 1024 chains with long walks gave the 690-parameter
 kinematic posterior in 2 hours on one GPU; 4096 chains with short walks, in the same time, scattered
