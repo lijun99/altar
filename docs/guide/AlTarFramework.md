@@ -492,7 +492,8 @@ for cross-fade CATMIP, that the priors are normalized: the magnitude penalty of 
 for one, is not. The bias is not small: on the Illapel static case, the dip slips started from the
 `moment` prep gave an evidence 22-80 nats above the one started from the prior, the more the
 larger the `target`. The posterior doesn't depend on the prep, which the walks forget; for the
-evidence, start from the prior.
+evidence, start from the prior. The run warns, next to the evidence, when a parameter set starts
+from a prep other than its prior.
 
 `target`
 : the COV to aim at; default 1. A larger target takes fewer, larger $\beta$ steps: each walk then

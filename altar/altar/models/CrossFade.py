@@ -135,6 +135,13 @@ class CrossFade(Bayesian, family="altar.models.crossfade"):
         return self.controller.posterior(model=self)
 
 
+    def unlike_prior(self) -> list[str]:
+        """
+        None: my initial samples come from the conjugate posterior, which my evidence accounts for
+        """
+        return []
+
+
     @altar.export
     def initialize_sample(self, step: BayesianState, batch: int | None = None) -> typing.Self:
         """
