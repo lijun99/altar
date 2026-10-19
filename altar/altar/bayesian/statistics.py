@@ -75,15 +75,42 @@ def condition_covariance(Σ: numpy.ndarray, ratio: float) -> numpy.ndarray:
     return 0.5 * (conditioned + conditioned.T)
 
 
+# the ways to resample
+RESAMPLING = ("multinomial", "stratified", "systematic", "residual")
+
+
 def multiplicities(w: numpy.ndarray, rng: numpy.random.Generator,
-                   low_variance: bool = False) -> numpy.ndarray:
+                   method: str = "systematic") -> numpy.ndarray:
     """
-    How many copies of each sample to keep, resampling by the normalized weights {w}: uniform
-    draws in [0, 1), or the equally spaced (u + i)/n of the low variance resampler, counted in
-    the intervals of the cumulative weights
+    How many copies of each sample to keep, resampling by the normalized weights {w}: the counts
+    of points in [0, 1) in the intervals of the cumulative weights, the points drawn by {method}:
+    multinomial, n independent ones; stratified, one in each of the n slices [k/n, (k+1)/n);
+    systematic, (u + k)/n for a single u; or residual, the floor of n w copies of each sample
+    outright, and the rest of them drawn independently by the remainders of its weight
     """
     n = w.size
-    r = (rng.random() + numpy.arange(n)) / n if low_variance else rng.random(size=n)
+    if method == "residual":
+        base = numpy.floor(n * w).astype(int)
+        rest = n - int(base.sum())
+        if rest == 0:
+            return base
+        remainder = n * w - base
+        return base + _counts(remainder / remainder.sum(), rng.random(size=rest), n)
+    if method == "multinomial":
+        r = rng.random(size=n)
+    elif method == "stratified":
+        r = (numpy.arange(n) + rng.random(size=n)) / n
+    elif method == "systematic":
+        r = (numpy.arange(n) + rng.random()) / n
+    else:
+        raise ValueError(f"unknown resampling method {method!r}; choose one of {RESAMPLING}")
+    return _counts(w, r, n)
+
+
+def _counts(w: numpy.ndarray, r: numpy.ndarray, n: int) -> numpy.ndarray:
+    """
+    How many of the points {r} fall in the interval of each of the {n} cumulative weights {w}
+    """
     edges = numpy.concatenate(([0.0], numpy.cumsum(w)))
     # a draw past a cumulative sum that rounding left short of one belongs to the last sample
     bins = numpy.clip(numpy.searchsorted(edges, r, side="right") - 1, 0, n - 1)

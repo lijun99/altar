@@ -469,8 +469,18 @@ for one, is not.
 `beta_resampling_start`
 : resample only once $\beta$ reaches this value; default 0.
 
-`use_low_variance_resampler`
-: resample with evenly spaced random numbers (systematic resampling); default `False`.
+`resampler`
+: replaces the weighted samples by equally weighted ones: `altar.bayesian.importanceresampler`, whose
+  `method` draws the copies. Every method copies a sample of weight $w$ $Nw$ times on average; they
+  differ in how far the counts stray from it:
+  - `multinomial`: $N$ independent draws, so a count is binomial and can be anything from 0 to $N$;
+  - `stratified`: one draw in each of $N$ equal slices of $[0, 1)$;
+  - `systematic`, the default: one draw $u$ and the evenly spaced $(u + k)/N$, so that a count is
+    the floor or the ceiling of $Nw$;
+  - `residual`: the floor of $Nw$ copies outright, the rest drawn independently.
+
+  The less the counts stray, the fewer samples the resampling loses by chance, and the more the
+  population keeps of the information in the weights.
 
 ```none
 linear:
