@@ -64,8 +64,12 @@ class HMC:
         )
         # the buffers of a trajectory follow the new state
         self._backup = self._scratch = self._mask = None
-        # from the step size a restarted run reached, else from the configured one
-        eta = self.proposal_state.eta if self._restored is None else self._restored
+        # from the step size a restarted run reached, else from the configured one, else from the
+        # number of parameters: 1/d^(1/4), or 1/d^(1/3) with a single leapfrog step (MALA), the
+        # scaling with the dimension d of the optimal step on a gaussian target (Beskos et al., 2013)
+        eta = self._restored if self._restored is not None else self.step_size
+        if eta is None:
+            eta = model.parameters ** -(1 / 3 if self.leapfrog_steps == 1 else 1 / 4)
         self.step_size = self.stepsizer.initialize(eta)
         self._set_step_size(self.step_size)
         return self

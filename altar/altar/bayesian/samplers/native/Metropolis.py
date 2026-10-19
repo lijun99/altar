@@ -11,6 +11,7 @@
 
 # externals
 from __future__ import annotations
+import math
 import typing
 import numpy
 # the package
@@ -59,8 +60,10 @@ class Metropolis:
         # (Roberts-Gelman-Gilks), unless the user picked a target explicitly
         if getattr(self.stepsizer, "target", None) is None:
             self.stepsizer.target = 0.234
-        # initialize the step size regulator and record the initial scaling
-        self.scaling = self.stepsizer.initialize(value=self.scaling)
+        # initialize the step size regulator and record the initial scaling, if given; else the
+        # first walk sets it from the number of parameters
+        if self.scaling is not None:
+            self.scaling = self.stepsizer.initialize(value=self.scaling)
 
         # initialize the step count regulator (e.g. {FixedSteps} fills in application.job.steps)
         self.stepcounter.initialize(application=application)
@@ -80,6 +83,10 @@ class Metropolis:
         dispatcher = annealer.dispatcher
         # notify we have started sampling the posterior
         dispatcher.notify(event=dispatcher.sample_posterior_start, controller=annealer)
+        # the initial scaling, unless given: 2.38/√d, the optimal one for a random walk shaped by
+        # the covariance of a gaussian target in d dimensions (Roberts, Gelman and Gilks, 1997)
+        if self.scaling is None:
+            self.scaling = self.stepsizer.initialize(value=2.38 / math.sqrt(step.parameters))
         # let the proposal adapt to the samples this walk starts from
         self.proposal.new_walk()
         # walk the chains; statistics stored on self
@@ -231,7 +238,7 @@ class Metropolis:
     stepsizer: StepSizer     # the step size regulator
     stepcounter: StepCounter # the step count regulator
 
-    scaling: float = 0.1     # current proposal scaling; updated by stepsizer after each update
+    scaling: float | None = None # current proposal scaling; updated by stepsizer after each update
     statistics: Statistics | None = None  # from the last walk_chains call
 
     info: journal.info | None = None  # the application info channel

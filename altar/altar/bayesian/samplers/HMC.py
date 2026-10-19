@@ -37,8 +37,10 @@ class HMC(altar.component, family="altar.samplers.hmc", implements=sampler):
     leapfrog_steps = altar.properties.int(default=10)
     leapfrog_steps.doc = "the number of leapfrog substeps per trajectory"
 
-    step_size = altar.properties.float(default=0.01)
-    step_size.doc = "the leapfrog step size epsilon; adapted after each trajectory by {stepsizer}"
+    step_size = altar.properties.float(default=None)
+    step_size.doc = "the initial leapfrog step size epsilon, adapted after each trajectory by " \
+                    "{stepsizer}; by default 1/d^(1/4), d the number of parameters, or 1/d^(1/3) " \
+                    "with a single leapfrog step, as in MALA"
 
     trajectory_length = altar.properties.float(default=0)
     trajectory_length.validators = altar.constraints.isGreaterEqual(value=0)

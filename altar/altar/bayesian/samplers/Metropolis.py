@@ -45,8 +45,10 @@ class Metropolis(altar.component, family="altar.samplers.metropolis", implements
     stepcounter.doc = "the step count regulator that decides how many MC steps to run per β step"
 
     # the initial proposal scaling; {stepsizer} adjusts it after every β step
-    scaling = altar.properties.float(default=.1)
-    scaling.doc = "the parameter covariance Σ is scaled by the square of this"
+    scaling = altar.properties.float(default=None)
+    scaling.doc = "the parameter covariance Σ is scaled by the square of this; by default " \
+                  "2.38/√d, d the number of parameters, the optimal scaling of a random walk on " \
+                  "a gaussian target"
 
 
     # protocol obligations

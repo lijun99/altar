@@ -97,7 +97,8 @@ class H5Recorder(
             line = [
                 item.get("iteration"),
                 item.get("beta"),
-                item.get("scaling"),
+                # not set yet, e.g. before the first walk, when it follows from the parameters
+                numpy.nan if item.get("scaling") is None else item.get("scaling"),
                 stats[0],
                 stats[1],
                 stats[2],
@@ -219,7 +220,8 @@ class H5Recorder(
             rows.append([
                 item.get("iteration"),
                 item.get("beta"),
-                item.get("scaling"),
+                # not set yet, e.g. before the first walk, when it follows from the parameters
+                numpy.nan if item.get("scaling") is None else item.get("scaling"),
                 accepted,
                 invalid,
                 rejected,
