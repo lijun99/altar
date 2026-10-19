@@ -1,0 +1,52 @@
+# -*- toml -*-
+#
+# (c) 2013-present parasim inc
+# (c) 2010-present california institute of technology
+# all rights reserved
+#
+
+# pip install . builds altar and pyre, from the extern/pyre submodule, in one cmake project and
+# installs them as one wheel; cmake finds cuda, mpi and hdf5 if they are there, and the
+# compilers, and the cuda toolkit for gpu support, come from the system or conda
+
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=3", "numpy", "setuptools-scm>=8"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "altar"
+dynamic = ["version"]
+description = "A Bayesian framework for inverse problems"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"
+dependencies = ["numpy", "h5py", "PyYAML"]
+
+[project.optional-dependencies]
+# pyre finds the gpus with cuda-python
+cuda = ["cuda-python"]
+# the cuTile kernels of the volcano and regression models
+cutile = ["cuda-tile"]
+
+[project.urls]
+Documentation = "https://altar2.readthedocs.io"
+Source = "https://github.com/lijun99/altar"
+
+[tool.scikit-build]
+cmake.version = ">=3.20"
+# cmake installs everything, the python packages included
+wheel.packages = []
+# for the build, not the installed packages: the staged headers, and pyre's cmake files
+wheel.exclude = ["include/**", "altar.libs/cmake/**", "share/cmake/**"]
+# the gpus of the machine that builds; set another with -C cmake.define.CMAKE_CUDA_ARCHITECTURES=90
+cmake.define.CMAKE_CUDA_ARCHITECTURES = "native"
+# keep the build, so that rebuilds are incremental
+build-dir = "build/{wheel_tag}"
+metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
+sdist.include = ["extern/pyre"]
+
+[tool.setuptools_scm]
+local_scheme = "no-local-version"
+
+
+# end of file

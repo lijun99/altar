@@ -8,6 +8,8 @@
 #     mkdir build && cd build
 #     cmake .. -DCMAKE_INSTALL_PREFIX=$CONDA_PREFIX -DCMAKE_PREFIX_PATH=$CONDA_PREFIX -DCMAKE_CUDA_ARCHITECTURES=native
 #     make -j && make install
+# or, with pyre built along from extern/pyre (git submodule update --init),
+#     pip install .
 
 # cmake setup
 # v3.18 is needed to pass Development.Module to FIndPython
@@ -35,8 +37,15 @@ find_package(MPI)
 set(PYTHON_COMPONENTS Interpreter Development.Module NumPy)
 find_package(Python 3.7 REQUIRED COMPONENTS ${PYTHON_COMPONENTS} OPTIONAL_COMPONENTS Development.Embed)
 
-# pyre and pyre cuda
-find_package(PYRE)
+# pyre and pyre cuda: built here from extern/pyre for a wheel, or when asked to; otherwise the
+# installed one
+option(ALTAR_BUNDLED_PYRE "build pyre from extern/pyre along with altar" ${SKBUILD})
+if(ALTAR_BUNDLED_PYRE)
+  include(altar_pyre)
+  altar_bundledPyre()
+else()
+  find_package(PYRE)
+endif()
 
 # pybind11, for the python extension modules
 set(PYBIND11_FINDPYTHON ON)
