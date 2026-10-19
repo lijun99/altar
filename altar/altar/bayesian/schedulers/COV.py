@@ -17,7 +17,7 @@ import numpy
 import altar
 # my protocol
 from .Scheduler import Scheduler as scheduler
-from ..statistics import weighted_covariance, condition_covariance, multiplicities
+from ..statistics import weighted_covariance, condition_covariance
 
 if typing.TYPE_CHECKING:
     import journal
@@ -63,8 +63,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
     beta_min = altar.properties.float(default=0)
     beta_min.doc = 'the minimum beta value to be used'
 
-    use_low_variance_resampler = altar.properties.bool(default=False)
-    use_low_variance_resampler.doc = "whether to equal spaced random numbers for resampling"
+    resampler = altar.bayesian.resampler()
+    resampler.doc = "replaces the weighted samples by equally weighted ones, by default " \
+                    "{altar.bayesian.importanceresampler} with systematic resampling"
 
     # public data
     cov: float = 0.0 # the actual value for COV we were able to attain
@@ -77,9 +78,9 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         Initialize me and my parts given an {application} context
         """
-        # the random number generator, for resampling
-        self.rng = application.rng.rng
-        # initialize my solver
+        # initialize my resampler
+        self.resampler.initialize(application=application)
+        # and my solver
         self.solver.initialize(application=application, scheduler=self)
         # grab the info channel
         self.info = application.info
@@ -104,21 +105,11 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         # resampling according to their likelihood
         if β > self.beta_resampling_start:
             step.weighted_theta = getattr(step, "theta_sampling", step.theta).copy()
-            θ, (prior, data, posterior), θ_sampling, jacobian = self.resampling(step=step)
-            # update the step after the resampling
-            step.prior[...] = prior
-            step.data[...] = data
-            step.theta[...] = θ
-            # a reparameterized step keeps theta_sampling/jacobian as separate buffers (see
-            # {altar.bayesian.states.CoolingStep}), not aliases of theta -- they must be
-            # reordered by the exact same sample indices, or theta/theta_sampling end up
-            # describing different chains after resampling (row i's physical theta no longer
-            # corresponds to row i's sampling-space theta), silently corrupting any
-            # reparameterized gradient-based sampler (e.g. HMC) that reads both
-            if getattr(step, 'has_reparametrization', False):
-                step.theta_sampling[...] = θ_sampling
-                if jacobian is not None and step.jacobian is not None:
-                    step.jacobian[...] = jacobian
+            # the sample behind each new one, published for the diagnostics of the run; every
+            # part of the state follows the same rows, the samples in sampling and physical
+            # space, the jacobian and the densities
+            step.ancestors = self.resampler.rows(w=step.weights)
+            step.reorder(rows=step.ancestors)
 
         # update the step (common procedures with or w/o resampling)
         step.beta = β
@@ -192,41 +183,11 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         """
         Rebuild the sample and its statistics sorted by the likelihood of the parameter values
         """
-        counts = self.compute_sample_multiplicities(step=step)
+        counts = self.resampler.multiplicities(w=step.weights)
         # the old samples by decreasing multiplicity, each duplicated by its count
         order = numpy.argsort(counts, kind="stable")[::-1]
         rows = numpy.repeat(order, counts[order])
         return step.theta[rows], (step.prior[rows], step.data[rows], step.posterior[rows])
-
-
-    # important resampling: rank is not needed, shuffle is recommended
-    def resampling(self, step: CoolingStep) -> tuple[numpy.ndarray, tuple[numpy.ndarray, ...],
-                                                      numpy.ndarray | None, numpy.ndarray | None]:
-        """
-        Rebuild the sample and its statistics, resampled by their weights, in random order
-        """
-        counts = self.compute_sample_multiplicities(step=step)
-        # the index of the old sample behind each new one, duplicated by its count, shuffled
-        rows = numpy.repeat(numpy.arange(counts.size), counts)
-        self.rng.shuffle(rows)
-        # publish them, for the diagnostics of the run
-        step.ancestors = rows
-
-        self.info.log(f"resampling: unique samples {numpy.count_nonzero(counts)} out of {counts.size}")
-
-        # a reparameterized step carries theta_sampling/jacobian as separate buffers from
-        # theta (not aliases; see {altar.bayesian.states.CoolingStep}), so they must be
-        # reordered by the exact same sample indices, or theta/theta_sampling end up
-        # describing different chains after resampling
-        θ_sampling = jacobian = None
-        if getattr(step, 'has_reparametrization', False):
-            θ_sampling = step.theta_sampling[rows]
-            if step.jacobian is not None:
-                jacobian = step.jacobian[rows]
-
-        # return the shuffled data
-        likelihoods = step.prior[rows], step.data[rows], step.posterior[rows]
-        return step.theta[rows], likelihoods, θ_sampling, jacobian
 
 
     # implementation details
@@ -238,17 +199,7 @@ class COV(altar.component, family="altar.schedulers.cov", implements=scheduler):
         return condition_covariance(Σ=Σ, ratio=self.min_eigenvalue_ratio)
 
 
-    def compute_sample_multiplicities(self, step: CoolingStep) -> numpy.ndarray:
-        """
-        How many copies of each sample to keep, given the normalized weights of this cooling
-        step
-        """
-        return multiplicities(
-            w=step.weights, rng=self.rng, low_variance=self.use_low_variance_resampler)
-
-
     # private data
-    rng: numpy.random.Generator
     info: journal.info
 
 
