@@ -155,9 +155,13 @@ times the cheapest.
 There is no agreed minimum. The number of chains a problem needs is the largest of four:
 
 1. **For the sampler to adapt.** The Metropolis proposal is the weighted covariance of the
-   population, whose effective size is about $N/2$ at a COV target of 1: it needs at least
-   $N \ge 2d$ chains, $d$ the parameters, and better several times that. An HMC diagonal mass has
-   no such limit. A dense mass needs $N \ge 2d$, which the run enforces, and walks that mix.
+   population, whose effective size is about $N/2$ at a COV target of 1. On the static case, with
+   walks long enough at every count, its posterior spreads came out at 0.67 of the right ones with
+   $0.75d$ chains, $d$ the parameters, 0.87 with $1.5d$, 0.96 with $3d$, and 0.98-0.99 with $6d$-$12d$:
+   use at least $3d$, and $6d$ or more for spreads within a few percent. An HMC diagonal mass has no
+   such limit: from 64 chains ($0.2d$) to 4096, the runs scattered as independent samples of their
+   size, and their spreads were within 1% from 128 chains on. A dense mass needs $N \ge 2d$, which
+   the run enforces, and walks that mix.
 2. **For the precision.** With walks that mix, a posterior mean is within about
    $1/\sqrt{N_\mathrm{eff}}$ of its posterior standard deviation: 0.09 for 128 chains, 0.03 for
    1024. Tails, e.g. a 95% interval, need about a thousand effective samples or more. A pool and a
@@ -171,8 +175,8 @@ What worked on the cases here:
 | problem | chains | limited by |
 |---|---|---|
 | tens of parameters, Metropolis (linear, 18) | 256 | precision |
-| hundreds, Metropolis (static, 342) | 128 failed, 4096 worked; at least $2d \approx 700$ | adaptation |
-| hundreds, HMC with a diagonal mass (static, 342) | 128, at its precision | precision |
+| hundreds, Metropolis (static, 342) | $3d \approx 1000$ for spreads within 5%, $6d$-$12d$ within 2-3% | adaptation |
+| hundreds, HMC with a diagonal mass (static, 342) | any, from 64 on: the error followed $1/\sqrt{N}$ | precision |
 | hundreds, HMC with long walks (kinematic, 690) | 1024 | precision, modes (the hypocenter) |
 | a dense mass | $\ge 2d$, with long walks | adaptation |
 | few parameters, an expensive model | a few hundred, with a pool and a production walk (untested) | precision |
