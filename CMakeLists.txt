@@ -39,7 +39,12 @@ find_package(Python 3.7 REQUIRED COMPONENTS ${PYTHON_COMPONENTS} OPTIONAL_COMPON
 
 # pyre and pyre cuda: built here from extern/pyre for a wheel, or when asked to; otherwise the
 # installed one
-option(ALTAR_BUNDLED_PYRE "build pyre from extern/pyre along with altar" ${SKBUILD})
+if(SKBUILD)
+  set(_bundled ON)
+else()
+  set(_bundled OFF)
+endif()
+option(ALTAR_BUNDLED_PYRE "build pyre from extern/pyre along with altar" ${_bundled})
 if(ALTAR_BUNDLED_PYRE)
   include(altar_pyre)
   altar_bundledPyre()
