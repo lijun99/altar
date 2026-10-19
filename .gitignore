@@ -5,7 +5,8 @@
 __pycache__
 .DS_Store
 
-# the default build locations
+# the default build locations; build/ holds pip's
+/build
 /builds
 /products
 build*/

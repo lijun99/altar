@@ -9,7 +9,8 @@ supplies every library they need:
 1. check the {ref}`requirements <installation-requirements>`;
 2. create a {ref}`conda environment <installation-conda>` with the prerequisites;
 3. {ref}`download <installation-downloads>` pyre and AlTar;
-4. build and install {ref}`pyre <installation-pyre>`, then {ref}`AlTar <installation-altar>`;
+4. build and install {ref}`pyre <installation-pyre>`, then {ref}`AlTar <installation-altar>`, or
+   both at once {ref}`with pip <installation-pip>`;
 5. {ref}`check <installation-check>` the installation.
 
 The GPU (CUDA) support is optional: without a CUDA toolkit, both packages build their cpu parts
@@ -98,6 +99,40 @@ git clone -b develop https://github.com/lijun99/altar.git
 
 The `altar2` branch of pyre carries the pyre changes this version of AlTar needs, ahead of
 their merge into pyre's own repository.
+
+(installation-pip)=
+## Or: build and install both with pip
+
+AlTar carries pyre's `altar2` branch as a git submodule, `extern/pyre`, and `pip install .` builds
+the two together with CMake and installs them as one Python package; the next two sections can then
+be skipped:
+
+```bash
+cd ~/tools/src
+git clone --recursive -b develop https://github.com/lijun99/altar.git
+cd altar
+pip install ".[cuda]"     # GPU support; ".[cuda,cutile]" with the cuTile kernels, "." for the cpu
+```
+
+Run it in the environment AlTar should live in: a conda environment as above, or a Python virtual
+environment (`python -m venv`). pip brings numpy, h5py and PyYAML; the compilers and, for GPU
+support, the CUDA toolkit come from the system or the conda environment, as for the CMake build, and
+CMake finds MPI and HDF5 if they are there. The command line applications, `altar`, `altar-linear`,
+`slipmodel` and the others, go on the environment's path.
+
+The CUDA code is compiled for the GPUs of the machine that builds it
+(`CMAKE_CUDA_ARCHITECTURES=native`). CMake settings are passed with `-C`, e.g. for other GPUs, or
+for a host compiler `nvcc` accepts when the default one is too new for it:
+
+```bash
+pip install ".[cuda]" -C cmake.define.CMAKE_CUDA_ARCHITECTURES=90
+pip install ".[cuda]" -C cmake.define.CMAKE_CUDA_HOST_COMPILER=$CXX
+pip install . -C cmake.define.WITH_CUDA=OFF        # the cpu parts only
+```
+
+The build is kept in `build/`, so after an update `pip install .` recompiles only what changed. A
+clone made without `--recursive` needs `git submodule update --init` first, which also brings
+pyre up to the version this AlTar pins.
 
 (installation-pyre)=
 ## Build and install pyre
