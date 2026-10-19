@@ -25,10 +25,11 @@ macro(altar_bundledPyre)
   set(PYRE_BUILD_TESTING OFF CACHE BOOL "Build pyre's test suite" FORCE)
 
   if(SKBUILD)
-    # pyre's packages at the root of the wheel, its libraries with altar's, its scripts on the path
+    # pyre's packages at the root of the wheel, its libraries with altar's; its scripts, its own
+    # build tools, mm and merlin, are left out
     set(PYRE_DEST_PACKAGES .)
     set(CMAKE_INSTALL_LIBDIR altar.libs CACHE PATH "the shared libraries, in the wheel" FORCE)
-    set(CMAKE_INSTALL_BINDIR ${SKBUILD_SCRIPTS_DIR} CACHE PATH "the scripts, in the wheel" FORCE)
+    set(CMAKE_INSTALL_BINDIR ${SKBUILD_NULL_DIR} CACHE PATH "pyre's scripts, left out" FORCE)
     # the libraries and extension modules find altar.libs relative to themselves, from any depth
     # of the packages, so the installed wheel works wherever pip puts it
     set(CMAKE_INSTALL_RPATH "$ORIGIN")
