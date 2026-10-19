@@ -10,7 +10,7 @@
 """
 Check that an app that reads no configuration file meant for it says so, shows its help screen
 and fails, instead of running on its defaults; and that a file named by --config, or one named
-after the app, is enough.
+after the app, in the startup directory or the user configuration directory, is enough.
 
     python noconfig.py
 """
@@ -26,11 +26,11 @@ import tempfile
 EXAMPLES = pathlib.Path(__file__).resolve().parent.parent / "examples"
 
 
-def run(files, *args):
+def run(files, *args, user=None):
     """
     Run {altar-linear} with {args} in a scratch directory that holds {files}, and return its exit
-    status and everything it said; with an empty user configuration directory, so that the files
-    of whoever runs the test don't count
+    status and everything it said; with a user configuration directory that holds the files
+    {user}, if any, so that the files of whoever runs the test don't count
     """
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="altar-noconfig-"))
     try:
@@ -38,6 +38,8 @@ def run(files, *args):
             (scratch / name).write_text(text)
         # pyre reads {$XDG_CONFIG_HOME/pyre}, if it is there, instead of ~/.config/pyre or ~/.pyre
         (scratch / "config" / "pyre").mkdir(parents=True)
+        for name, text in (user or {}).items():
+            (scratch / "config" / "pyre" / name).write_text(text)
         env = {**os.environ, "XDG_CONFIG_HOME": str(scratch / "config")}
         status = subprocess.run(["altar-linear", *args], cwd=scratch, capture_output=True,
                                 text=True, timeout=600, env=env)
@@ -62,11 +64,12 @@ def main():
 
     # the example, found either way; the runs need not succeed, only get past the check
     example = (EXAMPLES / "linear.pfg").read_text()
-    for label, files, args in [
-            ("a file named by --config", {"other.pfg": example}, ["--config=other.pfg"]),
-            ("a file named after the app", {"linear.pfg": example}, []),
+    for label, files, args, user in [
+            ("a file named by --config", {"other.pfg": example}, ["--config=other.pfg"], None),
+            ("a file named after the app", {"linear.pfg": example}, [], None),
+            ("one in the user configuration directory", {}, [], {"linear.pfg": example}),
     ]:
-        code, said = run(files, *args, "--job.gpus=0", "--job.tasks=1")
+        code, said = run(files, *args, "--job.gpus=0", "--job.tasks=1", user=user)
         ok = "no configuration file was read" not in said and "usage:" not in said
         if not ok:
             print("\n".join(f"    {line}" for line in said.splitlines()[-12:]))
