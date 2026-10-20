@@ -41,6 +41,22 @@ Each is selected with `controller = altar.bayesian.<controller>`.
 **Adding a model** takes little code: it only needs a forward model, written in numpy. GPU
 kernels can be written with cuTile, NVRTC or CUDA C++; see the [Programming Guide](https://altar2.readthedocs.io/en/latest/guide/Programming.html).
 
+## Installation
+
+AlTar is built on [pyre](https://github.com/pyre/pyre), which it carries as a git submodule; pip
+builds the two together and installs them into the current Python environment:
+
+```bash
+git clone --recursive -b develop https://github.com/lijun99/altar.git
+cd altar
+pip install ".[cuda]"     # or "." for the cpu only
+```
+
+The build needs a C++23 compiler (e.g. GCC ≥ 13) and CMake, and, for GPU support, the CUDA
+toolkit. See the [Installation Guide](https://altar2.readthedocs.io/en/latest/guide/Installation.html)
+for the requirements, a ready conda environment, the build options (GPU architectures, cpu only,
+incremental rebuilds), and building pyre and AlTar separately with CMake.
+
 ## Guides
 
 Readthedocs ([html](https://altar2.readthedocs.io/en/latest/) | [pdf](https://altar2.readthedocs.io/_/downloads/en/latest/pdf/) | [epub](https://altar2.readthedocs.io/_/downloads/en/latest/epub/)):
