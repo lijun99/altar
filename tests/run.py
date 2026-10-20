@@ -86,6 +86,7 @@ def cpu():
                                                   "resampling.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
+    tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
     tests += [
         example("altar-linear", "linear", "linear.pfg", 0),
         example("altar-linear", "linear", "linear_hmc.pfg", 0),
@@ -100,6 +101,7 @@ def cpu():
         example("slipmodel", "seismic", "static.pfg", 0, needs=("seismic-data",)),
         example("slipmodel", "seismic", "static.pfg", 0, "--controller=altar.bayesian.cf_catmip",
                 needs=("seismic-data",), variant="cf_catmip"),
+        example("slipmodel", "seismic", "kinematic.pfg", 0, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi", needs=("mpi",), examples="linear", anneals=True,
                       command=["altar-linear", "--config=linear.pfg", "--job.gpus=0", "--job.tasks=2",
@@ -120,6 +122,9 @@ def gpu():
     cuda = sorted(path.name for path in (ROOT / "altar/tests/cuda").glob("*.py"))
     tests = scripts(ROOT / "altar/tests/cuda", cuda)
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
+    tests += scripts(MODELS / "seismic/tests", ["kinematic_mesh.py"])
+    tests.append(Test(name="models:seismic:tests:kinematic_cpu:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "kinematic_cpu.py", "--gpu"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),

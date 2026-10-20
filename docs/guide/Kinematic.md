@@ -47,10 +47,11 @@ and the forward model takes two steps: $\mathbf M_b$ from the eikonal solver, th
 $\mathbf d^{pred} = \mathcal G_b \mathbf M_b$.
 
 ```{note}
-The kinematic model runs only on the GPU (`job.gpus = 1`): its fast sweeping is too expensive for
-the cpu. It provides the exact gradient of its data likelihood for HMC and MALA, by the adjoint of
-its forward model: back through the source time functions, the interpolation of the arrival times,
-and their fast sweeping and seeding.
+The kinematic model runs on the GPU (`job.gpus = 1`) or on the cpu (`job.gpus = 0`), where the
+samples run in parallel threads (`OMP_NUM_THREADS`), with the same results to round-off; the GPU is
+much faster for production runs. It provides the exact gradient of its data likelihood for HMC and
+MALA, by the adjoint of its forward model: back through the source time functions, the
+interpolation of the arrival times, and their fast sweeping and seeding.
 ```
 
 ## Joint static and kinematic inversion

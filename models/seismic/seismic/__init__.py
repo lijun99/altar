@@ -42,4 +42,13 @@ def kinematic():
     # and return it
     return kinematic
 
+@altar.foundry(implements=altar.models.model, tip="kinematic inversion model on a triangulated fault, cuda only")
+def kinematicmesh():
+    # grab the factory
+    from .KinematicMesh import KinematicMesh as kinematicmesh
+    # attach its docstring
+    __doc__ = kinematicmesh.__doc__
+    # and return it
+    return kinematicmesh
+
 # end of file

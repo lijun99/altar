@@ -20,8 +20,8 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     The kinematic slip model: rupture fronts by fast sweeping from the hypocenter, slips of each
     patch over time, then data = Gb Mb
 
-    cuda only: the fast sweeping is too expensive for the cpu backend. My parameters, in
-    {idx_map} order, are the strike slips, dip slips, rise times and rupture velocities of the
+    On the cuda backend, or on the cpu, where the samples run in parallel threads. My parameters,
+    in {idx_map} order, are the strike slips, dip slips, rise times and rupture velocities of the
     {Nas}x{Ndd} patches, then the hypocenter along strike and dip.
     """
 
@@ -71,16 +71,10 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         """
         Initialize the state of the model given a {problem} specification
         """
-        # cuda only
-        if altar.backends.active() != "cuda":
-            application.error.log(
-                "the kinematic model has only a cuda implementation; run it with job.gpus >= 1")
-            raise SystemExit(1)
-
+        self.native = altar.backends.active() != "cuda"
         # chain up; mounts my inputs, loads the data and its covariance, lays out my psets
         super().initialize(application=application)
 
-        from altar.models.seismic.ext import cudaseismic
         patches = self.Nas * self.Ndd
         self.NGbparameters = 2 * patches * self.Nt
 
@@ -91,13 +85,22 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
                 f"the kinematic model needs {4 * patches + 2} parameters for {patches} patches, "
                 f"got {idx_map.size}")
             raise SystemExit(1)
-        self.gidx_map = altar.cuda.vector(source=idx_map.astype("int64"))
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
-        self.gt0s = altar.cuda.vector(source=t0s, dtype=self.precision)
-
-        # the green's functions, kept raw for the forward problem, and premerged with the data
-        # covariance for sampling
+        # the green's functions, kept raw for the forward problem
         self.GF = self.io.load(filename=self.green, shape=(self.NGbparameters, self.observations))
+
+        if self.native:
+            from altar.models.seismic.ext import seismic
+            self._native_green()
+            self.cmodel = seismic.Kinematic(
+                Nas=self.Nas, Ndd=self.Ndd, Nmesh=self.Nmesh, dsp=self.dsp, Nt=self.Nt, Npt=self.Npt,
+                dt=self.dt, t0s=t0s, idx_map=idx_map.astype("int64"), precision=self.precision)
+            return self
+
+        from altar.models.seismic.ext import cudaseismic
+        self.gidx_map = altar.cuda.vector(source=idx_map.astype("int64"))
+        self.gt0s = altar.cuda.vector(source=t0s, dtype=self.precision)
+        # premerged with the data covariance for sampling
         self.gGF = altar.cuda.matrix(source=self.GF, dtype=self.precision)
         self._premerge_covariance()
 
@@ -108,6 +111,32 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             idx_map=self.gidx_map.grid)
         # all done
         return self
+
+
+    def _native_green(self):
+        """
+        The green's functions of the cpu likelihood, at my precision: whitened by the data
+        covariance, G <- G L with cd^-1 = L L^T, if the data are
+        """
+        G = numpy.asarray(self.GF, dtype=float)
+        if self.dataobs.merge_cd_with_data:
+            cd_inv = self.dataobs.cd_inv
+            G = G * cd_inv if isinstance(cd_inv, float) else G @ numpy.asarray(cd_inv, dtype=float)
+        self._G = numpy.ascontiguousarray(G, dtype=self.precision)
+        return self
+
+
+    def _native_residual(self, theta, batch):
+        """
+        The residuals Gb Mb - d of the first {batch} rows of {theta}, whitened if the data are, on
+        the cpu, and the slips Mb
+        """
+        θ = numpy.ascontiguousarray(theta[:batch], dtype=self.precision)
+        if self._mb is None or self._mb.shape[0] < batch:
+            self._mb = numpy.zeros((max(batch, self.samples), self.NGbparameters), dtype=self.precision)
+        Mb = self._mb[:batch]
+        self.cmodel.cast_mb(theta=θ, mb=Mb, batch=batch)
+        return Mb @ self._G - self.dataobs.dataobs, θ
 
 
     def _premerge_covariance(self):
@@ -150,7 +179,10 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         """
         Premerge the new covariance into a fresh copy of the raw green's functions, once they exist
         """
-        if self.gGF is not None:
+        if self.native:
+            if self._G is not None:
+                self._native_green()
+        elif self.gGF is not None:
             numpy.asarray(self.gGF)[:, :] = numpy.asarray(self.GF)
             self._premerge_covariance()
         return self
@@ -162,6 +194,8 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         chain rule through the slip history Mb, d(log L)/d(Mb) = -Gb'^T w, then back through the
         source time functions, the arrival times and their fast sweeping, on the device
         """
+        if self.native:
+            return self._native_gradient(step=step, batch=batch)
         # in an ensemble, the ensemble owns the parameter sets and their priors
         if not self.embedded:
             if not self.checked_unbounded_priors:
@@ -190,11 +224,45 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         return self
 
 
+    def _native_gradient(self, step, batch=None):
+        """
+        The gradients of the log prior and log likelihood on the cpu, into {step.grad_prior} and
+        {step.grad_data}: d(log L)/d(Mb) = -C^-1 r Gb^T, then back through the slip history
+        """
+        θ = self.restrict(theta=step.theta)
+        grad_prior = self.restrict(theta=step.grad_prior)
+        grad_data = self.restrict(theta=step.grad_data)
+        # in an ensemble, the ensemble owns the parameter sets and their priors
+        if not self.embedded:
+            if not self.checked_unbounded_priors:
+                self.verify_unbounded_priors()
+            for name in self.psets_list:
+                self.psets[name].prior_gradient(theta=θ, gradient=grad_prior)
+        batch = θ.shape[0] if batch is None else batch
+        r, θb = self._native_residual(theta=θ, batch=batch)
+        # the residual weighted by the inverse covariance, unless whitened already
+        data = self.dataobs
+        if not data.merge_cd_with_data:
+            cd_inv = data.cd_inv
+            r = r * (cd_inv * cd_inv) if isinstance(cd_inv, float) else r @ cd_inv @ cd_inv.T
+        if data.mask is not None:
+            r[:, ~data.mask] = 0
+        dMb = numpy.ascontiguousarray(-r @ self._G.T, dtype=self.precision)
+        gradient = numpy.zeros_like(θb)
+        self.cmodel.gradient(theta=θb, dmb=dMb, gradient=gradient, batch=batch)
+        grad_data[:batch] = gradient
+        return self
+
+
     def forward_model_batched(self, theta, prediction, batch=None):
         """
-        Fill {prediction}, (samples x observations), with the whitened residual Gb' Mb - d'
+        Fill {prediction}, (samples x observations), with the residual Gb Mb - d, whitened on
+        cuda, and on the cpu if the data are
         """
         batch = batch if batch is not None else theta.shape[0]
+        if self.native:
+            prediction[:batch] = self._native_residual(theta=theta, batch=batch)[0]
+            return self
         prediction.copy(self.dataobs.dataobs_batch)
         self.cmodel.forward_batched(
             theta=theta.grid, green=self.gGF.grid, prediction=prediction.grid,
@@ -210,6 +278,11 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         """
         theta = numpy.atleast_2d(numpy.asarray(theta, dtype=float))
         rows = theta.shape[0]
+        if self.native:
+            Mb = numpy.zeros((rows, self.NGbparameters), dtype=self.precision)
+            self.cmodel.cast_mb(theta=numpy.ascontiguousarray(theta, dtype=self.precision), mb=Mb, batch=rows)
+            Mb = Mb.astype(float)
+            return {"data": Mb @ numpy.asarray(self.GF, dtype=float), "Mb": Mb}
         data = numpy.empty((rows, self.observations))
         Mb = numpy.empty((rows, self.NGbparameters))
         # the raw green's functions, not the covariance-premerged ones
@@ -228,7 +301,10 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
 
 
     # private data
+    native = False # whether on the cpu
     GF = None # the raw green's functions, on the host
+    _G = None # the cpu likelihood's green's functions, whitened if the data are
+    _mb = None # the slips of the cpu likelihood
     gGF = None # the covariance-premerged green's functions
     gt0s = None
     gidx_map = None

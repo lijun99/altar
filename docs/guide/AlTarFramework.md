@@ -1031,7 +1031,7 @@ linear:
 
 or `--job.gpus=1` on the command line. The configuration stays the same otherwise: the same model,
 priors and controller run on the GPU. Not every model has both implementations: see the model's
-page; the kinematic model, for one, runs only on the GPU.
+page.
 
 Each process uses one GPU, so `job.gpus` is 0 or 1, and several GPUs are used by several
 processes: e.g. for 8 GPUs on each of 4 hosts,

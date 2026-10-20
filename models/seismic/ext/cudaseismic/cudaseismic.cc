@@ -10,6 +10,7 @@
 
 #include "moment.h"
 #include "kinematic.h"
+#include "kinematicmesh.h"
 
 
 PYBIND11_MODULE(cudaseismic, m)
@@ -21,6 +22,8 @@ PYBIND11_MODULE(cudaseismic, m)
     altar::models::seismic::extensions::moment::__init__(m);
     // the kinematic slip model
     altar::models::seismic::extensions::kinematic::__init__(m);
+    // the kinematic slip model on a triangulated fault
+    altar::models::seismic::extensions::kinematicmesh::__init__(m);
 }
 
 // end of file

@@ -34,7 +34,7 @@ Each is selected with `controller = altar.bayesian.<controller>`.
 |---|---|
 | Linear inverse problems, d = G θ | `linear` |
 | Static slip inversion of earthquakes, with model uncertainties (C_p) | `seismic` |
-| Kinematic slip inversion, alone or jointly with the static one (GPU only) | `seismic` |
+| Kinematic slip inversion, on rectangular or triangulated faults, alone or jointly with the static one | `seismic` |
 | Volcanic sources: Mogi point source, compound dislocation model (CDM), Reverso | `mogi`, `cdm`, `reverso` |
 | Sequences of earthquakes and aseismic slip (SEAS), *in development* | `seas` |
 
