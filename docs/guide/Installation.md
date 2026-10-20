@@ -130,8 +130,16 @@ pip install ".[cuda]" -C cmake.define.CMAKE_CUDA_HOST_COMPILER=$CXX
 pip install . -C cmake.define.WITH_CUDA=OFF        # the cpu parts only
 ```
 
-The build is kept in `build/`, so after an update `pip install .` recompiles only what changed. A
-clone made without `--recursive` needs `git submodule update --init` first, which also brings
+The build is kept in `build/`. pip builds in a fresh environment of its own each time, which
+recompiles everything; to recompile only what changed after an update, e.g. while working on AlTar,
+install the build tools into the environment once and build in it:
+
+```bash
+pip install scikit-build-core pybind11 numpy setuptools-scm cmake ninja
+pip install --no-build-isolation ".[cuda]"
+```
+
+A clone made without `--recursive` needs `git submodule update --init` first, which also brings
 pyre up to the version this AlTar pins.
 
 (installation-pyre)=
