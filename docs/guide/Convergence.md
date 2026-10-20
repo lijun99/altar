@@ -176,13 +176,15 @@ What worked on the cases here:
 | tens of parameters, Metropolis (linear, 18) | 256 | precision |
 | hundreds, Metropolis (static, 342) | $3d \approx 1000$ for spreads within 5%, $6d$-$12d$ within 2-3% | adaptation |
 | hundreds, HMC with a diagonal mass (static, 342) | any, from 64 on: the error followed $1/\sqrt{N}$ | precision |
-| hundreds, HMC with long walks (kinematic, 690) | 1024 | precision, modes (the hypocenter) |
+| hundreds, HMC with long walks (kinematic, 690) | 256 ($0.37d$); more didn't lower the scatter between runs, about 0.1 sd | the walks |
 | a dense mass | $\ge 2d$, with long walks | adaptation |
 | few parameters, an expensive model | a few hundred, with a pool and a production walk (untested) | precision |
 | comparing evidences | thousands | the evidence's spread |
 
-Beyond that, spend the budget on the walks. 1024 chains with long walks gave the 690-parameter
-kinematic posterior in 2 hours on one GPU; 4096 chains with short walks, in the same time, scattered
+Beyond that, spend the budget on the walks. On the 690-parameter kinematic case, with long walks,
+256, 512, 1024 and 2048 chains gave the same posterior, and two runs differed by about 0.1 posterior
+standard deviations at every count: the rest of the error came from the walks, not the chains. 256
+chains took 1 hour on one GPU, 2048 took 3.2; 4096 chains with short walks, in 2 hours, scattered
 three to four times as much from run to run.
 
 ### The COV target
@@ -227,7 +229,7 @@ honest error bar, repeat the run: the results of independent runs can be pooled.
 |---|---|---|
 | tens of parameters, cheap forward model | `altar.bayesian.catmip` | thousands of chains, a few hundred steps, or decorrelating walks |
 | a static slip inversion, hundreds of parameters | `altar.bayesian.catmip_hmc` | 4096 chains, 20-50 trajectories, or decorrelating walks; COV 1-2 |
-| a kinematic inversion, hundreds of correlated parameters | `altar.bayesian.catmip_hmc` | 1024 chains; `trajectory_length = 1`; decorrelating walks on the median; a pool of 16 spread over the walks; a production walk |
+| a kinematic inversion, hundreds of correlated parameters | `altar.bayesian.catmip_hmc` | 256-512 chains; `trajectory_length = 1`; decorrelating walks on the median; a pool of 16 spread over the walks; a production walk |
 
 For the kinematic case, in full:
 
@@ -247,7 +249,7 @@ slipmodel:
         pool = 16
         pool_interval = 0
         production = 160
-    job.chains = 2**10
+    job.chains = 2**9
 ```
 
 For a model with few parameters and an expensive forward problem, e.g. an earthquake cycle model,
