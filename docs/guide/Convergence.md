@@ -156,7 +156,7 @@ There is no agreed minimum. The number of chains a problem needs is the largest 
 1. **For the sampler to adapt.** The Metropolis proposal is the weighted covariance of the
    population, whose effective size is about $N/2$ at a COV target of 1. On the static case, with
    walks long enough at every count, its posterior spreads came out at 0.67 of the right ones with
-   $0.75d$ chains, $d$ the parameters, 0.87 with $1.5d$, 0.96 with $3d$, and 0.98-0.99 with $6d$-$12d$:
+   $0.75d$ chains, $d$ the number of parameters, 0.87 with $1.5d$, 0.96 with $3d$, and 0.98-0.99 with $6d$-$12d$:
    use at least $3d$, and $6d$ or more for spreads within a few percent. An HMC diagonal mass has no
    such limit: from 64 chains ($0.2d$) to 4096, the runs scattered as independent samples of their
    size, and their spreads were within 1% from 128 chains on. A dense mass needs $N \ge 2d$, which
@@ -180,6 +180,17 @@ What worked on the cases here:
 | a dense mass | $\ge 2d$, with long walks | adaptation |
 | few parameters, an expensive model | a few hundred, with a pool and a production walk (untested) | precision |
 | comparing evidences | thousands | the evidence's spread |
+
+In practice:
+
+1. Start from the sampler: Metropolis needs at least $3d$ chains; HMC with a diagonal mass needs no
+   minimum of its own.
+2. Raise it for the precision you need, $N_\mathrm{eff} \approx 1/\epsilon^2$ for an error of
+   $\epsilon$ standard deviations on the means, and for the modes you expect, $20/p$-$50/p$.
+3. Use thousands only to compare evidences.
+4. Run twice and compare the means in posterior standard deviations: a scatter near
+   $1/\sqrt{N_\mathrm{eff}}$ means the chains set the error, and more chains help; a scatter well
+   above it means the walks do, and longer or better walks help, not more chains.
 
 Beyond that, spend the budget on the walks. On the 690-parameter kinematic case, with long walks,
 256, 512, 1024 and 2048 chains gave the same posterior, and two runs differed by about 0.1 posterior
@@ -228,7 +239,7 @@ honest error bar, repeat the run: the results of independent runs can be pooled.
 | problem | controller | settings |
 |---|---|---|
 | tens of parameters, cheap forward model | `altar.bayesian.catmip` | thousands of chains, a few hundred steps, or decorrelating walks |
-| a static slip inversion, hundreds of parameters | `altar.bayesian.catmip_hmc` | 4096 chains, 20-50 trajectories, or decorrelating walks; COV 1-2 |
+| a static slip inversion, hundreds of parameters | `altar.bayesian.catmip_hmc` | 1024-4096 chains, for the precision; 20-50 trajectories, or decorrelating walks; COV 1-2 |
 | a kinematic inversion, hundreds of correlated parameters | `altar.bayesian.catmip_hmc` | 256-512 chains; `trajectory_length = 1`; decorrelating walks on the median; a pool of 16 spread over the walks; a production walk |
 
 For the kinematic case, in full:
