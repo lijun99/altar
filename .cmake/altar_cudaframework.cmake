@@ -32,7 +32,7 @@ function(altar_cuda_buildLibrary)
   # set the include directories
   target_include_directories(
     libcudaaltar PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
@@ -91,7 +91,7 @@ function(altar_cuda_buildModule)
   # set the include directories
   target_include_directories(
     cudaaltarmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}

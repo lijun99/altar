@@ -43,7 +43,7 @@ function(altar_cdm_buildModule)
   # set the include directories
   target_include_directories(
     cdmmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${PYRE_INCLUDE_DIRS}
     )
   # set the libraries to link against

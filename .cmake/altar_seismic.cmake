@@ -62,7 +62,7 @@ function(altar_seismic_cuda_buildLibrary)
   # set the include directories
   target_include_directories(
     libcudaseismic PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     )
@@ -113,7 +113,7 @@ function(altar_seismic_cuda_buildModule)
   # set the include directories; altar/ext/cuda provides the shared binding helpers
   target_include_directories(
     cudaseismicmodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${Python3_NumPy_INCLUDE_DIRS}
     ${PYRE_INCLUDE_DIRS}
     ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES}

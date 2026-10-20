@@ -67,6 +67,14 @@ endfunction(altar_pythonInit)
 function(altar_stagingInit)
   # the layout
   set(ALTAR_STAGING_PACKAGES ${CMAKE_BINARY_DIR}/packages PARENT_SCOPE)
+  # the headers the sources compile against: in the install prefix, where pyre's are too, or, for a
+  # wheel, in the build, since the prefix is a new scratch directory each time, which would
+  # rebuild everything
+  if(SKBUILD)
+    set(ALTAR_STAGING_INCLUDE ${CMAKE_BINARY_DIR}/include PARENT_SCOPE)
+  else()
+    set(ALTAR_STAGING_INCLUDE ${CMAKE_INSTALL_PREFIX}/include PARENT_SCOPE)
+  endif()
   # all done
 endfunction(altar_stagingInit)
 
@@ -99,7 +107,7 @@ function(altar_stageHeaders source destination)
   file(GLOB_RECURSE headers CONFIGURE_DEPENDS RELATIVE ${source} ${source}/*.h ${source}/*.icc)
   foreach(header ${headers})
     configure_file(${source}/${header}
-      ${CMAKE_INSTALL_PREFIX}/${ALTAR_DEST_INCLUDE}/${destination}/${header} COPYONLY)
+      ${ALTAR_STAGING_INCLUDE}/${destination}/${header} COPYONLY)
   endforeach()
   # all done
 endfunction(altar_stageHeaders)

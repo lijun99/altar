@@ -43,7 +43,7 @@ function(altar_mogi_buildModule)
   # set the include directories
   target_include_directories(
     mogimodule PRIVATE
-    ${CMAKE_INSTALL_PREFIX}/include
+    ${ALTAR_STAGING_INCLUDE}
     ${PYRE_INCLUDE_DIRS}
     )
   # set the libraries to link against
