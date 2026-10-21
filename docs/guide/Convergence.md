@@ -28,7 +28,7 @@ with $N$ the chains, $S$ the steps (or HMC trajectories) of each walk, and $K$ t
 |---|---|---|
 | $N$, the chains (`job.chains`) | the Monte Carlo error, about $\sigma/\sqrt{N_\mathrm{eff}}$; the population statistics the sampler adapts to (the proposal $\Sigma$, the mass matrix, the next $\beta$); how many modes the population can carry | a proposal or mass from too few samples; a schedule that runs ahead; a lost mode |
 | $S$, the walk (`job.steps`, or a {ref}`step counter <stepcounters>`) | how far the chains move from the copies the resampling made | the copies stay together: too narrow a posterior, and runs that disagree with each other |
-| $K$, the $\beta$ steps | set by the {ref}`COV target <cov-scheduler>` and by how much the data tell | rarely the problem |
+| $K$, the $\beta$ steps | set by the {ref}`COV target <cov-scheduler>` and by how much the data tell, see {ref}`how many β steps <beta-steps>` | rarely the problem |
 
 The walk and the chains don't substitute for each other: more chains don't fix walks that are too
 short, and longer walks don't fix a proposal estimated from too few chains.
@@ -212,6 +212,53 @@ followed the number of steps:
 
 With thousands of chains and walks that mix, 1.5-2 saves about a third of the time. With few
 chains, or if you need the evidence, stay at 1 or below.
+
+(beta-steps)=
+### How many β steps
+
+The number of $\beta$ steps follows from how much the data narrow the prior. Let
+$r_k = \sigma_{\mathrm{prior},k} / \sigma_{\mathrm{post},k}$ along each principal direction $k$ of
+the posterior, measured in units of the prior. For a gaussian prior and posterior, the log-weights
+of a step $\Delta\beta$ at $\beta$ have variance
+$\tfrac12 \Delta\beta^2 \sum_k (\beta + r_k^{-2})^{-2}$, and the scheduler holds it at
+$\ln(1 + c^2)$, with $c$ the COV target. Then
+
+$$
+K \approx \frac{1}{\sqrt{2 \ln(1 + c^2)}} \int_0^1 \Big[\sum_k \big(\beta + r_k^{-2}\big)^{-2}\Big]^{1/2} d\beta
+\;\approx\; \sqrt{d}\; \frac{\ln(1 + r^2)}{\sqrt{2 \ln(1 + c^2)}} \;\approx\; 1.7 \sqrt{d}\, \ln r ,
+$$
+
+the last two for $d$ parameters narrowed by the same ratio $r$, the last for $c = 1$:
+
+| $d$ \ $r$ | 10 | 100 | 1000 |
+|---|---|---|---|
+| 10 | 12 | 25 | 37 |
+| 100 | 39 | 78 | 117 |
+| 1000 | 124 | 247 | 371 |
+
+- $K$ grows as the square root of the number of parameters: four times the parameters, twice the
+  steps.
+- It grows with the logarithm of the narrowing: each factor of 10 in $r$ adds about $4\sqrt d$
+  steps, and a prior twice as wide adds about $1.2\sqrt d$.
+- The data enter only through the posterior widths: more or more precise data add steps
+  logarithmically.
+- Parameters the data barely constrain, $r \approx 1$, add almost nothing.
+- The chains don't change $K$, only its noise: the COV is a property of the population.
+- The target enters as $1/\sqrt{2\ln(1 + c^2)}$: relative to 1, 1.76 times the steps for 0.5 and
+  0.66 for 2. The static case above took 1.88 and 0.60 times.
+
+On three SEAS runs, with $r_k$ from the final samples (uniform priors, of standard deviation
+width$/\sqrt{12}$), the estimate came within two steps:
+
+| parameters | $r_k$, median (range) | β steps | estimate |
+|---|---|---|---|
+| 20 | 107 (11-688) | 37 | 37.9 |
+| 20 | 140 (7-711) | 38 | 38.6 |
+| 23 | 148 (6-1528) | 41 | 42.9 |
+
+To plan a run, take $\sigma_{\mathrm{post}}$ from the {ref}`resolution <resolution>` action at a
+guess of the solution. The estimate assumes log-normal weights: posteriors far from gaussian, e.g.
+multimodal or piled up against a bound, can take more steps, mostly early on.
 
 ### The resampling
 
