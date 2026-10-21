@@ -68,4 +68,11 @@ def tgaussian():
     return tgaussian
 
 
+@altar.foundry(
+    implements=distribution, tip="a gaussian distribution correlated in space, e.g. for the slips of a fault")
+def correlated():
+    from .Correlated import Correlated as correlated
+    return correlated
+
+
 # end of file

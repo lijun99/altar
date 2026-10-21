@@ -83,7 +83,7 @@ def cpu():
                                                   "annealer.py", "annealer_instance.py",
                                                   "weighted_statistics.py", "outliers.py",
                                                   "diagnostics.py", "controllers.py",
-                                                  "resampling.py"])
+                                                  "resampling.py", "correlated.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
@@ -125,6 +125,8 @@ def gpu():
     tests += scripts(MODELS / "seismic/tests", ["kinematic_mesh.py"])
     tests.append(Test(name="models:seismic:tests:kinematic_cpu:gpu", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "kinematic_cpu.py", "--gpu"]))
+    tests.append(Test(name="altar:tests:altar:correlated:gpu", cwd=ROOT / "altar/tests/altar",
+                      command=[sys.executable, "correlated.py", "--gpu"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
