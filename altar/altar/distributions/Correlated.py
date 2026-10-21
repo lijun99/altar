@@ -72,6 +72,11 @@ class Correlated(base, family="altar.distributions.correlated"):
     sweeps.doc = "the sweeps of elliptical slice sampling for the initial samples within a " \
                  "bounded {support}"
 
+    normalization_draws = altar.properties.int(default=10000)
+    normalization_draws.doc = "the draws of the GHK simulator for the mass of a bounded " \
+                              "{support}, which normalizes the density within it; 0 skips it, " \
+                              "and leaves the normalization of the untruncated distribution"
+
 
     # configuration
     @altar.export
@@ -91,7 +96,7 @@ class Correlated(base, family="altar.distributions.correlated"):
         """
         impl = super()._makeImpl()
         for name in ["mean", "sigma", "kernel", "length", "coordinates", "dataset", "support",
-                     "reparameterize", "transform", "jitter", "sweeps"]:
+                     "reparameterize", "transform", "jitter", "sweeps", "normalization_draws"]:
             setattr(impl, name, getattr(self, name))
         return impl
 

@@ -31,7 +31,7 @@ class Correlated(base):
         # the numerics on the host, without the transform, which runs here on the device
         self.host = host()
         for name in ["parameters", "offset", "mean", "sigma", "kernel", "length", "coordinates",
-                     "dataset", "support", "jitter", "sweeps"]:
+                     "dataset", "support", "jitter", "sweeps", "normalization_draws"]:
             setattr(self.host, name, getattr(self, name))
         # {rng} is unused on cuda; the initial samples come from the application's generator
         generator = rng if rng is not None else getattr(application, "rng", None)
@@ -170,6 +170,7 @@ class Correlated(base):
     support = None
     jitter = None
     sweeps = None
+    normalization_draws = 10000
     bounded = False
     # set by {initialize} and {_prepare}
     host = None

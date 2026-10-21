@@ -115,6 +115,19 @@ def cpu(coordinates, x):
     passed.append(check("truncated draws, inside", 0.0 if inside else 1.0, 0.0))
     passed.append(check("truncated draws, means", numpy.abs(ess.mean(0) - kept.mean(0)).max(), 1e-2))
     passed.append(check("truncated draws, sds", numpy.abs(ess.std(0) - kept.std(0)).max(), 1e-2))
+    # the mass of the support: GHK against the share of the untruncated draws inside it, and,
+    # for independent parameters, against the product of their masses
+    fraction = numpy.log(kept.shape[0] / raw.shape[0])
+    print(f"  log mass: GHK {truncated.log_mass:.4f} ± {truncated.log_mass_error:.4f}, draws {fraction:.4f}")
+    passed.append(check("log mass of the support, against draws", abs(truncated.log_mass - fraction), 3e-2))
+    from altar.distributions.native.Correlated import _ndtr, _ndtri
+    independent = make("native", coordinates, support=(low, high), length=(1e-6,))
+    s = 0.5 * math.sqrt(1 + 1e-6)
+    exact = n * math.log(0.5 * (math.erf((high - 1) / s / math.sqrt(2)) - math.erf((low - 1) / s / math.sqrt(2))))
+    passed.append(check("log mass of the support, independent", abs(independent.log_mass - exact), 1e-9))
+    # the normal cdf and its inverse
+    p = numpy.concatenate([10.0 ** -numpy.linspace(1, 300, 300), numpy.linspace(0.01, 0.99, 99), 1 - 10.0 ** -numpy.linspace(2, 15, 14)])
+    passed.append(check("inverse normal cdf", numpy.abs(_ndtr(_ndtri(p)) / p - 1).max(), 1e-12))
     return all(passed)
 
 

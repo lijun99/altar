@@ -33,8 +33,8 @@ class Correlated(base):
     The cpu implementation of a gaussian distribution whose parameters are correlated in
     space: N(mean, C), with C_ij = sigma^2 k(|x_i - x_j| / length) for the locations x_i of
     the parameters, e.g. the centroids of the patches of a fault, and a correlation kernel k;
-    optionally restricted to a support, e.g. to keep the slip positive, with the normalization
-    of the untruncated distribution
+    optionally restricted to a support, e.g. to keep the slip positive, and normalized within it
+    by the GHK estimate of its mass
     """
 
 
@@ -79,7 +79,42 @@ class Correlated(base):
         self.constant = -0.5 * n * math.log(2 * math.pi) - numpy.log(numpy.diag(self.factor)).sum()
         low, high = self.support
         self.bounded = bool(numpy.isfinite(low) or numpy.isfinite(high))
+        # within a support, less the log of its mass, so the density integrates to 1 over it
+        if self.bounded and self.normalization_draws > 0:
+            self.log_mass, self.log_mass_error = self.mass(draws=self.normalization_draws)
+            self.constant -= self.log_mass
+            info = getattr(application, "info", None)
+            if info is not None:
+                info.log(f"correlated prior: the support holds exp({self.log_mass:.6g} ± "
+                         f"{self.log_mass_error:.2g}) of the untruncated distribution")
         return self
+
+
+    def mass(self, draws: int) -> tuple[float, float]:
+        """
+        log P(low <= X <= high) for X ~ N(mean, C), and its standard error, by the GHK simulator
+        (Geweke, Hajivassiliou and Keane): each coordinate drawn in turn from its truncated
+        conditional along the Cholesky factor, the product of their masses averaged; with a
+        fixed seed, so the normalization is the same in every run
+        """
+        low, high = self.support
+        L, m, n = self.factor, self.mean_vector, self.parameters
+        rng = numpy.random.default_rng(1)
+        z = numpy.zeros((draws, n))
+        logw = numpy.zeros(draws)
+        for i in range(n):
+            shift = m[i] + z[:, :i] @ L[i, :i]
+            a, b = (low - shift) / L[i, i], (high - shift) / L[i, i]
+            # in the upper tail, by symmetry, so the masses don't cancel
+            upper = a > 0
+            lo = numpy.where(upper, _ndtr(-b), _ndtr(a))
+            p = numpy.where(upper, _ndtr(-a), _ndtr(b)) - lo
+            logw += numpy.log(numpy.maximum(p, 1e-300))
+            x = _ndtri(lo + rng.uniform(size=draws) * p)
+            z[:, i] = numpy.where(upper, -x, x)
+        top = logw.max()
+        w = numpy.exp(logw - top)
+        return float(top + numpy.log(w.mean())), float(w.std() / (w.mean() * math.sqrt(draws)))
 
 
     def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
@@ -187,14 +222,52 @@ class Correlated(base):
     dataset: str | None
     jitter: float
     sweeps: int
+    normalization_draws: int = 10000
     # set by {build}
     bounded: bool = False
+    log_mass: float = 0.0 # log P(X in my support) of the untruncated distribution
+    log_mass_error: float = 0.0
     covariance: numpy.ndarray
     factor: numpy.ndarray # L, with C = L L^T
     whitener: numpy.ndarray # L^-1
     precision_matrix: numpy.ndarray # C^-1
     mean_vector: numpy.ndarray
     constant: float
+
+
+_erfc = numpy.frompyfunc(math.erfc, 1, 1)
+
+
+def _ndtr(x: numpy.ndarray) -> numpy.ndarray:
+    """
+    The standard normal cumulative distribution function, accurate in the lower tail
+    """
+    return _erfc(-numpy.asarray(x, dtype=float) / math.sqrt(2)).astype(float) / 2
+
+
+def _ndtri(p: numpy.ndarray) -> numpy.ndarray:
+    """
+    The inverse of {_ndtr}: Acklam's rational approximation, refined by one Halley step
+    """
+    a = (-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+         1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00)
+    b = (-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+         6.680131188771972e+01, -1.328068155288572e+01)
+    c = (-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+         -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00)
+    d = (7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+         3.754408661907416e+00)
+    poly = lambda coefficients, t: numpy.polyval(coefficients, t)
+    p = numpy.clip(numpy.asarray(p, dtype=float), 1e-300, 1 - 1e-16)
+    q = p - 0.5
+    r = q * q
+    x = q * poly(a, r) / poly(b + (1.0,), r)
+    tail = numpy.sqrt(-2 * numpy.log(numpy.minimum(p, 1 - p)))
+    edge = poly(c, tail) / poly(d + (1.0,), tail)
+    x = numpy.where(p < 0.02425, edge, numpy.where(p > 1 - 0.02425, -edge, x))
+    e = _ndtr(x) - p
+    u = e * math.sqrt(2 * math.pi) * numpy.exp(x * x / 2)
+    return x - u / (1 + x * u / 2)
 
 
 def load_coordinates(distribution: typing.Any, application: typing.Any = None) -> numpy.ndarray:
