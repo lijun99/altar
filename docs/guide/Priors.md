@@ -135,6 +135,110 @@ prior:
     sigma = 2
 ```
 
+(correlated)=
+### Correlated Gaussian
+
+`correlated`: a Gaussian whose parameters are correlated in space, e.g. the slips of the patches of
+a fault, so that neighboring patches tend to slip alike:
+
+$$
+\boldsymbol\theta \sim \mathcal N(\mu \mathbf 1, \mathbf C), \qquad
+C_{ij} = \sigma^2 \left[ k(r_{ij}) + \epsilon\, \delta_{ij} \right], \qquad
+r_{ij} = \left| \frac{\mathbf x_i - \mathbf x_j}{\boldsymbol\ell} \right|,
+$$
+
+with $\mathbf x_i$ the location of parameter $i$, $\boldsymbol\ell$ the correlation length, one
+value or one per coordinate, and the kernel $k$ one of
+
+| `kernel` | $k(r)$ |
+|---|---|
+| `exponential` | $e^{-r}$, rough |
+| `matern32` | $(1 + \sqrt 3\, r)\, e^{-\sqrt 3\, r}$ |
+| `gaussian` | $e^{-r^2/2}$, smooth |
+
+`mean`, `sigma`
+: $\mu$ and $\sigma$, the mean and the standard deviation of each parameter; defaults 0 and 1.
+
+`kernel`
+: the correlation with distance; default `exponential`.
+
+`length`
+: $\boldsymbol\ell$, in the units of the coordinates: one value, `(30,)`, or one per coordinate,
+  e.g. `(40, 20)` along strike and down dip; default `(1,)`.
+
+`coordinates`
+: the locations of the parameters, (parameters × dimensions), in a text or an `.h5` file; looked
+  for in the current directory, then among the model's input files.
+
+`dataset`
+: the dataset of `coordinates` in an `.h5` file; by default the first one.
+
+`support`
+: an interval the parameters must stay in, e.g. `(0, 15)` to keep the slips positive; unbounded by
+  default.
+
+`reparameterize`, `transform`
+: sample a bounded `support` in an unbounded space instead; see {ref}`below <reparameterization>`.
+
+`jitter`
+: $\epsilon$, which keeps $\mathbf C$ positive definite; default $10^{-6}$.
+
+`sweeps`, `normalization_draws`
+: for a bounded `support`: the sweeps of elliptical slice sampling for the initial samples, default
+  100, and the draws of the GHK estimate of its mass, default 10000.
+
+Without a support, the initial samples are exact draws. Within one, the distribution is the
+Gaussian restricted to it, and renormalized: the mass of the support under the Gaussian, a
+multivariate normal integral, is estimated once by the GHK simulator (Geweke, Hajivassiliou and
+Keane), with a fixed seed, so that the evidences of runs with the same prior can be compared. Its
+log is in the journal. The initial samples come from elliptical slice sampling (Murray et al.,
+2010), started inside the support.
+
+For the slips of a fault, the coordinates are the centroids of its patches, in the coordinates of
+the fault surface if it curves: distances along the fault, not through the earth. With CSI's
+`TriangularPatchesKin`, for one:
+
+```python
+numpy.savetxt('centroids.txt', [fault.uv[face].mean(axis=0) for face in fault.Faces])
+```
+
+and, for the slips along the plate convergence, positive:
+
+```none
+parallel:
+    count = 128
+    prior = correlated
+    prior:
+        mean = 0
+        sigma = 3
+        kernel = exponential
+        length = (20,)
+        coordinates = centroids.txt
+        support = (0, 15)
+        reparameterize = True
+```
+
+The correlation is a preference, not a constraint: where the data resolve the slip, they override
+it; where they don't, it fills the gaps from the neighbors, rather than from the prior mean, patch
+by patch. The correlation length is the setting that matters. On a Pedernales-like synthetic, with
+independent priors as the reference, the same marginals and lengths of 20 to 80 km:
+
+- the error of the posterior mean slip fell for every true slip distribution tried: smooth
+  asperities, a sharp-edged box, and checkerboards of 40 and 20 km;
+- with waveforms, every prior recovered even the 20 km checkerboard, one patch cell per block: the
+  prior doesn't erase what the data resolve;
+- with static data alone, a length longer than the true features made the posterior overconfident:
+  on the 40 km checkerboard, 55% of the patches had the truth in their 68% interval at 80 km,
+  against 88% with independent priors;
+- with static data alone, the evidence rose with the length whatever the truth, so it can't choose
+  the length when the data don't resolve the slip; with waveforms, it stopped preferring 40 over
+  20 km once the true features were 20 km.
+
+So take the length from what is known of the source, e.g. scaling relations (Mai and Beroza, 2002),
+or from the size of the features the data can resolve, rather than from the evidence alone; prefer
+the shorter of the lengths in doubt; and check with a {ref}`recovery test <recovery-tests>` that
+the posterior covers features of the size you report.
+
 ### Positive uniform
 
 `positiveuniform`: the uniform distribution on $(0, 1)$, never exactly 0 (cpu only).
@@ -200,8 +304,8 @@ $\log |\mathrm{d}x/\mathrm{d}s|$, which the posterior of the sampling-space valu
 apart. The archived steps then hold, for each such parameter set, both `<pset>_physical` and
 `<pset>_sampling` samples, and the log-Jacobian of each sample in `jacobian`.
 
-`uniform`, `tgaussian` and the seismic `moment` prior can be reparameterized, on the cpu and the
-GPU. The gradient-based samplers, HMC, MALA and SGLD, need it: they refuse bounded priors that aren't
+`uniform`, `tgaussian`, `correlated` and the seismic `moment` prior can be reparameterized, on the
+cpu and the GPU. The gradient-based samplers, HMC, MALA and SGLD, need it: they refuse bounded priors that aren't
 reparameterized, and name them. Metropolis (and so CATMIP) takes it as an option. Without it,
 Metropolis walks the physical values and rejects the proposals outside the support, which slows
 the chains down when the posterior presses against a bound. With it, Metropolis walks the
