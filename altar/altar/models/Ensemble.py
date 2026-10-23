@@ -258,17 +258,21 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
     def _polar_gradient(self, controller: Annealer, step: typing.Any, batch: int | None = None) -> typing.Self:
         """
-        The data gradients of my models with polar slips: each model's, on the host, onto my
-        parameters and the components, which the chain rule folds onto the magnitudes and the
-        rakes; the cascaded ones, with the Jacobian of {step} if reparameterized, into its prior
+        The data gradients of my models with polar slips: each model's onto my parameters and
+        the components, which the chain rule folds onto the magnitudes and the rakes, on the
+        device; the cascaded ones, with the Jacobian of {step} if reparameterized, into its prior
         gradient
         """
         θ = step.theta
         rows = θ.shape[0]
         samples = rows if batch is None else batch
-        host = numpy.array(θ, dtype=float)
-        data = numpy.zeros((rows, self._width))
-        cascade = numpy.zeros((rows, self._width))
+        if self._gradients is None or self._gradients[0].shape[0] != rows:
+            self._gradients = (altar.cuda.matrix(shape=(rows, self._width), dtype=self.precision),
+                               altar.cuda.matrix(shape=(rows, self._width), dtype=self.precision),
+                               altar.cuda.matrix(shape=(rows, self.parameters), dtype=self.precision))
+        data, cascade, folded = self._gradients
+        data.zero()
+        cascade.zero()
         for name, member in self.models.items():
             cols = self._columns[name]
             view = _Gradients(
@@ -276,28 +280,18 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
                 prior_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero(),
                 data_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero())
             member.gradient(controller=controller, step=view, batch=batch)
-            target = cascade if member.cascaded else data
-            target[:, cols] += numpy.array(view.data_gradient, dtype=float)
+            self._scatter(name=name, gradient=view.data_gradient, target=cascade if member.cascaded else data,
+                          batch=samples)
         m, r = self._polar
-        n, P = m.size, self.parameters
-        rake = numpy.radians(host[:, r])
-
-        def fold(g):
-            # d/dm = cos g_along + sin g_across; d/drake = m (cos g_across - sin g_along) pi/180
-            out = g[:, :P].copy()
-            along, across = g[:, P:P + n], g[:, P + n:]
-            out[:, m] += numpy.cos(rake) * along + numpy.sin(rake) * across
-            out[:, r] += host[:, m] * (numpy.cos(rake) * across - numpy.sin(rake) * along) * numpy.pi / 180
-            return out
-
-        numpy.asarray(step.data_gradient)[...] = fold(data)
+        polar = altar.cuda.libcudaaltar.distributions
+        polar.cudaPolar_fold(θ.grid, data.grid, step.data_gradient.grid, int(m[0]), int(r[0]), int(m.size))
         if any(member.cascaded for member in self.models.values()):
-            folded = fold(cascade)
+            polar.cudaPolar_fold(θ.grid, cascade.grid, folded.grid, int(m[0]), int(r[0]), int(m.size))
             jacobian = getattr(step, "Jacobian", None)
             if jacobian is not None:
                 self.eval_jacobian(step=step, batch=batch)
-                folded *= numpy.array(jacobian, dtype=float)
-            numpy.asarray(step.prior_gradient)[...] += folded
+                folded *= jacobian
+            step.prior_gradient += folded
         return self
 
 
@@ -305,7 +299,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         """
         The columns of {theta} my model {name} works on: {theta} itself if that is all of them,
         in order, otherwise a gather into a scratch matrix, on the device for cuda; with polar
-        slips, from {theta} extended by their components, made on the host
+        slips, from {theta} extended by their components, made on the device
         """
         cols = self._columns[name]
         if self._polar is None and cols.size == self.parameters and numpy.array_equal(cols, numpy.arange(self.parameters)):
@@ -317,7 +311,10 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
         if self._polar is not None:
             if self._extended is None or self._extended.shape[0] != rows:
                 self._extended = altar.cuda.matrix(shape=(rows, self._width), dtype=self.precision)
-            numpy.asarray(self._extended)[...] = self._extend(numpy.array(theta, dtype=float))
+            m, r = self._polar
+            grid = theta.grid if hasattr(theta, "grid") else theta
+            altar.cuda.libcudaaltar.distributions.cudaPolar_extend(
+                grid, self._extended.grid, int(m[0]), int(r[0]), int(m.size))
             source, width = self._extended, self._width
         selection, θ = self._selection(name=name, rows=rows)
         cublas = altar.cuda.cublas
@@ -332,16 +329,17 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
 
     def _scatter(self, name: str, gradient: Array, target: Array, batch: int) -> Array:
         """
-        target += the gradient on the columns of my model {name}, scattered to theta's columns
+        target += the gradient on the columns of my model {name}, scattered to theta's columns,
+        extended by the components of polar slips
         """
         cols = self._columns[name]
         selection, _ = self._selection(name=name, rows=gradient.shape[0])
         cublas = altar.cuda.cublas
         gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
-        # column-major: target^T (P x n) += S (P x p) gradient^T (p x n), S read as its transpose
+        # column-major: target^T (W x n) += S (W x p) gradient^T (p x n), S read as its transpose
         gemm(altar.cuda.cublas_handle(), cublas.Operation.T, cublas.Operation.N,
-             self.parameters, batch, cols.size, 1.0,
-             selection.grid, cols.size, gradient.grid, cols.size, 1.0, target.grid, self.parameters)
+             self._width, batch, cols.size, 1.0,
+             selection.grid, cols.size, gradient.grid, cols.size, 1.0, target.grid, self._width)
         return target
 
 
@@ -390,6 +388,7 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
     _width: int = 0 # the columns of theta extended by the components of polar slips
     _polar: tuple | None = None # the columns of the magnitudes and of the rakes of polar slips
     _extended: Array | None = None # the extended theta, on the device
+    _gradients: tuple | None = None # the gradients on the extended theta, and the folded one
 
 
 class _Gradients:
