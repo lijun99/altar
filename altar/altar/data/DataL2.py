@@ -38,7 +38,7 @@ class DataL2(base, family="altar.data.datal2"):
     cd_file.doc = "the name of the file with the data covariance matrix"
 
     cd_std = altar.properties.float(default=1.0)
-    cd_std.doc = "the constant covariance for data, sigma^2"
+    cd_std.doc = "the standard deviation of each observation, for a constant covariance sigma^2 I"
 
     cd_dtype = altar.properties.str(default=None)
     cd_dtype.doc = "the data type (float32/float64) for Cd computations, if different from " \
