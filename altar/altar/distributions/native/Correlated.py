@@ -31,10 +31,10 @@ KERNELS = {
 class Correlated(base):
     """
     The cpu implementation of a gaussian distribution whose parameters are correlated in
-    space: N(mean, C), with C_ij = sigma^2 k(|x_i - x_j| / length) for the locations x_i of
-    the parameters, e.g. the centroids of the patches of a fault, and a correlation kernel k;
-    optionally restricted to a support, e.g. to keep the slip positive, and normalized within it
-    by the GHK estimate of its mass
+    space: N(mean, C), with C_ij = sigma^2 k(r_ij / length) for the distance r_ij between the
+    locations of the parameters, e.g. the centroids of the patches of a fault, and a correlation
+    kernel k; optionally restricted to a support, e.g. to keep the slip positive, and normalized
+    within it by the GHK estimate of its mass
     """
 
 

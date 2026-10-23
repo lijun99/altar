@@ -21,8 +21,8 @@ from .Base import Base as base
 class Correlated(base, family="altar.distributions.correlated"):
     """
     A gaussian distribution whose parameters are correlated in space, e.g. the slips of the
-    patches of a fault: N(mean, C), with C_ij = sigma^2 k(|x_i - x_j| / length) for the
-    locations x_i of the parameters, read from {coordinates}, and a correlation kernel k
+    patches of a fault: N(mean, C), with C_ij = sigma^2 k(r_ij / length) for the distance r_ij
+    between the locations of the parameters, read from {coordinates}, and a correlation kernel k
 
     My actual numerics live in {altar.distributions.native.Correlated.Correlated} (cpu) or
     {altar.distributions.cuda.Correlated.Correlated}; see {Base} for how one gets picked.

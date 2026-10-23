@@ -79,7 +79,7 @@ class Correlated(base):
     def eval_prior(self, theta, likelihood, batch=None):
         """
         Add to {likelihood} the log prior probabilities of my portion of the samples in
-        {theta}: z = L^-1 (θ - mean), then log N = constant - |z|^2 / 2
+        {theta}: z = L^-1 (θ - mean), then log N = constant - z.z / 2
         """
         grid = self._grid(theta)
         rows, width = grid.shape
