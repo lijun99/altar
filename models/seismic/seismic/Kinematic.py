@@ -12,6 +12,8 @@ import numpy
 import altar
 # my base class
 from altar.models.BayesianL2 import BayesianL2
+# the time shifts of the stations, on the cpu
+from . import shifts as timeshifts
 
 
 # declaration
@@ -22,7 +24,8 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
 
     On the cuda backend, or on the cpu, where the samples run in parallel threads. My parameters,
     in {idx_map} order, are the strike slips, dip slips, rise times and rupture velocities of the
-    {Nas}x{Ndd} patches, then the hypocenter along strike and dip.
+    {Nas}x{Ndd} patches, then the hypocenter along strike and dip, then, with {shifts}, the time
+    shift of the traces of each station.
     """
 
 
@@ -65,6 +68,17 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     idx_map.default = None
     idx_map.doc = "the columns of theta holding my parameters; default all, in order"
 
+    # the time shifts of the stations, for the errors of the velocity model in the arrival times
+    shifts = altar.properties.int(default=0)
+    shifts.doc = "the stations whose traces are shifted in time by a parameter of their own, the " \
+                 "last {shifts} of my parameters, in s, positive later; 0, the default, for none"
+
+    traces = altar.properties.int(default=3)
+    traces.doc = "the traces of each station, e.g. its three components, which share its time shift"
+
+    sampling = altar.properties.float(default=None)
+    sampling.doc = "the sampling interval of the traces, in s, for the time shifts; default {dt}"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -78,13 +92,15 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         patches = self.Nas * self.Ndd
         self.NGbparameters = 2 * patches * self.Nt
 
-        # my columns of theta
+        # my columns of theta, and those of the time shifts, if any, after them
         idx_map = numpy.arange(self.parameters) if self.idx_map is None else numpy.asarray(self.idx_map)
-        if idx_map.size != 4 * patches + 2:
+        if idx_map.size != 4 * patches + 2 + self.shifts:
             application.error.log(
-                f"the kinematic model needs {4 * patches + 2} parameters for {patches} patches, "
-                f"got {idx_map.size}")
+                f"the kinematic model needs {4 * patches + 2 + self.shifts} parameters for {patches} "
+                f"patches and {self.shifts} time shifts, got {idx_map.size}")
             raise SystemExit(1)
+        self.setup_shifts(columns=idx_map, application=application)
+        idx_map = idx_map[:4 * patches + 2]
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
         # the green's functions, kept raw for the forward problem
         self.GF = self.io.load(filename=self.green, shape=(self.NGbparameters, self.observations))
@@ -136,7 +152,12 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self._mb = numpy.zeros((max(batch, self.samples), self.NGbparameters), dtype=self.precision)
         Mb = self._mb[:batch]
         self.cmodel.cast_mb(theta=θ, mb=Mb, batch=batch)
-        return Mb @ self._G - self.dataobs.dataobs, θ
+        prediction = Mb @ self._G
+        if self._shift_column is not None:
+            # kept, for the derivatives of the shifts
+            self._raw = prediction
+            prediction = timeshifts.shift(prediction, self._delays(θ, batch), self.traces, self._trace_length)
+        return prediction - self.dataobs.dataobs, θ
 
 
     def _premerge_covariance(self):
@@ -162,6 +183,40 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self.gGF.grid, obs,
         )
         return self
+
+
+    def setup_shifts(self, columns, application):
+        """
+        Lay out the time shifts of the stations from my {columns} of theta, the last {shifts} of
+        them: the observations are the traces of the stations, {traces} each, station by station
+        """
+        self._shift_column = None
+        if not self.shifts:
+            return self
+        start = columns[-self.shifts]
+        if not numpy.array_equal(columns[-self.shifts:], start + numpy.arange(self.shifts)):
+            application.error.log("the time shifts must be in consecutive columns of theta")
+            raise SystemExit(1)
+        length, remainder = divmod(self.observations, self.shifts * self.traces)
+        if remainder:
+            application.error.log(f"{self.observations} observations aren't {self.shifts} stations "
+                                  f"of {self.traces} traces of the same length")
+            raise SystemExit(1)
+        # a whitening that doesn't commute with the shifts would need the raw residual
+        if not isinstance(self.dataobs.cd_inv, float):
+            application.error.log("the time shifts need a constant data covariance, cd_std")
+            raise SystemExit(1)
+        self._shift_column, self._trace_length = int(start), int(length)
+        self._sampling = float(self.dt if self.sampling is None else self.sampling)
+        return self
+
+
+    def _delays(self, theta, batch):
+        """
+        The time shifts of the first {batch} rows of {theta}, in samples, on the host
+        """
+        θ = numpy.asarray(theta, dtype=float)[:batch]
+        return θ[:, self._shift_column:self._shift_column + self.shifts] / self._sampling
 
 
     def compute_cp(self, theta):
@@ -212,15 +267,29 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self._dmb = altar.cuda.matrix(shape=(rows, self.NGbparameters), dtype=self.precision)
         w, gdMb = self._residual, self._dmb
         self.forward_model_batched(theta=θ, prediction=w, batch=samples)
+        source = w
+        if self._shift_column is not None:
+            # w back through the shifts, before the green's functions
+            from altar.models.seismic.ext import cudaseismic
+            if self._adjoint is None or self._adjoint.shape != w.shape:
+                self._adjoint = altar.cuda.matrix(shape=w.shape, dtype=self.precision)
+            cudaseismic.cudaTimeShift_adjoint(w.grid, θ.grid, self._adjoint.grid, self._shift_column,
+                                              self.traces, self._trace_length, self._sampling)
+            source = self._adjoint
         cublas = altar.cuda.cublas
         gemm = cublas.dgemm if self.precision == "float64" else cublas.sgemm
         gemm(altar.cuda.cublas_handle(), cublas.Operation.T, cublas.Operation.N,
              self.NGbparameters, samples, self.observations, -1.0,
-             self.gGF.grid, self.observations, w.grid, self.observations,
+             self.gGF.grid, self.observations, source.grid, self.observations,
              0.0, gdMb.grid, self.NGbparameters)
         # and back to my columns of theta
         step.data_gradient.zero()
         self.cmodel.gradient(theta=θ.grid, dmb=gdMb.grid, gradient=step.data_gradient.grid, batch=samples)
+        if self._shift_column is not None:
+            # d(log L)/d(shift) = -w . d(shift x)/d(shift)
+            cudaseismic.cudaTimeShift_gradient(self._raw.grid, w.grid, θ.grid, step.data_gradient.grid,
+                                               self._shift_column, self.traces, self._trace_length,
+                                               self._sampling, -1.0)
         return self
 
 
@@ -247,9 +316,16 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             r = r * (cd_inv * cd_inv) if isinstance(cd_inv, float) else r @ cd_inv @ cd_inv.T
         if data.mask is not None:
             r[:, ~data.mask] = 0
+        if self._shift_column is not None:
+            # d(log L)/d(shift) = -r . d(shift x)/d(shift), and r back through the shifts
+            delays = self._delays(θb, batch)
+            shift_gradient = -timeshifts.gradient(self._raw, r, delays, self.traces, self._trace_length) / self._sampling
+            r = timeshifts.adjoint(r, delays, self.traces, self._trace_length)
         dMb = numpy.ascontiguousarray(-r @ self._G.T, dtype=self.precision)
         gradient = numpy.zeros_like(θb)
         self.cmodel.gradient(theta=θb, dmb=dMb, gradient=gradient, batch=batch)
+        if self._shift_column is not None:
+            gradient[:, self._shift_column:self._shift_column + self.shifts] = shift_gradient
         grad_data[:batch] = gradient
         return self
 
@@ -262,6 +338,18 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         batch = batch if batch is not None else theta.shape[0]
         if self.native:
             prediction[:batch] = self._native_residual(theta=theta, batch=batch)[0]
+            return self
+        if self._shift_column is not None:
+            # the raw prediction, kept for the derivatives of the shifts, shifted, less the data
+            from altar.models.seismic.ext import cudaseismic
+            if self._raw is None or self._raw.shape != prediction.shape:
+                self._raw = altar.cuda.matrix(shape=prediction.shape, dtype=self.precision)
+            self.cmodel.forward_batched(
+                theta=theta.grid, green=self.gGF.grid, prediction=self._raw.grid,
+                batch=batch, residual=False)
+            cudaseismic.cudaTimeShift_shift(self._raw.grid, theta.grid, prediction.grid, self._shift_column,
+                                            self.traces, self._trace_length, self._sampling)
+            prediction -= self.dataobs.dataobs_batch
             return self
         prediction.copy(self.dataobs.dataobs_batch)
         self.cmodel.forward_batched(
@@ -282,7 +370,7 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             Mb = numpy.zeros((rows, self.NGbparameters), dtype=self.precision)
             self.cmodel.cast_mb(theta=numpy.ascontiguousarray(theta, dtype=self.precision), mb=Mb, batch=rows)
             Mb = Mb.astype(float)
-            return {"data": Mb @ numpy.asarray(self.GF, dtype=float), "Mb": Mb}
+            return {"data": self._shifted(Mb @ numpy.asarray(self.GF, dtype=float), theta), "Mb": Mb}
         data = numpy.empty((rows, self.observations))
         Mb = numpy.empty((rows, self.NGbparameters))
         # the raw green's functions, not the covariance-premerged ones
@@ -297,7 +385,16 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self.cmodel.linear_gm(green=gGF.grid, mb=gMb.grid, prediction=gData.grid, batch=batch, residual=False)
             data[start:start + batch] = numpy.asarray(gData)[:batch]
             Mb[start:start + batch] = numpy.asarray(gMb)[:batch]
-        return {"data": data, "Mb": Mb}
+        return {"data": self._shifted(data, theta), "Mb": Mb}
+
+
+    def _shifted(self, data, theta):
+        """
+        The raw predictions {data} of the rows of {theta}, with their time shifts, if any
+        """
+        if self._shift_column is None:
+            return data
+        return timeshifts.shift(data, self._delays(theta, theta.shape[0]), self.traces, self._trace_length)
 
 
     # private data
@@ -310,6 +407,11 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     gidx_map = None
     _residual = None # the whitened residual of {gradient}
     _dmb = None # d(log L)/d(Mb) of {gradient}
+    _shift_column = None # the column of theta of the first time shift, if any
+    _trace_length = None # the samples of each trace
+    _sampling = None # their sampling interval, in s
+    _raw = None # the predictions before the time shifts, on cuda
+    _adjoint = None # the adjoint shift of the residual, on cuda
     cmodel = None
     NGbparameters = None
 

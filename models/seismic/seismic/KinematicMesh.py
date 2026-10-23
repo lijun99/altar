@@ -88,11 +88,14 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         # the hypocenter; the cuda model reads a velocity per patch, its group's
         expected = 3 * patches + velocities + 2
         columns = numpy.arange(self.parameters) if self.idx_map is None else numpy.asarray(self.idx_map)
-        if columns.size != expected:
+        if columns.size != expected + self.shifts:
             application.error.log(
-                f"the kinematic mesh model needs {expected} parameters for {patches} patches and "
-                f"{velocities} rupture velocities, got {columns.size}")
+                f"the kinematic mesh model needs {expected + self.shifts} parameters for {patches} "
+                f"patches, {velocities} rupture velocities and {self.shifts} time shifts, got {columns.size}")
             raise SystemExit(1)
+        # the time shifts, if any, after the parameters of the rupture
+        self.setup_shifts(columns=columns, application=application)
+        columns = columns[:expected]
         layout = numpy.concatenate([numpy.arange(3 * patches), 3 * patches + groups,
                                     3 * patches + velocities + numpy.arange(2)])
         idx_map = columns[layout].astype("int64")
