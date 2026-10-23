@@ -72,12 +72,21 @@ class Resolution(altar.panel(), family='altar.actions.resolution'):
         # F, summed over the models of an ensemble, each on its own columns
         F = numpy.zeros((model.parameters, model.parameters))
         members = getattr(model, "models", None)
-        for name, member, columns in (
-                [(name, member, model.columns(name)) for name, member in members.items()]
-                if members else [(None, model, numpy.arange(model.parameters))]):
-            Fm = self.fisher(plexus=plexus, model=member, points=points[:, columns],
-                             mean=mean[columns], h=h[columns])
-            F[numpy.ix_(columns, columns)] += Fm
+        for name, member in (members.items() if members else [(None, model)]):
+            if name is None:
+                Fm = self.fisher(plexus=plexus, model=member, points=points, mean=mean, h=h)
+                F += Fm
+            else:
+                # on the model's own parameters, with its steps from their spread, then onto
+                # mine, F = D F_m D^T, D their derivatives with respect to mine
+                θm = model.member_theta(name, θ)
+                sdm = θm.std(axis=0) if θm.shape[0] > 1 else numpy.zeros(θm.shape[1])
+                meanm = model.member_theta(name, mean)[0]
+                hm = self.step * numpy.where(sdm > 0, sdm, numpy.maximum(numpy.abs(meanm), 1.0))
+                Fm = self.fisher(plexus=plexus, model=member, points=model.member_theta(name, points),
+                                 mean=meanm, h=hm)
+                D = model.member_jacobian(name, mean)
+                F += D @ Fm @ D.T
             if name is not None:
                 channel.line(f"  {name}: {member.dataobs.observations} observations, "
                              f"tr F C_m = {numpy.trace(Fm):.4g}")

@@ -86,7 +86,7 @@ def cpu():
                                                   "resampling.py", "correlated.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
-    tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
+    tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py"])
     tests += [
         example("altar-linear", "linear", "linear.pfg", 0),
         example("altar-linear", "linear", "linear_hmc.pfg", 0),
@@ -127,6 +127,8 @@ def gpu():
                       command=[sys.executable, "kinematic_cpu.py", "--gpu"]))
     tests.append(Test(name="altar:tests:altar:correlated:gpu", cwd=ROOT / "altar/tests/altar",
                       command=[sys.executable, "correlated.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:polar:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "polar.py", "--gpu"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
