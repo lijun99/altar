@@ -83,7 +83,7 @@ def cpu():
                                                   "annealer.py", "annealer_instance.py",
                                                   "weighted_statistics.py", "outliers.py",
                                                   "diagnostics.py", "controllers.py",
-                                                  "resampling.py", "cmaes.py"])
+                                                  "resampling.py", "cmaes.py", "minimizers.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += [
@@ -107,6 +107,8 @@ def cpu():
                                "--controller.archiver.output_dir=results"]))
     tests.append(Test(name="analysis:linear:cpu", cwd=MODELS / "linear/tests",
                       command=[sys.executable, "analysis.py"]))
+    tests.append(Test(name="optimize:linear:mpi:cpu", needs=("mpi",), cwd=MODELS / "linear/tests",
+                      command=[sys.executable, "optimize.py"]))
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:cpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", f"--precision={precision}"]))
@@ -148,6 +150,8 @@ def gpu():
                                "--controller.archiver.output_dir=results"]))
     tests.append(Test(name="analysis:linear:gpu", cwd=MODELS / "linear/tests",
                       command=[sys.executable, "analysis.py", "--gpu"]))
+    tests.append(Test(name="optimize:linear:mpi:gpu", needs=("mpi",), cwd=MODELS / "linear/tests",
+                      command=[sys.executable, "optimize.py", "--gpu"]))
     for precision in ["float64", "float32"]:
         tests.append(Test(name=f"posterior:linear:gpu:{precision}", cwd=MODELS / "linear/tests",
                           command=[sys.executable, "posterior.py", "--gpu", f"--precision={precision}"]))
