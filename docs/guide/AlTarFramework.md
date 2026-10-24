@@ -925,6 +925,80 @@ step, or a `.txt` or `.h5` file with one sample per row, and `dataset`, its data
 `.h5` file; and `output`, the HDF5 file for the schedule and the comparison, by default
 `diagnose.h5`.
 
+(optimize)=
+## The best fit
+
+The `optimize` action finds the best fit of the model to its data, the maximum of the data log
+likelihood over the parameters inside the supports of their priors, or, with `posterior`, the
+maximum of the posterior under the conjugate prior, the gaussian matched to each parameter set's
+prior, as in the {ref}`resolution <resolution>`:
+
+```bash
+slipmodel.plexus optimize --config=static.pfg
+```
+
+It is the quick answer to how well a model can fit the data at all, without an annealing schedule
+or the mixing of walks to worry about: e.g. whether a change to the model, more free parameters
+or another fixed input, improves the best fit, or whether a posterior sits well below the best fit,
+a sign that its walks did not mix. Its best point is also a starting point for other runs, and a
+`theta` for the other actions.
+
+It uses the covariance matrix adaptation evolution strategy, CMA-ES (Hansen, *The CMA evolution
+strategy: a tutorial*, 2016), which needs no gradient: each generation samples a population from a
+gaussian, runs the forward model on it as one batch, as a run's chains, and moves the gaussian
+toward the best of them, learning the scales and the correlations of the parameters. Points outside
+the bounds are moved to the nearest bound and penalized, so that optima on a bound are found and
+reported. It suits nonlinear models without a gradient, up to a few hundred parameters; for a
+linear model the least-squares solution is exact, and with thousands of parameters the search
+slows down. On the linear example it finds the exact posterior mean to $10^{-4}$ of a posterior
+standard deviation, in about 500 generations of 12 points for 18 parameters.
+
+It runs in one process. For an ensemble of models, the log likelihood is the sum of each model's,
+on its own parameters; a $C_p$ is computed once, at the start. Its settings, in an `optimize`
+section:
+
+`theta`
+: the start: an archived step, or a `.txt` or `.h5` file with one sample per row, whose mean is
+  used; by default the means of the priors.
+
+`dataset`
+: the dataset of the samples in a plain `.h5` file; by default the first one.
+
+`posterior`
+: maximize the posterior under the conjugate prior instead of the data log likelihood; default
+  no.
+
+`population`
+: the points of each generation; by default $4 + 3 \ln n$ for $n$ parameters. A larger population
+  searches more globally, and costs nothing more per generation while it fits in the batch the
+  model runs at once, e.g. on a gpu.
+
+`generations`
+: the most generations to run; default 2000.
+
+`step`
+: the initial standard deviation of each parameter, relative to the spread of the samples of
+  `theta`, or else to the standard deviation of its prior; default 0.3, and at most a quarter of
+  a bounded support.
+
+`tolerance`
+: stop when the best value changes less than this over a window of generations, or every step
+  size shrinks below this fraction of its start; default $10^{-6}$.
+
+`seed`, `batch`
+: the seed of the random populations, default 0; the most points to run at once, by default the
+  whole population.
+
+`output`
+: the HDF5 file for the results; default `optimize.h5`. It holds the best point (`best/theta`)
+  and its value, its data log likelihood, the start, the final mean and covariance of the search,
+  the bounds, and the history of each generation's best and median values. The best point is also
+  written, as one row, to a `.txt` file of the same name, e.g. for the `theta` of the
+  {ref}`forward check <forward-check>`.
+
+The report lists, for each parameter set, the best values and how many of them sit on a bound; a
+best fit that needs many parameters on their bounds deserves a look at the bounds, or at the model.
+
 (job)=
 ## Job
 
