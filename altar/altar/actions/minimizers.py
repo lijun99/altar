@@ -7,10 +7,10 @@
 #
 
 """
-Bounded least squares, minimizing |r(x)|^2 / 2 for the residuals r of a {problem}: Levenberg-
-Marquardt and projected L-BFGS. The problem provides {residuals(X)}, the residuals of each row of
-{X} as the rows of a matrix, and {jacobian(x)}, the jacobian of r at {x}; both minimizers try a
-few points at once in each step, as one batch of the forward model
+Bounded least squares, minimizing half the sum of squares of the residuals r of a {problem}:
+Levenberg-Marquardt and projected L-BFGS. The problem provides {residuals(X)}, the residuals of
+each row of {X} as the rows of a matrix, and {jacobian(x)}, the jacobian of r at {x}; both
+minimizers try a few points at once in each step, as one batch of the forward model
 """
 
 # externals
@@ -19,7 +19,7 @@ import numpy
 
 def cost(R):
     """
-    |r|^2 / 2 of each row of {R}
+    Half the sum of squares of each row of {R}
     """
     return 0.5 * (R ** 2).sum(axis=1)
 

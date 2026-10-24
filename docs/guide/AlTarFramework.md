@@ -943,19 +943,54 @@ or another fixed input, improves the best fit, or whether a posterior sits well 
 a sign that its walks did not mix. Its best point is also a starting point for other runs, and a
 `theta` for the other actions.
 
-It uses the covariance matrix adaptation evolution strategy, CMA-ES (Hansen, *The CMA evolution
-strategy: a tutorial*, 2016), which needs no gradient: each generation samples a population from a
-gaussian, runs the forward model on it as one batch, as a run's chains, and moves the gaussian
-toward the best of them, learning the scales and the correlations of the parameters. Points outside
-the bounds are moved to the nearest bound and penalized, so that optima on a bound are found and
-reported. It suits nonlinear models without a gradient, up to a few hundred parameters; for a
-linear model the least-squares solution is exact, and with thousands of parameters the search
-slows down. On the linear example it finds the exact posterior mean to $10^{-4}$ of a posterior
-standard deviation, in about 500 generations of 12 points for 18 parameters.
+It has three methods, set by `method`:
 
-It runs in one process. For an ensemble of models, the log likelihood is the sum of each model's,
-on its own parameters; a $C_p$ is computed once, at the start. Its settings, in an `optimize`
-section:
+`cma`, the default
+: the covariance matrix adaptation evolution strategy, CMA-ES (Hansen, *The CMA evolution
+  strategy: a tutorial*, 2016), which needs no gradient: each generation samples a population from
+  a gaussian, runs the forward model on it as one batch, as a run's chains, and moves the gaussian
+  toward the best of them, learning the scales and the correlations of the parameters. Points
+  outside the bounds are moved to the nearest bound and penalized, so that optima on a bound are
+  found. It is the robust choice far from the optimum, or with several of them, for up to a few
+  hundred parameters.
+
+`lm`
+: Levenberg-Marquardt on the whitened residuals, with Marquardt's scaling of the damping and the
+  parameters held on a bound left out of each step; each iteration tries four dampings in one
+  batch. It converges in a few iterations near a single optimum, and gives the covariance at the
+  optimum, $(J^T J)^{-1}$, the Laplace approximation of the posterior with `posterior`, whose
+  standard deviations it reports and saves.
+
+`lbfgs`
+: projected L-BFGS, with a backtracking line search whose step lengths are tried in one batch.
+  It needs more iterations than `lm` on a least-squares problem, and converges slowly in its
+  last digits: a `tolerance` $\epsilon$ on the objective leaves the parameters about
+  $\sqrt{2 \epsilon}$ standard deviations from the optimum.
+
+`lm` and `lbfgs` take the jacobian of the residuals by central differences, inside the bounds,
+$2n$ forward runs for $n$ parameters in one batch, as the {ref}`resolution <resolution>` does; they
+measure their steps in units of the initial standard deviations of `step`, so that parameters of
+very different scales are treated alike. A good practice is `cma` first, then `lm` from its best
+point, `theta = optimize.txt`, for the polish and the covariance. On the linear example, all
+three find the exact posterior mean, `cma` to $10^{-4}$ of a posterior standard deviation in about
+500 generations of 12 points for 18 parameters, `lm` to $10^{-9}$ in 5 iterations, with the exact
+standard deviations, and `lbfgs` to about $10^{-3}$ in 70 iterations.
+
+Each batch of points is shared among the processes of an mpi run: the first process runs the
+optimizer and sends the points, each process runs the forward model on its share, on its own gpu,
+and the first collects the results. A model whose forward runs are expensive, e.g. an earthquake
+cycle model on several gpus, runs the same way as its sampling, e.g.
+
+```bash
+slipmodel.plexus optimize --config=static.pfg --shell=mpi.shells.mpirun --job.tasks=4 --job.gpus=1
+```
+
+with the plexus as a script, so that `mpirun` can start it in each process. For an ensemble of
+models, the log likelihood is the sum of each model's, on its own parameters; a $C_p$ is computed
+once, at the start. Its settings, in an `optimize` section:
+
+`method`
+: `cma`, the default, `lm` or `lbfgs`.
 
 `theta`
 : the start: an archived step, or a `.txt` or `.h5` file with one sample per row, whose mean is
@@ -968,33 +1003,36 @@ section:
 : maximize the posterior under the conjugate prior instead of the data log likelihood; default
   no.
 
-`population`
-: the points of each generation; by default $4 + 3 \ln n$ for $n$ parameters. A larger population
-  searches more globally, and costs nothing more per generation while it fits in the batch the
-  model runs at once, e.g. on a gpu.
-
-`generations`
-: the most generations to run; default 2000.
-
 `step`
 : the initial standard deviation of each parameter, relative to the spread of the samples of
   `theta`, or else to the standard deviation of its prior; default 0.3, and at most a quarter of
-  a bounded support.
+  a bounded support. It is also the unit of the steps of `lm` and `lbfgs`.
+
+`population`, `generations`, `seed`
+: for `cma`: the points of each generation, by default $4 + 3 \ln n$ for $n$ parameters, a
+  larger population searching more globally and costing nothing more per generation while it
+  fits in the batch the model runs at once, e.g. on a gpu; the most generations, default 2000;
+  the seed of the random populations, default 0.
+
+`iterations`, `difference`, `memory`
+: for `lm` and `lbfgs`: the most iterations, default 200; the finite-difference step of each
+  parameter, relative to its `step`, default $10^{-3}$; for `lbfgs`, the curvature pairs to keep,
+  default 10.
 
 `tolerance`
-: stop when the best value changes less than this over a window of generations, or every step
-  size shrinks below this fraction of its start; default $10^{-6}$.
+: stop when the best value changes less than this over a window of generations for `cma`, or of
+  5 iterations for `lm` and `lbfgs`; `cma` also stops when every step size shrinks below this
+  fraction of its start; default $10^{-6}$.
 
-`seed`, `batch`
-: the seed of the random populations, default 0; the most points to run at once, by default the
-  whole population.
+`batch`
+: the most points each process runs at once; by default all of its share.
 
 `output`
 : the HDF5 file for the results; default `optimize.h5`. It holds the best point (`best/theta`)
-  and its value, its data log likelihood, the start, the final mean and covariance of the search,
-  the bounds, and the history of each generation's best and median values. The best point is also
-  written, as one row, to a `.txt` file of the same name, e.g. for the `theta` of the
-  {ref}`forward check <forward-check>`.
+  and its value, its data log likelihood, the start, the bounds, the history of the best values,
+  for `cma` the final mean and covariance of the search, and for `lm` the covariance at the
+  optimum and its standard deviations (`best/sd`). The best point is also written, as one row, to
+  a `.txt` file of the same name, e.g. for the `theta` of the {ref}`forward check <forward-check>`.
 
 The report lists, for each parameter set, the best values and how many of them sit on a bound; a
 best fit that needs many parameters on their bounds deserves a look at the bounds, or at the model.
