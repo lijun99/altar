@@ -228,7 +228,9 @@ slipmodel:
 
 For a model with few parameters and an expensive forward problem, e.g. an earthquake cycle model,
 the chains, not the walks, are the cost: use as few as the precision needs, and a pool with a
-production walk for the samples. This has not been tested as thoroughly as the cases above.
+production walk for the samples. This has not been tested as thoroughly as the cases above. The
+{ref}`optimize <optimize>` action tells at a fraction of the cost how well such a model can fit
+the data at all, and gives a check of the posterior: one well below its best fit has not mixed.
 
 
 ## The evidence
