@@ -83,7 +83,7 @@ def cpu():
                                                   "annealer.py", "annealer_instance.py",
                                                   "weighted_statistics.py", "outliers.py",
                                                   "diagnostics.py", "controllers.py",
-                                                  "resampling.py", "correlated.py"])
+                                                  "resampling.py", "correlated.py", "cmaes.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
