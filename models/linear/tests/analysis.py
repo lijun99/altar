@@ -19,10 +19,11 @@ catmip samples the mean log likelihood of the exact ones. The {resolution} actio
 its tr R and its linearized standard deviations must be those of the exact posterior. The
 {synthetic} action makes data for a checkerboard true model, whose noise must have χ²/N near 1;
 the {recover} action, given exact samples of the posterior for those data, must find the z
-scores of the truth under that posterior. The {diagnose} action compares the catmip posterior
-with the exact samples: their means and standard deviations must agree; it also reports the
-diagnostics of the walks: every resampling keeps some parents, and the last walk forgets most of
-its start.
+scores of the truth under that posterior. The {optimize} action maximizes the posterior under
+the conjugate prior, here the exact one: its best point must be μ. The {diagnose} action
+compares the catmip posterior with the exact samples: their means and standard deviations must
+agree; it also reports the diagnostics of the walks: every resampling keeps some parents, and
+the last walk forgets most of its start.
 
     python analysis.py
     python analysis.py --gpu
@@ -53,6 +54,7 @@ Z = 0.1
 SHIFT = 0.3
 SD = (0.8, 1.25)
 CORRELATION = 0.6
+OPTIMUM = 1e-3
 
 CONFIG = f"""
 linear:
@@ -94,6 +96,9 @@ linear:
         theta = results/step_final.h5
         reference = exact.txt
         output = diagnose.h5
+    optimize:
+        posterior = yes
+        output = optimize.h5
     recover:
         theta = synthetic.txt
         truth = synthetic/truth.txt
@@ -139,6 +144,7 @@ def main():
                         [sys.executable, "-c", PLEXUS, "forward", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "resolution", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "diagnose", "--config=linear.pfg", gpus],
+                        [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "synthetic", "--config=linear.pfg", gpus],
                         "exact samples of the synthetic data",
                         [sys.executable, "-c", PLEXUS, "recover", "--config=linear.pfg", gpus]]:
@@ -168,6 +174,8 @@ def main():
             final_beta = numpy.asarray(h5["schedule/beta"])[-1]
             parents = numpy.asarray(h5["schedule/parents"])[1:]
             correlation = numpy.asarray(h5["schedule/correlation"])[-1]
+        with h5py.File(scratch / "optimize.h5") as h5:
+            optimum = numpy.asarray(h5["best/theta"])
         with h5py.File(scratch / "recover.h5") as h5:
             z = numpy.asarray(h5["z"])
         truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
@@ -176,6 +184,7 @@ def main():
         Cd = numpy.loadtxt(EXAMPLES / CASE / "cd.txt")
         noise = numpy.loadtxt(scratch / "synthetic" / "data.txt") - G @ truth
         noise = noise @ numpy.linalg.solve(Cd, noise) / noise.size
+        offset = (numpy.abs(optimum - mean) / numpy.sqrt(numpy.diag(cov))).max()
         FC = F @ cov
         expected = at_mean - 0.5 * numpy.trace(FC)
         variance = 0.5 * numpy.trace(FC @ FC) + g @ cov @ g
@@ -198,6 +207,7 @@ def main():
             ("diagnose, parents, fewest", parents.min(), SAMPLES,
              0 < parents.min() and parents.max() <= SAMPLES),
             ("diagnose, final walk correlation", correlation, 0.0, 0 <= correlation <= CORRELATION),
+            ("optimize, max |x - μ|/sd", offset, 0.0, offset <= OPTIMUM),
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
