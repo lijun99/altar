@@ -20,7 +20,8 @@ its tr R and its linearized standard deviations must be those of the exact poste
 {synthetic} action makes data for a checkerboard true model, whose noise must have χ²/N near 1;
 the {recover} action, given exact samples of the posterior for those data, must find the z
 scores of the truth under that posterior. The {optimize} action maximizes the posterior under
-the conjugate prior, here the exact one: its best point must be μ. The {diagnose} action
+the conjugate prior, here the exact one: the best point of each of its methods must be μ, and
+the standard deviations of Levenberg-Marquardt at the optimum those of C. The {diagnose} action
 compares the catmip posterior with the exact samples: their means and standard deviations must
 agree; it also reports the diagnostics of the walks: every resampling keeps some parents, and
 the last walk forgets most of its start.
@@ -55,6 +56,8 @@ SHIFT = 0.3
 SD = (0.8, 1.25)
 CORRELATION = 0.6
 OPTIMUM = 1e-3
+EXACT = 1e-6
+LBFGS = 1e-2
 
 CONFIG = f"""
 linear:
@@ -145,6 +148,10 @@ def main():
                         [sys.executable, "-c", PLEXUS, "resolution", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "diagnose", "--config=linear.pfg", gpus],
                         [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus],
+                        [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus,
+                         "--linear.optimize.method=lm", "--linear.optimize.output=lm.h5"],
+                        [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus,
+                         "--linear.optimize.method=lbfgs", "--linear.optimize.output=lbfgs.h5"],
                         [sys.executable, "-c", PLEXUS, "synthetic", "--config=linear.pfg", gpus],
                         "exact samples of the synthetic data",
                         [sys.executable, "-c", PLEXUS, "recover", "--config=linear.pfg", gpus]]:
@@ -176,6 +183,10 @@ def main():
             correlation = numpy.asarray(h5["schedule/correlation"])[-1]
         with h5py.File(scratch / "optimize.h5") as h5:
             optimum = numpy.asarray(h5["best/theta"])
+        with h5py.File(scratch / "lm.h5") as h5:
+            lm, lm_sd = numpy.asarray(h5["best/theta"]), numpy.asarray(h5["best/sd"])
+        with h5py.File(scratch / "lbfgs.h5") as h5:
+            lbfgs = numpy.asarray(h5["best/theta"])
         with h5py.File(scratch / "recover.h5") as h5:
             z = numpy.asarray(h5["z"])
         truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
@@ -184,7 +195,10 @@ def main():
         Cd = numpy.loadtxt(EXAMPLES / CASE / "cd.txt")
         noise = numpy.loadtxt(scratch / "synthetic" / "data.txt") - G @ truth
         noise = noise @ numpy.linalg.solve(Cd, noise) / noise.size
-        offset = (numpy.abs(optimum - mean) / numpy.sqrt(numpy.diag(cov))).max()
+        sd = numpy.sqrt(numpy.diag(cov))
+        offset = (numpy.abs(optimum - mean) / sd).max()
+        lm_offset, lbfgs_offset = (numpy.abs(lm - mean) / sd).max(), (numpy.abs(lbfgs - mean) / sd).max()
+        lm_sd_error = numpy.abs(lm_sd / sd - 1).max()
         FC = F @ cov
         expected = at_mean - 0.5 * numpy.trace(FC)
         variance = 0.5 * numpy.trace(FC @ FC) + g @ cov @ g
@@ -208,6 +222,9 @@ def main():
              0 < parents.min() and parents.max() <= SAMPLES),
             ("diagnose, final walk correlation", correlation, 0.0, 0 <= correlation <= CORRELATION),
             ("optimize, max |x - μ|/sd", offset, 0.0, offset <= OPTIMUM),
+            ("optimize lm, max |x - μ|/sd", lm_offset, 0.0, lm_offset <= EXACT),
+            ("optimize lm, sd, max rel error", lm_sd_error, 0.0, lm_sd_error <= EXACT),
+            ("optimize lbfgs, max |x - μ|/sd", lbfgs_offset, 0.0, lbfgs_offset <= LBFGS),
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
