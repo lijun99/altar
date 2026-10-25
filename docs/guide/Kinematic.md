@@ -175,6 +175,126 @@ example, `9patch/kinematicG.gf.h5` (88 MB), are not in the repository; see `9pat
 : the uncertainty of the Green's functions (see {doc}`StaticCp`); the kinematic kernels have the
   shape of the Green's functions.
 
+## The kinematic model on triangular meshes
+
+`altar.models.seismic.kinematicmesh` is the same source model on a fault meshed with triangles,
+planar or curved, e.g. by CSI's `TriangularPatchesKin`. The rupture front spreads from the
+hypocenter by the fast iterative method, on a mesh refined from the patches, and each patch slips
+at its source points, each from the moment the front reaches it. Its parameters are the two slips
+and the rise time of each patch, a rupture velocity per patch or per group of patches, and the
+hypocenter, along strike and down dip in the surface coordinates of the mesh; like the model on
+rectangles, it runs on the GPU or the cpu, with the exact gradient.
+
+`mesh`
+: the patches, an `.h5` file as CSI's `saveKinematic` writes it: `vertices` (km, depth positive),
+  their surface coordinates `uv`, the `faces`, and the source points of each patch,
+  `sources/uv` and `sources/patch`, the same number for every patch.
+
+`refine`
+: the triangles of the mesh of the arrival times along each edge of a patch; default 10.
+
+`velocity_groups`
+: a dataset of `mesh` with the group of each patch, numbered from 0; the patches of a group share
+  one rupture velocity. By default, a velocity per patch.
+
+`green`, `Nt`, `dt`, `t0s`
+: as for the model on rectangles; the rows of the Green's functions are the time intervals, then
+  the two slips, then the patches.
+
+### The source time function
+
+Both kinematic models release the slip of each source point over its rise time $T_r$ with a source
+time function of unit area, sampled at the start of each time interval:
+
+`stf`
+: `triangle`, the default, or `cosine`, a raised cosine, $(1 - \cos 2\pi s/T_r)/T_r$, smooth.
+
+`peak`
+: where the triangle peaks, as a fraction of the rise time: 0.5, the default, for a symmetric
+  triangle; less for a fast rise and a slow decay, closer to the slip rates of dynamic ruptures.
+
+With waveforms bandpassed at periods longer than the rise times, the data constrain the time of
+each patch's slip better than its shape; the shape matters with broadband records.
+
+### Time shifts of the stations
+
+Errors of the velocity model shift the arrivals at each station, and a model without them would
+absorb the shifts in the hypocenter, the rupture velocities and the slips. A time shift per
+station, a parameter set of its own sampled with the others, takes them up instead:
+
+`shifts`
+: the number of stations; their shifts, in s, positive later, are the last `shifts` parameters
+  of the model. 0, the default, for none.
+
+`traces`
+: the traces of each station, e.g. its three components, which share its shift; default 3.
+
+`sampling`
+: the sampling interval of the traces, in s; by default `dt`.
+
+The observations must be the traces of the stations, station by station, each trace the same
+length; each is shifted by cubic interpolation, with zeros beyond its ends. The data covariance
+must be a constant, `dataobs.cd_std`. In an ensemble:
+
+```none
+psets_list = [across, parallel, risetime, rupturevelocity, hypo_strike, hypo_dip, shift]
+psets:
+    shift = contiguous
+    shift:
+        count = 18
+        prior = gaussian
+        prior.sigma = 3
+models:
+    kinematic:
+        psets_list = [across, parallel, risetime, rupturevelocity, hypo_strike, hypo_dip, shift]
+        shifts = 18
+        traces = 3
+```
+
+On a synthetic whose records were delayed by up to 4.6 s, the inversion without shifts collapsed
+on a wrong model; with them, it recovered the slip, the hypocenter and the velocities as well as
+from the undelayed records, and the delays to 0.1 s.
+
+### Arrival times
+
+`altar.models.seismic.arrivals` fits the arrival times of a phase, e.g. P picks, from the
+hypocenter on the mesh: it maps the hypocenter from the surface coordinates into space through its
+triangle, and computes the travel times along straight rays in a homogeneous medium, or from a
+table. In an ensemble with the kinematic model, the two share the hypocenter, which the picks pin
+down apart from the rupture velocities, its common trade-off with them:
+
+```none
+models:
+    arrivals = altar.models.seismic.arrivals
+    arrivals:
+        cascaded = True
+        psets_list = [hypo_strike, hypo_dip]
+        mesh = mesh.h5
+        stations = stations.txt
+        velocity = 6.5
+        dataobs:
+            observations = 18
+            data_file = picks.h5
+            cd_std = 0.2
+```
+
+`mesh`
+: the mesh of the kinematic model.
+
+`stations`
+: the station of each pick, x and y in km in the frame of the mesh, and optionally its elevation;
+  a text or an `.h5` file.
+
+`velocity`
+: the velocity of the phase along straight rays, in km/s; default 6.
+
+`table`
+: an `.h5` file with the travel times, `times`, on the grid of `depths` and `distances` (km), for a
+  layered earth; it overrides `velocity`.
+
+`origin`
+: the time of the origin of the rupture in the time of the picks, in s; default 0.
+
 ## The cascaded inversion
 
 The example, `cascaded.pfg`, sets up the ensemble:
@@ -223,6 +343,42 @@ For the cascading scheme:
 For the non-cascading scheme, skip the static inversion: set `cascaded = False` for the static
 model too, and draw the slips from distributions rather than `preset`, e.g. as in `static.pfg`. It
 usually takes many more steps to converge.
+
+### Slips as a magnitude and a rake
+
+The two slips of each patch can be sampled as a magnitude and a rake instead, with the ensemble's
+`polar`: its parameter sets of the magnitudes and of the rakes, in degrees from the first
+direction, then the names the models use for the two components, which the ensemble computes,
+magnitude $\cos$(rake) and magnitude $\sin$(rake):
+
+```none
+model = altar.models.ensemble
+model:
+    polar = [magnitude, rake, parallel, across]
+    psets_list = [magnitude, rake, risetime, rupturevelocity, hypo_strike, hypo_dip]
+    psets:
+        magnitude:
+            prior = uniform
+            prior.support = (0, 15)
+            prior.reparameterize = True
+        rake:
+            prior = gaussian
+            prior.mean = 0
+            prior.sigma = 20
+    models:
+        static:
+            psets_list = [across, parallel]
+        kinematic:
+            psets_list = [across, parallel, risetime, rupturevelocity, hypo_strike, hypo_dip]
+```
+
+A prior on the rake ties the slip across the main direction to the magnitude, where independent
+priors on the two components give every patch the same spread across it, however little it
+slips; the magnitude, and the moment from it, are then no longer inflated by that spread. On a
+synthetic of the Pedernales earthquake, the moment magnitude from the slips came out 0.06 too
+large with independent components and 0.01 with polar slips, the error of the slips halved, and
+the evidence favored the polar slips. A static model alone takes polar slips as the single model
+of an ensemble.
 
 ```{note}
 Run the cascaded example in double precision (`job.gpuprecision = float64`, as it is set). In

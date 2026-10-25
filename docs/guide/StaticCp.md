@@ -84,6 +84,29 @@ $N_{obs} \times N_{obs}$ matrix, once, or at each $\beta$ step with an adaptive 
 observations, factor it in double precision (`dataobs.cd_dtype = float64`), and mind the memory.
 ```
 
+### The geometry of the fault
+
+The kernels can be of any uncertain input, e.g. the dip, the strike or the position of the fault,
+whose uncertainty is often the largest for subduction megathrusts. CSI computes them (its
+`buildGeometryKernels`, on a branch for now) by central differences of the static Green's functions over faults rebuilt with the input perturbed, e.g. for
+the dip of a curved slab meshed with triangles:
+
+```python
+def slab(dip=0.0):
+    fault = csi.TriangularPatchesKin('slab', lon0=lon0, lat0=lat0)
+    fault.buildCurvedFault(..., dip=lambda z: profile(z) + dip, ...)
+    return fault
+
+K = fault.buildGeometryKernels(gps, slab, steps={'dip': 1.0}, method='cuokada')
+csi.TriangularPatchesKin.saveCpKernels(K, sigma=[3.0], kernelfile='static.kernel.h5',
+                                       covariancefile='static.Cmu.h5')
+```
+
+The kernels are linear in the inputs: for perturbations as large as their uncertainty, check how
+far $\mathbf G$ departs from them. On a slab dipping 3° more than assumed, 30% of the change of
+$\mathbf G$ was beyond the kernel of the dip; the adaptive $C_p$ still improved the slip, and the
+evidence favored it, but recovered only part of the gap to the true geometry.
+
 ## The check against the data
 
 With a $C_p$, the {ref}`forward check <forward-check>` estimates $C_p$ at the posterior mean,
