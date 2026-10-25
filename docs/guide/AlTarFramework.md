@@ -941,7 +941,8 @@ It is the quick answer to how well a model can fit the data at all, without an a
 or the mixing of walks to worry about: e.g. whether a change to the model, more free parameters
 or another fixed input, improves the best fit, or whether a posterior sits well below the best fit,
 a sign that its walks did not mix. Its best point is also a starting point for other runs, and a
-`theta` for the other actions.
+`theta` for the other actions. {ref}`The best fit <optimization>` chapter shows how to use it, on
+an example.
 
 It has three methods, set by `method`:
 
