@@ -152,7 +152,8 @@ calculateBigM(const TYPE * theta, TYPE * gMb, size_t parameters, size_t batch,
     dim3 block(1, BLOCKDIM, 1);
     dim3 grid(batch, IDIVUP(_Np, block.y), 1);
     cudaKinematicMesh_kernels::castBigM_batched<TYPE><<<grid, block, 0, stream>>>
-        (_gidx_map, theta, parameters, _gpu_TI0, _gt0s, _dt, int(_Nt), int(_Np), int(_Nsp), batch, gMb);
+        (_gidx_map, theta, parameters, _gpu_TI0, _gt0s, _dt, int(_Nt), int(_Np), int(_Nsp), batch,
+         _stf_kind, _stf_peak, gMb);
     cudaSafeCall(cudaGetLastError());
 }
 
@@ -224,7 +225,7 @@ gradient(const TYPE * theta, const TYPE * gdMb, TYPE * gGrad, size_t parameters,
     dim3 grid(batch, IDIVUP(_Np, block.y), 1);
     cudaKinematicMesh_kernels::castBigM_adjoint_batched<TYPE><<<grid, block, 0, stream>>>
         (_gidx_map, theta, parameters, _gpu_TI0, gdMb, _gt0s, _dt, int(_Nt), int(_Np), int(_Nsp),
-         batch, gGrad, _gpu_dTI0);
+         batch, _stf_kind, _stf_peak, gGrad, _gpu_dTI0);
     cudaSafeCall(cudaGetLastError());
     // the interpolation: the arrival times on the mesh
     cudaSafeCall(cudaMemsetAsync(_gpu_dT, 0, _V*batch*sizeof(TYPE), stream));

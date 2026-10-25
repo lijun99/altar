@@ -37,14 +37,14 @@ namespace cudaKinematicMesh_kernels {
     template <typename TYPE>
     __global__ void castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam,
         const TYPE * gTI0, const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch,
-        TYPE * gMb);
+        int kind, TYPE peak, TYPE * gMb);
 
     // the adjoint of castBigM: the slips and rise times into gGrad, the arrival times at the
     // source points into gdTI0
     template <typename TYPE>
     __global__ void castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam,
         const TYPE * gTI0, const TYPE * gdMb, const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp,
-        size_t batch, TYPE * gGrad, TYPE * gdTI0);
+        size_t batch, int kind, TYPE peak, TYPE * gGrad, TYPE * gdTI0);
 
     // the adjoint of the interpolation: the source points onto the vertices, one thread a sample
     template <typename TYPE>

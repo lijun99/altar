@@ -14,6 +14,8 @@
 
 #include <algorithm>
 #include <cmath>
+
+#include "stf.h"
 #include <numeric>
 
 namespace {
@@ -287,8 +289,8 @@ _interpolate(const TYPE * T, TYPE * TI0) const
 }
 
 
-// the slips of each patch over time: the triangles of its {Nsp} source points, contiguous, sampled
-// at the start of each time interval
+// the slips of each patch over time: the source time functions of its {Nsp} source points,
+// contiguous, sampled at the start of each time interval
 template <typename TYPE>
 void
 altar::models::seismic::KinematicMesh<TYPE>::
@@ -298,14 +300,14 @@ _cast(const TYPE * M, const TYPE * TI0, TYPE * Mb) const
     for (int patch = 0; patch < Np; ++patch) {
         const TYPE * TI = TI0 + patch*Nsp;
         TYPE ss = M[_idx[patch]], sd = M[_idx[Np + patch]];
-        TYPE hTr = M[_idx[2*Np + patch]]/2;
+        TYPE Tr = M[_idx[2*Np + patch]];
         for (int i = 0; i < int(_Nt); ++i) {
             TYPE t0 = _t0s[patch] + _dt*i;
             TYPE c = 0;
             for (int q = 0; q < Nsp; ++q) {
-                TYPE t = TI[q] + hTr;
-                if (t0 <= t - hTr || t0 >= t + hTr) continue;
-                c += (1 - std::abs(t - t0)/hTr)/hTr/Nsp;
+                TYPE v, dv_ds, dv_dTr;
+                altar::models::seismic::stf(t0 - TI[q], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
+                c += v/Nsp;
             }
             Mb[i*2*Np + patch] = c*ss;
             Mb[i*2*Np + Np + patch] = c*sd;
@@ -325,33 +327,28 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
         const TYPE * TI = TI0 + patch*Nsp;
         TYPE * dTI = dTI0 + patch*Nsp;
         TYPE ss = M[_idx[patch]], sd = M[_idx[Np + patch]];
-        TYPE hTr = M[_idx[2*Np + patch]]/2;
+        TYPE Tr = M[_idx[2*Np + patch]];
         for (int q = 0; q < Nsp; ++q) dTI[q] = 0;
-        TYPE gss = 0, gsd = 0, ghTr = 0;
+        TYPE gss = 0, gsd = 0, gTr = 0;
         for (int i = 0; i < int(_Nt); ++i) {
             TYPE t0 = _t0s[patch] + _dt*i;
             TYPE dss = dMb[i*2*Np + patch], dsd = dMb[i*2*Np + Np + patch];
             TYPE gc = dss*ss + dsd*sd;
             TYPE c = 0;
             for (int q = 0; q < Nsp; ++q) {
-                TYPE t = TI[q] + hTr;
-                if (t0 <= t - hTr || t0 >= t + hTr) continue;
-                TYPE a = t - t0;
-                TYPE absa = std::abs(a);
-                TYPE sign = TYPE((a > 0) - (a < 0));
-                c += (1 - absa/hTr)/hTr/Nsp;
-                // v = (1 - |a|/h)/h/Nsp, with a = TI0 + h - t
-                TYPE dv_da = -sign/(hTr*hTr*Nsp);
-                TYPE dv_dh = (2*absa/hTr - 1)/(hTr*hTr*Nsp);
-                dTI[q] += gc*dv_da;
-                ghTr += gc*(dv_dh + dv_da);
+                // v(t - TI0; Tr)/Nsp: d/dTI0 = -dv/ds
+                TYPE v, dv_ds, dv_dTr;
+                altar::models::seismic::stf(t0 - TI[q], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
+                c += v/Nsp;
+                dTI[q] -= gc*dv_ds/Nsp;
+                gTr += gc*dv_dTr/Nsp;
             }
             gss += dss*c;
             gsd += dsd*c;
         }
         grad[_idx[patch]] = gss;
         grad[_idx[Np + patch]] = gsd;
-        grad[_idx[2*Np + patch]] = ghTr/2;
+        grad[_idx[2*Np + patch]] = gTr;
     }
 }
 

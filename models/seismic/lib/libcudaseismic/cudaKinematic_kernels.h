@@ -48,14 +48,16 @@ namespace cudaKinematic_kernels {
     __global__ void castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0,
         TYPE *const gMb, const TYPE *const gt0s,
         const TYPE dt, const size_t Nparam,
-        const size_t Nt, const size_t Nas, const size_t Ndd, const size_t Npt_gi);
+        const size_t Nt, const size_t Nas, const size_t Ndd, const size_t Npt_gi,
+        const int kind, const TYPE peak);
     
     /// the adjoints, for the gradient with respect to theta, from that with respect to Mb
     // of castBigM: the slips and rise times, and the arrival times at the source points
     template <typename TYPE>
     __global__ void castBigM_adjoint_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0,
         const TYPE *const gdMb, const TYPE *const gt0s, const TYPE dt, const size_t Nparam, const size_t Nt,
-        const size_t Nas, const size_t Ndd, const size_t Npt_gi, TYPE *const gGrad, TYPE *const gdTI0);
+        const size_t Nas, const size_t Ndd, const size_t Npt_gi, const int kind, const TYPE peak,
+        TYPE *const gGrad, TYPE *const gdTI0);
     // of interpolateT0: the arrival times on the mesh
     template <typename TYPE>
     __global__ void interpolateT0_adjoint_batched(const TYPE *const gdTI0, TYPE *const gdT0, const size_t Ns_good,

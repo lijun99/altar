@@ -15,6 +15,8 @@
 #include <algorithm>
 #include <cmath>
 
+#include "stf.h"
+
 namespace {
     // the share of the gradient {g} of min(a, b) that goes to {a}: all of it, half on a tie, or none
     template <typename TYPE>
@@ -224,8 +226,8 @@ _interpolate(const TYPE * T, TYPE * TI0) const
 }
 
 
-// the slips of each patch over time: triangles of the rise time from the arrival time at each of its
-// source points, sampled at the start of each time interval
+// the slips of each patch over time: the source time functions of the rise time from the arrival
+// time at each of its source points, sampled at the start of each time interval
 template <typename TYPE>
 void
 altar::models::seismic::Kinematic<TYPE>::
@@ -234,16 +236,16 @@ _cast(const TYPE * M, const TYPE * TI0, TYPE * Mb) const
     const int Npatch = _Npatch, Ndd = _Ndd, Npt = _Npt;
     for (int patch = 0; patch < Npatch; ++patch) {
         TYPE ss = M[_idx[patch]], sd = M[_idx[patch+Npatch]];
-        TYPE hTr = M[_idx[2*Npatch+patch]]/2.0;
+        TYPE Tr = M[_idx[2*Npatch+patch]];
         int idx = patch % Ndd, idy = patch / Ndd;
         for (int i = 0; i < int(_Nt); ++i) {
             TYPE t0 = _t0s[patch] + _dt*i;
             TYPE c = 0.0;
             for (int idx_ti = idx*Npt; idx_ti < (idx+1)*Npt; ++idx_ti) {
                 for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
-                    TYPE TI = TI0[idx_ti + idy_ti*(Ndd*Npt)] + hTr;
-                    if (t0 <= (TI-hTr) || t0 >= (TI+hTr)) continue;
-                    c += (1.0 - std::abs(TI-t0)/hTr)*(1.0/hTr)/(Npt*Npt);
+                    TYPE v, dv_ds, dv_dTr;
+                    altar::models::seismic::stf(t0 - TI0[idx_ti + idy_ti*(Ndd*Npt)], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
+                    c += v/(Npt*Npt);
                 }
             }
             Mb[i*(2*Npatch) + patch] = c*ss;
@@ -264,14 +266,14 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
     TYPE n2 = Npt*Npt;
     for (int patch = 0; patch < Npatch; ++patch) {
         TYPE ss = M[_idx[patch]], sd = M[_idx[patch+Npatch]];
-        TYPE hTr = M[_idx[2*Npatch+patch]]/2.0;
+        TYPE Tr = M[_idx[2*Npatch+patch]];
         int idx = patch % Ndd, idy = patch / Ndd;
         for (int idx_ti = idx*Npt; idx_ti < (idx+1)*Npt; ++idx_ti) {
             for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
                 dTI0[idx_ti + idy_ti*(Ndd*Npt)] = 0;
             }
         }
-        TYPE gss = 0, gsd = 0, ghTr = 0;
+        TYPE gss = 0, gsd = 0, gTr = 0;
         for (int i = 0; i < int(_Nt); ++i) {
             TYPE t0 = _t0s[patch] + _dt*i;
             TYPE dss = dMb[i*(2*Npatch) + patch], dsd = dMb[i*(2*Npatch) + Npatch + patch];
@@ -280,17 +282,12 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
             for (int idx_ti = idx*Npt; idx_ti < (idx+1)*Npt; ++idx_ti) {
                 for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
                     int k = idx_ti + idy_ti*(Ndd*Npt);
-                    TYPE TI = TI0[k] + hTr;
-                    if (t0 <= (TI-hTr) || t0 >= (TI+hTr)) continue;
-                    TYPE a = TI - t0;
-                    TYPE absa = std::abs(a);
-                    TYPE sign = TYPE((a > 0) - (a < 0));
-                    c += (1.0 - absa/hTr)*(1.0/hTr)/n2;
-                    // v = (1 - |a|/h)/h/n2, with a = TI0 + h - t
-                    TYPE dv_da = -sign/(hTr*hTr*n2);
-                    TYPE dv_dh = (2*absa/hTr - 1)/(hTr*hTr*n2);
-                    dTI0[k] += gc*dv_da;
-                    ghTr += gc*(dv_dh + dv_da);
+                    // v(t - TI0; Tr)/n2: d/dTI0 = -dv/ds
+                    TYPE v, dv_ds, dv_dTr;
+                    altar::models::seismic::stf(t0 - TI0[k], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
+                    c += v/n2;
+                    dTI0[k] -= gc*dv_ds/n2;
+                    gTr += gc*dv_dTr/n2;
                 }
             }
             gss += dss*c;
@@ -298,7 +295,7 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
         }
         grad[_idx[patch]] = gss;
         grad[_idx[patch+Npatch]] = gsd;
-        grad[_idx[2*Npatch+patch]] = ghTr/2.0;
+        grad[_idx[2*Npatch+patch]] = gTr;
     }
 }
 

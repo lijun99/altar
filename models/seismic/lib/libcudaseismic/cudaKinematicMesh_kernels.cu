@@ -7,6 +7,7 @@
 //
 
 #include "cudaKinematicMesh_kernels.h"
+#include "../libseismic/stf.h"
 
 // the parameters of a sample, in {gIdx} order: the strike slips, dip slips, rise times and rupture
 // velocities of the {Np} patches, then the hypocenter along strike and down dip
@@ -233,13 +234,13 @@ interpolate_batched(const TYPE * gT, int V, const int * gCorners, const TYPE * g
 }
 
 
-// the slips of each patch over time, Mb[samples][Nt][2][Np]: the triangles of its {Nsp} source
-// points, contiguous, sampled at the start of each time interval
+// the slips of each patch over time, Mb[samples][Nt][2][Np]: the source time functions of its
+// {Nsp} source points, contiguous, sampled at the start of each time interval
 template <typename TYPE>
 __global__ void
 cudaKinematicMesh_kernels::
 castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE * gTI0,
-    const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch, TYPE * gMb)
+    const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch, int kind, TYPE peak, TYPE * gMb)
 {
     size_t sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y*blockDim.y;
@@ -248,14 +249,14 @@ castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE
     const TYPE * TI0 = gTI0 + (sample*Np + patch)*Nsp;
     TYPE * Mb = gMb + sample*Nt*2*Np;
     TYPE ss = M[gIdx[patch]], sd = M[gIdx[Np + patch]];
-    TYPE hTr = M[gIdx[2*Np + patch]]/2;
+    TYPE Tr = M[gIdx[2*Np + patch]];
     for (int i = 0; i < Nt; ++i) {
         TYPE t0 = gt0s[patch] + dt*i;
         TYPE c = 0;
         for (int q = 0; q < Nsp; ++q) {
-            TYPE TI = TI0[q] + hTr;
-            if (t0 <= TI - hTr || t0 >= TI + hTr) continue;
-            c += (1 - abs(TI - t0)/hTr)/hTr/Nsp;
+            TYPE v, dv_ds, dv_dTr;
+            altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
+            c += v/Nsp;
         }
         Mb[i*2*Np + patch] = c*ss;
         Mb[i*2*Np + Np + patch] = c*sd;
@@ -269,7 +270,7 @@ __global__ void
 cudaKinematicMesh_kernels::
 castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE * gTI0,
     const TYPE * gdMb, const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch,
-    TYPE * gGrad, TYPE * gdTI0)
+    int kind, TYPE peak, TYPE * gGrad, TYPE * gdTI0)
 {
     size_t sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y*blockDim.y;
@@ -279,26 +280,21 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, co
     TYPE * dTI0 = gdTI0 + (sample*Np + patch)*Nsp;
     const TYPE * dMb = gdMb + sample*Nt*2*Np;
     TYPE ss = M[gIdx[patch]], sd = M[gIdx[Np + patch]];
-    TYPE hTr = M[gIdx[2*Np + patch]]/2;
+    TYPE Tr = M[gIdx[2*Np + patch]];
     for (int q = 0; q < Nsp; ++q) dTI0[q] = 0;
-    TYPE gss = 0, gsd = 0, ghTr = 0;
+    TYPE gss = 0, gsd = 0, gTr = 0;
     for (int i = 0; i < Nt; ++i) {
         TYPE t0 = gt0s[patch] + dt*i;
         TYPE dss = dMb[i*2*Np + patch], dsd = dMb[i*2*Np + Np + patch];
         TYPE gc = dss*ss + dsd*sd;
         TYPE c = 0;
         for (int q = 0; q < Nsp; ++q) {
-            TYPE TI = TI0[q] + hTr;
-            if (t0 <= TI - hTr || t0 >= TI + hTr) continue;
-            TYPE a = TI - t0;
-            TYPE absa = abs(a);
-            TYPE sign = TYPE((a > 0) - (a < 0));
-            c += (1 - absa/hTr)/hTr/Nsp;
-            // v = (1 - |a|/h)/h/Nsp, with a = TI0 + h - t
-            TYPE dv_da = -sign/(hTr*hTr*Nsp);
-            TYPE dv_dh = (2*absa/hTr - 1)/(hTr*hTr*Nsp);
-            dTI0[q] += gc*dv_da;
-            ghTr += gc*(dv_dh + dv_da);
+            // v(t - TI0; Tr)/Nsp: d/dTI0 = -dv/ds
+            TYPE v, dv_ds, dv_dTr;
+            altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
+            c += v/Nsp;
+            dTI0[q] -= gc*dv_ds/Nsp;
+            gTr += gc*dv_dTr/Nsp;
         }
         gss += dss*c;
         gsd += dsd*c;
@@ -306,7 +302,7 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, co
     TYPE * grad = gGrad + sample*Nparam;
     grad[gIdx[patch]] = gss;
     grad[gIdx[Np + patch]] = gsd;
-    grad[gIdx[2*Np + patch]] = ghTr/2;
+    grad[gIdx[2*Np + patch]] = gTr;
 }
 
 

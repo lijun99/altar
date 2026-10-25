@@ -54,6 +54,8 @@ protected:
     TYPE _dsp; ///< the length of a single patch along a single dimension
     TYPE _dt; ///< the width of the small triangle source time function
     size_t _Nmesh; ///< the number of grid point on each patch for fast-sweeping
+    int _stf_kind = 0; ///< the source time function, see {setSTF}
+    TYPE _stf_peak = 0.5;
 
     // work matrices/vectors
     TYPE * _gpu_Mb; ///< the big-M matrix ((2*<c>_Nt</c>*Npatch)*Ns where Ns is the leading index) on GPU
@@ -95,6 +97,8 @@ protected:
 public:
     /// initialize the model specific GPU data
     void initialize(const size_t samples);
+    /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
+    void setSTF(int kind, TYPE peak) { _stf_kind = kind; _stf_peak = peak; }
     /// calculate the forward model
     void forwardModel(cublasHandle_t handle, const TYPE * const theta, const TYPE * const Gb, TYPE * const prediction,
         const size_t parameters, const size_t batch, bool return_residual=true, cudaStream_t stream=0) const;

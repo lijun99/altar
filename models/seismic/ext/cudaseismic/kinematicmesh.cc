@@ -139,6 +139,14 @@ namespace {
             return _cell == 'd' ? _double->iterations(batch) : _float->iterations(batch);
         }
 
+    public:
+        // the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
+        auto set_stf(int kind, double peak) -> void
+        {
+            if (_double) _double->setSTF(kind, peak);
+            if (_float) _float->setSTF(kind, static_cast<float>(peak));
+        }
+
     private:
         template <typename T>
         static auto ptr(grid_t & g) -> T * { return reinterpret_cast<T *>(g.address()); }
@@ -179,6 +187,8 @@ altar::models::seismic::extensions::kinematicmesh::__init__(py::module & m) -> v
         .def("forward_batched", &KinematicMesh::forward_batched,
              "theta"_a, "green"_a, "prediction"_a, "batch"_a, "residual"_a,
              "prediction <- Gb Mb(theta), or Gb Mb(theta) - prediction when {residual}")
+        .def("set_stf", &KinematicMesh::set_stf, "kind"_a, "peak"_a,
+             "the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine")
         .def("cast_mb", &KinematicMesh::cast_mb, "theta"_a, "mb"_a, "batch"_a,
              "mb <- the slips of each patch over time, from {theta}")
         .def("gradient", &KinematicMesh::gradient, "theta"_a, "dmb"_a, "gradient"_a, "batch"_a,

@@ -79,6 +79,15 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     sampling = altar.properties.float(default=None)
     sampling.doc = "the sampling interval of the traces, in s, for the time shifts; default {dt}"
 
+    # the source time function of each source point
+    stf = altar.properties.str(default="triangle")
+    stf.doc = "the slip rate of each source point over its rise time: triangle, or cosine, a raised " \
+              "cosine, smooth"
+
+    peak = altar.properties.float(default=0.5)
+    peak.doc = "where the triangle peaks, as a fraction of the rise time; 0.5, the default, for a " \
+               "symmetric one, less for a fast rise and a slow decay"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -111,7 +120,7 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self.cmodel = seismic.Kinematic(
                 Nas=self.Nas, Ndd=self.Ndd, Nmesh=self.Nmesh, dsp=self.dsp, Nt=self.Nt, Npt=self.Npt,
                 dt=self.dt, t0s=t0s, idx_map=idx_map.astype("int64"), precision=self.precision)
-            return self
+            return self.configure_stf(application=application)
 
         from altar.models.seismic.ext import cudaseismic
         self.gidx_map = altar.cuda.vector(source=idx_map.astype("int64"))
@@ -126,7 +135,7 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             samples=self.samples, parameters=self.parameters, observations=self.observations,
             idx_map=self.gidx_map.grid)
         # all done
-        return self
+        return self.configure_stf(application=application)
 
 
     def _native_green(self):
@@ -182,6 +191,18 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
             self.gGF.grid, obs,
             self.gGF.grid, obs,
         )
+        return self
+
+
+    def configure_stf(self, application):
+        """
+        Hand my source time function to my compiled model
+        """
+        kinds = {"triangle": 0, "cosine": 1}
+        if self.stf not in kinds or not 0 < self.peak < 1:
+            application.error.log(f"stf: triangle or cosine, and a peak in (0, 1); got '{self.stf}', {self.peak}")
+            raise SystemExit(1)
+        self.cmodel.set_stf(kind=kinds[self.stf], peak=float(self.peak))
         return self
 
 

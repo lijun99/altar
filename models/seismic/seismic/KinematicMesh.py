@@ -122,7 +122,7 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
                 Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, xyz=xyz, patchGeometry=geometry,
                 spacing=spacing, Nsp=int(counts[0]), corners=corners, weights=weights,
                 idx_map=idx_map, precision=self.precision, **tables)
-            return self
+            return self.configure_stf(application=application)
 
         from altar.models.seismic.ext import cudaseismic
         self.gidx_map = altar.cuda.vector(source=idx_map)
@@ -138,7 +138,7 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
             parameters=self.parameters, observations=self.observations,
             idx_map=self.gidx_map.grid, **tables)
         # all done
-        return self
+        return self.configure_stf(application=application)
 
 
     # private data
