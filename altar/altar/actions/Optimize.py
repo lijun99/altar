@@ -391,7 +391,10 @@ class Problem:
         X = numpy.vstack([numpy.where(numpy.eye(n, dtype=bool), plus[None, :], x[None, :]),
                           numpy.where(numpy.eye(n, dtype=bool), minus[None, :], x[None, :])])
         R = self.residuals(X)
-        return (R[:n] - R[n:]).T / (plus - minus)
+        J = (R[:n] - R[n:]).T / (plus - minus)
+        # a derivative from a forward run that failed is unknown: leave it out
+        J[~numpy.isfinite(J)] = 0
+        return J
 
 
     def serve(self):
