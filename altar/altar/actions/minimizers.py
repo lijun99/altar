@@ -19,9 +19,11 @@ import numpy
 
 def cost(R):
     """
-    Half the sum of squares of each row of {R}
+    Half the sum of squares of each row of {R}; infinite for a row that isn't finite, e.g. a
+    forward run that failed
     """
-    return 0.5 * (R ** 2).sum(axis=1)
+    c = 0.5 * (R ** 2).sum(axis=1)
+    return numpy.where(numpy.isfinite(c), c, numpy.inf)
 
 
 def free(x, gradient, lower, upper):
