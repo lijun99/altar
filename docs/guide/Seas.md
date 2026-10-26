@@ -313,6 +313,49 @@ MCMC samples the new posterior from any start. Discard the first rounds as burn-
 the means and spreads stop moving. If the posterior moves a lot, MCMC alone can miss parts of it
 that annealing from the prior would find.
 
+## The best fit
+
+`seas.plexus` runs AlTar's actions on a SEAS configuration, under the same `seas` settings as the
+`seas` application. Its `optimize` action finds the best fit of the model to the data, without
+annealing (see {ref}`the best fit <optimization>`):
+
+```bash
+seas.plexus optimize --config=seas.yaml
+```
+
+with its settings in an `optimize` section, e.g. CMA-ES from a finished run's posterior:
+
+```yaml
+seas:
+  optimize:
+    method: cma
+    theta: results/step_final.h5
+    step: 1
+    population: 32
+    generations: 100
+    output: optimize.h5
+```
+
+It runs under MPI like a sampling run: with `shell: mpi.shells.mpirun` and `job.tasks`, each GPU runs
+its share of each batch, `job.chains` points at once. It is useful to:
+
+- **compare variants by their best fit before sampling them**: another slip file, other prior
+  bounds, more free nodes of `alpha_h_mat`. A variant whose best fit isn't better isn't worth a run;
+- **check a posterior**: a best fit well above the likelihoods of the posterior means its walks
+  didn't reach that region;
+- **start the next step**: its `optimize.txt` is a `theta` for the other actions.
+
+Two things are particular to SEAS. A sample's likelihood depends slightly on the state its spin-up
+starts from, within the spin-up tolerance: a fraction of a log-likelihood unit at
+`spinup_rtol: 1e-5`. CMA-ES doesn't mind; Levenberg-Marquardt, `method: lm`, needs finite
+differences larger than that noise, e.g. `difference: 0.03` from a one-row start, `theta:
+optimize.txt`, whose steps are then a hundredth of a unit of log10 alpha_h, against the default's
+millionths from a posterior's spread. And every forward run spins up: an `lm` iteration costs
+$2n + 4$ runs for $n$ parameters, a CMA-ES generation `population` runs. On 4 V100s, with 20
+parameters from a posterior, `lm` took 5 minutes per iteration and gained 28 in log likelihood in 5
+iterations; CMA-ES took 2 minutes per generation of 32 and gained 12 in 10. A run whose
+integration fails counts as the worst fit.
+
 ## Notes
 
 - Under MPI only the first task logs, so the integrator's statistics in the log are those of the
