@@ -88,32 +88,33 @@ class LevenbergMarquardt:
         return
 
 
-    def step(self):
+    def step(self, attempts=5):
         """
-        One iteration; False if no damping improved the fit
+        One iteration; when none of the dampings improves the fit, try again with a thousand times
+        more, up to {attempts} times; False if none did
         """
         J = self.problem.jacobian(self.x)
         A, g = J.T @ J, J.T @ self.r
         active = free(self.x, g, self.lower, self.upper)
-        candidates = []
-        for λ in self.damping * self.trials:
-            δ = numpy.zeros_like(self.x)
-            Af = A[numpy.ix_(active, active)]
-            δ[active] = numpy.linalg.solve(Af + λ * numpy.diag(numpy.maximum(numpy.diag(Af), 1e-300)),
-                                           -g[active])
-            candidates.append(numpy.clip(self.x + δ, self.lower, self.upper))
-        X = numpy.array(candidates)
-        R = self.problem.residuals(X)
-        values = cost(R)
-        best = int(numpy.argmin(values))
+        Af = A[numpy.ix_(active, active)]
+        scaling = numpy.diag(numpy.maximum(numpy.diag(Af), 1e-300))
         self.iteration += 1
-        self.A, self.active = A, active
-        if values[best] < self.value:
-            self.damping *= self.trials[best] / 3
-            self.x, self.r, self.value = X[best], R[best], float(values[best])
-            self.history.append(self.value)
-            return True
-        self.damping *= 10 * self.trials[-1]
+        for _ in range(attempts):
+            candidates = []
+            for λ in self.damping * self.trials:
+                δ = numpy.zeros_like(self.x)
+                δ[active] = numpy.linalg.solve(Af + λ * scaling, -g[active])
+                candidates.append(numpy.clip(self.x + δ, self.lower, self.upper))
+            X = numpy.array(candidates)
+            R = self.problem.residuals(X)
+            values = cost(R)
+            best = int(numpy.argmin(values))
+            if values[best] < self.value:
+                self.damping *= self.trials[best] / 3
+                self.x, self.r, self.value = X[best], R[best], float(values[best])
+                self.history.append(self.value)
+                return True
+            self.damping *= 10 * self.trials[-1]
         self.history.append(self.value)
         return False
 
