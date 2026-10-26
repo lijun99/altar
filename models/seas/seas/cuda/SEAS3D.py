@@ -740,6 +740,37 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         return self
 
     @altar.export
+    def forward_problem(self, application, theta):
+        """
+        The data predicted by each row of {theta}, in batches of {cuda_batch_size}, for the
+        actions; the rows whose integration failed are not a number
+        """
+        theta = np.atleast_2d(np.asarray(theta, dtype=float))
+        rows = theta.shape[0]
+        predicted = np.full((rows, self.dataobs.observations), np.nan)
+        # before the first batch, spin up the mean of the rows alone, as the sampling does
+        if rows and self.warm_start and self.warm_up and not self._warm:
+            self.forward_model_batched(
+                theta=theta.mean(axis=0, keepdims=True),
+                prediction=self.obs_disp,
+                batch=1,
+            )
+        for start in range(0, rows, self.cuda_batch_size):
+            batch = min(self.cuda_batch_size, rows - start)
+            self.forward_model_batched(
+                theta=theta[start : start + batch],
+                prediction=self.obs_disp,
+                batch=batch,
+            )
+            block = np.asarray(self.obs_disp)[:batch].astype(float)
+            failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[
+                :batch
+            ]
+            block[failed] = np.nan
+            predicted[start : start + batch] = block
+        return {"data": predicted}
+
+    @altar.export
     def gradient(self, controller, step, batch=None):
         """
         Fill {step.prior_gradient} and {step.data_gradient} with the gradients of the log prior

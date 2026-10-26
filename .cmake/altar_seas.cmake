@@ -92,7 +92,7 @@ endfunction(altar_seas_cuda_buildModule)
 function(altar_seas_cuda_buildDriver)
   # install the scripts
   install(
-    PROGRAMS bin/seas
+    PROGRAMS bin/seas bin/seas.plexus
     DESTINATION bin
     )
   # all done
