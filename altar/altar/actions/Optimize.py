@@ -115,7 +115,7 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
             channel.line(f"  start {what} {initial:.8g}")
             run = {"cma": self.cma, "lm": self.descent, "lbfgs": self.descent}[self.method]
             result = run(problem=problem, start=start, scale=scale, lower=lower, upper=upper,
-                         channel=channel)
+                         initial=initial, channel=channel)
             best, x = result["best"], result["x"]
             likelihood = float(problem.values(x[None, :], with_prior=False)[0]) \
                 if self.posterior else best
@@ -136,12 +136,14 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
 
 
     # the optimizers
-    def cma(self, problem, start, scale, lower, upper, channel):
+    def cma(self, problem, start, scale, lower, upper, initial, channel):
         """
-        CMA-ES from {start}, with the initial standard deviations {scale}
+        CMA-ES from {start}, with the initial standard deviations {scale}; the start, of value
+        {initial}, is the best point until a better one is found
         """
         es = CMAES(x0=start, scale=scale, lower=lower, upper=upper, population=self.population,
                    seed=self.seed)
+        es.best = (-initial, start.copy())
         channel.line(f"  population {es.population}")
         every = max(1, self.generations // 20)
         reason = f"{self.generations} generations"
@@ -165,7 +167,7 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
                 "attributes": {"population": es.population}}
 
 
-    def descent(self, problem, start, scale, lower, upper, channel):
+    def descent(self, problem, start, scale, lower, upper, initial, channel):
         """
         Levenberg-Marquardt or L-BFGS from {start}, in units of {scale}
         """
