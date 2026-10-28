@@ -87,7 +87,14 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     warm_up.doc = (
         "with {warm_start}, spin up the mean sample of the first batch alone, from v_init, and "
         "start every slot from its state: the long cold spin-up then runs on one system "
-        "rather than on the whole batch"
+        "rather than on the whole batch; see {rewarm} for the later batches"
+    )
+    rewarm = altar.properties.bool(default=True)
+    rewarm.doc = (
+        "with {warm_up}, warm up on the mean sample of every batch, from the state the previous "
+        "batch left, rather than only on the first: each slot then starts near its sample, "
+        "instead of from the state of whatever sample it ran last, which, while the proposals "
+        "are wide, stalls a few spin-ups at n_cycles_max and with them the whole batch"
     )
     spinup_file = altar.properties.path(default=None)
     spinup_file.doc = (
@@ -695,26 +702,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         predictions = self.obs_disp
         llk_batch = self.likelihood_batch
 
-        # before the first batch, spin up its mean sample alone; the forward model leaves its
-        # state in every slot, for all the samples to start from
-        if self.warm_start and self.warm_up and not self._warm:
-            start = perf_counter()
-            self.forward_model_batched(
-                theta=theta[:batch].mean(axis=0, keepdims=True),
-                prediction=predictions,
-                batch=1,
-            )
-            cycles = int(np.asarray(self.cmodel.step_statistics()["cycles"])[0])
-            self.info.log(
-                f"Device {self.device.id}: warmed up on the mean sample in "
-                f"{perf_counter() - start:.1f}s, {cycles} spin-up cycles"
-            )
-
         # iterate over batches
         cuda_batch_size = self.cuda_batch_size
         for system_start in range(0, batch, cuda_batch_size):
             # get the actual batch size
             batch_size_run = min(cuda_batch_size, batch - system_start)
+            # start its slots from the spin-up of its mean sample
+            self.warm(theta=theta[system_start : system_start + batch_size_run])
             # call forward model to calculate the data prediction
             self.forward_model_batched(
                 theta=theta[system_start : system_start + batch_size_run],
@@ -748,15 +742,10 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         theta = np.atleast_2d(np.asarray(theta, dtype=float))
         rows = theta.shape[0]
         predicted = np.full((rows, self.dataobs.observations), np.nan)
-        # before the first batch, spin up the mean of the rows alone, as the sampling does
-        if rows and self.warm_start and self.warm_up and not self._warm:
-            self.forward_model_batched(
-                theta=theta.mean(axis=0, keepdims=True),
-                prediction=self.obs_disp,
-                batch=1,
-            )
         for start in range(0, rows, self.cuda_batch_size):
             batch = min(self.cuda_batch_size, rows - start)
+            # start its slots from the spin-up of its mean sample, as the sampling does
+            self.warm(theta=theta[start : start + batch])
             self.forward_model_batched(
                 theta=theta[start : start + batch],
                 prediction=self.obs_disp,
@@ -863,6 +852,27 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             state[slots, 2 * patches :] = self.sim.v_init.T.ravel().astype(self.gpuprec)
         return self
 
+    def warm(self, theta):
+        """
+        Spin up the mean of the samples {theta} alone, before the first batch or, with {rewarm},
+        before every one; the forward model leaves its state in every slot, for all the samples
+        to start from
+        """
+        if not (self.warm_start and self.warm_up and (self.rewarm or not self._warm)):
+            return self
+        start = perf_counter()
+        self.forward_model_batched(
+            theta=np.asarray(theta).mean(axis=0, keepdims=True),
+            prediction=self.obs_disp,
+            batch=1,
+        )
+        cycles = int(np.asarray(self.cmodel.step_statistics()["cycles"])[0])
+        self.info.log(
+            f"Device {self.device.id}: warmed up on the mean sample in "
+            f"{perf_counter() - start:.1f}s, {cycles} spin-up cycles"
+        )
+        return self
+
     def run_mean(self, theta):
         """
         Run the mean of the samples {theta}, and keep its slip rates at t = 0, its predicted
@@ -939,6 +949,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         }
         for first in range(0, n, self.cuda_batch_size):
             batch = min(self.cuda_batch_size, n - first)
+            self.warm(theta=theta[rows[first : first + batch]])
             self.forward_model_batched(
                 theta=theta[rows[first : first + batch]],
                 prediction=self.obs_disp,
