@@ -1004,6 +1004,13 @@ once, at the start. Its settings, in an `optimize` section:
 : maximize the posterior under the conjugate prior instead of the data log likelihood; default
   no.
 
+`fixed`
+: the parameters to hold fixed, a list of entries: a parameter set, `name`, or some of its
+  entries, `name[i]` or `name[i:j]` (counted from 0 within the set, `j` excluded), each at its
+  start value, or at one of its own, `name[i]=value`, which has to be inside the support of its
+  prior. The optimizer only sees the others; the fixed ones keep their values in the results,
+  with zero standard deviations. Default none.
+
 `step`
 : the initial standard deviation of each parameter, relative to the spread of the samples of
   `theta`, or else to the standard deviation of its prior; default 0.3, and at most a quarter of
@@ -1030,7 +1037,8 @@ once, at the start. Its settings, in an `optimize` section:
 
 `output`
 : the HDF5 file for the results; default `optimize.h5`. It holds the best point (`best/theta`)
-  and its value, its data log likelihood, the start, the bounds, the history of the best values,
+  and its value, its data log likelihood, the start, the bounds, the mask of the fixed parameters
+  (`fixed`), the history of the best values,
   for `cma` the final mean and covariance of the search, and for `lm` the covariance at the
   optimum and its standard deviations (`best/sd`). The best point is also written, as one row, to
   a `.txt` file of the same name, e.g. for the `theta` of the {ref}`forward check <forward-check>`.

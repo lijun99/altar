@@ -119,6 +119,60 @@ scaled and correlated: about 200 for the 6 parameters of mogi, about 500 for an 
 problem. A larger `population` searches more globally, and costs nothing more per generation while
 it fits in the batch the model runs at once.
 
+## Narrower bounds, and fixed parameters
+
+The bounds of the search are the supports of the priors, so a narrower range for a run is a
+narrower `prior.support` in its configuration, e.g. in a copy kept for the optimization. A support
+belongs to a whole parameter set: to bound one parameter differently, give it a set of its own.
+
+To hold parameters fixed, list them in `fixed`: a whole set, an entry or a slice of one, at its
+start value or at a value given with it. For mogi, the polish of the best fit with the offsets at
+0, the source at 3500 m instead of the 3000 m of the truth, and its second coordinate where the
+start has it, in the `mogi` section:
+
+```yaml
+mogi:
+  optimize:
+    method: lm
+    theta: optimize.txt
+    output: fixed.h5
+    fixed:
+      - offsets=0          # the whole set, at 0
+      - depth=3500         # at 3500 m
+      - location[1]        # the second entry of the set, at its start value
+```
+
+or on the command line, `--mogi.optimize.fixed="[offsets=0, depth=3500, location[1]]"`. Indices
+count from 0 within the set, `name[i:j]` is a slice that excludes `j`, and a value has to be inside
+the support of the prior. In a yaml flow list, `[...]`, quote the entries with brackets. The run
+reports:
+
+```none
+ --   fixed: 4 parameters (offsets=0, depth=3500, location[1]), 2 free
+ --   start data log likelihood 82.793719
+ --   stopped after 8 iterations, 86 evaluations: no step improved the fit
+ --   best data log likelihood 410.59621, +327.802 from the start
+ --   parameter set    count          mean                    [min, max]  on a bound   fixed   median sd
+ --   location             2      -14.6067      [-29.2126, -0.000748367]           0       1       22.11
+ --   depth                1          3500                  [3500, 3500]           0       1           -
+ --   source               1     1.192e+07        [1.192e+07, 1.192e+07]           0       0   7.505e+04
+ --   offsets              2             0                        [0, 0]           0       2           -
+```
+
+The deeper source needs a larger volume change, $1.19 \times 10^7$ m³ instead of $10^7$, and still
+fits 119 worse in log likelihood than the free best fit, 529.9: the data rule out 3500 m. The
+optimizer only sees the free parameters, so a fixed parameter costs `lm` and `lbfgs` no finite
+differences. The fixed parameters keep their values in `best/theta`, with zero standard deviations
+in `best/sd`, and the output marks them in `fixed`.
+
+With fixed parameters, `lm` gives the conditional optimum and the conditional uncertainties of the
+others: how well they are determined if the fixed ones are known. Where they are correlated with
+the fixed ones, these are smaller than with everything free: the standard deviation of the volume
+change is $7.5 \times 10^4$ m³ with the depth fixed, against $3.1 \times 10^5$ with it free. On the
+linear example, a fixed run matches the conditional mean and standard deviations of the exact
+posterior to $10^{-6}$. To compare two variants by their best fit, e.g. a parameter fixed against
+free, the difference of their best log likelihoods says how much the fit gains from freeing it.
+
 ## Expensive models: MPI and GPUs
 
 Each step runs the forward model on a batch of points: a generation of CMA-ES, the $2n$ points of a
