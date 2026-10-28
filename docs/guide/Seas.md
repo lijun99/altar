@@ -362,6 +362,21 @@ its share of each batch, `job.chains` points at once. It is useful to:
   didn't reach that region;
 - **start the next step**: its `optimize.txt` is a `theta` for the other actions.
 
+To optimize only some of the estimated nodes, hold the others in `fixed`, e.g. one row at its start
+and one node at the value the `.ini` gives the nodes that aren't estimated:
+
+```yaml
+seas:
+  optimize:
+    fixed:
+      - log10_alpha_h_3          # the whole row, at its start value
+      - log10_alpha_h_0[4]=10    # its fifth node, at 1e10
+```
+
+A fixed node costs `lm` no finite differences, and the difference of the best log likelihoods with
+and without a node fixed says how much the fit gains from freeing it. Narrower bounds for a run are
+narrower `prior.support` values, per parameter set.
+
 Two things are particular to SEAS. A sample's likelihood depends slightly on the state its spin-up
 starts from, within the spin-up tolerance: a fraction of a log-likelihood unit at
 `spinup_rtol: 1e-5`. CMA-ES doesn't mind; Levenberg-Marquardt, `method: lm`, needs finite
