@@ -123,6 +123,7 @@ The settings of the spin-up and the outputs, described in the sections below:
 | `spinup_anderson_damping` | 1.0 | the damping of each Anderson step: 1 takes it whole, less moves only part of the way (`seas-anderson` only) |
 | `warm_start` | true | start each forward call's spin-up from where its GPU slot's last one ended |
 | `warm_up` | true | before the first forward call, spin up the mean sample alone, and start every slot from it |
+| `rewarm` | true | with `warm_up`, do so before every batch, from the state the last one left |
 | `spinup_file` | none | a step file of an earlier run whose recorded spin-up state the spin-ups start from |
 | `record_mean` | true | for each step file the recorder writes, run the mean model and record it there |
 | `record_posterior` | 0 | at the end of the run, run this many samples of the final population and write them to `posterior_runs.h5` |
@@ -189,6 +190,21 @@ likelihood also depends on what its slot computed before, so keep the tolerance 
 With `warm_up`, the first forward call is preceded by the spin-up of the population's mean sample
 alone, whose state then starts every slot: one system runs the long cold spin-up instead of the
 whole batch. A slot whose sample fails to integrate starts its next call cold again.
+
+With `rewarm`, the default, every batch is preceded by such a warm-up, on its own mean sample and
+from the state the last one left, instead of each slot starting from the sample it ran last. Early
+in the annealing the proposals are wide, so the sample a slot ran last can be far from its next
+one. Most spin-ups still converge quickly from there, but a few in a batch can stall at
+`n_cycles_max` or fail, and the whole batch waits for them. In test cases with 512 prior samples per
+GPU, the later calls took 3 to 15 times longer without `rewarm` than the first, and with it about
+the same. Near the posterior the samples a slot runs are close together, and the extra warm-up
+costs 10-15% per call.
+
+Warm starts are also more accurate than cold ones. A cold spin-up stops at about the same distance
+from the steady cycle every time, while a warm one keeps closing in on it from one call to the next.
+In both test cases, a cold start at the recommended tolerances was off by about 0.6-0.8 in the
+log-likelihood of posterior samples, against a reference 100 times tighter. Two calls later the
+rewarmed ones were off by 0.2-0.3.
 
 For each step file the recorder writes, every `output_freq` beta steps and at the end,
 `record_mean` runs the mean model, and its state then also starts every slot's next call.
