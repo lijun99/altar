@@ -138,13 +138,14 @@ checked half of the state, the slip rates or the tractions, between consecutive 
 by component:
 
 $$
-|y_\text{new} - y_\text{old}| \le \texttt{spinup\_atol} + \texttt{spinup\_rtol}\,\max(|y_\text{new}|, |y_\text{old}|)
+|y_\text{new} - y_\text{old}| \le a + r \max(|y_\text{new}|, |y_\text{old}|)
 $$
 
-The test bounds the change per cycle, not the distance to the steady cycle. When each cycle closes
-only a small part of the remaining gap, the remaining error can be many times the last change. So
-the tolerance has to be tight. With `spinup_rtol = 1` the test passes after one or two cycles,
-whatever the state, which is far from converged.
+where $a$ is `spinup_atol` and $r$ is `spinup_rtol`. The test bounds the change per cycle, not
+the distance to the steady cycle. When each cycle closes only a small part of the remaining gap,
+the remaining error can be many times the last change. So the tolerance has to be tight. With
+`spinup_rtol = 1` the test passes after one or two cycles, whatever the state, which is far from
+converged.
 
 Which of the two tolerances matters depends on the ODE:
 
@@ -152,8 +153,8 @@ Which of the two tolerances matters depends on the ODE:
   change of $v$, the same on every patch, so `spinup_atol` sets the accuracy and `spinup_rtol`
   should be 0. With rtol > 0, patches whose slip rate is far from $v_0$ would get a looser test,
   for no physical reason. `spinup_atol = 1e-3` bounds the change of $v$ per cycle to 0.1%.
-- **traction-dependent:** the state is the traction $\tau \approx (\rho + \log(v/v_0))\,\alpha_h$,
-  about $100\,\alpha_h$, i.e. $10^7$ to $10^{12}$ Pa. `spinup_atol` in Pa hardly matters, and
+- **traction-dependent:** the state is the traction $\tau \approx (\rho + \log(v/v_0)) \alpha_h$,
+  about $100 \alpha_h$, i.e. $10^7$ to $10^{12}$ Pa. `spinup_atol` in Pa hardly matters, and
   `spinup_rtol` sets the accuracy. Since $\delta v / v \approx \delta\tau / \alpha_h$,
   `spinup_rtol = 1e-5` bounds the change of $v$ per cycle to about 0.1%.
 
