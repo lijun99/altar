@@ -898,9 +898,11 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         Run the mean model of the last beta step and record it via {archiver}, which calls me
         for the steps it writes
         """
-        if self._population is None:
-            return self
-        self.run_mean(theta=np.asarray(self._population))
+        population = self._population
+        # a restart that takes no step, e.g. from a step at beta 1, has only the one it loaded
+        if population is None:
+            population = self.controller.worker.step.theta
+        self.run_mean(theta=np.asarray(population))
         archiver.write("SEAS/theta_mean", self._mean["theta_mean"])
         archiver.write(
             "SEAS/v_t0",
