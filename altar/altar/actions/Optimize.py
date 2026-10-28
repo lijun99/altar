@@ -23,7 +23,7 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
     """
     The best fit of a model to its data: maximize the data log likelihood, or, with {posterior},
     the posterior under the conjugate prior, over the parameters inside the supports of their
-    priors, by CMA-ES, which needs no gradient, Levenberg-Marquardt or L-BFGS, which use a jacobian
+    priors, except those held {fixed}, by CMA-ES, which needs no gradient, Levenberg-Marquardt or L-BFGS, which use a jacobian
     by finite differences; each step runs the forward model on a batch of points, shared among
     the processes of an mpi run
     """
@@ -41,6 +41,11 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
 
     dataset = altar.properties.str(default=None)
     dataset.doc = "the dataset holding {theta} in a plain .h5 file; default the first one"
+
+    fixed = altar.properties.list(schema=altar.properties.str(), default=[])
+    fixed.doc = "the parameters to hold fixed: a parameter set, 'name', or some of its entries, " \
+                "'name[i]' or 'name[i:j]', each at its start value, or at a value of its own, " \
+                "'name[i]=value'"
 
     posterior = altar.properties.bool(default=False)
     posterior.doc = "add the conjugate prior to the objective, for the maximum of the " \
@@ -95,9 +100,13 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
         if self.posterior and prior is None:
             raise ValueError("'posterior' needs the conjugate prior of the model")
         start, scale, sampled = self.start(model=model, lower=lower, upper=upper, prior=prior)
-        problem = Problem(plexus=plexus, model=model, start=start, posterior=self.posterior,
-                          prior=prior, batch=self.batch,
-                          steps=self.difference * scale, lower=lower, upper=upper)
+        fixed = self.pins(model=model, start=start, lower=lower, upper=upper)
+        free = ~fixed
+        # the optimizers see only the free parameters
+        problem = Problem(plexus=plexus, model=model, start=start, free=free,
+                          posterior=self.posterior, prior=prior, batch=self.batch,
+                          steps=self.difference * scale[free], lower=lower[free],
+                          upper=upper[free])
         # the workers of an mpi run only evaluate the points the manager sends them
         if not problem.manager:
             problem.serve()
@@ -110,27 +119,33 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
                      f" {problem.processes} process(es) -> '{self.output}'")
         channel.line(f"  start: {'the prior means' if self.theta is None else self.theta},"
                      f" initial sd {self.step:g} x {'the sample' if sampled else 'the prior'} sd")
+        if fixed.any():
+            channel.line(f"  fixed: {fixed.sum()} parameter{'s' if fixed.sum() > 1 else ''}"
+                         f" ({', '.join(self.fixed)}), {free.sum()} free")
         try:
-            initial = float(problem.values(start[None, :])[0])
+            initial = float(problem.values(start[None, free])[0])
             channel.line(f"  start {what} {initial:.8g}")
             run = {"cma": self.cma, "lm": self.descent, "lbfgs": self.descent}[self.method]
-            result = run(problem=problem, start=start, scale=scale, lower=lower, upper=upper,
-                         initial=initial, channel=channel)
+            result = run(problem=problem, start=start[free], scale=scale[free],
+                         lower=lower[free], upper=upper[free], initial=initial, channel=channel)
             best, x = result["best"], result["x"]
             likelihood = float(problem.values(x[None, :], with_prior=False)[0]) \
                 if self.posterior else best
         finally:
             problem.release()
+        # back to all the parameters
+        result = self.expand(result=result, problem=problem)
+        x = result["x"]
 
         channel.line(f"  stopped after {result['steps']} {result['unit']},"
                      f" {problem.evaluations} evaluations: {result['reason']}")
         channel.line(f"  best {what} {best:.8g}, {best - initial:+.6g} from the start")
         if self.posterior:
             channel.line(f"  its data log likelihood {likelihood:.8g}")
-        self.report(model=model, x=x, lower=lower, upper=upper, sd=result.get("sd"),
+        self.report(model=model, x=x, lower=lower, upper=upper, fixed=fixed, sd=result.get("sd"),
                     channel=channel)
         self.save(result=result, start=start, initial=initial, likelihood=likelihood,
-                  lower=lower, upper=upper)
+                  lower=lower, upper=upper, fixed=fixed)
         channel.log()
         return 0
 
@@ -251,29 +266,96 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
         return numpy.clip(mean, lower, upper), scale, sampled
 
 
-    def report(self, model, x, lower, upper, channel, sd=None):
+    def pins(self, model, start, lower, upper):
         """
-        Summarize the best point by parameter set on {channel}, with the parameters on a bound
-        and, from lm, the median standard deviation at the optimum
+        The mask of the parameters in {fixed}; those given a value get it in {start}
         """
+        import re
+        fixed = numpy.zeros(model.parameters, dtype=bool)
+        form = re.compile(r"^\s*(\w+)\s*(?:\[([^\]]*)\])?\s*(?:=\s*(\S+))?\s*$")
+        for entry in self.fixed:
+            match = form.match(entry)
+            if match is None:
+                raise ValueError(f"fixed: '{entry}' is not 'name', 'name[i]' or 'name[i:j]',"
+                                 f" with an optional '=value'")
+            name, index, value = match.groups()
+            if name not in model.psets_list:
+                raise ValueError(f"fixed: no parameter set '{name}'; the sets are"
+                                 f" {', '.join(model.psets_list)}")
+            pset = model.psets[name]
+            entries = numpy.arange(pset.count)
+            if index is not None:
+                try:
+                    parts = [int(part) if part.strip() else None for part in index.split(":")]
+                    if len(parts) == 1:
+                        entries = entries[[parts[0]]] if parts[0] is not None else entries[:0]
+                    else:
+                        entries = entries[slice(*parts)]
+                except (ValueError, TypeError, IndexError):
+                    raise ValueError(f"fixed: '{entry}': not an index or a slice of the"
+                                     f" {pset.count} entries of '{name}'") from None
+                if entries.size == 0:
+                    raise ValueError(f"fixed: '{entry}' selects no entries of '{name}'")
+            columns = pset.offset + entries
+            if value is not None:
+                v = float(value)
+                if ((v < lower[columns]) | (v > upper[columns])).any():
+                    raise ValueError(f"fixed: '{entry}' is outside the support of its prior")
+                start[columns] = v
+            fixed[columns] = True
+        if fixed.all():
+            raise ValueError("fixed: every parameter is fixed, there is nothing to optimize")
+        return fixed
+
+
+    def expand(self, result, problem):
+        """
+        The {result} of the optimizer over the free parameters, over all of them: the fixed ones
+        at their values, with zero standard deviations and covariances
+        """
+        free = problem.free
+        result["x"] = problem.expand(result["x"][None, :])[0]
+        if "sd" in result:
+            sd = numpy.zeros(free.size)
+            sd[free] = result["sd"]
+            result["sd"] = sd
+        final = result.get("final")
+        if final:
+            covariance = numpy.zeros((free.size, free.size))
+            covariance[numpy.ix_(free, free)] = final["covariance"]
+            final["mean"] = problem.expand(final["mean"][None, :])[0]
+            final["covariance"] = covariance
+        return result
+
+
+    def report(self, model, x, lower, upper, fixed, channel, sd=None):
+        """
+        Summarize the best point by parameter set on {channel}, with the free parameters on a
+        bound, the fixed ones, and, from lm, the median standard deviation of the free ones at
+        the optimum
+        """
+        pinned = fixed.any()
         channel.line(f"  {'parameter set':16s}{'count':>6s}{'mean':>14s}{'[min, max]':>30s}"
-                     f"{'on a bound':>12s}" + (f"{'median sd':>12s}" if sd is not None else ""))
+                     f"{'on a bound':>12s}" + (f"{'fixed':>8s}" if pinned else "")
+                     + (f"{'median sd':>12s}" if sd is not None else ""))
         for name in model.psets_list:
             pset = model.psets[name]
             columns = slice(pset.offset, pset.offset + pset.count)
-            v, lo, hi = x[columns], lower[columns], upper[columns]
+            v, lo, hi, held = x[columns], lower[columns], upper[columns], fixed[columns]
             width = numpy.where(numpy.isfinite(hi - lo), hi - lo, 1.0)
-            edge = int(((v - lo <= 1e-6 * width) | (hi - v <= 1e-6 * width)).sum())
+            edge = int((((v - lo <= 1e-6 * width) | (hi - v <= 1e-6 * width)) & ~held).sum())
+            median = "" if sd is None else f"{'-':>12s}" if held.all() \
+                else f"{numpy.median(sd[columns][~held]):12.4g}"
             channel.line(f"  {name:16s}{pset.count:6d}{v.mean():14.6g}"
                          f"{f'[{v.min():.6g}, {v.max():.6g}]':>30s}{edge:12d}"
-                         + (f"{numpy.median(sd[columns]):12.4g}" if sd is not None else ""))
+                         + (f"{int(held.sum()):8d}" if pinned else "") + median)
         if sd is not None:
             channel.line("  (sd: from (J^T J)^{-1} at the optimum; zero for the parameters held"
-                         " on a bound)")
+                         " on a bound" + (" and the fixed ones)" if pinned else ")"))
         return
 
 
-    def save(self, result, start, initial, likelihood, lower, upper):
+    def save(self, result, start, initial, likelihood, lower, upper, fixed):
         """
         Save the best point, the start, the final state of the optimizer and the history
         """
@@ -284,6 +366,7 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
             h5["best/loglikelihood"] = likelihood
             h5["start/theta"], h5["start/objective"] = start, initial
             h5["bounds/lower"], h5["bounds/upper"] = lower, upper
+            h5["fixed"] = fixed
             for key, value in result["history"].items():
                 h5[f"history/{key}"] = value
             for key, value in result.get("final", {}).items():
@@ -302,16 +385,18 @@ class Problem:
     """
     The fit of a model to its data, as least squares: the whitened residuals of the rows of theta,
     summed over the models of an ensemble, each on its own columns, plus the conjugate prior if
-    asked for, and their jacobian by central differences. The rows of each batch are shared among
-    the processes of an mpi run: the manager sends them, every process runs its part, and the
+    asked for, and their jacobian by central differences. The rows hold the {free} parameters;
+    the others keep their values in {start}. The rows of each batch are shared among the
+    processes of an mpi run: the manager sends them, every process runs its part, and the
     manager collects the residuals
     """
 
 
-    def __init__(self, plexus, model, start, posterior, prior, batch, steps, lower, upper):
+    def __init__(self, plexus, model, start, free, posterior, prior, batch, steps, lower, upper):
         import mpi
         self.plexus, self.posterior, self.prior, self.batch = plexus, posterior, prior, batch
         self.steps, self.lower, self.upper = steps, lower, upper
+        self.template, self.free = start.copy(), free
         self.world = mpi.world
         self.processes = self.world.size
         self.manager = self.world.rank == 0
@@ -335,8 +420,17 @@ class Problem:
         The residuals of each row of {theta}, on the manager; a collective call
         """
         with_prior = self.posterior if with_prior is None else with_prior
-        theta = self.world.bcast(item=("residuals", theta, with_prior), source=0)[1]
+        theta = self.world.bcast(item=("residuals", self.expand(theta), with_prior), source=0)[1]
         return self.share(theta=theta, with_prior=with_prior)
+
+
+    def expand(self, theta):
+        """
+        The rows of {theta}, over the free parameters, with the fixed ones added
+        """
+        full = numpy.tile(self.template, (theta.shape[0], 1))
+        full[:, self.free] = theta
+        return full
 
 
     def share(self, theta, with_prior):
@@ -385,7 +479,7 @@ class Problem:
     def jacobian(self, x):
         """
         The jacobian of the residuals at {x}, by central differences inside the bounds, all the
-        perturbed points in one batch
+        perturbed points in one batch; over the free parameters only
         """
         n = x.size
         plus = numpy.minimum(x + self.steps, self.upper)

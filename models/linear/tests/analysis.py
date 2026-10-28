@@ -21,7 +21,9 @@ its tr R and its linearized standard deviations must be those of the exact poste
 the {recover} action, given exact samples of the posterior for those data, must find the z
 scores of the truth under that posterior. The {optimize} action maximizes the posterior under
 the conjugate prior, here the exact one: the best point of each of its methods must be μ, and
-the standard deviations of Levenberg-Marquardt at the optimum those of C. The {diagnose} action
+the standard deviations of Levenberg-Marquardt at the optimum those of C; with some parameters
+fixed, Levenberg-Marquardt must find the mean and the standard deviations of the others under
+the conditional posterior, and leave the fixed ones at their values. The {diagnose} action
 compares the catmip posterior with the exact samples: their means and standard deviations must
 agree; it also reports the diagnostics of the walks: every resampling keeps some parents, and
 the last walk forgets most of its start.
@@ -58,6 +60,8 @@ CORRELATION = 0.6
 OPTIMUM = 1e-3
 EXACT = 1e-6
 LBFGS = 1e-2
+# the parameters the conditional optimum holds fixed: three at a value, one at its start
+FIXED = "[all[0:3]=0.1, all[10]]"
 
 CONFIG = f"""
 linear:
@@ -152,6 +156,9 @@ def main():
                          "--linear.optimize.method=lm", "--linear.optimize.output=lm.h5"],
                         [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus,
                          "--linear.optimize.method=lbfgs", "--linear.optimize.output=lbfgs.h5"],
+                        [sys.executable, "-c", PLEXUS, "optimize", "--config=linear.pfg", gpus,
+                         "--linear.optimize.method=lm", f"--linear.optimize.fixed={FIXED}",
+                         "--linear.optimize.output=fixed.h5"],
                         [sys.executable, "-c", PLEXUS, "synthetic", "--config=linear.pfg", gpus],
                         "exact samples of the synthetic data",
                         [sys.executable, "-c", PLEXUS, "recover", "--config=linear.pfg", gpus]]:
@@ -187,6 +194,9 @@ def main():
             lm, lm_sd = numpy.asarray(h5["best/theta"]), numpy.asarray(h5["best/sd"])
         with h5py.File(scratch / "lbfgs.h5") as h5:
             lbfgs = numpy.asarray(h5["best/theta"])
+        with h5py.File(scratch / "fixed.h5") as h5:
+            pinned, pinned_sd = numpy.asarray(h5["best/theta"]), numpy.asarray(h5["best/sd"])
+            held, pinned_start = numpy.asarray(h5["fixed"]), numpy.asarray(h5["start/theta"])
         with h5py.File(scratch / "recover.h5") as h5:
             z = numpy.asarray(h5["z"])
         truth = numpy.loadtxt(scratch / "synthetic" / "truth.txt")
@@ -199,6 +209,20 @@ def main():
         offset = (numpy.abs(optimum - mean) / sd).max()
         lm_offset, lbfgs_offset = (numpy.abs(lm - mean) / sd).max(), (numpy.abs(lbfgs - mean) / sd).max()
         lm_sd_error = numpy.abs(lm_sd / sd - 1).max()
+        # the conditional posterior of the free parameters, given the fixed ones at their values
+        free = ~held
+        values = numpy.zeros(held.size)
+        values[:3] = 0.1
+        values[10] = pinned_start[10]
+        conditional_cov = numpy.linalg.inv(numpy.linalg.inv(cov)[numpy.ix_(free, free)])
+        conditional = mean[free] + cov[numpy.ix_(free, held)] @ numpy.linalg.solve(
+            cov[numpy.ix_(held, held)], values[held] - mean[held])
+        conditional_sd = numpy.sqrt(numpy.diag(conditional_cov))
+        fixed_offset = (numpy.abs(pinned[free] - conditional) / conditional_sd).max()
+        fixed_sd_error = numpy.abs(pinned_sd[free] / conditional_sd - 1).max()
+        fixed_held = numpy.abs(pinned[held] - values[held]).max() + numpy.abs(pinned_sd[held]).max()
+        expected_held = numpy.zeros(held.size, dtype=bool)
+        expected_held[[0, 1, 2, 10]] = True
         FC = F @ cov
         expected = at_mean - 0.5 * numpy.trace(FC)
         variance = 0.5 * numpy.trace(FC @ FC) + g @ cov @ g
@@ -225,6 +249,10 @@ def main():
             ("optimize lm, max |x - μ|/sd", lm_offset, 0.0, lm_offset <= EXACT),
             ("optimize lm, sd, max rel error", lm_sd_error, 0.0, lm_sd_error <= EXACT),
             ("optimize lbfgs, max |x - μ|/sd", lbfgs_offset, 0.0, lbfgs_offset <= LBFGS),
+            ("optimize fixed, the fixed ones", fixed_held, 0.0,
+             (held == expected_held).all() and fixed_held == 0),
+            ("optimize fixed, max |x - μ|/sd", fixed_offset, 0.0, fixed_offset <= EXACT),
+            ("optimize fixed, sd, max rel error", fixed_sd_error, 0.0, fixed_sd_error <= EXACT),
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
