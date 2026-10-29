@@ -211,7 +211,7 @@ switches to `nearest` once beta reaches it, keeping `mean` where the population 
 its cost near the posterior.
 
 In test cases with 512 prior samples per GPU, a fresh set every call, as after a resampling, the
-later calls took 3 to 15 times longer than the first with `slot`; with `mean` and `nearest` they
+later calls took 2 to 15 times longer than the first with `slot`; with `mean` and `nearest` they
 took about as long as the first, with no sample past 23 cycles for the rate-dependent ODE or 72 for
 the traction one. Near the posterior, where no batch stalls, `nearest` cost the same as `slot`, and
 `mean` 9-14% more, for its extra spin-up.
