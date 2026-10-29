@@ -121,9 +121,9 @@ The settings of the spin-up and the outputs, described in the sections below:
 |---|---|---|
 | `spinup_anderson` | 0 | accelerate the spin-up by Anderson mixing of this many of its last cycles, at most 8; 0 is off (`seas-anderson` only) |
 | `spinup_anderson_damping` | 1.0 | the damping of each Anderson step: 1 takes it whole, less moves only part of the way (`seas-anderson` only) |
-| `warm_start` | true | start each forward call's spin-up from where its GPU slot's last one ended |
-| `warm_up` | true | before the first forward call, spin up the mean sample alone, and start every slot from it |
-| `rewarm` | true | with `warm_up`, do so before every batch, from the state the last one left |
+| `warm_start` | `mean` | where each forward call's spin-ups start: `mean`, `nearest`, `slot` or `cold` |
+| `mean_until` | none | with `mean`, use the mean only while beta is below this, and `nearest` after |
+| `warm_up` | true | with `nearest` or `slot`, spin up the first batch's mean sample alone and start every slot from it |
 | `spinup_file` | none | a step file of an earlier run whose recorded spin-up state the spin-ups start from |
 | `record_mean` | true | for each step file the recorder writes, run the mean model and record it there |
 | `record_posterior` | 0 | at the end of the run, run this many samples of the final population and write them to `posterior_runs.h5` |
@@ -179,33 +179,52 @@ $\alpha_h$ makes the slip rate relax very slowly. In a traction-dependent test c
 the warm-up with Anderson took 13 cycles. `v_init_file` in the `[simulation]` section of the `.ini`
 replaces it with any velocity of shape `[inner patches, 2]` in m/s, saved with `numpy.save`.
 
-### Warm starts and the warm-up
+### Warm starts
 
-A cold spin-up takes tens to hundreds of cycles. With `warm_start`, each GPU slot starts its next
-forward call from the slip rates its last call ended with. The traction-dependent ODE builds each
-sample's initial traction from them with its own $\alpha_h$. Since nearby samples have similar
-steady cycles, a warm call needs far fewer cycles. With a tight tolerance the result doesn't depend
-on where the spin-up started, so the warm start only saves time. With a loose one, a sample's
-likelihood also depends on what its slot computed before, so keep the tolerance tight.
+A cold spin-up takes tens to hundreds of cycles. A warm one starts from the slip rates another
+sample's spin-up reached, and since nearby samples have similar steady cycles, it needs far fewer.
+The traction-dependent ODE builds each sample's initial traction from those slip rates with its own
+$\alpha_h$. A slot whose sample fails to integrate starts its next call cold again. `warm_start`
+says where each forward call's spin-ups start:
 
-With `warm_up`, the first forward call is preceded by the spin-up of the population's mean sample
-alone, whose state then starts every slot: one system runs the long cold spin-up instead of the
-whole batch. A slot whose sample fails to integrate starts its next call cold again.
+`mean` (the default)
+: before each batch, the batch's mean sample spins up alone, from the state the previous batch
+  left, and every sample starts from its state. The most accurate, at the cost of that extra
+  spin-up, 9-14% of a call near the posterior.
 
-With `rewarm`, the default, every batch is preceded by such a warm-up, on its own mean sample and
-from the state the last one left, instead of each slot starting from the sample it ran last. Early
-in the annealing the proposals are wide, so the sample a slot ran last can be far from its next
-one. Most spin-ups still converge quickly from there, but a few in a batch can stall at
-`n_cycles_max` or fail, and the whole batch waits for them. In test cases with 512 prior samples per
-GPU, the later calls took 3 to 15 times longer without `rewarm` than the first, and with it about
-the same. Near the posterior the samples a slot runs are close together, and the extra warm-up
-costs 10-15% per call.
+`nearest`
+: each sample starts from the state of the sample of the previous batch nearest to it, in units of
+  that batch's spread. As fast as a start can be, and nearly as robust as `mean`.
 
-Warm starts are also more accurate than cold ones. A cold spin-up stops at about the same distance
-from the steady cycle every time, while a warm one keeps closing in on it from one call to the next.
-In both test cases, a cold start at the recommended tolerances was off by about 0.6-0.8 in the
-log-likelihood of posterior samples, against a reference 100 times tighter. Two calls later the
-rewarmed ones were off by 0.2-0.3.
+`slot`
+: each sample starts from the state of whatever sample its GPU slot ran last. Early in the
+  annealing the proposals are wide, and the population is reshuffled at every resampling, so that
+  sample can be far from the new one: most spin-ups still converge quickly, but a few in a batch
+  stall at `n_cycles_max` or fail, and the whole batch waits for them.
+
+`cold`
+: every spin-up starts from `v_init`.
+
+With `nearest` and `slot`, `warm_up` spins up the first batch's mean sample alone before it, so
+that one system, rather than the whole batch, runs the long cold spin-up. With `mean`, `mean_until`
+switches to `nearest` once beta reaches it, keeping `mean` where the population is wide and saving
+its cost near the posterior.
+
+In test cases with 512 prior samples per GPU, a fresh set every call, as after a resampling, the
+later calls took 3 to 15 times longer than the first with `slot`; with `mean` and `nearest` they
+took about as long as the first, with no sample past 23 cycles for the rate-dependent ODE or 72 for
+the traction one. Near the posterior, where no batch stalls, `nearest` cost the same as `slot`, and
+`mean` 9-14% more, for its extra spin-up.
+
+With a tight tolerance the result hardly depends on where a spin-up started, but not exactly. The
+test stops a spin-up once a cycle changes it by less than the tolerance, and its remaining error is
+roughly proportional to how far it started from the steady cycle. A cold start ends at about the
+same distance every time; a warm one inherits the spin-ups before it and keeps closing in from one
+call to the next. In both test cases, against a reference 100 times tighter, cold starts at the
+recommended tolerances were off by 0.6-0.8 in the log likelihood of posterior samples; two calls
+later, `mean` starts were off by 0.2-0.3 and `nearest` and `slot` starts by 0.35-0.42. All of them
+are small against the spread of the posterior's log likelihoods, about 4, and nearly the same for
+every sample.
 
 For each step file the recorder writes, every `output_freq` beta steps and at the end,
 `record_mean` runs the mean model, and its state then also starts every slot's next call.
