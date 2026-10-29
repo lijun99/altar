@@ -77,24 +77,29 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "the damping of each anderson step: 1, the default, takes it whole, less moves only "
         "part of the way, for spin-ups whose steps overshoot"
     )
-    warm_start = altar.properties.bool(default=True)
+    warm_start = altar.properties.str(default="mean")
+    warm_start.validators = altar.constraints.isMember(
+        "mean", "nearest", "slot", "cold"
+    )
     warm_start.doc = (
-        "start the spin-up of each forward call from the slip rates its gpu slot reached in "
-        "the previous call, instead of from v_init; it saves most of the spin-up cycles, but "
-        "needs a tight spinup_rtol, or the likelihoods depend on what the slot computed before"
+        "where the spin-up of each forward call starts: 'mean', the default and the most "
+        "accurate, from a spin-up of the batch's mean sample alone, itself started from the "
+        "state the previous batch left; 'nearest', from the state of the previous batch's "
+        "sample nearest to each one, at no extra cost; 'slot', from the state of the sample "
+        "the gpu slot ran last, which stalls batches while the proposals are wide; 'cold', "
+        "from v_init"
     )
     warm_up = altar.properties.bool(default=True)
     warm_up.doc = (
-        "with {warm_start}, spin up the mean sample of the first batch alone, from v_init, and "
-        "start every slot from its state: the long cold spin-up then runs on one system "
-        "rather than on the whole batch; see {rewarm} for the later batches"
+        "with {warm_start} 'nearest' or 'slot', spin up the mean sample of the first batch "
+        "alone, from v_init, and start every slot from its state: the long cold spin-up then "
+        "runs on one system rather than on the whole batch"
     )
-    rewarm = altar.properties.bool(default=True)
-    rewarm.doc = (
-        "with {warm_up}, warm up on the mean sample of every batch, from the state the previous "
-        "batch left, rather than only on the first: each slot then starts near its sample, "
-        "instead of from the state of whatever sample it ran last, which, while the proposals "
-        "are wide, stalls a few spin-ups at n_cycles_max and with them the whole batch"
+    mean_until = altar.properties.float(default=None)
+    mean_until.doc = (
+        "with {warm_start} 'mean', start from the mean sample only while the annealing "
+        "temperature is below this, and from the nearest sample after; unset, the default, "
+        "throughout"
     )
     spinup_file = altar.properties.path(default=None)
     spinup_file.doc = (
@@ -607,7 +612,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         if self.forward_ode == "ratedependent":
 
             # without a warm start, every batch starts from v_init
-            if not self.warm_start:
+            if self.warm_start == "cold":
                 np.asarray(self.state_init)[...] = self.state_init_cold
             # call CUDA forward model
             ticks.append(self.sync_and_time())
@@ -622,7 +627,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             # the slip rates to start from, [batch_size_run, patches, 2]: those each slot
             # reached at t = 0 in the previous batch, else v_init
             state_init = np.asarray(self.state_init)
-            if self.warm_start and self._warm:
+            if self.warm_start != "cold" and self._warm:
                 v = (
                     state_init[:batch_size_run, 2 * patches :]
                     .reshape(batch_size_run, 2, patches)
@@ -657,6 +662,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         if failed.any():
             slots = failed[np.arange(self.cuda_batch_size) % batch_size_run]
             self.cool(slots=slots)
+        # the samples whose states the slots hold, for a nearest start
+        self._previous = (np.array(theta[:batch_size_run], dtype=float), ~failed)
 
         # log timings
         ticks.append(self.sync_and_time())
@@ -854,11 +861,18 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
 
     def warm(self, theta):
         """
-        Spin up the mean of the samples {theta} alone, before the first batch or, with {rewarm},
-        before every one; the forward model leaves its state in every slot, for all the samples
-        to start from
+        Set the states the slots start from for the samples {theta}, as {warm_start} says: a
+        spin-up of their mean alone, whose state the forward model leaves in every slot, before
+        every batch for 'mean' and before the first with {warm_up}; otherwise, for 'nearest'
+        and for 'mean' past {mean_until}, the state of the previous sample nearest to each
         """
-        if not (self.warm_start and self.warm_up and (self.rewarm or not self._warm)):
+        mode = self.warm_start
+        if mode == "cold":
+            return self
+        first = not self._warm
+        if not ((mode == "mean" and self.mean_now()) or (first and self.warm_up)):
+            if mode in ("mean", "nearest") and not first:
+                self.nearest(theta=theta)
             return self
         start = perf_counter()
         self.forward_model_batched(
@@ -871,6 +885,43 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             f"Device {self.device.id}: warmed up on the mean sample in "
             f"{perf_counter() - start:.1f}s, {cycles} spin-up cycles"
         )
+        return self
+
+    def mean_now(self):
+        """
+        Whether a 'mean' warm start still uses the mean at the current temperature: always
+        without {mean_until}, or outside an annealing
+        """
+        if self.mean_until is None:
+            return True
+        # under mpi, the local worker holds the step, with the temperature broadcast to it
+        worker = getattr(getattr(self, "controller", None), "worker", None)
+        worker = getattr(worker, "worker", worker)
+        beta = getattr(getattr(worker, "step", None), "beta", None)
+        return beta is None or float(beta) < self.mean_until
+
+    def nearest(self, theta):
+        """
+        Start the slot of each row of {theta} from the state of the sample of the previous
+        batch nearest to it, in units of that batch's spread; samples that failed don't count
+        """
+        if self._previous is None:
+            return self
+        previous, usable = self._previous
+        if not usable.any():
+            return self
+        theta = np.asarray(theta, dtype=float)
+        candidates, slots = previous[usable], np.flatnonzero(usable)
+        spread = candidates.std(axis=0)
+        spread[spread == 0] = 1
+        distance = (((theta[:, None, :] - candidates[None, :, :]) / spread) ** 2).sum(
+            axis=2
+        )
+        source = slots[distance.argmin(axis=1)]
+        # the checked half of the state, the slip rates or their logarithm
+        patches = self.fault.inner_num_patches
+        state = np.asarray(self.state_init)
+        state[: theta.shape[0], 2 * patches :] = state[source, 2 * patches :]
         return self
 
     def run_mean(self, theta):
@@ -1020,8 +1071,8 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             self.info.log(f"Device {self.device.id}: {message}; spinning up cold")
             return self
 
-        if not self.warm_start:
-            return unusable("spin-up states need warm_start") if given else self
+        if self.warm_start == "cold":
+            return unusable("spin-up states need a warm_start") if given else self
         import h5py
 
         with h5py.File(str(path), "r") as f:
@@ -1065,6 +1116,7 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
     )
     _mean = None  # the mean model of the last beta step, for the archiver
     _population = None  # the samples of the last beta step, for their mean model
+    _previous = None  # the samples of the last batch and which of them didn't fail
 
 
 # end of file
