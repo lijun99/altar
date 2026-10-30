@@ -227,7 +227,8 @@ are small against the spread of the posterior's log likelihoods, about 4, and ne
 every sample.
 
 For each step file the recorder writes, every `output_freq` beta steps and at the end,
-`record_mean` runs the mean model, and its state then also starts every slot's next call.
+`record_mean` runs the mean model, and except with `cold`, its state then also starts the next
+call's spin-ups, as a warm-up on the mean would.
 
 ### Anderson acceleration
 
