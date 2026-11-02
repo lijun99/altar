@@ -82,4 +82,14 @@ def diagnose():
     # and  return the panel
     return Diagnose
 
+# the best fit of a model to its data, without gradients
+@altar.foundry(implements=altar.action, tip="find the best fit of the model to its data")
+def optimize():
+    # get the command panel
+    from .Optimize import Optimize
+    # attach the docstring
+    __doc__ = Optimize.__doc__
+    # and  return the panel
+    return Optimize
+
 # end of file

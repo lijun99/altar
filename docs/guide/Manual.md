@@ -9,6 +9,7 @@ QuickStart
 Pyre
 AlTarFramework
 Convergence
+Optimize
 Priors
 Models
 ```
