@@ -102,26 +102,20 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
 
         # the mesh of the arrival times, and its tables
-        xyz, coords, triangles, patch = meshes.refine(vertices, faces, uv, self.refine)
-        edges = xyz[triangles[:, [1, 2, 0]]] - xyz[triangles]
-        spacing = float(numpy.sqrt((edges ** 2).sum(-1)).mean())
-        corners, weights = meshes.locate(sources, owners, coords, triangles, patch)
-        tables = meshes.tables(xyz, triangles, patch)
-        self.vertices = xyz.shape[0]
+        grid = meshes.arrival_mesh(vertices, faces, uv, sources, owners, self.refine)
+        self.vertices = grid["xyz"].shape[0]
         application.info.log(f"kinematic mesh: {patches} patches, {self.vertices} vertices,"
-                             f" spacing {spacing:.3g} km, {counts[0]} source points per patch")
+                             f" spacing {grid['spacing']:.3g} km, {counts[0]} source points per patch")
 
         # the green's functions, kept raw for the forward problem
         self.GF = self.io.load(filename=self.green, shape=(self.NGbparameters, self.observations))
-        geometry = meshes.patch_geometry(vertices, faces, uv)
 
         if self.native:
             from altar.models.seismic.ext import seismic
             self._native_green()
             self.cmodel = seismic.KinematicMesh(
-                Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, xyz=xyz, patchGeometry=geometry,
-                spacing=spacing, Nsp=int(counts[0]), corners=corners, weights=weights,
-                idx_map=idx_map, precision=self.precision, **tables)
+                Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, Nsp=int(counts[0]), idx_map=idx_map,
+                precision=self.precision, **grid)
             return self.configure_stf(application=application)
 
         from altar.models.seismic.ext import cudaseismic
@@ -132,11 +126,9 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         self._premerge_covariance()
 
         self.cmodel = cudaseismic.cudaKinematicMesh(
-            Np=patches, Nt=self.Nt, dt=self.dt, t0s=self.gt0s.grid, xyz=xyz,
-            patchGeometry=geometry, spacing=spacing,
-            Nsp=int(counts[0]), corners=corners, weights=weights, samples=self.samples,
-            parameters=self.parameters, observations=self.observations,
-            idx_map=self.gidx_map.grid, **tables)
+            Np=patches, Nt=self.Nt, dt=self.dt, t0s=self.gt0s.grid, Nsp=int(counts[0]),
+            samples=self.samples, parameters=self.parameters, observations=self.observations,
+            idx_map=self.gidx_map.grid, **grid)
         # all done
         return self.configure_stf(application=application)
 

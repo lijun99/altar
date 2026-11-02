@@ -109,4 +109,18 @@ def locate(points, patches, uv, triangles, patch):
     return corners, weights
 
 
+def arrival_mesh(vertices, faces, uv, sources, owners, m):
+    """
+    What the compiled kinematic models on a triangulated fault take: the vertices of the mesh of
+    the arrival times, {faces} cut m x m times, the mean length of its edges, the triangle of each
+    source point and its weights, the geometry of the patches and the tables
+    """
+    xyz, coords, triangles, patch = refine(vertices, faces, uv, m)
+    edges = xyz[triangles[:, [1, 2, 0]]] - xyz[triangles]
+    corners, weights = locate(sources, owners, coords, triangles, patch)
+    return {"xyz": xyz, "spacing": float(numpy.sqrt((edges ** 2).sum(-1)).mean()),
+            "corners": corners, "weights": weights,
+            "patchGeometry": patch_geometry(vertices, faces, uv), **tables(xyz, triangles, patch)}
+
+
 # end of file
