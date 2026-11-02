@@ -295,6 +295,26 @@ models:
 `origin`
 : the time of the origin of the rupture in the time of the picks, in s; default 0.
 
+### Slip histories outside of AlTar
+
+`SlipHistory`, in `altar.models.seismic.history`, makes the slip histories of the model on
+triangles without an application, e.g. for synthetics or least squares in other programs, such
+as CSI's `TriangularPatchesKin.castbigM`. It runs the compiled model on the cpu:
+
+```python
+from altar.models.seismic.history import SlipHistory
+
+history = SlipHistory(vertices, faces, uv, sources, patches, Nt=85, dt=1.0, refine=10,
+                      stf="triangle", peak=0.5)
+Mb = history(slip, risetime, velocity, hypocenter)        # Nt x 2 x patches
+onsets, times = history.arrivals(velocity, hypocenter)    # at the source points, at the vertices
+```
+
+The `slip` of each patch is along the two rakes of the Green's functions (patches x 2), the rise
+times and rupture velocities one per patch, and the hypocenter in surface coordinates; with a
+leading axis on each, it computes a batch of models at once. The data are then the big G times
+`Mb`, raveled.
+
 ## The cascaded inversion
 
 The example, `cascaded.pfg`, sets up the ensemble:
