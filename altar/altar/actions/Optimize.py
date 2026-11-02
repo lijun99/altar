@@ -7,6 +7,7 @@
 #
 
 # externals
+import functools
 import pathlib
 import numpy
 # get the package
@@ -384,7 +385,7 @@ class Optimize(altar.panel(), family='altar.actions.optimize'):
 class Problem:
     """
     The fit of a model to its data, as least squares: the whitened residuals of the rows of theta,
-    summed over the models of an ensemble, each on its own columns, plus the conjugate prior if
+    summed over the models of an ensemble, each on its own parameters, plus the conjugate prior if
     asked for, and their jacobian by central differences. The rows hold the {free} parameters;
     the others keep their values in {start}. The rows of each batch are shared among the
     processes of an mpi run: the manager sends them, every process runs its part, and the
@@ -401,15 +402,18 @@ class Problem:
         self.processes = self.world.size
         self.manager = self.world.rank == 0
         self.evaluations = 0
+        # each model with its parameters from the rows: those of an ensemble's member, with the
+        # components of polar slips, if any, derived
         members = getattr(model, "models", None)
         self.parts = []
-        for member, columns in ([(member, model.columns(name)) for name, member in members.items()]
-                                if members else [(model, numpy.arange(model.parameters))]):
+        for member, select in ([(member, functools.partial(model.member_theta, name))
+                                for name, member in members.items()]
+                               if members else [(model, numpy.atleast_2d)]):
             # C_p, if any, at the start, as the forward check does at the posterior mean
             cp = getattr(member, "cp", None)
             if cp is not None:
-                cp.apply(model=member, theta=start[columns])
-            self.parts.append((member, columns, Misfit(dataobs=member.dataobs)))
+                cp.apply(model=member, theta=select(start)[0])
+            self.parts.append((member, select, Misfit(dataobs=member.dataobs)))
         # the normalization: the objective is the constant minus half the sum of squares
         self.constant = sum(misfit.normalization for _, _, misfit in self.parts)
         return
@@ -455,8 +459,8 @@ class Problem:
         for begin in range(0, theta.shape[0], size):
             rows = theta[begin:begin + size]
             columns = []
-            for member, cols, misfit in self.parts:
-                p = member.forward_problem(application=self.plexus, theta=rows[:, cols])["data"]
+            for member, select, misfit in self.parts:
+                p = member.forward_problem(application=self.plexus, theta=select(rows))["data"]
                 columns.append(misfit.whiten(p))
             if with_prior:
                 mean, variance = self.prior

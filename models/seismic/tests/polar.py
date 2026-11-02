@@ -8,9 +8,9 @@
 
 # slips sampled as a magnitude and a rake, the ensemble's {polar}: two static models on random
 # green's functions, one cascaded, one annealed, naming the two components in opposite orders;
-# their predictions and data likelihoods against numpy, from the components of the polar slips;
-# and, with --gpu, the gradients of the ensemble against central differences of the likelihoods,
-# with the magnitudes reparameterized
+# their predictions, data likelihoods and the residuals of the optimize action against numpy, from
+# the components of the polar slips; and, with --gpu, the gradients of the ensemble against central
+# differences of the likelihoods, with the magnitudes reparameterized
 import pathlib
 import sys
 import tempfile
@@ -142,6 +142,13 @@ def main():
             step[i] = h
             fd[i] = (model.member_theta(name, θ[0] + step)[0] - model.member_theta(name, θ[0] - step)[0]) / (2 * h)
         check(f"{name}: member_jacobian", numpy.abs(D - fd).max(), 1e-7)
+    # the residuals of the optimize action, each model on the components of the polar slips
+    from altar.actions.Optimize import Problem
+    problem = Problem(plexus=app, model=model, start=θ[0], free=numpy.ones(θ.shape[1], dtype=bool),
+                      posterior=False, prior=None, batch=None, steps=None, lower=None, upper=None)
+    misfit = -0.5 * (problem.evaluate(theta=θ, with_prior=False) ** 2).sum(axis=1)
+    expected = sum(loglike(name, θ) for name in MEMBERS)
+    check("optimize: residuals", numpy.abs(misfit - expected).max() / numpy.abs(expected).max(), 1e-12)
 
     if gpu:
         import altar.cuda
