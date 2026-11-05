@@ -88,7 +88,7 @@ def cpu():
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py", "arrivals.py", "timeshift.py", "stf.py",
-                                                "history.py"])
+                                                "history.py", "noise.py"])
     tests.append(Test(name="models:seismic:tests:arrivals:table", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "arrivals.py", "--table"]))
     tests += [
@@ -135,6 +135,8 @@ def gpu():
                       command=[sys.executable, "correlated.py", "--gpu"]))
     tests.append(Test(name="models:seismic:tests:polar:gpu", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "polar.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:noise:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "noise.py", "--gpu"]))
     tests.append(Test(name="models:seismic:tests:arrivals:gpu", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "arrivals.py", "--gpu"]))
     tests.append(Test(name="models:seismic:tests:timeshift:gpu", cwd=MODELS / "seismic/tests",
