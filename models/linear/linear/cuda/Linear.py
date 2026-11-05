@@ -68,7 +68,11 @@ class Linear:
         cd_inv = self._dataobs.cd_inv
         # a constant variance: U is the scalar cd_inv; a one-off scaling
         if isinstance(cd_inv, float):
-            numpy.asarray(self.G)[:, :] *= cd_inv
+            G = numpy.asarray(self.G)
+            G[:, :] *= cd_inv
+            # masked observations leave the gradient too, as their residuals vanish
+            if self._dataobs.mask is not None:
+                G[~self._dataobs.mask, :] = 0
             return self
         cublas = altar.cuda.cublas
         handle = altar.cuda.cublas_handle()
