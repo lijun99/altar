@@ -49,6 +49,11 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
                 "direction, and the names my models use for the two components, " \
                 "along = magnitude cos(rake) and across = magnitude sin(rake)"
 
+    noise = altar.properties.dict(schema=altar.properties.str())
+    noise.doc = "the noise scales of my models' data: per model, a parameter set of mine, of one " \
+                "parameter h that no model uses, which scales the model's data covariance by " \
+                "exp(2h), its standard deviations by exp(h)"
+
 
     # protocol obligations
     @altar.export
@@ -103,6 +108,16 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
             member.embedded = True
             member.parameters = int(cols.size)
             member.initialize(application=application)
+        # the column of the noise scale of each model that has one
+        self._noise, self._unscaled = {}, {}
+        for name, pset in self.noise.items():
+            used = [model for model, member in self.models.items() if pset in member.psets_list]
+            if name not in self.models or pset not in self.psets_list or self.psets[pset].count != 1 \
+                    or used or (self.polar and pset in self.polar[:2]):
+                self.error.log(f"noise: '{name}' must be one of my models, and '{pset}' a parameter "
+                               f"set of mine of one parameter, in no model's psets_list ({used})")
+                raise SystemExit(1)
+            self._noise[name] = int(columns[pset][0])
         # the members mounted their own inputs; mine are the ones that stay visible
         application.pfs["inputs"] = self.ifs.discover()
         return self
@@ -129,6 +144,8 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
             member.eval_data_likelihood(
                 theta=self._member_theta(name=name, theta=step.theta, batch=samples),
                 likelihood=likelihood, batch=batch)
+            if name in self._noise:
+                self._scale_likelihood(name=name, theta=step.theta, likelihood=likelihood, batch=samples)
             self._add(x=likelihood, y=step.prior if member.cascaded else step.data, batch=batch)
         dispatcher.notify(event=dispatcher.data_finish, controller=annealer)
 
@@ -201,6 +218,8 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
             member.gradient(controller=controller, step=view, batch=batch)
             target = step.data_gradient if not member.cascaded else (
                 cascade if cascade is not None else step.prior_gradient)
+            if name in self._noise:
+                self._scale_gradient(name=name, theta=θ, view=view, target=target, batch=samples)
             self._scatter(name=name, gradient=view.data_gradient, target=target, batch=samples)
         # d(physical)/d(sampling) on the cascaded data gradients, into the prior gradient
         if cascade is not None:
@@ -280,8 +299,10 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
                 prior_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero(),
                 data_gradient=altar.cuda.matrix(shape=(rows, cols.size), dtype=self.precision).zero())
             member.gradient(controller=controller, step=view, batch=batch)
-            self._scatter(name=name, gradient=view.data_gradient, target=cascade if member.cascaded else data,
-                          batch=samples)
+            target = cascade if member.cascaded else data
+            if name in self._noise:
+                self._scale_gradient(name=name, theta=θ, view=view, target=target, batch=samples)
+            self._scatter(name=name, gradient=view.data_gradient, target=target, batch=samples)
         m, r = self._polar
         polar = altar.cuda.libcudaaltar.distributions
         polar.cudaPolar_fold(θ.grid, data.grid, step.data_gradient.grid, int(m[0]), int(r[0]), int(m.size))
@@ -293,6 +314,50 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
                 folded *= jacobian
             step.prior_gradient += folded
         return self
+
+
+    def _scale_likelihood(self, name: str, theta: Array, likelihood: Array, batch: int) -> Array:
+        """
+        The data likelihoods {likelihood} of my model {name}, c - chi^2/2, with its covariance
+        scaled by exp(2h): c - N h - exp(-2h) chi^2/2
+        """
+        column = self._noise[name]
+        N, c = self._noise_constants(name=name)
+        if altar.backends.active() == "cuda":
+            altar.cuda.libcudaaltar.distributions.cudaNoise_likelihood(
+                _grid(theta), _grid(likelihood), column, N, c, batch)
+            return likelihood
+        h = theta[:batch, column]
+        likelihood[:batch] = c - N * h + numpy.exp(-2 * h) * (likelihood[:batch] - c)
+        return likelihood
+
+
+    def _scale_gradient(self, name: str, theta: Array, view: _Gradients, target: Array,
+                        batch: int) -> Array:
+        """
+        The data gradient of my model {name} with its covariance scaled by exp(2h): its own
+        times exp(-2h), and the derivative by h, -N + exp(-2h) chi^2, added to {target}, from
+        its unscaled likelihoods, which cost a forward run
+        """
+        rows = theta.shape[0]
+        likelihood = self._unscaled.get(name)
+        if likelihood is None or likelihood.shape[0] != rows:
+            likelihood = self._unscaled[name] = self._vector(samples=rows)
+        self.models[name].eval_data_likelihood(theta=view.theta, likelihood=likelihood, batch=batch)
+        N, c = self._noise_constants(name=name)
+        altar.cuda.libcudaaltar.distributions.cudaNoise_gradient(
+            _grid(theta), likelihood.grid, view.data_gradient.grid, _grid(target), self._noise[name], N, c, batch)
+        return target
+
+
+    def _noise_constants(self, name: str) -> tuple[float, float]:
+        """
+        The number of valid observations of my model {name} and the normalization of its data
+        likelihood
+        """
+        data = self.models[name].dataobs
+        mask = data.mask
+        return float(data.observations if mask is None else mask.sum()), float(data.normalization)
 
 
     def _member_theta(self, name: str, theta: Array, batch: int) -> Array:
@@ -389,6 +454,15 @@ class Ensemble(BayesianL2, family="altar.models.ensemble"):
     _polar: tuple | None = None # the columns of the magnitudes and of the rakes of polar slips
     _extended: Array | None = None # the extended theta, on the device
     _gradients: tuple | None = None # the gradients on the extended theta, and the folded one
+    _noise: dict[str, int] | None = None # per model with a noise scale, its column of theta
+    _unscaled: dict | None = None # per model with a noise scale, its unscaled likelihoods, on the device
+
+
+def _grid(array: typing.Any) -> typing.Any:
+    """
+    The grid of an {altar.cuda} array, or the grid itself
+    """
+    return getattr(array, "grid", array)
 
 
 class _Gradients:

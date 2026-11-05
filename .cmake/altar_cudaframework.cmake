@@ -61,6 +61,7 @@ function(altar_cuda_buildLibrary)
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaUniform.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaLogitTransform.cu
     ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaPolar.cu
+    ${CMAKE_SOURCE_DIR}/altar/lib/libcudaaltar/distributions/cudaNoise.cu
     )
 
   # stage the altar cuda headers
@@ -123,6 +124,7 @@ function(altar_cuda_buildModule)
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/uniform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/ranged.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/polar.cc
+    ${CMAKE_SOURCE_DIR}/altar/ext/cuda/noise.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/tgaussian.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/logittransform.cc
     ${CMAKE_SOURCE_DIR}/altar/ext/cuda/metropolis.cc

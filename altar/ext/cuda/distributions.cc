@@ -18,6 +18,7 @@
 #include "tgaussian.h"
 #include "logittransform.h"
 #include "polar.h"
+#include "noise.h"
 
 
 // build the {distributions} submodule once, here, and hand it to each distribution's own
@@ -35,6 +36,7 @@ altar::cuda::extensions::distributions::__init__(py::module & m) -> void
     altar::cuda::extensions::distributions::tgaussian::__init__(distributions);
     altar::cuda::extensions::distributions::logittransform::__init__(distributions);
     altar::cuda::extensions::distributions::polar::__init__(distributions);
+    altar::cuda::extensions::distributions::noise::__init__(distributions);
 }
 
 
