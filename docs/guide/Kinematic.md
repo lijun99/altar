@@ -407,6 +407,52 @@ stops when the covariance of the samples becomes singular; the kinematic model a
 single precision.
 ```
 
+### The noise scale of each data set
+
+The covariance of each data set fixes its weight against the others. When it is uncertain, e.g.
+the errors of the earth model in the waveforms against those of the InSAR, the ensemble can sample
+a scale for it with `noise`: per model, a parameter set of one parameter $h$, used by no model,
+that scales its covariance by $e^{2h}$, its standard deviations by $e^h$:
+
+```none
+model = altar.models.ensemble
+model:
+    psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypo_strike, hypo_dip, h_static, h_kinematic]
+    noise:
+        static = h_static
+        kinematic = h_kinematic
+    psets:
+        h_static = contiguous
+        h_kinematic = contiguous
+        h_static:
+            count = 1
+            prior = gaussian
+            prior.mean = 0
+            prior.sigma = 1
+        h_kinematic:
+            count = 1
+            prior = gaussian
+            prior.mean = 0
+            prior.sigma = 1
+```
+
+With $N$ observations and $\chi^2$ under its covariance, a model's data likelihood becomes
+$c - N h - e^{-2h} \chi^2 / 2$, so $h$ settles near $\frac{1}{2} \log(\chi^2 / N)$: a data set
+the model fits worse than its covariance says gets a larger $h$ and less weight. The scale
+applies to the covariance in effect, $C_d$ or $C_\chi = C_d + C_p$ with a model uncertainty. A
+gaussian prior on $h$ needs no reparameterization for HMC; a uniform one does. With HMC, the
+gradient by $h$ takes a forward run of the model beyond its own gradient. The `optimize` action
+takes the noise scales as fixed values: list them in its `fixed`.
+
+On a synthetic of GPS and InSAR on a curved slab, with the InSAR noise three times the standard
+deviation its covariance stated, the stated covariances let the InSAR warp the slips: their error
+was 1.8 times that of a run with the true standard deviations, and only 78% of them were within
+one standard deviation of the truth, against 99%. With a noise scale per data set, $h$ came out
+$1.05 \pm 0.08$ for the InSAR, against $\log 3 = 1.10$, and $-0.07 \pm 0.10$ for the GPS, and
+the slips were as good as with the true standard deviations. The evidence favored the scales over
+the stated covariances by 117, and the true covariances over the scales by 23, the price of two
+more parameters.
+
 ## The check against the data
 
 ```bash
