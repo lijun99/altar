@@ -400,6 +400,34 @@ large with independent components and 0.01 with polar slips, the error of the sl
 the evidence favored the polar slips. A static model alone takes polar slips as the single model
 of an ensemble.
 
+#### Choosing the rake's prior
+
+Where its center comes from: the direction the fault is expected to slip.
+
+- On a subduction interface, the plate convergence from a plate motion model (MORVEL, GSRM),
+  projected onto each patch; the first direction of the Green's functions usually already follows
+  it (csi's `convergenceRakes`), and the mean is then 0.
+- On a strike-slip or crustal fault, pure strike slip along the trace, or the rake of the event's
+  moment tensor (W phase, GCMT).
+
+What sets its standard deviation: how far a patch may turn from that center.
+
+- The scatter of the slip vectors of earlier events on the same fault, e.g. the interplate thrust
+  mechanisms of GCMT around the rupture; on many megathrusts it is 10° to 20°.
+- The obliquity of the convergence: where it is oblique, part of it may be taken up by a
+  strike-slip fault in the forearc, and the interface slips off the convergence; shift the mean or
+  widen the sd (30° or more).
+- The event's own moment tensor: its rake against the center is a lower bound on the spread to
+  allow.
+- What the data resolve: where the fault slips a lot, the data set its rake and the sd matters
+  little; where it barely slips, its rake is the prior's.
+
+The slip across the center that the prior allows grows with the magnitude, about 0.34 m per meter
+of slip at 20°, a few centimeters on a patch that slips 0.1 m. Run two or three sds, e.g. 10°, 20°
+and 40°: with the same data, their evidences compare them, and a slip or rake that moves with them
+is set by the prior, not by the data. The 20° above is generous for the Pedernales synthetic,
+whose rakes stay within a few degrees of the convergence where it slips.
+
 ```{note}
 Run the cascaded example in double precision (`job.gpuprecision = float64`, as it is set). In
 single precision, its acceptance rate drops to zero part way through the annealing, and the run
