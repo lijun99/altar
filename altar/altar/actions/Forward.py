@@ -19,8 +19,12 @@ class Forward(altar.panel(), family='altar.actions.forward'):
     """
     Check a sampled model against its data: run the forward model on the posterior mean and on
     the posterior samples, and compare the predicted data, with its uncertainty band, to the
-    observed data
+    observed data; under mpi, each process runs its share of the samples, and the manager
+    collects them, measures the fit and writes the output
     """
+
+    # the process that collects the runs, as in the mpi annealing
+    manager = 0
 
 
     # user configurable state
@@ -63,13 +67,19 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             if self.samples is not None:
                 reference = reference[:self.samples]
 
+        import mpi
+        communicator = mpi.world
+        boss = communicator.rank == self.manager
         channel = plexus.info
-        channel.line(f"forward: {θ.shape[0]} samples of '{self.theta}' -> '{self.output}'")
+        channel.line(f"forward: {θ.shape[0]} samples of '{self.theta}' -> '{self.output}',"
+                     f" {communicator.size} process(es)")
         if reference is not None:
             channel.line(f"reference: {reference.shape[0]} samples of '{self.reference}'")
+        import contextlib
         import h5py
-        with h5py.File(str(self.output), "w") as h5:
-            h5["theta/mean"], h5["theta/std"] = θ.mean(axis=0), θ.std(axis=0)
+        with h5py.File(str(self.output), "w") if boss else contextlib.nullcontext() as h5:
+            if boss:
+                h5["theta/mean"], h5["theta/std"] = θ.mean(axis=0), θ.std(axis=0)
             members = getattr(model, "models", None)
             if members:
                 for name, member in members.items():
@@ -77,18 +87,20 @@ class Forward(altar.panel(), family='altar.actions.forward'):
                     columns = model.columns(name)
                     self.check(plexus=plexus, model=member, theta=θ[:, columns],
                                reference=None if reference is None else reference[:, columns],
-                               h5=h5.create_group(name), channel=channel, indent="  ")
+                               h5=h5.create_group(name) if boss else None, channel=channel,
+                               communicator=communicator, indent="  ")
             else:
                 self.check(plexus=plexus, model=model, theta=θ, reference=reference, h5=h5,
-                           channel=channel)
+                           channel=channel, communicator=communicator)
         channel.log()
         return 0
 
 
-    def check(self, plexus, model, theta, h5, channel, reference=None, indent=""):
+    def check(self, plexus, model, theta, h5, channel, communicator, reference=None, indent=""):
         """
         Run {model} on the mean of {theta} and on all of {theta}, compare with its observed data,
-        write the results into {h5} and summarize them on {channel}; the same for {reference}
+        write the results into {h5} and summarize them on {channel}; the same for {reference}; the
+        runs are shared among the processes, the rest is the manager's
         """
         mean = theta.mean(axis=0)
         run = model.forward_problem
@@ -96,8 +108,15 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             run = getattr(model, "forward_states", None)
             if run is None:
                 raise ValueError(f"'states': the model '{model.pyre_name}' has no histories to save")
-        at_mean = run(application=plexus, theta=mean[None, :])
-        ensemble = run(application=plexus, theta=theta)
+        at_mean = self.share(run=run, plexus=plexus, theta=mean[None, :], communicator=communicator)
+        ensemble = self.share(run=run, plexus=plexus, theta=theta, communicator=communicator)
+        if reference is not None:
+            others = [self.share(run=model.forward_problem, plexus=plexus, theta=rows,
+                                 communicator=communicator)
+                      for rows in (reference.mean(axis=0)[None, :], reference)]
+        # the workers are done
+        if communicator.rank != self.manager:
+            return
 
         # C_p, if any, at my posterior mean; the reference is measured against the same C_chi
         cp = getattr(model, "cp", None)
@@ -135,16 +154,27 @@ class Forward(altar.panel(), family='altar.actions.forward'):
                      f"{(miss <= 1).mean():.1%} at 1 sigma, {(miss <= 2).mean():.1%} at 2 sigma")
 
         if reference is not None:
-            other = misfit.measure(
-                mean_model=model.forward_problem(
-                    application=plexus, theta=reference.mean(axis=0)[None, :])["data"][0],
-                samples=model.forward_problem(application=plexus, theta=reference)["data"])
+            other = misfit.measure(mean_model=others[0]["data"][0], samples=others[1]["data"])
             self.save(fit=other, h5=h5.create_group("reference"))
             self.report(fit=other, label=str(self.reference), channel=channel, indent=indent)
             gain = fit["samples"]["loglikelihood"].mean() - other["samples"]["loglikelihood"].mean()
             channel.line(f"{indent}mean log L, this run - reference: {gain:+.6g}"
                          f" (chi^2 {-2 * gain + 0.0:+.6g})")
         return
+
+
+    def share(self, run, plexus, theta, communicator):
+        """
+        The outputs of {run} on the rows of {theta}, each process running its share, split by rank
+        as the mpi annealing splits its chains, stacked in rank order on the manager; None elsewhere
+        """
+        rows = numpy.array_split(numpy.arange(theta.shape[0]), communicator.size)[communicator.rank]
+        mine = run(application=plexus, theta=theta[rows]) if rows.size else None
+        parts = communicator.gatherObject(item=mine, root=self.manager)
+        if communicator.rank != self.manager:
+            return None
+        parts = [part for part in parts if part is not None]
+        return {name: numpy.concatenate([part[name] for part in parts]) for name in parts[0]}
 
 
     def report(self, fit, label, channel, indent=""):

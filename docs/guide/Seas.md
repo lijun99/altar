@@ -419,6 +419,9 @@ file as `theta`, with `states`:
 seas.plexus forward --config=seas.yaml --seas.forward.theta=lm.txt --seas.forward.states=yes
 ```
 
+Like `optimize`, it shares the runs among the GPUs of an MPI run, e.g. the samples of a posterior
+among the 4 processes of `mpirun -n 4` with `job.tasks: 4`.
+
 `forward.h5` then holds, besides the predicted data, `slip` [m] and `slip_rate` [m/s] at the
 observation times, `[t_obs, 2, patches]` in `mean_model`, `mean` and `std`, and `[samples, t_obs, 2,
 patches]` in `samples`, as in `posterior_runs.h5`; a run that fails to integrate is not a number.

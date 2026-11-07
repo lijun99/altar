@@ -702,6 +702,10 @@ data and $C_\chi$, and reports the difference of their mean $\log L$. Two runs t
 same posterior have the same distribution of $\log L$; a run whose samples fit worse and spread
 less than another's has likely not converged.
 
+Under MPI, e.g. `--shell=mpi.shells.mpirun --job.tasks=4`, each process runs its share of the
+samples, on its own GPU, and the first collects them, measures the fit and writes the output, the
+same as one process would.
+
 For an {doc}`ensemble of models <Kinematic>`, it reports each model separately. Its settings go in
 a `forward` section of the configuration:
 
