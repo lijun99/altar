@@ -41,6 +41,10 @@ class Forward(altar.panel(), family='altar.actions.forward'):
     reference.doc = "another posterior to compare with, in the same forms as {theta}; " \
                     "its fit is measured with the same data and covariance"
 
+    states = altar.properties.bool(default=False)
+    states.doc = "also save the histories the model integrates, e.g. the slip and slip rate of " \
+                 "SEAS, of the mean model and of each sample; for models with 'forward_states'"
+
 
     # commands
     @altar.export(tip="compare the data predicted by the posterior to the observed data")
@@ -87,8 +91,13 @@ class Forward(altar.panel(), family='altar.actions.forward'):
         write the results into {h5} and summarize them on {channel}; the same for {reference}
         """
         mean = theta.mean(axis=0)
-        at_mean = model.forward_problem(application=plexus, theta=mean[None, :])
-        ensemble = model.forward_problem(application=plexus, theta=theta)
+        run = model.forward_problem
+        if self.states:
+            run = getattr(model, "forward_states", None)
+            if run is None:
+                raise ValueError(f"'states': the model '{model.pyre_name}' has no histories to save")
+        at_mean = run(application=plexus, theta=mean[None, :])
+        ensemble = run(application=plexus, theta=theta)
 
         # C_p, if any, at my posterior mean; the reference is measured against the same C_chi
         cp = getattr(model, "cp", None)
@@ -112,6 +121,9 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             h5[f"{name}/mean_model"] = at_mean[name][0]
             h5[f"{name}/mean"] = values.mean(axis=0)
             h5[f"{name}/std"] = values.std(axis=0)
+            # the histories of each sample too
+            if self.states and name != "data":
+                h5[f"{name}/samples"] = values
 
         channel.line(f"{indent}{misfit.observations} observations, {misfit.kind}")
         channel.line(f"{indent}data sigma rms {numpy.sqrt((sigma ** 2).mean()):.6g},"

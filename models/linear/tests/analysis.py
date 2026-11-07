@@ -26,7 +26,8 @@ fixed, Levenberg-Marquardt must find the mean and the standard deviations of the
 the conditional posterior, and leave the fixed ones at their values. The {diagnose} action
 compares the catmip posterior with the exact samples: their means and standard deviations must
 agree; it also reports the diagnostics of the walks: every resampling keeps some parents, and
-the last walk forgets most of its start.
+the last walk forgets most of its start. Asked for the histories of a model that integrates none,
+{forward} must refuse.
 
     python analysis.py
     python analysis.py --gpu
@@ -176,6 +177,12 @@ def main():
                 return 1
             print(status.stdout.split("journal (altar):")[-1].rstrip())
 
+        # the linear model integrates nothing, so asking for its histories is an error
+        status = subprocess.run([sys.executable, "-c", PLEXUS, "forward", "--config=linear.pfg", gpus,
+                                 "--linear.forward.states=yes", "--linear.forward.output=states.h5"],
+                                cwd=scratch, capture_output=True, text=True, errors="replace")
+        refused = status.returncode != 0 and "has no histories" in status.stdout + status.stderr
+
         with h5py.File(scratch / "forward.h5") as h5:
             catmip = numpy.asarray(h5["fit/samples/loglikelihood"])
             reference = numpy.asarray(h5["reference/fit/samples/loglikelihood"])
@@ -256,6 +263,7 @@ def main():
             ("synthetic, chi^2/N of the noise", noise, 1.0, NOISE[0] <= noise <= NOISE[1]),
             ("recover, z of the truth", numpy.abs(z - expected_z).max(), 0.0,
              numpy.abs(z - expected_z).max() <= Z),
+            ("forward states, refused", int(refused), 1, refused),
         ]
         failures = 0
         for name, value, target, good in checks:
