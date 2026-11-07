@@ -302,6 +302,8 @@ population after the annealing ends, so that they keep its distribution. It writ
 | `ix_estim_row`, `ix_estim_col`, `psets_list`, `mask` | | to map the parameters and data back |
 
 A run restarted from its `step_final.h5` with `record_posterior` set produces it for a finished run.
+The `forward` action with `states` writes the same histories for any parameters, e.g. a best fit
+(see {ref}`the best fit <seas-best-fit>`).
 
 ## Restarting and reusing runs
 
@@ -350,6 +352,7 @@ MCMC samples the new posterior from any start. Discard the first rounds as burn-
 the means and spreads stop moving. If the posterior moves a lot, MCMC alone can miss parts of it
 that annealing from the prior would find.
 
+(seas-best-fit)=
 ## The best fit
 
 `seas.plexus` runs AlTar's actions on a SEAS configuration, under the same `seas` settings as the
