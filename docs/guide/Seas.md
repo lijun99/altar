@@ -408,6 +408,23 @@ parameters from a posterior, `lm` took 5 minutes per iteration and gained 28 in 
 iterations; CMA-ES took 2 minutes per generation of 32 and gained 12 in 10. A run whose
 integration fails counts as the worst fit.
 
+The optimizer saves only the best point. Its slip history, and its fit to other data, come from the
+`forward` action (see {ref}`checking the posterior <forward-check>`) at the best point, its `.txt`
+file as `theta`, with `states`:
+
+```bash
+seas.plexus forward --config=seas.yaml --seas.forward.theta=lm.txt --seas.forward.states=yes
+```
+
+`forward.h5` then holds, besides the predicted data, `slip` [m] and `slip_rate` [m/s] at the
+observation times, `[t_obs, 2, patches]` in `mean_model`, `mean` and `std`, and `[samples, t_obs, 2,
+patches]` in `samples`, as in `posterior_runs.h5`; a run that fails to integrate is not a number.
+The slip is the total since the start of the spin-up, so it carries an offset that depends on where
+the spin-up stopped: two runs of the same point differed by up to 6 cm in it, but by less than a
+millimeter in the slip since the first observation time, the part the data see. A
+different `data_file` measures the fit to other data, e.g. a best fit to a subset of the data on all
+of it.
+
 ## Notes
 
 - Under MPI only the first task logs, so the integrator's statistics in the log are those of the

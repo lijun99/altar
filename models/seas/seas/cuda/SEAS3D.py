@@ -746,9 +746,26 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         The data predicted by each row of {theta}, in batches of {cuda_batch_size}, for the
         actions; the rows whose integration failed are not a number
         """
+        return self.forward_runs(theta=theta, states=False)
+
+    def forward_states(self, application, theta):
+        """
+        As {forward_problem}, with the slip [m] and slip rate [m/s] histories of each row at the
+        observation times, [rows, t_obs, components, patches], for the forward action's {states}
+        """
+        return self.forward_runs(theta=theta, states=True)
+
+    def forward_runs(self, theta, states):
+        """
+        Run the rows of {theta} in batches of {cuda_batch_size}: their predicted data and, with
+        {states}, their slip and slip rate histories; not a number where the integration failed
+        """
         theta = np.atleast_2d(np.asarray(theta, dtype=float))
         rows = theta.shape[0]
         predicted = np.full((rows, self.dataobs.observations), np.nan)
+        if states:
+            shape = (rows, self.sim.t_obs.size, 2, self.fault.inner_num_patches)
+            slip, slip_rate = np.full(shape, np.nan), np.full(shape, np.nan)
         for start in range(0, rows, self.cuda_batch_size):
             batch = min(self.cuda_batch_size, rows - start)
             # start its slots from the spin-up of its mean sample, as the sampling does
@@ -764,7 +781,25 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             ]
             block[failed] = np.nan
             predicted[start : start + batch] = block
+            if states:
+                s, r = self.histories(batch=batch)
+                s[failed], r[failed] = np.nan, np.nan
+                slip[start : start + batch], slip_rate[start : start + batch] = s, r
+        if states:
+            return {"data": predicted, "slip": slip, "slip_rate": slip_rate}
         return {"data": predicted}
+
+    def histories(self, batch):
+        """
+        The slip and slip rate histories of the first {batch} slots after a forward call,
+        [batch, t_obs, components, patches]
+        """
+        patches, steps = self.fault.inner_num_patches, self.sim.t_obs.size
+        # [systems, steps, slip or slip rate, components, patches], the slip rates linear
+        state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
+            batch, steps, 2, 2, patches
+        )
+        return state[:, :, 0].astype(float), state[:, :, 1].astype(float)
 
     @altar.export
     def gradient(self, controller, step, batch=None):
@@ -988,8 +1023,6 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         rng = getattr(getattr(self, "rng", None), "rng", None)
         rng = rng if isinstance(rng, np.random.Generator) else np.random.default_rng()
         rows = np.sort(rng.choice(theta.shape[0], size=n, replace=False))
-        patches = self.fault.inner_num_patches
-        steps = self.sim.t_obs.size
         start = perf_counter()
         runs = {
             "likelihood": [],
@@ -1018,12 +1051,9 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
             runs["likelihood"].append(
                 np.asarray(self.likelihood_batch)[:batch].astype(float)
             )
-            # [systems, steps, slip or slip rate, components, patches], the slip rates linear
-            state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
-                batch, steps, 2, 2, patches
-            )
-            runs["slip"].append(state[:, :, 0].astype(float))
-            runs["slip_rate"].append(state[:, :, 1].astype(float))
+            slip, slip_rate = self.histories(batch=batch)
+            runs["slip"].append(slip)
+            runs["slip_rate"].append(slip_rate)
             runs["failed"].append(
                 np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:batch]
             )
