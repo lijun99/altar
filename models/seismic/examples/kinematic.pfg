@@ -37,10 +37,10 @@ slipmodel:
         ; the fault and time meshes
         Nas = 3 ; patches along strike
         Ndd = 3 ; patches along dip
-        Nmesh = 30 ; mesh points for each patch
+        Nmesh = 30 ; cells of the fast sweeping grid along each side of a patch
         dsp = 20.0 ; length for each patch, km
         Nt = 90 ; number of time intervals
-        Npt = 2 ; mesh points for each time interval
+        Npt = 2 ; source points along each side of a patch
         dt = 1.0 ; time unit for each interval, second
         t0s = [0.0] * {slipmodel.model.patches}
 

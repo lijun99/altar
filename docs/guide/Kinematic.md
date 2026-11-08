@@ -23,8 +23,9 @@ where $\vec\xi$ labels the patch and
 - $S(t; T_r)$ is the source time function, a triangle over $[0, T_r]$ with unit integral.
 
 For smooth predictions, each patch is refined into an $N_{mesh} \times N_{mesh}$ grid to solve the
-eikonal equation, and each time interval into $N_{pt}$ points; $\mathbf M_b$ is interpolated and
-integrated from these finer meshes. The predicted data are then
+eikonal equation, and holds $N_{pt} \times N_{pt}$ source points, each with its own rupture time;
+the slip rate of the patch is the mean of the source time functions of its points, so that it
+slips over the time the front takes to cross it. The predicted data are then
 
 $$
 d^{pred}(\vec x, t) = \sum_{\vec\xi,\, t'} \mathcal G_b(\vec x, \vec\xi;\, t - t')\, \mathbf M_b(\vec\xi, t'),
@@ -156,7 +157,7 @@ example, `9patch/kinematicG.gf.h5` (88 MB), are not in the repository; see `9pat
 : the number of patches along strike and down dip.
 
 `Nmesh`
-: the grid points along each side of a patch, for the eikonal equation.
+: the cells of the grid of the eikonal equation along each side of a patch.
 
 `dsp`
 : the length of a side of a patch, in km.
@@ -165,7 +166,7 @@ example, `9patch/kinematicG.gf.h5` (88 MB), are not in the repository; see `9pat
 : the number of time intervals, long enough to cover the rupture, and their length, in s.
 
 `Npt`
-: the points within each time interval.
+: the source points along each side of a patch, $N_{pt} \times N_{pt}$ in all.
 
 `t0s`
 : a start time for each patch, added to the arrival time of the rupture; chosen well, they reduce
@@ -188,10 +189,12 @@ rectangles, it runs on the GPU or the cpu, with the exact gradient.
 `mesh`
 : the patches, an `.h5` file as CSI's `saveKinematic` writes it: `vertices` (km, depth positive),
   their surface coordinates `uv`, the `faces`, and the source points of each patch,
-  `sources/uv` and `sources/patch`, the same number for every patch.
+  `sources/uv` and `sources/patch`, the same number for every patch: $N_{pt} \times N_{pt}$ with
+  CSI's `setSourcePoints(Npt)`.
 
-`refine`
-: the triangles of the mesh of the arrival times along each edge of a patch; default 10.
+`Nmesh`
+: the triangles of the mesh of the arrival times along each edge of a patch; default 10. Its
+  former name, `refine`, still works.
 
 `velocity_groups`
 : a dataset of `mesh` with the group of each patch, numbered from 0; the patches of a group share
@@ -304,7 +307,7 @@ as CSI's `TriangularPatchesKin.castbigM`. It runs the compiled model on the cpu:
 ```python
 from altar.models.seismic.history import SlipHistory
 
-history = SlipHistory(vertices, faces, uv, sources, patches, Nt=85, dt=1.0, refine=10,
+history = SlipHistory(vertices, faces, uv, sources, patches, Nt=85, dt=1.0, Nmesh=10,
                       stf="triangle", peak=0.5)
 Mb = history(slip, risetime, velocity, hypocenter)        # Nt x 2 x patches
 onsets, times = history.arrivals(velocity, hypocenter)    # at the source points, at the vertices
