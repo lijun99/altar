@@ -13,14 +13,15 @@
 import numpy
 
 
-def refine(vertices, faces, uv, m):
+def refine(vertices, faces, uv, Nmesh):
     """
-    Each triangle of {faces} cut into m x m triangles, which keep its index as their patch; the
-    vertices at the same point merged, so faults that meet share them. Returns the vertices, the
-    surface coordinates of the corners of each triangle (a vertex where faults meet has those of
-    each), the triangles and the patch of each
+    Each triangle of {faces} cut into Nmesh x Nmesh triangles, which keep its index as their
+    patch; the vertices at the same point merged, so faults that meet share them. Returns the
+    vertices, the surface coordinates of the corners of each triangle (a vertex where faults meet
+    has those of each), the triangles and the patch of each
     """
     vertices, uv = numpy.asarray(vertices, dtype=float), numpy.asarray(uv, dtype=float)
+    m = Nmesh
     lattice = [(i, j) for i in range(m + 1) for j in range(m + 1 - i)]
     index = {ij: k for k, ij in enumerate(lattice)}
     L = numpy.array(lattice, dtype=float) / m
@@ -109,13 +110,13 @@ def locate(points, patches, uv, triangles, patch):
     return corners, weights
 
 
-def arrival_mesh(vertices, faces, uv, sources, owners, m):
+def arrival_mesh(vertices, faces, uv, sources, owners, Nmesh):
     """
     What the compiled kinematic models on a triangulated fault take: the vertices of the mesh of
-    the arrival times, {faces} cut m x m times, the mean length of its edges, the triangle of each
-    source point and its weights, the geometry of the patches and the tables
+    the arrival times, {faces} cut Nmesh x Nmesh times, the mean length of its edges, the triangle
+    of each source point and its weights, the geometry of the patches and the tables
     """
-    xyz, coords, triangles, patch = refine(vertices, faces, uv, m)
+    xyz, coords, triangles, patch = refine(vertices, faces, uv, Nmesh)
     edges = xyz[triangles[:, [1, 2, 0]]] - xyz[triangles]
     corners, weights = locate(sources, owners, coords, triangles, patch)
     return {"xyz": xyz, "spacing": float(numpy.sqrt((edges ** 2).sum(-1)).mean()),

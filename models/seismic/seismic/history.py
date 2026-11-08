@@ -21,7 +21,7 @@ class SlipHistory:
     triangulated fault, on the cpu: the patches {faces} of {vertices} (km), the surface
     coordinates {uv} of the vertices, the source points of each patch, {sources} in surface
     coordinates and their {patches}, stored patch by patch; {Nt} time steps of {dt} seconds; the
-    rupture times on the patches cut {refine} x {refine} times; the source time function {stf},
+    rupture times on the patches cut {Nmesh} x {Nmesh} times; the source time function {stf},
     a triangle peaking at {peak} of the rise time, or a raised cosine
 
     The data are then big G @ Mb, with the big G of the model, one column per time step, rake
@@ -29,7 +29,7 @@ class SlipHistory:
     """
 
 
-    def __init__(self, vertices, faces, uv, sources, patches, Nt, dt, refine=10, stf="triangle",
+    def __init__(self, vertices, faces, uv, sources, patches, Nt, dt, Nmesh=10, stf="triangle",
                  peak=0.5):
         from .ext import seismic
         kinds = {"triangle": 0, "cosine": 1}
@@ -44,7 +44,7 @@ class SlipHistory:
         self.patches, self.Nt = Np, int(Nt)
         grid = meshes.arrival_mesh(numpy.asarray(vertices, dtype=float), faces,
                                    numpy.asarray(uv, dtype=float),
-                                   numpy.asarray(sources, dtype=float), patches, refine)
+                                   numpy.asarray(sources, dtype=float), patches, Nmesh)
         self.corners, self.weights = grid["corners"], grid["weights"]
         self.model = seismic.KinematicMesh(
             Np=Np, Nt=self.Nt, dt=float(dt), t0s=numpy.zeros(Np), Nsp=int(counts[0]),

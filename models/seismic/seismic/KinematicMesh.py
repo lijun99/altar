@@ -23,10 +23,11 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
     time, then data = Gb Mb
 
     On the cuda backend, or on the cpu. The patches and their source points come from {mesh}, as csi's
-    TriangularPatchesKin saves them; my parameters, in {idx_map} order, are the strike slips, dip
-    slips, rise times and rupture velocities of the patches, then the hypocenter along strike and
-    down dip, in the surface coordinates of the mesh. The settings of the rectangular model, Nas,
-    Ndd, Nmesh, dsp and Npt, don't apply.
+    TriangularPatchesKin saves them, Npt x Npt per patch; my parameters, in {idx_map} order, are the
+    strike slips, dip slips, rise times and rupture velocities of the patches, then the hypocenter
+    along strike and down dip, in the surface coordinates of the mesh. {Nmesh} cuts each patch into
+    Nmesh x Nmesh triangles for the arrival times; the settings Nas, Ndd, dsp and Npt of the
+    rectangular model don't apply.
     """
 
 
@@ -34,8 +35,9 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
     mesh = altar.properties.path(default="mesh.h5")
     mesh.doc = "the patches: vertices, surface coordinates uv, faces, and the source points"
 
-    refine = altar.properties.int(default=10)
-    refine.doc = "the triangles of the arrival times along each edge of a patch"
+    Nmesh = altar.properties.int(default=10)
+    Nmesh.aliases = {"refine"}
+    Nmesh.doc = "the triangles of the mesh of the arrival times along each edge of a patch"
 
     velocity_groups = altar.properties.str(default=None)
     velocity_groups.doc = "the dataset of {mesh} with the velocity group of each patch, which then " \
@@ -102,7 +104,7 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
 
         # the mesh of the arrival times, and its tables
-        grid = meshes.arrival_mesh(vertices, faces, uv, sources, owners, self.refine)
+        grid = meshes.arrival_mesh(vertices, faces, uv, sources, owners, self.Nmesh)
         self.vertices = grid["xyz"].shape[0]
         application.info.log(f"kinematic mesh: {patches} patches, {self.vertices} vertices,"
                              f" spacing {grid['spacing']:.3g} km, {counts[0]} source points per patch")

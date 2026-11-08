@@ -27,7 +27,7 @@ slipmodel:
     model:
         case = .
         mesh = mesh.h5
-        refine = 6
+        Nmesh = 6
         patches = {patches}
         green = kinematicG.gf.h5
         dataobs:

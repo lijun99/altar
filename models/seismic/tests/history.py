@@ -25,7 +25,7 @@ slipmodel:
     model:
         case = .
         mesh = mesh.h5
-        refine = 6
+        Nmesh = 6
         patches = {patches}
         green = kinematicG.gf.h5
         dataobs:
@@ -92,7 +92,7 @@ def main():
 
     # and outside of one
     from altar.models.seismic.history import SlipHistory
-    history = SlipHistory(xyz, faces, uv, sources, owners, Nt=NT, dt=DT, refine=6, stf=STF, peak=PEAK)
+    history = SlipHistory(xyz, faces, uv, sources, owners, Nt=NT, dt=DT, Nmesh=6, stf=STF, peak=PEAK)
     Mb = history(slip, risetime, velocity, hypocenter)
     one = history(slip[1], risetime[1], velocity[1], hypocenter[1])
     at_sources, at_vertices = history.arrivals(velocity, hypocenter)

@@ -40,7 +40,7 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     Ndd.doc = "number of patches along dip direction"
 
     Nmesh = altar.properties.int(default=1)
-    Nmesh.doc = "number of mesh points for each patch for fast sweeping"
+    Nmesh.doc = "the cells of the fast sweeping mesh along each side of a patch"
 
     dsp = altar.properties.float(default=10.0)
     dsp.doc = "the length of each patch, in km"
@@ -49,7 +49,7 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     Nt.doc = "number of time intervals for the kinematic process"
 
     Npt = altar.properties.int(default=1)
-    Npt.doc = "number of mesh points for each time interval for fast sweeping"
+    Npt.doc = "the source points along each side of a patch, Npt x Npt in all"
 
     dt = altar.properties.float(default=1.0)
     dt.doc = "the length of each time interval, in s"

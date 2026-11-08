@@ -100,7 +100,7 @@ def setup(scratch, problem, rng):
         with h5py.File(folder / "mesh.h5", "w") as h5:
             h5["vertices"], h5["uv"], h5["faces"] = xyz, uv, faces
             h5["sources/uv"], h5["sources/patch"] = sources, owners
-        config = km.CONFIG.format(refine=km.REFINE, patches=Np, obs=km.OBS, nt=km.NT, dt=km.DT)
+        config = km.CONFIG.format(nmesh=km.NMESH, patches=Np, obs=km.OBS, nt=km.NT, dt=km.DT)
         nt = km.NT
         hypocenters = km.hypocenters(rng, problem, 8)
     obs = OBS if problem == "rectangle" else km.OBS
@@ -161,7 +161,7 @@ def compare(problem, folder, Np, results, gpu):
         from mesh import Mesh
         from slip import SlipHistory
         xyz, uv, faces, sources, owners = km.fault(problem)
-        points, coords, triangles, patch = meshes.refine(xyz, faces, uv, km.REFINE)
+        points, coords, triangles, patch = meshes.refine(xyz, faces, uv, km.NMESH)
         proto = SlipHistory(Mesh(points, triangles, patch, coords), sources, owners, Np, km.NT, km.DT,
                             numpy.zeros(Np), len(owners) // Np)
         inputs = numpy.load(folder / "inputs.npz")
