@@ -208,13 +208,20 @@ For each sample, the model computes $\mathbf M_b$ in four steps.
 4. **Slip histories.** For patch $p$ and the time interval $i$, from $t_i = t_{0,p} + i\,dt$,
 
    $$
-   c_i = \frac{1}{N_{pt}^2} \sum_q S\big(t_i - T_q;\, T_{r,p}\big), \qquad
+   c_i = \frac{dt}{N_{pt}^2} \sum_q S\big(t_i - T_q;\, T_{r,p}\big), \qquad
    \mathbf M_b(p, i) = \mathbf D_p\, c_i,
    $$
 
    with the source time function $S$ of unit area sampled at the start of the interval (see
-   {ref}`below <kinematic-stf>`). $c_i$ is a slip rate, in 1/s: $\sum_i c_i\, dt \approx 1$, and
-   $\mathbf M_b(p, i)\, dt$ is the slip of the patch in the interval.
+   {ref}`below <kinematic-stf>`). $c_i$ is the share of the slip in the interval,
+   $\sum_i c_i \approx 1$, and $\mathbf M_b(p, i)$ the slip of the patch in it, in m, as Green's
+   functions of 1 m of slip in each interval, such as CSI's, expect.
+
+   ```{note}
+   Until November 2026, $\mathbf M_b$ held the slip rates, without the factor $dt$: with
+   $dt = 1$ s the same, but with another $dt$, the slips of earlier runs are $dt$ times too large
+   for Green's functions of 1 m of slip.
+   ```
 
 The gradient runs the same steps backward: the adjoints of the source time functions, of the
 interpolation, of the sweeps, from the arrival times kept after each, and of the seeds.
