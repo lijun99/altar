@@ -87,9 +87,11 @@ observations, factor it in double precision (`dataobs.cd_dtype = float64`), and 
 ### The geometry of the fault
 
 The kernels can be of any uncertain input, e.g. the dip, the strike or the position of the fault,
-whose uncertainty is often the largest for subduction megathrusts. CSI computes them (its
-`buildGeometryKernels`, on a branch for now) by central differences of the static Green's functions over faults rebuilt with the input perturbed, e.g. for
-the dip of a curved slab meshed with triangles:
+whose uncertainty is often the largest for subduction megathrusts. CSI computes them
+(`TriangularPatchesKin.buildGeometryKernels`, for now on the `triangular-kinematic` branch of
+[lijun99/csi](https://github.com/lijun99/csi/tree/triangular-kinematic)) by central differences of
+the static Green's functions over faults rebuilt with the input perturbed, e.g. for the dip of a
+curved slab meshed with triangles:
 
 ```python
 def slab(dip=0.0):
