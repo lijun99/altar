@@ -25,7 +25,8 @@ where $\vec\xi$ labels the patch and
 For smooth predictions, each patch is refined into an $N_{mesh} \times N_{mesh}$ grid to solve the
 eikonal equation, and holds $N_{pt} \times N_{pt}$ source points, each with its own rupture time;
 the slip rate of the patch is the mean of the source time functions of its points, so that it
-slips over the time the front takes to cross it. The predicted data are then
+slips over the time the front takes to cross it (see {ref}`the forward model <kinematic-forward>`).
+The predicted data are then
 
 $$
 d^{pred}(\vec x, t) = \sum_{\vec\xi,\, t'} \mathcal G_b(\vec x, \vec\xi;\, t - t')\, \mathbf M_b(\vec\xi, t'),
@@ -176,6 +177,48 @@ example, `9patch/kinematicG.gf.h5` (88 MB), are not in the repository; see `9pat
 : the uncertainty of the Green's functions (see {doc}`StaticCp`); the kinematic kernels have the
   shape of the Green's functions.
 
+(kinematic-forward)=
+### The forward model
+
+For each sample, the model computes $\mathbf M_b$ in four steps.
+
+1. **Seeds.** The grid of the eikonal equation covers the fault padded by one patch on each side,
+   $(N_{as}+2) N_{mesh} \times (N_{dd}+2) N_{mesh}$ cells of side $h = dsp/N_{mesh}$; the cells of
+   the padding have the rupture velocity of the nearest patch. The cells within one cell of the
+   hypocenter start at their straight-ray times, $r/V_r$, $r$ their distance to it; the others at
+   times that grow steeply with the distance, $\big(r + 10 (r-h)^2/h\big)/V_r$, which the sweeps
+   then lower. Unlike infinite times, these keep the arrival times differentiable in the
+   hypocenter and the velocities.
+2. **Fast sweeping.** One pass of four sweeps along the diagonals of the grid, one in each
+   direction, updates each cell from the earlier of its two neighbors along strike, $a$, and of
+   its two neighbors down dip, $b$, with $f = 1/V_r$ of its patch,
+
+   $$
+   T = \begin{cases}
+   \min(a, b) + f h & \text{if } |a - b| \ge f h, \\
+   \tfrac12 \big(a + b + \sqrt{2 f^2 h^2 - (a-b)^2}\big) & \text{otherwise},
+   \end{cases}
+   $$
+
+   and keeps the earlier of the new and the old time. One pass is exact for a uniform velocity;
+   strong contrasts, which make the front turn back, would need more.
+3. **Source points.** The $N_{pt} \times N_{pt}$ source points of each patch are the centers of
+   its sub-squares of side $dsp/N_{pt}$; their rupture times $T_q$ are interpolated bilinearly
+   from the four nearest cells.
+4. **Slip histories.** For patch $p$ and the time interval $i$, from $t_i = t_{0,p} + i\,dt$,
+
+   $$
+   c_i = \frac{1}{N_{pt}^2} \sum_q S\big(t_i - T_q;\, T_{r,p}\big), \qquad
+   \mathbf M_b(p, i) = \mathbf D_p\, c_i,
+   $$
+
+   with the source time function $S$ of unit area sampled at the start of the interval (see
+   {ref}`below <kinematic-stf>`). $c_i$ is a slip rate, in 1/s: $\sum_i c_i\, dt \approx 1$, and
+   $\mathbf M_b(p, i)\, dt$ is the slip of the patch in the interval.
+
+The gradient runs the same steps backward: the adjoints of the source time functions, of the
+interpolation, of the sweeps, from the arrival times kept after each, and of the seeds.
+
 ## The kinematic model on triangular meshes
 
 `altar.models.seismic.kinematicmesh` is the same source model on a fault meshed with triangles,
@@ -204,6 +247,60 @@ rectangles, it runs on the GPU or the cpu, with the exact gradient.
 : as for the model on rectangles; the rows of the Green's functions are the time intervals, then
   the two slips, then the patches.
 
+### The forward model on triangles
+
+The same four steps, on a mesh of triangles. Each edge of a patch is cut into $N_{mesh}$ equal
+segments, and the lines through their ends parallel to the edges cut the patch into $N_{mesh}^2$
+equal triangles, $N_{mesh}(N_{mesh}+1)/2$ pointing as the patch and $N_{mesh}(N_{mesh}-1)/2$
+upside down; the vertices on the edges that patches, or faults that meet, share are merged.
+
+1. **Seeds.** The hypocenter is mapped from the surface coordinates onto the fault, through the
+   affine map of the patch that holds it. The vertices near it start at their straight-ray
+   times in space, with the fastest velocity of their patches, rising steeply past one spacing
+   of the mesh as on rectangles; the others, at a cap.
+2. **The fast iterative method.** The active vertices, at first the seeds, update from each of
+   their triangles, with the velocity of its patch, and keep the earliest time; the neighbors of
+   a vertex whose time drops become active, until a pass changes nothing.
+3. **Source points.** CSI's `setSourcePoints(Npt)` cuts each patch the same way, into $N_{pt}^2$
+   sub-triangles, and places a source point at the centroid of each; the sub-triangles have the
+   same area, so the points share the slip of the patch equally. Their rupture times are
+   interpolated linearly in the triangles of the mesh that hold them.
+4. **Slip histories.** As on rectangles, the mean over the $N_{pt}^2$ source points of each patch.
+
+### Choosing Nmesh, Npt and dt
+
+With $L$ the size of a patch, $V_r$ the rupture velocity, $T_{r,min}$ the shortest rise time of the
+prior, and $f_{max}$ the highest frequency of the data, for both models:
+
+`dt`
+: no longer than about $T_{r,min}/2$: the source time functions are sampled at the start of each
+  interval, not averaged over it, and an interval as long as the rise time misses the shape of
+  the function and its area. With Green's functions of a source time function $2\,dt$ long, as
+  CSI's, $dt \approx 1/(4 f_{max})$ keeps the band of the data; shorter adds columns to
+  $\mathcal G_b$, but no information. It must be a multiple of the sampling of the Green's
+  functions.
+
+`Nt`
+: enough for $N_t\, dt$ to cover the latest rupture time, the longest rise time and the start
+  times `t0s`; the cost of $\mathcal G_b \mathbf M_b$ grows with it.
+
+`Npt`
+: neighboring source points start about $L/(N_{pt} V_r)$ apart; when that is under about
+  $T_{r,min}/2$, their source time functions overlap into a smooth slip rate of the patch,
+  $N_{pt} \gtrsim 2L/(V_r T_{r,min})$. Once it is under $dt$ too, more points change little. The
+  model costs little more with more points, but Green's functions that sum the point sources of
+  each patch, as CSI's with `points=True`, cost $N_{pt}^2$ sources a patch.
+
+`Nmesh`
+: the error of the arrival times shrinks with the spacing of the mesh, $L/N_{mesh}$; the cost grows
+  as $N_{mesh}^2$ on rectangles, closer to $N_{mesh}^3$ on triangles. At least $2 N_{pt}$, so that
+  the times of neighboring source points differ by more than the error. To check it, compare the
+  rupture times at $N_{mesh}$ and $2 N_{mesh}$, e.g. with `SlipHistory.arrivals` or CSI's
+  `computeRuptureTimes`: if they differ by much less than $dt$, $N_{mesh}$ is enough. On the
+  gmsh mesh of the Slab2 tutorial, those at 10 are 0.14 s later than at 40 on average, 0.30 s at
+  most. Make the synthetics with the same `Nmesh` in CSI as in AlTar.
+
+(kinematic-stf)=
 ### The source time function
 
 Both kinematic models release the slip of each source point over its rise time $T_r$ with a source
