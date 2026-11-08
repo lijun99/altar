@@ -412,7 +412,7 @@ castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gT
                 TYPE v, dv_ds, dv_dTr;
                 altar::models::seismic::stf(t0 - gTI0_sample[idx_ti + idy_ti*(Ndd*Npt_gi)], Tr, kind, peak,
                                             v, dv_ds, dv_dTr);
-                c += v/(Npt_gi*Npt_gi);
+                c += v*sdt/(Npt_gi*Npt_gi);
             }
         }
         gMb_sample[i*(2*Npatch)+patch] = c*ss;
@@ -471,9 +471,9 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *
                 // v(t - TI0; Tr)/n2: d/dTI0 = -dv/ds
                 TYPE v, dv_ds, dv_dTr;
                 altar::models::seismic::stf(t0 - gTI0_sample[k], Tr, kind, peak, v, dv_ds, dv_dTr);
-                c += v/n2;
-                gdTI0_sample[k] -= gc*dv_ds/n2;
-                ghTr += gc*dv_dTr/n2;
+                c += v*dt/n2;
+                gdTI0_sample[k] -= gc*dv_ds*dt/n2;
+                ghTr += gc*dv_dTr*dt/n2;
             }
         }
         gss += dss*c;

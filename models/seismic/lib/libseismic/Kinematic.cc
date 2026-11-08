@@ -245,7 +245,7 @@ _cast(const TYPE * M, const TYPE * TI0, TYPE * Mb) const
                 for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
                     TYPE v, dv_ds, dv_dTr;
                     altar::models::seismic::stf(t0 - TI0[idx_ti + idy_ti*(Ndd*Npt)], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                    c += v/(Npt*Npt);
+                    c += v*_dt/(Npt*Npt);
                 }
             }
             Mb[i*(2*Npatch) + patch] = c*ss;
@@ -285,9 +285,9 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
                     // v(t - TI0; Tr)/n2: d/dTI0 = -dv/ds
                     TYPE v, dv_ds, dv_dTr;
                     altar::models::seismic::stf(t0 - TI0[k], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                    c += v/n2;
-                    dTI0[k] -= gc*dv_ds/n2;
-                    gTr += gc*dv_dTr/n2;
+                    c += v*_dt/n2;
+                    dTI0[k] -= gc*dv_ds*_dt/n2;
+                    gTr += gc*dv_dTr*_dt/n2;
                 }
             }
             gss += dss*c;

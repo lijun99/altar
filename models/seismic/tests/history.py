@@ -113,6 +113,14 @@ def main():
           at_sources.shape == (CHAINS, len(sources)) and numpy.allclose(first, at_sources[0], rtol=0, atol=1e-12)
           and at_sources.min() >= 0)
 
+    # the slip of each patch in all, with time steps other than 1 s: the sum of Mb over time
+    for dt in [0.25, 0.5]:
+        steps = int(numpy.ceil((at_sources.max() + risetime.max()) / dt)) + 1
+        total = SlipHistory(xyz, faces, uv, sources, owners, Nt=steps, dt=dt, Nmesh=6, stf=STF,
+                            peak=PEAK)(slip, risetime, velocity, hypocenter).sum(axis=1)
+        error = numpy.abs(total - numpy.moveaxis(slip, -1, 1)).max() / numpy.abs(slip).max()
+        check(f"the slips in all, dt {dt}: {error:.1e} (tolerance 2e-2)", error <= 2e-2)
+
     print("slip history:", "passed" if failures == 0 else f"{failures} FAILED")
     return 1 if failures else 0
 

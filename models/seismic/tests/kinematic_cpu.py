@@ -28,7 +28,7 @@ sys.path.insert(0, str(HERE / "trimesh"))
 import kinematic_mesh as km
 
 # the rectangular fault: 3 x 2 patches of 10 km, 6 x 6 cells each
-NAS, NDD, NMESH, DSP, NPT, NT, DT, OBS = 3, 2, 6, 10.0, 2, 30, 1.0, 200
+NAS, NDD, NMESH, DSP, NPT, NT, DT, OBS = 3, 2, 6, 10.0, 2, 30, 0.5, 200
 RECTANGLE = """
 slipmodel:
     model = altar.models.seismic.kinematic

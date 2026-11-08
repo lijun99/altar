@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE / "trimesh"))
 
 # the fault: 4 x 3 squares of 10 km, each cut into two triangles, dipping 30 degrees
 NS, ND, SIZE, DIP = 4, 3, 10.0, 30.0
-NMESH, POINTS, NT, DT, OBS = 6, 2, 40, 1.0, 300
+NMESH, POINTS, NT, DT, OBS = 6, 2, 40, 0.5, 300
 # the patches that share a velocity, in the grouped case
 GROUP = 4
 CONFIG = """

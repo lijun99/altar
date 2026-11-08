@@ -256,7 +256,7 @@ castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE
         for (int q = 0; q < Nsp; ++q) {
             TYPE v, dv_ds, dv_dTr;
             altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
-            c += v/Nsp;
+            c += v*dt/Nsp;
         }
         Mb[i*2*Np + patch] = c*ss;
         Mb[i*2*Np + Np + patch] = c*sd;
@@ -292,9 +292,9 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, co
             // v(t - TI0; Tr)/Nsp: d/dTI0 = -dv/ds
             TYPE v, dv_ds, dv_dTr;
             altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
-            c += v/Nsp;
-            dTI0[q] -= gc*dv_ds/Nsp;
-            gTr += gc*dv_dTr/Nsp;
+            c += v*dt/Nsp;
+            dTI0[q] -= gc*dv_ds*dt/Nsp;
+            gTr += gc*dv_dTr*dt/Nsp;
         }
         gss += dss*c;
         gsd += dsd*c;

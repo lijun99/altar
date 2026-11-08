@@ -289,8 +289,8 @@ _interpolate(const TYPE * T, TYPE * TI0) const
 }
 
 
-// the slips of each patch over time: the source time functions of its {Nsp} source points,
-// contiguous, sampled at the start of each time interval
+// the slips of each patch in each time interval: the source time functions of its {Nsp} source
+// points, contiguous, sampled at the start of the interval, times its length
 template <typename TYPE>
 void
 altar::models::seismic::KinematicMesh<TYPE>::
@@ -307,7 +307,7 @@ _cast(const TYPE * M, const TYPE * TI0, TYPE * Mb) const
             for (int q = 0; q < Nsp; ++q) {
                 TYPE v, dv_ds, dv_dTr;
                 altar::models::seismic::stf(t0 - TI[q], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                c += v/Nsp;
+                c += v*_dt/Nsp;
             }
             Mb[i*2*Np + patch] = c*ss;
             Mb[i*2*Np + Np + patch] = c*sd;
@@ -339,9 +339,9 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
                 // v(t - TI0; Tr)/Nsp: d/dTI0 = -dv/ds
                 TYPE v, dv_ds, dv_dTr;
                 altar::models::seismic::stf(t0 - TI[q], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                c += v/Nsp;
-                dTI[q] -= gc*dv_ds/Nsp;
-                gTr += gc*dv_dTr/Nsp;
+                c += v*_dt/Nsp;
+                dTI[q] -= gc*dv_ds*_dt/Nsp;
+                gTr += gc*dv_dTr*_dt/Nsp;
             }
             gss += dss*c;
             gsd += dsd*c;

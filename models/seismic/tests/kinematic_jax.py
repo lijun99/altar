@@ -69,7 +69,7 @@ class SlipHistory:
         TI = TI0[self.subcells][:, None, :] + hTr
         t = (self.t0s[:, None] + self.dt * jnp.arange(self.Nt)[None, :])[:, :, None]
         inside = ~((t <= TI - hTr) | (t >= TI + hTr))
-        triangle = (1.0 - jnp.abs(TI - t) / hTr) * (1.0 / hTr) / (self.Npt * self.Npt)
+        triangle = (1.0 - jnp.abs(TI - t) / hTr) * (1.0 / hTr) * self.dt / (self.Npt * self.Npt)
         c = jnp.where(inside, triangle, 0.0).sum(axis=-1)
         return jnp.stack([(c * θ[:Np, None]).T, (c * θ[Np:2 * Np, None]).T], axis=1).reshape(-1)
 
