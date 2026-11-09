@@ -123,6 +123,7 @@ The settings of the spin-up and the outputs, described in the sections below:
 | `spinup_anderson_damping` | 1.0 | the damping of each Anderson step: 1 takes it whole, less moves only part of the way (`seas-anderson` only) |
 | `warm_start` | `mean` | where each forward call's spin-ups start: `mean`, `nearest`, `slot` or `cold` |
 | `mean_until` | none | with `mean`, use the mean only while beta is below this, and `nearest` after |
+| `mean_batch` | 64 | with `mean`, the smallest batch whose mean spins up alone first; smaller ones start every sample from the previous sample nearest to their mean |
 | `warm_up` | true | with `nearest` or `slot`, spin up the first batch's mean sample alone and start every slot from it |
 | `spinup_file` | none | a step file of an earlier run whose recorded spin-up state the spin-ups start from |
 | `record_mean` | true | for each step file the recorder writes, run the mean model and record it there |
@@ -190,7 +191,10 @@ says where each forward call's spin-ups start:
 `mean` (the default)
 : before each batch, the batch's mean sample spins up alone, from the state the previous batch
   left, and every sample starts from its state. The most accurate, at the cost of that extra
-  spin-up, 9-14% of a call near the posterior.
+  spin-up, 9-14% of a call near the posterior. A batch smaller than `mean_batch`, e.g. the 10
+  points per GPU of an optimizer or a single sample, runs in about the time of that spin-up, which
+  would double its cost: all its samples start instead from the state of the previous batch's sample
+  nearest to its mean, still one common start.
 
 `nearest`
 : each sample starts from the state of the sample of the previous batch nearest to it, in units of
@@ -408,7 +412,8 @@ optimize.txt`, whose steps are then a hundredth of a unit of log10 alpha_h, agai
 millionths from a posterior's spread. And every forward run spins up: an `lm` iteration costs
 $2n + 4$ runs for $n$ parameters, a CMA-ES generation `population` runs. On 4 V100s, with 20
 parameters from a posterior, `lm` took 5 minutes per iteration and gained 28 in log likelihood in 5
-iterations; CMA-ES took 2 minutes per generation of 32 and gained 12 in 10. A run whose
+iterations; CMA-ES took 2 minutes per generation of 32 and gained 12 in 10. Half of those times
+were the spin-ups of each batch's mean, which batches below `mean_batch` now skip. A run whose
 integration fails counts as the worst fit.
 
 The optimizer saves only the best point. Its slip history, and its fit to other data, come from the

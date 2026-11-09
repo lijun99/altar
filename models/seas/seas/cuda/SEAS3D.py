@@ -101,6 +101,13 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         "temperature is below this, and from the nearest sample after; unset, the default, "
         "throughout"
     )
+    mean_batch = altar.properties.int(default=64)
+    mean_batch.doc = (
+        "with {warm_start} 'mean', the smallest batch whose mean sample spins up alone first; "
+        "a smaller batch, e.g. of the optimizers or of a single sample, runs in about the time "
+        "of that extra spin-up, and starts every sample from the state of the previous batch's "
+        "sample nearest to its mean instead"
+    )
     spinup_file = altar.properties.path(default=None)
     spinup_file.doc = (
         "a step file of an earlier run on the same mesh, e.g. its step_final.h5, whose recorded "
@@ -899,13 +906,22 @@ class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
         Set the states the slots start from for the samples {theta}, as {warm_start} says: a
         spin-up of their mean alone, whose state the forward model leaves in every slot, before
         every batch for 'mean' and before the first with {warm_up}; otherwise, for 'nearest'
-        and for 'mean' past {mean_until}, the state of the previous sample nearest to each
+        and for 'mean' past {mean_until}, the state of the previous sample nearest to each; a
+        'mean' batch smaller than {mean_batch} starts every slot from the state of the previous
+        sample nearest to its mean
         """
         mode = self.warm_start
         if mode == "cold":
             return self
         first = not self._warm
-        if not ((mode == "mean" and self.mean_now()) or (first and self.warm_up)):
+        mean = mode == "mean" and self.mean_now()
+        theta = np.atleast_2d(np.asarray(theta, dtype=float))
+        if mean and theta.shape[0] < self.mean_batch:
+            # one common start, as from the mean's spin-up, for the optimizers' differences
+            center = theta.mean(axis=0, keepdims=True)
+            self.nearest(theta=np.repeat(center, theta.shape[0], axis=0))
+            return self
+        if not (mean or (first and self.warm_up)):
             if mode in ("mean", "nearest") and not first:
                 self.nearest(theta=theta)
             return self
