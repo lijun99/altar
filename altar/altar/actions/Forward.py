@@ -108,12 +108,10 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             run = getattr(model, "forward_states", None)
             if run is None:
                 raise ValueError(f"'states': the model '{model.pyre_name}' has no histories to save")
-        at_mean = self.share(run=run, plexus=plexus, theta=mean[None, :], communicator=communicator)
-        ensemble = self.share(run=run, plexus=plexus, theta=theta, communicator=communicator)
+        at_mean, ensemble = self.runs(run=run, plexus=plexus, theta=theta, communicator=communicator)
         if reference is not None:
-            others = [self.share(run=model.forward_problem, plexus=plexus, theta=rows,
-                                 communicator=communicator)
-                      for rows in (reference.mean(axis=0)[None, :], reference)]
+            others = self.runs(run=model.forward_problem, plexus=plexus, theta=reference,
+                               communicator=communicator)
         # the workers are done
         if communicator.rank != self.manager:
             return
@@ -161,6 +159,20 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             channel.line(f"{indent}mean log L, this run - reference: {gain:+.6g}"
                          f" (chi^2 {-2 * gain + 0.0:+.6g})")
         return
+
+
+    def runs(self, run, plexus, theta, communicator):
+        """
+        The outputs of {run} on the mean of {theta} and on all its rows, in one call: the mean
+        is the first row, so that it runs in a batch with the samples rather than on its own;
+        None on the workers
+        """
+        rows = numpy.vstack([theta.mean(axis=0)[None, :], theta])
+        out = self.share(run=run, plexus=plexus, theta=rows, communicator=communicator)
+        if out is None:
+            return None, None
+        return ({name: values[:1] for name, values in out.items()},
+                {name: values[1:] for name, values in out.items()})
 
 
     def share(self, run, plexus, theta, communicator):

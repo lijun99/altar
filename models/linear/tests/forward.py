@@ -11,8 +11,9 @@
 Check the {forward} action in an mpi run of two processes: on the linear example, patch-9, with
 an odd number of samples of the exact posterior and a reference posterior, the samples shared
 unevenly between the processes, its output must be that of a run in one process: the predicted
-data, their statistics, and the log likelihood of each sample, in the same order. With --gpu,
-both processes share the first gpu.
+data, their statistics, and the log likelihood of each sample, in the same order. For a single
+sample, which runs with its mean as a second row, both predictions must be G theta, with no
+spread. With --gpu, both processes share the first gpu.
 
     python forward.py
     python forward.py --gpu
@@ -97,13 +98,15 @@ def main():
         numpy.savetxt(scratch / "exact.txt", rng.multivariate_normal(mean, cov, size=SAMPLES))
         numpy.savetxt(scratch / "other.txt", rng.multivariate_normal(mean, 2 * cov, size=SAMPLES))
         runs = {"one": [devices[0]] + (["--job.gpuids=[0]"] if options.gpu else []),
-                "two": ["--shell=mpi.shells.mpirun", "--job.tasks=2", *devices]}
+                "two": ["--shell=mpi.shells.mpirun", "--job.tasks=2", *devices],
+                "single": ["--shell=mpi.shells.mpirun", "--job.tasks=2", *devices,
+                           "--linear.forward.samples=1"]}
         for name, extra in runs.items():
             command = [sys.executable, "plexus.py", "forward", "--config=linear.pfg",
                        f"--linear.forward.output={name}.h5", *extra]
             status = subprocess.run(command, cwd=scratch, capture_output=True, text=True,
                                     errors="replace", timeout=900)
-            processes = "2 process(es)" if name == "two" else "1 process(es)"
+            processes = "1 process(es)" if name == "one" else "2 process(es)"
             if status.returncode != 0 or processes not in status.stdout + status.stderr:
                 (scratch / f"{name}.log").write_text(status.stdout + status.stderr)
                 options.keep = True
@@ -118,6 +121,19 @@ def main():
                 good = error <= TOLERANCE
                 print(f"2 processes vs 1, {key:36s} {'ok' if good else 'FAIL':4s} {error:12.4g}")
                 failures += not good
+        # the single sample: G theta, as the mean model and as the samples' mean, with no spread
+        G = numpy.loadtxt(EXAMPLES / CASE / "green.txt")
+        expected = G @ numpy.loadtxt(scratch / "exact.txt")[0]
+        with h5py.File(scratch / "single.h5") as single:
+            for key in ("data/mean_model", "data/mean"):
+                error = numpy.abs(numpy.asarray(single[key]) - expected).max() / numpy.abs(expected).max()
+                good = error <= TOLERANCE
+                print(f"1 sample, {key:45s} {'ok' if good else 'FAIL':4s} {error:12.4g}")
+                failures += not good
+            spread = numpy.abs(numpy.asarray(single["data/std"])).max()
+            good = spread == 0
+            print(f"1 sample, {'data/std':45s} {'ok' if good else 'FAIL':4s} {spread:12.4g}")
+            failures += not good
         return 1 if failures else 0
     finally:
         if options.keep:
