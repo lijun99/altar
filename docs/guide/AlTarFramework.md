@@ -268,8 +268,16 @@ slipmodel:
 
 The matrix $\mathbf A$, of the size of the parameters, is factored at every walk, on the host,
 also on the GPU, where only the likelihoods run on the device. The sampler,
-`altar.bayesian.samplers.perturbation`, also works at any $\beta$, e.g. under `catmip`. It has
-these settings:
+`altar.bayesian.samplers.perturbation`, also works at any $\beta$, e.g. under `catmip`.
+
+With an adaptive $C_p$ (`cp = altar.models.cp.adaptive`), re-estimated from the mean of the samples
+before each walk, every walk samples the posterior under the $C_p$ in effect exactly, and the walks
+iterate toward the mean model whose posterior gives back its own $C_p$. The first walk takes its
+$C_p$ from the starting samples, so the controller walks on until $C_p$ changes by less than
+`cp_tolerance` (0.01, relative, in the Frobenius norm) between walks, up to `max_rounds` (20). On
+the 9-patch $C_p$ example, it settles in 3 to 5 walks.
+
+The sampler has these settings:
 
 `trajectory_time`
 : the length of a trajectory, $2\pi$ a whole oscillation; by default $\pi/2$, which lands on an
