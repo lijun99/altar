@@ -82,3 +82,20 @@ problem is the conjugate one. hmc needs about 20 rounds of 100 trajectories (15x
 wall time), catmip_hmc about 200 trajectories per step (100x). catmip_hmc's evidence is 5.4 nats
 high when the dip slips start from the moment prep, and right (within 0.2) from the prior: the same
 bias as on 9patch.
+
+## Adaptive C_p (`adaptive.py`)
+
+`staticCp.pfg`: 9patchCp, 168 observations, C_p = K_p C_mu K_p^T from the mean model, re-estimated
+before every walk (`cp = altar.models.cp.adaptive`). The sampler reads the covariance in effect at
+every walk, so each walk is exact for its C_p; the walks iterate m -> mean under C_p(m). Reference:
+that fixed point computed directly in float64 (19 iterations from the initial model, trace C_p
+0.0029444), and the gaussian posterior there.
+
+With `rounds = 6`, the first walk takes C_p from the moment prep's mean, trace 8.4e-5, 35x too small
+(log evidence 624.9); then 0.00314, 0.00293, 0.002944, 0.002942, 0.002942 (log evidence 661.03).
+So one walk, the old default, would have sampled the wrong posterior without a word. The controller
+now walks until C_p changes by less than `cp_tolerance` (0.01, relative Frobenius norm): the changes
+are 0.975, 0.096, 0.0096, about 10x smaller per walk, so it stops after 4 walks (3-5 over seeds,
+cpu and gpu). The final samples match the fixed point: mean within 0.04-0.09 sd, sd ratios
+0.93-1.09 over seeds 0-3 on both backends. CATMIP with the adaptive C_p (C_p from the mean at every
+β step) matches it too: mean 0.077 sd, sd ratio 0.95-1.04.
