@@ -1,0 +1,65 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+
+; the static inversion example, sampled exactly: its posterior is a gaussian, truncated to the
+; support of the dip slips, which the perturbation controller samples with exact trajectories
+; that reflect off the bounds; without the moment constraint, whose penalty on Mw isn't gaussian
+; in the slips
+;
+;        slipmodel.plexus sample --config=static_perturbation.pfg
+
+slipmodel:
+
+    model = altar.models.seismic.static
+    model:
+        case = 9patch
+        patches = 9
+        parameters = 2*{slipmodel.model.patches}
+        green = static.gf.h5
+
+        dataobs:
+            observations = 108
+            data_file = static.data.h5
+            cd_file = static.Cd.h5
+
+        psets_list = [strikeslip, dipslip]
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
+
+            strikeslip:
+                count = {slipmodel.model.patches}
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 0.5
+
+            dipslip:
+                count = {slipmodel.model.patches}
+                prior = altar.models.seismic.moment
+                prior:
+                    support = (-0.5, 20) ; slip range
+                    Mw_mean = 7.3 ; for the initial samples only
+                    Mw_sigma = 0.2
+                    Mu = [30] ; in GPa
+                    area = [400] ; patch area in km^2
+
+    controller = altar.bayesian.perturbation
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver:
+            output_dir = results/static_perturbation
+
+    forward:
+        theta = results/static_perturbation/step_final.h5
+        output = results/static_perturbation/forward.h5
+
+    job:
+        tasks = 1
+        gpus = 0
+        chains = 2**10
+        steps = 20 ; exact trajectories, within the bounds
+
+; end of file

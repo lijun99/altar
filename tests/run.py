@@ -89,6 +89,7 @@ def cpu():
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py", "arrivals.py", "timeshift.py", "stf.py",
                                                 "history.py", "noise.py"])
+    tests += scripts(MODELS / "seismic/tests/perturbation", ["bounded.py"])
     tests.append(Test(name="models:seismic:tests:arrivals:table", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "arrivals.py", "--table"]))
     tests += [
@@ -105,6 +106,7 @@ def cpu():
         example("slipmodel", "seismic", "static.pfg", 0, needs=("seismic-data",)),
         example("slipmodel", "seismic", "static.pfg", 0, "--controller=altar.bayesian.cf_catmip",
                 needs=("seismic-data",), variant="cf_catmip"),
+        example("slipmodel", "seismic", "static_perturbation.pfg", 0, needs=("seismic-data",)),
         example("slipmodel", "seismic", "kinematic.pfg", 0, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi", needs=("mpi",), examples="linear", anneals=True,
@@ -162,6 +164,7 @@ def gpu():
         example("slipmodel", "seismic", "static.pfg", 1, needs=("seismic-data",)),
         example("slipmodel", "seismic", "static.pfg", 1, "--controller=altar.bayesian.cf_catmip",
                 needs=("seismic-data",), variant="cf_catmip"),
+        example("slipmodel", "seismic", "static_perturbation.pfg", 1, needs=("seismic-data",)),
         example("slipmodel", "seismic", "kinematic.pfg", 1, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi-2gpus", needs=("mpi", "2gpus"), examples="linear",

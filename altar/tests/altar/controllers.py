@@ -9,7 +9,8 @@
 
 """
 Check that the controllers without annealing walk as many times as they should, counted from
-where the run starts, a restart's iteration or 0: {mcmc} and {hmc} their {rounds}, {mala} once
+where the run starts, a restart's iteration or 0: {mcmc}, {hmc} and {perturbation} their
+{rounds}, {mala} once
 """
 
 
@@ -17,6 +18,7 @@ def test():
     from altar.bayesian.controllers.Mcmc import Mcmc
     from altar.bayesian.controllers.Hmc import Hmc
     from altar.bayesian.controllers.Mala import Mala
+    from altar.bayesian.controllers.Perturbation import Perturbation
 
     def walks(controller, start):
         controller.start_iteration = start
@@ -25,7 +27,7 @@ def test():
             iteration += 1
         return iteration - start
 
-    for factory in (Mcmc, Hmc):
+    for factory in (Mcmc, Hmc, Perturbation):
         controller = factory(name=f"rounds-{factory.__name__}")
         controller.rounds = 3
         assert walks(controller, start=0) == 3, factory.__name__
