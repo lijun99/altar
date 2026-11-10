@@ -81,4 +81,13 @@ def cf_catmip():
     __doc__ = CfCatmip.__doc__
     return CfCatmip
 
+@altar.foundry(
+    implements=controller,
+    tip="exact samples of linear-gaussian posteriors, by perturbation, at beta 1")
+def perturbation():
+    from .Perturbation import Perturbation
+    __doc__ = Perturbation.__doc__
+    return Perturbation
+
+
 # end of file

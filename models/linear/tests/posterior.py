@@ -149,6 +149,15 @@ CASES = {
     "cf_catmip-model": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256"], GAUSSIAN),
     "cf_catmip-tight": (["--controller=altar.bayesian.cf_catmip", "--job.steps=256",
                          *uniform(TIGHT, reparameterize=False)], TIGHTLY),
+    "perturbation": (["--controller=altar.bayesian.perturbation"], GAUSSIAN),
+    "perturbation-uniform": (["--controller=altar.bayesian.perturbation", "--job.steps=5",
+                              *uniform(SUPPORT)], WIDE),
+    "perturbation-tight": (["--controller=altar.bayesian.perturbation", "--job.steps=20",
+                            *uniform(TIGHT)], TIGHTLY),
+    "perturbation-tight-physical": (["--controller=altar.bayesian.perturbation", "--job.steps=20",
+                                     *uniform(TIGHT, reparameterize=False)], TIGHTLY),
+    "catmip-perturbation": (["--controller=altar.bayesian.catmip", "--job.steps=1",
+                             "--controller.sampler=altar.bayesian.samplers.perturbation"], GAUSSIAN),
 }
 
 # the tolerances, for 256 chains: the mean within this many posterior standard deviations,
