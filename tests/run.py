@@ -89,7 +89,7 @@ def cpu():
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py", "arrivals.py", "timeshift.py", "stf.py",
                                                 "history.py", "noise.py"])
-    tests += scripts(MODELS / "seismic/tests/perturbation", ["bounded.py"])
+    tests += scripts(MODELS / "seismic/tests/perturbation", ["bounded.py", "adaptive.py"])
     tests.append(Test(name="models:seismic:tests:arrivals:table", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "arrivals.py", "--table"]))
     tests += [
