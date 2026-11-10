@@ -56,6 +56,7 @@ The controller samples the posterior. The choice of controller is the choice of 
 | `altar.bayesian.catmip_mala` | CATMIP annealing, with Metropolis-adjusted Langevin sampling |
 | `altar.bayesian.mala` | the Metropolis-adjusted Langevin algorithm at a fixed $\beta = 1$, without annealing |
 | `altar.bayesian.cf_catmip` | {ref}`cross-fade CATMIP <cross-fade>`: from the conjugate posterior of a linear model to its posterior |
+| `altar.bayesian.perturbation` | {ref}`exact samples <perturbation>` of a linear model with Gaussian errors and a Gaussian prior on a box |
 | `altar.bayesian.langevin` | stochastic gradient Langevin dynamics (SGLD) |
 | `altar.bayesian.annealer` | the base of the annealing controllers, with the sampler and the scheduler left to configure |
 
@@ -217,6 +218,68 @@ The archive of a cross-fade run keeps the samples as usual, but its `prior` and 
 the two densities of the annealing, $\log P_c(\boldsymbol\theta|\mathbf d)$ and
 $\log P(\boldsymbol\theta) - \log P_c(\boldsymbol\theta)$, not the prior and the data
 likelihood.
+
+(perturbation)=
+### Perturbation sampling
+
+`altar.bayesian.perturbation` samples linear models with Gaussian errors exactly, e.g. the linear
+and the static slip models, under priors that are Gaussian on a box: `gaussian`, `uniform`,
+`tgaussian`, `correlated`, and the moment prior without its `moment_constraint`. Such a posterior
+at $\beta$ is a Gaussian $N(\mathbf m, \mathbf A^{-1})$ truncated to the box, with
+$\mathbf A = \mathbf P + \beta\, \mathbf G^T \mathbf C^{-1} \mathbf G$, $\mathbf P$ the precision
+of the prior, zero where it is flat.
+
+Each draw is a perturbation draw
+([Papandreou & Yuille, 2010](https://papers.nips.cc/paper_files/paper/2010/file/d09bf41544a3365a46c9077ebb5e35c3-Paper.pdf);
+[Orieux et al., 2012](https://doi.org/10.1109/LSP.2012.2189104)): the solution of
+
+$$
+\mathbf A\, \boldsymbol\theta = \mathbf P (\boldsymbol\mu + \boldsymbol\eta)
++ \beta\, \mathbf G^T \mathbf C^{-1} (\mathbf d + \boldsymbol\epsilon),
+\qquad \boldsymbol\eta \sim N(0, \mathbf P^{-1}),\ \boldsymbol\epsilon \sim N(0, \mathbf C / \beta),
+$$
+
+the prior and the data perturbed, is an independent draw of the posterior without bounds. Then one
+walk gives exact, independent samples. With bounds, the draws are the initial velocities of exact
+Hamiltonian trajectories, which reflect off the walls of the box
+([Pakman & Paninski, 2014](https://arxiv.org/abs/1208.4118)); every trajectory is
+accepted, and the chains walk `rounds` times (1 by default), `job.steps` trajectories each. On the
+9-patch static example with all nine dip slips bounded below near their posterior means, where
+0.2% of the untruncated posterior lies in the box, two trajectories from the prior reach the exact
+posterior.
+
+At $\beta = 1$, it computes the log evidence exactly, without annealing:
+
+$$
+\log P(\mathbf d) = \log P(\boldsymbol\theta) + \log P(\mathbf d|\boldsymbol\theta)
+- \log N(\boldsymbol\theta; \mathbf m, \mathbf A^{-1}) + \log P_{\rm box},
+$$
+
+at every sample, with $P_{\rm box}$, the mass of the untruncated posterior in the box, estimated by
+the GHK simulator (`evidence_draws`, 10000 by default). The log shows how much the estimate varies
+over the samples: more than round-off means the model isn't the Gaussian the sampler assumed.
+
+```none
+slipmodel:
+    controller = altar.bayesian.perturbation
+    job:
+        steps = 20 ; trajectories, with bounds
+```
+
+The matrix $\mathbf A$, of the size of the parameters, is factored at every walk, on the host,
+also on the GPU, where only the likelihoods run on the device. The sampler,
+`altar.bayesian.samplers.perturbation`, also works at any $\beta$, e.g. under `catmip`. It has
+these settings:
+
+`trajectory_time`
+: the length of a trajectory, $2\pi$ a whole oscillation; by default $\pi/2$, which lands on an
+  independent draw without bounds
+
+`max_bounces`
+: the most bounces of a chain off the walls in one trajectory, before the run stops; 100000
+
+`evidence_draws`
+: the GHK draws for the mass of the box; 0 skips the evidence with bounds
 
 (samplers)=
 ## Samplers
@@ -502,7 +565,7 @@ the samples at each $\beta$; use normalized, deliberately chosen priors, since t
 for the prior volume the data rule out; use thousands of chains and a target of 1 or below; and
 repeat the runs, trusting differences well beyond their spread. Cascaded runs, which start from the
 samples of the static stage, have no valid evidence. For linear models, `cf_catmip` gives it
-almost exactly.
+almost exactly, and `perturbation` exactly, also with bounds.
 
 `target`
 : the COV to aim at; default 1. A larger target takes fewer, larger $\beta$ steps: each walk then

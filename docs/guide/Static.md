@@ -166,8 +166,11 @@ reparameterized (`reparameterize = True`, see {doc}`Priors`). The static model i
 the slips, so it can also be sampled by {ref}`cross-fade CATMIP <cross-fade>`,
 `--controller=altar.bayesian.cf_catmip`: the 9-patch example then reaches the same posterior in
 two $\beta$ steps instead of about twenty. That's not so for inversions whose bounds bind, e.g.
-with many slips at their lower bound; see {ref}`cross-fade CATMIP <cross-fade>`. See {doc}`AlTarFramework` for the controllers, and for
-running on several processes or GPUs.
+with many slips at their lower bound; see {ref}`cross-fade CATMIP <cross-fade>`.
+`static_perturbation.pfg` samples it exactly, bounds included, with the
+{ref}`perturbation <perturbation>` controller, and gives its evidence; it needs
+`moment_constraint = False`, since that penalty isn't Gaussian in the slips. See
+{doc}`AlTarFramework` for the controllers, and for running on several processes or GPUs.
 
 (moment-distribution)=
 ## The moment magnitude prior
