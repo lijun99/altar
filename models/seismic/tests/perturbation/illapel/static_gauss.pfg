@@ -1,0 +1,64 @@
+;
+; the Illapel static inversion with gaussian priors: 170 patches, strike and dip slips, and a ramp;
+; the posterior is gaussian, so the perturbation controller samples it exactly
+
+slipmodel:
+
+    model = altar.models.seismic.static
+    model:
+
+        case = /baghdad-nobak/ljzhu/kinematic/Illapel.orig/Illapel_input
+        green = static.gf.h5
+
+        dataobs:
+            observations = 1248
+            data_file = static.data.h5
+            cd_file = static.Cxi.h5
+
+        psets_list = [strikeslip, dipslip, ramp]
+
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
+            ramp = contiguous
+
+            strikeslip:
+                count = 170
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 1.0
+
+            dipslip:
+                count = 170
+                prep = altar.models.seismic.moment
+                prep:
+                    support = (-0.5, 20)
+                    Mw_mean = 8.3
+                    Mw_sigma = 0.2
+                    Mu = [45] ; in GPa
+                    area = [324] ; patch area in km^2
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 5.0
+
+            ramp:
+                count = 2
+                prior = gaussian
+                prior.mean = 0
+                prior.sigma = 5.0
+
+    controller = altar.bayesian.perturbation
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver:
+            output_freq = 10
+
+    job:
+        tasks = 1
+        gpus = 1
+        precision = float32
+        gpuprecision = float32
+        chains = 2**12
+        steps = 100
+
+; end of file

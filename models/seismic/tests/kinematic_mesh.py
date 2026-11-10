@@ -25,7 +25,7 @@ sys.path.insert(0, str(HERE / "trimesh"))
 
 # the fault: 4 x 3 squares of 10 km, each cut into two triangles, dipping 30 degrees
 NS, ND, SIZE, DIP = 4, 3, 10.0, 30.0
-REFINE, POINTS, NT, DT, OBS = 6, 2, 40, 1.0, 300
+NMESH, POINTS, NT, DT, OBS = 6, 2, 40, 0.5, 300
 # the patches that share a velocity, in the grouped case
 GROUP = 4
 CONFIG = """
@@ -34,7 +34,7 @@ slipmodel:
     model:
         case = .
         mesh = mesh.h5
-        refine = {refine}
+        Nmesh = {nmesh}
         patches = {patches}
         green = kinematicG.gf.h5
         dataobs:
@@ -154,11 +154,11 @@ def check(geometry):
             h5["kinematicG.gf"] = rng.standard_normal((2 * Np * NT, OBS)) * 1e-2
         with h5py.File(scratch / "kinematicG.data.h5", "w") as h5:
             h5["kinematicG.data"] = rng.standard_normal(OBS) * 1e-2
-        config = CONFIG.format(refine=REFINE, patches=Np, obs=OBS, nt=NT, dt=DT)
+        config = CONFIG.format(nmesh=NMESH, patches=Np, obs=OBS, nt=NT, dt=DT)
         (scratch / "slipmodel.pfg").write_text(config)
-        # the same, with a velocity for each group of {GROUP} patches
-        grouped = config.replace(f"        refine = {REFINE}\n",
-                                 f"        refine = {REFINE}\n        velocity_groups = groups/velocity\n")
+        # the same, with a velocity for each group of {GROUP} patches, and Nmesh by its alias
+        grouped = config.replace(f"        Nmesh = {NMESH}\n",
+                                 f"        refine = {NMESH}\n        velocity_groups = groups/velocity\n")
         grouped = grouped.replace("            rupturevelocity:\n                count = " + str(Np),
                                   "            rupturevelocity:\n                count = " + str(G))
         (scratch / "grouped.pfg").write_text(grouped)
@@ -182,7 +182,7 @@ def check(geometry):
         from altar.models.seismic import mesh as meshes
         from mesh import Mesh
         from slip import SlipHistory
-        points, coords, triangles, patch = meshes.refine(xyz, faces, uv, REFINE)
+        points, coords, triangles, patch = meshes.refine(xyz, faces, uv, NMESH)
         proto = SlipHistory(Mesh(points, triangles, patch, coords), sources, owners, Np, NT, DT,
                             numpy.zeros(Np), len(owners) // Np)
         θ, Mb, dMb, grad, fd = results["float64"]

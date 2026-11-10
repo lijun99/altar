@@ -33,4 +33,13 @@ def mala():
     __doc__ = MALA.__doc__
     return MALA
 
+@altar.foundry(
+    implements=sampler,
+    tip="exact samples of linear-gaussian posteriors, by perturbation")
+def perturbation():
+    from .Perturbation import Perturbation
+    __doc__ = Perturbation.__doc__
+    return Perturbation
+
+
 # end of file

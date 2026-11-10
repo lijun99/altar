@@ -87,7 +87,11 @@ def cpu():
                                                   "minimizers.py"])
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
-    tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py"])
+    tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py", "arrivals.py", "timeshift.py", "stf.py",
+                                                "history.py", "noise.py"])
+    tests += scripts(MODELS / "seismic/tests/perturbation", ["bounded.py", "adaptive.py"])
+    tests.append(Test(name="models:seismic:tests:arrivals:table", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "arrivals.py", "--table"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 0),
         example("altar-linear", "linear", "linear_hmc.pfg", 0),
@@ -102,6 +106,7 @@ def cpu():
         example("slipmodel", "seismic", "static.pfg", 0, needs=("seismic-data",)),
         example("slipmodel", "seismic", "static.pfg", 0, "--controller=altar.bayesian.cf_catmip",
                 needs=("seismic-data",), variant="cf_catmip"),
+        example("slipmodel", "seismic", "static_perturbation.pfg", 0, needs=("seismic-data",)),
         example("slipmodel", "seismic", "kinematic.pfg", 0, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi", needs=("mpi",), examples="linear", anneals=True,
@@ -130,6 +135,16 @@ def gpu():
                       command=[sys.executable, "kinematic_cpu.py", "--gpu"]))
     tests.append(Test(name="altar:tests:altar:correlated:gpu", cwd=ROOT / "altar/tests/altar",
                       command=[sys.executable, "correlated.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:polar:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "polar.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:noise:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "noise.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:arrivals:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "arrivals.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:timeshift:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "timeshift.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:stf:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "stf.py", "--gpu"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
@@ -149,6 +164,7 @@ def gpu():
         example("slipmodel", "seismic", "static.pfg", 1, needs=("seismic-data",)),
         example("slipmodel", "seismic", "static.pfg", 1, "--controller=altar.bayesian.cf_catmip",
                 needs=("seismic-data",), variant="cf_catmip"),
+        example("slipmodel", "seismic", "static_perturbation.pfg", 1, needs=("seismic-data",)),
         example("slipmodel", "seismic", "kinematic.pfg", 1, needs=("seismic-data",)),
     ]
     tests.append(Test(name="example:linear:mpi-2gpus", needs=("mpi", "2gpus"), examples="linear",

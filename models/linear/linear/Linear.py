@@ -111,11 +111,10 @@ class Linear(BayesianL2, family="altar.models.linear"):
             model=self, theta=theta, green=green, prediction=prediction, observation=observation)
 
 
-    def conjugate_posterior(self, mean, variance):
+    def linear_system(self):
         """
-        The posterior N(m*, C*) under the conjugate prior N(mean, diag(variance)), with
-        C* = (C_m^-1 + G^T C^-1 G)^-1 and m* = C* (C_m^-1 m + G^T C^-1 d) for the covariance C in
-        effect, and the evidence of that model, log p_conj(d) (Minson, 2024, eq. A13)
+        L^-1 G, L^-1 d and log |C|, for the covariance C = L L^T in effect, on the valid
+        observations only
         """
         G = numpy.asarray(self._impl.green(), dtype=float)
         d = numpy.asarray(self.dataobs.observed(), dtype=float)
@@ -124,15 +123,22 @@ class Linear(BayesianL2, family="altar.models.linear"):
         mask = self.dataobs.mask
         if mask is not None:
             G, d = G[mask], d[mask]
-        observations = d.size
-        # whiten G and d by the covariance, C = L L^T
         if isinstance(covariance, float):
-            Gw, dw = G / numpy.sqrt(covariance), d / numpy.sqrt(covariance)
-            logdet = observations * numpy.log(covariance)
-        else:
-            L = numpy.linalg.cholesky(covariance)
-            Gw, dw = numpy.linalg.solve(L, G), numpy.linalg.solve(L, d)
-            logdet = 2 * numpy.log(numpy.diag(L)).sum()
+            scale = numpy.sqrt(covariance)
+            return G / scale, d / scale, d.size * numpy.log(covariance)
+        L = numpy.linalg.cholesky(covariance)
+        return (numpy.linalg.solve(L, G), numpy.linalg.solve(L, d),
+                2 * numpy.log(numpy.diag(L)).sum())
+
+
+    def conjugate_posterior(self, mean, variance):
+        """
+        The posterior N(m*, C*) under the conjugate prior N(mean, diag(variance)), with
+        C* = (C_m^-1 + G^T C^-1 G)^-1 and m* = C* (C_m^-1 m + G^T C^-1 d) for the covariance C in
+        effect, and the evidence of that model, log p_conj(d) (Minson, 2024, eq. A13)
+        """
+        Gw, dw, logdet = self.linear_system()
+        observations = dw.size
         precision = numpy.diag(1 / variance) + Gw.T @ Gw
         cstar = numpy.linalg.inv(precision)
         cstar = (cstar + cstar.T) / 2

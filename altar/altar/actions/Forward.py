@@ -70,9 +70,8 @@ class Forward(altar.panel(), family='altar.actions.forward'):
             if members:
                 for name, member in members.items():
                     channel.line(f"{name}:")
-                    columns = model.columns(name)
-                    self.check(plexus=plexus, model=member, theta=θ[:, columns],
-                               reference=None if reference is None else reference[:, columns],
+                    self.check(plexus=plexus, model=member, theta=model.member_theta(name, θ),
+                               reference=None if reference is None else model.member_theta(name, reference),
                                h5=h5.create_group(name), channel=channel, indent="  ")
             else:
                 self.check(plexus=plexus, model=model, theta=θ, reference=reference, h5=h5,

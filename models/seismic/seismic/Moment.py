@@ -69,4 +69,16 @@ class Moment(uniform, family="altar.models.seismic.moment"):
         return impl
 
 
+    # interface
+    def gaussian_form(self):
+        """
+        Flat on my support, as {Uniform}, unless the moment constraint adds its penalty on Mw,
+        which isn't gaussian in the slips
+        """
+        if self.moment_constraint:
+            raise NotImplementedError("the moment constraint, a gaussian on Mw, is not gaussian "
+                                      "in the slips; set moment_constraint = False")
+        return super().gaussian_form()
+
+
 # end of file

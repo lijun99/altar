@@ -59,6 +59,8 @@ public:
 
     /// the arrival times on the mesh, of the last forward model
     const TYPE * arrivals() const { return _gpu_T; }
+    /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
+    void setSTF(int kind, TYPE peak) { _stf_kind = kind; _stf_peak = peak; }
 
 private:
     void _arrivalTimes(const TYPE * theta, size_t parameters, size_t batch, cudaStream_t stream) const;
@@ -67,6 +69,8 @@ private:
     size_t _Np, _Nt, _Nsp, _P, _V, _E, _N, _VP;
     size_t _samples, _parameters, _observations, _NGbparameters;
     TYPE _dt, _spacing;
+    int _stf_kind = 0; ///< the source time function, see {setSTF}
+    TYPE _stf_peak = 0.5;
     const TYPE _radius = 1.0; ///< the straight ray seeding radius around the hypocenter, in spacings
     const TYPE _steepness = 10.0; ///< how fast the seeds rise past the radius
     const TYPE _cap = 1.e6; ///< the largest arrival time

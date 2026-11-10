@@ -50,6 +50,15 @@ namespace {
     template <template <typename> class M>
     class Model {
     public:
+        // the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
+        auto set_stf(int kind, double peak) -> void
+        {
+            dispatch([&](auto & model, auto * zero) {
+                using T = std::remove_pointer_t<decltype(zero)>;
+                model.setSTF(kind, T(peak));
+            });
+        }
+
         // Mb <- the slips of each patch over time, for the first {batch} rows of {theta}
         auto cast_mb(py::array theta, py::array mb, std::size_t batch) -> void
         {
@@ -182,6 +191,8 @@ PYBIND11_MODULE(seismic, m)
                       doubles_t, sizes_t, const std::string &>(),
              "Nas"_a, "Ndd"_a, "Nmesh"_a, "dsp"_a, "Nt"_a, "Npt"_a, "dt"_a, "t0s"_a, "idx_map"_a,
              "precision"_a)
+        .def("set_stf", &Kinematic::set_stf, "kind"_a, "peak"_a,
+             "the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine")
         .def("cast_mb", &Kinematic::cast_mb, "theta"_a, "mb"_a, "batch"_a,
              "mb <- the slips of each patch over time, from {theta}")
         .def("gradient", &Kinematic::gradient, "theta"_a, "dmb"_a, "gradient"_a, "batch"_a,
@@ -197,6 +208,8 @@ PYBIND11_MODULE(seismic, m)
              "Np"_a, "Nt"_a, "dt"_a, "t0s"_a, "xyz"_a, "incPtr"_a, "incA"_a, "incB"_a, "incPatch"_a,
              "nbPtr"_a, "nb"_a, "vpPtr"_a, "vpPatch"_a, "patchGeometry"_a, "spacing"_a, "Nsp"_a,
              "corners"_a, "weights"_a, "idx_map"_a, "precision"_a)
+        .def("set_stf", &KinematicMesh::set_stf, "kind"_a, "peak"_a,
+             "the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine")
         .def("cast_mb", &KinematicMesh::cast_mb, "theta"_a, "mb"_a, "batch"_a,
              "mb <- the slips of each patch over time, from {theta}")
         .def("gradient", &KinematicMesh::gradient, "theta"_a, "dmb"_a, "gradient"_a, "batch"_a,

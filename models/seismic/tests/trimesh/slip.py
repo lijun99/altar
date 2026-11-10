@@ -51,7 +51,7 @@ class SlipHistory:
         TI = TI0[:, None] + hp
         t = self.t0s[p][:, None] + self.dt * numpy.arange(self.Nt)[None, :]
         inside = ~((t <= TI - hp) | (t >= TI + hp))
-        tri = numpy.where(inside, (1.0 - numpy.abs(TI - t) / hp) / hp / self.Npt2, 0.0)
+        tri = numpy.where(inside, (1.0 - numpy.abs(TI - t) / hp) / hp * self.dt / self.Npt2, 0.0)
         c = numpy.zeros((self.Np, self.Nt))
         numpy.add.at(c, p, tri)
         return c, (TI, t, hp, inside)
@@ -68,7 +68,7 @@ class SlipHistory:
         # Mb = c * slip
         cc = numpy.zeros((Np, Nt))
         p = self.point_patch
-        tri = numpy.where(inside, (1.0 - numpy.abs(TI - t) / hp) / hp / self.Npt2, 0.0)
+        tri = numpy.where(inside, (1.0 - numpy.abs(TI - t) / hp) / hp * self.dt / self.Npt2, 0.0)
         numpy.add.at(cc, p, tri)
         gθ = numpy.zeros_like(θ)
         gθ[:Np] = (cc * g[:, 0, :].T).sum(1)
@@ -76,7 +76,7 @@ class SlipHistory:
         gc = g[:, 0, :].T * θ[:Np, None] + g[:, 1, :].T * θ[Np:2 * Np, None]
         # the triangles: (1/h - |TI - t|/h^2) / Npt2, with TI = TI0 + h
         sign = numpy.sign(TI - t)
-        gtri = numpy.where(inside, gc[p], 0.0) / self.Npt2
+        gtri = numpy.where(inside, gc[p], 0.0) * self.dt / self.Npt2
         gTI0 = (gtri * (-sign / hp ** 2)).sum(1)
         gh_point = (gtri * (-1.0 / hp ** 2 - sign / hp ** 2 + 2.0 * numpy.abs(TI - t) / hp ** 3)).sum(1)
         gh = numpy.zeros(Np)

@@ -8,6 +8,7 @@
 
 # externals
 import math
+import numpy
 # get the package
 import altar
 
@@ -99,6 +100,18 @@ class Correlated(base, family="altar.distributions.correlated"):
                      "reparameterize", "transform", "jitter", "sweeps", "normalization_draws"]:
             setattr(impl, name, getattr(self, name))
         return impl
+
+
+    # interface
+    def gaussian_form(self):
+        """
+        My mean and the inverse of my covariance, on my support
+        """
+        host = getattr(self._impl, "host", self._impl)
+        n = self.parameters
+        low, high = self.support
+        return (host.mean_vector.copy(), host.precision_matrix.copy(), numpy.full(n, low),
+                numpy.full(n, high))
 
 
 # end of file

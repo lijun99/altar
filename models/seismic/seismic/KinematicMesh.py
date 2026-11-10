@@ -23,10 +23,11 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
     time, then data = Gb Mb
 
     On the cuda backend, or on the cpu. The patches and their source points come from {mesh}, as csi's
-    TriangularPatchesKin saves them; my parameters, in {idx_map} order, are the strike slips, dip
-    slips, rise times and rupture velocities of the patches, then the hypocenter along strike and
-    down dip, in the surface coordinates of the mesh. The settings of the rectangular model, Nas,
-    Ndd, Nmesh, dsp and Npt, don't apply.
+    TriangularPatchesKin saves them, Npt x Npt per patch; my parameters, in {idx_map} order, are the
+    strike slips, dip slips, rise times and rupture velocities of the patches, then the hypocenter
+    along strike and down dip, in the surface coordinates of the mesh. {Nmesh} cuts each patch into
+    Nmesh x Nmesh triangles for the arrival times; the settings Nas, Ndd, dsp and Npt of the
+    rectangular model don't apply.
     """
 
 
@@ -34,8 +35,9 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
     mesh = altar.properties.path(default="mesh.h5")
     mesh.doc = "the patches: vertices, surface coordinates uv, faces, and the source points"
 
-    refine = altar.properties.int(default=10)
-    refine.doc = "the triangles of the arrival times along each edge of a patch"
+    Nmesh = altar.properties.int(default=10)
+    Nmesh.aliases = {"refine"}
+    Nmesh.doc = "the triangles of the mesh of the arrival times along each edge of a patch"
 
     velocity_groups = altar.properties.str(default=None)
     velocity_groups.doc = "the dataset of {mesh} with the velocity group of each patch, which then " \
@@ -88,38 +90,35 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         # the hypocenter; the cuda model reads a velocity per patch, its group's
         expected = 3 * patches + velocities + 2
         columns = numpy.arange(self.parameters) if self.idx_map is None else numpy.asarray(self.idx_map)
-        if columns.size != expected:
+        if columns.size != expected + self.shifts:
             application.error.log(
-                f"the kinematic mesh model needs {expected} parameters for {patches} patches and "
-                f"{velocities} rupture velocities, got {columns.size}")
+                f"the kinematic mesh model needs {expected + self.shifts} parameters for {patches} "
+                f"patches, {velocities} rupture velocities and {self.shifts} time shifts, got {columns.size}")
             raise SystemExit(1)
+        # the time shifts, if any, after the parameters of the rupture
+        self.setup_shifts(columns=columns, application=application)
+        columns = columns[:expected]
         layout = numpy.concatenate([numpy.arange(3 * patches), 3 * patches + groups,
                                     3 * patches + velocities + numpy.arange(2)])
         idx_map = columns[layout].astype("int64")
         t0s = numpy.zeros(patches) if self.t0s is None else numpy.asarray(self.t0s, dtype=float)
 
         # the mesh of the arrival times, and its tables
-        xyz, coords, triangles, patch = meshes.refine(vertices, faces, uv, self.refine)
-        edges = xyz[triangles[:, [1, 2, 0]]] - xyz[triangles]
-        spacing = float(numpy.sqrt((edges ** 2).sum(-1)).mean())
-        corners, weights = meshes.locate(sources, owners, coords, triangles, patch)
-        tables = meshes.tables(xyz, triangles, patch)
-        self.vertices = xyz.shape[0]
+        grid = meshes.arrival_mesh(vertices, faces, uv, sources, owners, self.Nmesh)
+        self.vertices = grid["xyz"].shape[0]
         application.info.log(f"kinematic mesh: {patches} patches, {self.vertices} vertices,"
-                             f" spacing {spacing:.3g} km, {counts[0]} source points per patch")
+                             f" spacing {grid['spacing']:.3g} km, {counts[0]} source points per patch")
 
         # the green's functions, kept raw for the forward problem
         self.GF = self.io.load(filename=self.green, shape=(self.NGbparameters, self.observations))
-        geometry = meshes.patch_geometry(vertices, faces, uv)
 
         if self.native:
             from altar.models.seismic.ext import seismic
             self._native_green()
             self.cmodel = seismic.KinematicMesh(
-                Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, xyz=xyz, patchGeometry=geometry,
-                spacing=spacing, Nsp=int(counts[0]), corners=corners, weights=weights,
-                idx_map=idx_map, precision=self.precision, **tables)
-            return self
+                Np=patches, Nt=self.Nt, dt=self.dt, t0s=t0s, Nsp=int(counts[0]), idx_map=idx_map,
+                precision=self.precision, **grid)
+            return self.configure_stf(application=application)
 
         from altar.models.seismic.ext import cudaseismic
         self.gidx_map = altar.cuda.vector(source=idx_map)
@@ -129,13 +128,11 @@ class KinematicMesh(Kinematic, family="altar.models.seismic.kinematicmesh"):
         self._premerge_covariance()
 
         self.cmodel = cudaseismic.cudaKinematicMesh(
-            Np=patches, Nt=self.Nt, dt=self.dt, t0s=self.gt0s.grid, xyz=xyz,
-            patchGeometry=geometry, spacing=spacing,
-            Nsp=int(counts[0]), corners=corners, weights=weights, samples=self.samples,
-            parameters=self.parameters, observations=self.observations,
-            idx_map=self.gidx_map.grid, **tables)
+            Np=patches, Nt=self.Nt, dt=self.dt, t0s=self.gt0s.grid, Nsp=int(counts[0]),
+            samples=self.samples, parameters=self.parameters, observations=self.observations,
+            idx_map=self.gidx_map.grid, **grid)
         # all done
-        return self
+        return self.configure_stf(application=application)
 
 
     # private data

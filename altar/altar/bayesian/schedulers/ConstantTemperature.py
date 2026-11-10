@@ -117,6 +117,7 @@ class ConstantTemperature(altar.component, family="altar.schedulers.constant", i
     rng: numpy.random.Generator
     info: journal.info
     walks: int = 0 # the walks so far
+    log_evidence: float | None = None # set by samplers that know it, e.g. the perturbation one
 
 
 # end of file

@@ -323,6 +323,30 @@ The log evidence printed at the end of a run matters only to compare models of t
 algorithm against an exact answer. It assumes the chains start from the prior, a fixed likelihood,
 and normalized priors; see {ref}`the COV scheduler <cov-scheduler>`.
 
+### Comparing models
+
+The difference of the log evidences of two models of the same data is the log of the odds the data
+give one over the other: a difference of a few units is weak, of tens decisive. It compares the
+whole models, priors included, so it can choose between parameterizations or priors, e.g. slips as
+a magnitude and a rake against two components, a correlated prior against independent ones, or a
+$C_p$ against none. Before reading it:
+
+- **The same data.** Runs with different data sets, e.g. with picks added, or with other weights of
+  the same data, have evidences of different things.
+- **Normalized priors.** The built-in priors are; a correlated prior within a support is normalized
+  by an estimate of the mass of the support, with a fixed seed, the same in every run.
+- **From the prior.** A run whose samples start from another distribution, e.g. a cascade from a
+  static posterior, has the evidence of its annealed data given the other's; compare cascades only
+  with cascades from the same start.
+- **Within its error.** Repeat the runs: two runs of the same kinematic cascade differed by a few
+  tenths here.
+
+The evidence tells which model predicts the data better, not which is closer to the truth where the
+data are silent. With weak data, it can prefer the smoother of two priors whatever the truth: the
+static data of a subduction earthquake, blurred by their distance from the fault, favored a longer
+correlation length even for a checkerboard of slip, whose posterior was then overconfident. Check
+the models it favors with {ref}`recovery tests <recovery-tests>`.
+
 
 ## A checklist
 

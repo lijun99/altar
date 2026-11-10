@@ -51,4 +51,14 @@ def kinematicmesh():
     # and return it
     return kinematicmesh
 
+
+@altar.foundry(implements=altar.models.model, tip="the arrival times of a phase from the hypocenter on a triangulated fault")
+def arrivals():
+    # grab the factory
+    from .Arrivals import Arrivals as arrivals
+    # attach its docstring
+    __doc__ = arrivals.__doc__
+    # and return it
+    return arrivals
+
 # end of file

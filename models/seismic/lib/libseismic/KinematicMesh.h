@@ -32,6 +32,8 @@ template <typename TYPE>
 class altar::models::seismic::KinematicMesh
 {
 public:
+    /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
+    void setSTF(int kind, TYPE peak) { _stf_kind = kind; _stf_peak = peak; }
     /// Mb <- the slips of each patch over time, for each row of {theta}
     void calculateBigM(const TYPE * theta, TYPE * Mb, std::size_t parameters, std::size_t batch) const;
     /// grad <- d(log L)/d(theta) on my columns, from dMb = d(log L)/d(Mb)
@@ -65,6 +67,8 @@ private:
 
     std::size_t _Np, _Nt, _Nsp, _P, _V, _NGb;
     TYPE _dt, _spacing;
+    int _stf_kind = 0; ///< the source time function, see {setSTF}
+    TYPE _stf_peak = 0.5;
     int _maxiter;
     std::vector<TYPE> _t0s, _xyz, _patchGeometry, _weights;
     std::vector<int> _incPtr, _incA, _incB, _incPatch, _nbPtr, _nb, _vpPtr, _vpPatch, _corners;

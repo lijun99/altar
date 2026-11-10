@@ -192,6 +192,15 @@ class Base(altar.component, implements=distribution):
         return self._impl.to_sampling(theta=theta, batch=batch)
 
 
+    def gaussian_form(self):
+        """
+        My density as a gaussian on a box, for the samplers of linear-gaussian posteriors: the
+        mean, the precision and the lower and upper bounds of my {parameters}, a zero precision
+        for a flat density; distributions that aren't one raise {NotImplementedError}
+        """
+        raise NotImplementedError(f"the {type(self).__name__} prior is not a gaussian on a box")
+
+
     # the forwarding interface (cpu only: on cuda, samples are drawn straight into a grid by
     # the kernels behind {initialize_sample}, never one distribution at a time)
     @altar.export

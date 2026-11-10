@@ -9,6 +9,7 @@
 #
 
 # get the package
+import numpy
 import altar
 
 # get the protocol
@@ -25,6 +26,15 @@ class UnitGaussian(base, family="altar.distributions.ugaussian"):
     My actual numerics live in {altar.distributions.native.UnitGaussian.UnitGaussian}; there
     is no cuda counterpart today, matching the status quo before this refactor.
     """
+
+
+    # interface
+    def gaussian_form(self):
+        """
+        A zero mean and the identity, unbounded
+        """
+        n = self.parameters
+        return numpy.zeros(n), numpy.identity(n), numpy.full(n, -numpy.inf), numpy.full(n, numpy.inf)
 
 
 # end of file

@@ -56,6 +56,7 @@ class Adaptive(altar.component, family="altar.models.cp.adaptive", implements=Cp
         mean = self._initial if initial else self.posterior_mean(annealer=annealer, step=step)
         cp = model.compute_cp(theta=mean)
         model.update_covariance(cp=cp)
+        self.latest = cp
         annealer.info.log(f"C_p from the {'initial' if initial else 'posterior'} mean model, "
                           f"at beta {beta:.6g}: trace {numpy.trace(cp):.6g}")
         return True
@@ -85,6 +86,7 @@ class Adaptive(altar.component, family="altar.models.cp.adaptive", implements=Cp
 
     # private data
     _initial = None
+    latest = None # the last C_p, for controllers that walk until it settles
 
 
 # end of file

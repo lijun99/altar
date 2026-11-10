@@ -84,15 +84,15 @@ class Synthetic(altar.panel(), family='altar.actions.synthetic'):
         rng = numpy.random.default_rng(self.seed)
         members = getattr(model, "models", None)
         cases = set()
-        for name, member, columns in (
-                [(name, member, model.columns(name)) for name, member in members.items()]
-                if members else [(None, model, numpy.arange(model.parameters))]):
+        for name, member, values in (
+                [(name, member, model.member_theta(name, truth)[0]) for name, member in members.items()]
+                if members else [(None, model, truth)]):
             # the inputs, once per case
             case = pathlib.Path(str(member.case))
             if case not in cases:
                 shutil.copytree(case, output, dirs_exist_ok=True)
                 cases.add(case)
-            data = self.predict(plexus=plexus, model=member, truth=truth[columns], rng=rng)
+            data = self.predict(plexus=plexus, model=member, truth=values, rng=rng)
             self.write(dataobs=member.dataobs, data=data, path=output)
             label = f"{name}: " if name is not None else ""
             channel.line(f"  {label}{data.size} observations -> '{output / str(member.dataobs.data_file)}'")

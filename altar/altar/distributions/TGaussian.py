@@ -9,6 +9,7 @@
 #
 
 # get the package
+import numpy
 import altar
 
 # get the protocol
@@ -63,6 +64,17 @@ class TGaussian(base, family="altar.distributions.tgaussian"):
         impl.reparameterize = self.reparameterize
         impl.transform = self.transform
         return impl
+
+
+    # interface
+    def gaussian_form(self):
+        """
+        My mean and precision on my support
+        """
+        n = self.parameters
+        low, high = self.support
+        return (numpy.full(n, float(self.mean)), numpy.identity(n) / self.sigma ** 2,
+                numpy.full(n, low), numpy.full(n, high))
 
 
 # end of file
