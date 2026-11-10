@@ -9,6 +9,7 @@
 #
 
 # get the package
+import numpy
 import altar
 
 # get the protocol
@@ -44,6 +45,16 @@ class Gaussian(base, family="altar.distributions.gaussian"):
         impl.mean = self.mean
         impl.sigma = self.sigma
         return impl
+
+
+    # interface
+    def gaussian_form(self):
+        """
+        My mean and precision, unbounded
+        """
+        n = self.parameters
+        return (numpy.full(n, float(self.mean)), numpy.identity(n) / self.sigma ** 2,
+                numpy.full(n, -numpy.inf), numpy.full(n, numpy.inf))
 
 
 # end of file

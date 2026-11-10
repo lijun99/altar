@@ -92,29 +92,13 @@ class Correlated(base):
 
     def mass(self, draws: int) -> tuple[float, float]:
         """
-        log P(low <= X <= high) for X ~ N(mean, C), and its standard error, by the GHK simulator
-        (Geweke, Hajivassiliou and Keane): each coordinate drawn in turn from its truncated
-        conditional along the Cholesky factor, the product of their masses averaged; with a
-        fixed seed, so the normalization is the same in every run
+        log P(low <= X <= high) for X ~ N(mean, C), and its standard error, by the GHK simulator;
+        with a fixed seed, so the normalization is the same in every run
         """
         low, high = self.support
-        L, m, n = self.factor, self.mean_vector, self.parameters
-        rng = numpy.random.default_rng(1)
-        z = numpy.zeros((draws, n))
-        logw = numpy.zeros(draws)
-        for i in range(n):
-            shift = m[i] + z[:, :i] @ L[i, :i]
-            a, b = (low - shift) / L[i, i], (high - shift) / L[i, i]
-            # in the upper tail, by symmetry, so the masses don't cancel
-            upper = a > 0
-            lo = numpy.where(upper, _ndtr(-b), _ndtr(a))
-            p = numpy.where(upper, _ndtr(-a), _ndtr(b)) - lo
-            logw += numpy.log(numpy.maximum(p, 1e-300))
-            x = _ndtri(lo + rng.uniform(size=draws) * p)
-            z[:, i] = numpy.where(upper, -x, x)
-        top = logw.max()
-        w = numpy.exp(logw - top)
-        return float(top + numpy.log(w.mean())), float(w.std() / (w.mean() * math.sqrt(draws)))
+        n = self.parameters
+        return box_mass(mean=self.mean_vector, factor=self.factor, low=numpy.full(n, low),
+                        high=numpy.full(n, high), draws=draws)
 
 
     def verify(self, theta: numpy.ndarray, mask: numpy.ndarray,
@@ -233,6 +217,32 @@ class Correlated(base):
     precision_matrix: numpy.ndarray # C^-1
     mean_vector: numpy.ndarray
     constant: float
+
+
+def box_mass(mean: numpy.ndarray, factor: numpy.ndarray, low: numpy.ndarray,
+             high: numpy.ndarray, draws: int, seed: int = 1) -> tuple[float, float]:
+    """
+    log P(low <= X <= high) for X ~ N(mean, L L^T), L the lower {factor}, and its standard
+    error, by the GHK simulator (Geweke, Hajivassiliou and Keane): each coordinate drawn in turn
+    from its truncated conditional along L, the product of their masses averaged
+    """
+    L, m, n = factor, mean, mean.size
+    rng = numpy.random.default_rng(seed)
+    z = numpy.zeros((draws, n))
+    logw = numpy.zeros(draws)
+    for i in range(n):
+        shift = m[i] + z[:, :i] @ L[i, :i]
+        a, b = (low[i] - shift) / L[i, i], (high[i] - shift) / L[i, i]
+        # in the upper tail, by symmetry, so the masses don't cancel
+        upper = a > 0
+        lo = numpy.where(upper, _ndtr(-b), _ndtr(a))
+        p = numpy.where(upper, _ndtr(-a), _ndtr(b)) - lo
+        logw += numpy.log(numpy.maximum(p, 1e-300))
+        x = _ndtri(lo + rng.uniform(size=draws) * p)
+        z[:, i] = numpy.where(upper, -x, x)
+    top = logw.max()
+    w = numpy.exp(logw - top)
+    return float(top + numpy.log(w.mean())), float(w.std() / (w.mean() * math.sqrt(draws)))
 
 
 _erfc = numpy.frompyfunc(math.erfc, 1, 1)

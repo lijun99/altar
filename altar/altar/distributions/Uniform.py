@@ -9,6 +9,7 @@
 #
 
 # get the package
+import numpy
 import altar
 
 # get the protocol
@@ -56,6 +57,16 @@ class Uniform(base, family="altar.distributions.uniform"):
         impl.reparameterize = self.reparameterize
         impl.transform = self.transform
         return impl
+
+
+    # interface
+    def gaussian_form(self):
+        """
+        Flat, a zero precision, on my support
+        """
+        n = self.parameters
+        low, high = self.support
+        return numpy.full(n, (low + high) / 2), numpy.zeros((n, n)), numpy.full(n, low), numpy.full(n, high)
 
 
 # end of file

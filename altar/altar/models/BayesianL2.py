@@ -500,6 +500,34 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
             f"'{type(self).__name__}' has no conjugate posterior, for cross-fade sampling")
 
 
+    # samplers of linear-gaussian posteriors, see {altar.bayesian.samplers.Perturbation}
+    def gaussian_prior(self) -> tuple[numpy.ndarray, numpy.ndarray, numpy.ndarray, numpy.ndarray]:
+        """
+        My prior as a gaussian on a box, from those of my parameter sets: the mean, the precision,
+        zero for the flat ones, and the lower and upper bounds of my parameters
+        """
+        n = self.parameters
+        mean, precision = numpy.zeros(n), numpy.zeros((n, n))
+        low, high = numpy.full(n, -numpy.inf), numpy.full(n, numpy.inf)
+        for name in self.psets_list:
+            pset = self.psets[name]
+            columns = slice(pset.offset, pset.offset + pset.count)
+            try:
+                form = pset.prior.gaussian_form()
+            except NotImplementedError as error:
+                raise NotImplementedError(f"parameter set '{name}': {error}") from None
+            mean[columns], precision[columns, columns], low[columns], high[columns] = form
+        return mean, precision, low, high
+
+
+    def linear_system(self) -> tuple[numpy.ndarray, numpy.ndarray, float]:
+        """
+        My data as a linear system whitened by their covariance, L^-1 G, L^-1 d and log |C| for
+        the covariance C = L L^T in effect; linear models provide it
+        """
+        raise NotImplementedError(f"'{type(self).__name__}' is not a linear model")
+
+
     # private data
     observations: int
     device: typing.Any = None
