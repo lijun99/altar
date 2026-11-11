@@ -24,6 +24,17 @@ def trajectory():
     return trajectory
 
 
+@altar.foundry(implements=model,
+               tip="time-dependent slip on a fault mesh from GNSS position time series")
+def slip():
+    # grab the factory
+    from .Slip import Slip as slip
+    # attach its docstring
+    __doc__ = slip.__doc__
+    # and return it
+    return slip
+
+
 # the spatially pooled sparsity prior on a group of basis functions
 from altar.distributions import distribution
 
