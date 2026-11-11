@@ -148,7 +148,8 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
                      + (", correlated between stations: " + ", ".join(
                          f"{c} c0 {v['c0']:.3f}, {v['ell_km']:.0f} km" for c, v in spatial.items())
                         if spatial else ""))
-        channel.line(f" -- {s.size} parameters")
+        channel.line(f" -- {s.size} parameters, solved on the "
+                     f"{'device' if altar.backends.active() == 'cuda' else 'host'}")
         channel.log()
         return self
 
@@ -212,9 +213,17 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
     # the samplers of linear-gaussian posteriors
     def linear_operator(self, beta: float = 1.0) -> typing.Any:
         """
-        My posterior precision at {beta}, matrix-free; see {altar.models.gnss.tdslip.Operator}
+        My posterior precision at {beta}, matrix-free; see {altar.models.gnss.tdslip.Operator},
+        and, on the cuda backend, {altar.models.gnss.cuda.Slip.Operator}, which solves and
+        perturbs on the device
         """
-        return self.numerics.operator(beta)
+        host = self.numerics.operator(beta)
+        if altar.backends.active() != "cuda":
+            return host
+        if self._device is None or self._device.host is not host:
+            from .cuda.Slip import Operator
+            self._device = Operator(host)
+        return self._device
 
 
     def gaussian_prior(self):
@@ -243,32 +252,31 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
         return {"data": total.reshape(k, -1), "slip": slip_only.reshape(k, -1)}
 
 
-    # implementation details
+    # implementation details: the densities run on the host; on the cuda backend, the samples
+    # and the likelihoods are in managed memory, read and written after the device is done
     def _host(self, theta, batch):
         rows = theta.shape[0] if batch is None else batch
-        if isinstance(theta, numpy.ndarray):
-            return theta[:rows]
-        return numpy.asarray(theta.copy_to_host() if hasattr(theta, "copy_to_host")
-                             else theta)[:rows]
+        if not isinstance(theta, numpy.ndarray):
+            altar.cuda.synchronize()
+        return numpy.asarray(theta, dtype=float)[:rows]
 
 
     def _add(self, out, values, batch):
-        if isinstance(out, numpy.ndarray):
-            out[:values.size] += values
-        else:
-            raise NotImplementedError("the gnss slip model's densities run on the host")
+        if not isinstance(out, numpy.ndarray):
+            altar.cuda.synchronize()
+        numpy.asarray(out)[:values.size] += values
 
 
     def _set(self, out, values, batch):
-        if isinstance(out, numpy.ndarray):
-            out[:values.size] = values
-        else:
-            raise NotImplementedError("the gnss slip model's densities run on the host")
+        if not isinstance(out, numpy.ndarray):
+            altar.cuda.synchronize()
+        numpy.asarray(out)[:values.size] = values
 
 
     # private data
     design = None # the case, {altar.models.gnss.design.Design}
     numerics = None # the posterior, {altar.models.gnss.tdslip.Slip}
+    _device = None # its operator on the device, on the cuda backend
 
 
 # end of file

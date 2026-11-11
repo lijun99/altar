@@ -181,7 +181,8 @@ class Slip:
             self.h[b] = Xtd[tcols] - Ant.T @ sol[:, -1]
             # log p(d_b | theta_b) = -1/2 theta^T M theta + h^T theta + c
             self.c[b] = -0.5 * (dw @ dw - Xtd[ncols] @ sol[:, -1]
-                                + 2 * numpy.log(numpy.diag(L)).sum() + ok.sum() * math.log(2 * math.pi)
+                                + 2 * numpy.log(numpy.diag(L)).sum()
+                                + ok.sum() * math.log(2 * math.pi)
                                 + 2 * numpy.log(numpy.diag(La)).sum()
                                 - numpy.log(fixed[ncols]).sum())
         # the temporal prior
@@ -233,7 +234,8 @@ class Slip:
                 if not idx.size:
                     continue
                 c0, ell = float(spatial[cmp]["c0"]), float(spatial[cmp]["ell_km"])
-                S = numpy.exp(-station_distances(lat[idx], lon[idx]) / ell) + 1e-9 * numpy.identity(idx.size)
+                S = (numpy.exp(-station_distances(lat[idx], lon[idx]) / ell)
+                     + 1e-9 * numpy.identity(idx.size))
                 LS = numpy.linalg.cholesky(S)
                 Sinv = cho_solve((LS, True), numpy.identity(idx.size))
                 Sinv = 0.5 * (Sinv + Sinv.T)

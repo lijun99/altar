@@ -90,7 +90,8 @@ def main():
         checks = {
             "symmetric": asym < 1e-12,
             "positive definite": eig.min() > 0,
-            "cg against dense": numpy.abs(x_cg[0] - x_dense).max() / numpy.abs(x_dense).max() < 1e-8,
+            "cg against dense": (numpy.abs(x_cg[0] - x_dense).max()
+                                 / numpy.abs(x_dense).max()) < 1e-8,
             "perturbations ~ N(0, A)": (numpy.linalg.norm(cov - A) / numpy.linalg.norm(A)) < 0.05,
             "gradient b - A theta": abs(fd - an) / max(abs(an), 1) < 1e-5,
         }
