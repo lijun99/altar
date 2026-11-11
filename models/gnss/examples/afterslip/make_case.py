@@ -7,15 +7,16 @@
 # all rights reserved
 #
 
-# a synthetic afterslip case for the gnss slip model, unlike the subduction slow slip the model was
-# built for: a vertical strike-slip fault, 60 km long and 20 km deep, in 150 triangles; a 1 m
-# coseismic rupture above 8 km on day 365, then a year of afterslip below it, mostly right-lateral,
-# growing as log(1 + t / 10 d); 25 stations within 60 km, 730 days, offsets, trends, annual and
-# semiannual terms, white noise (1 mm horizontal, 3 mm vertical) plus a process correlated over
-# 30 days, 2 % of the days missing. The I-splines of the slip start at the earthquake, so the year of
-# data before it pins the offsets and trends. Writes the model's inputs: trajectory.h5 (the
-# coseismic step as a per-block steps group, nuisance), greens.h5 (cutde, triangular dislocations
-# in a half-space) and noise.json; truth.npz; and prints the counts for afterslip.pfg
+# a synthetic afterslip case for the gnss slip model, unlike the subduction slow slip the model
+# was built for: a vertical strike-slip fault, 60 km long and 20 km deep, in 150 triangles; a 1 m
+# coseismic rupture above 8 km on day 365, then a year of afterslip below it, mostly
+# right-lateral, growing as log(1 + t / 10 d); 25 stations within 60 km, 730 days, offsets,
+# trends, annual and semiannual terms, white noise (1 mm horizontal, 3 mm vertical) plus a
+# process correlated over 30 days, 2 % of the days missing. The I-splines of the slip start at
+# the earthquake, so the year of data before it pins the offsets and trends. Writes the model's
+# inputs: trajectory.h5 (the coseismic step as a per-block steps group, nuisance), greens.h5
+# (cutde, triangular dislocations in a half-space) and noise.json; truth.npz; and prints the
+# counts for afterslip.pfg
 #     python make_case.py
 import json
 import numpy

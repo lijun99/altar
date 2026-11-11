@@ -289,6 +289,52 @@ The sampler has these settings:
 `evidence_draws`
 : the GHK draws for the mass of the box; 0 skips the evidence with bounds
 
+`solver`
+: `auto` (the default), `dense` or `operator`, see {ref}`below <perturbation-matrix-free>`
+
+`tolerance`, `max_iterations`
+: when the conjugate gradients of the matrix-free path stop; $10^{-7}$ and 5000
+
+(perturbation-matrix-free)=
+#### Matrix-free
+
+When a model has too many parameters to form and factor $\mathbf A$, e.g. slip on a fault mesh at
+many times, it gives the sampler $\mathbf A$ as an operator instead, from its method
+`linear_operator(beta)`. The object it returns has
+
+`size`
+: the number of parameters
+
+`apply(x)`
+: $\mathbf A \mathbf x$ for each row of `x`, (rows × size)
+
+`rhs()`
+: the right-hand side of the mean, $\mathbf A \mathbf m = \mathbf P \boldsymbol\mu + \beta\, \mathbf G^T \mathbf C^{-1} \mathbf d$
+
+`perturb(rows, rng)`
+: `rows` draws of $N(0, \mathbf A)$, the perturbation of the prior plus that of the data,
+  $\mathbf P \boldsymbol\eta + \beta\, \mathbf G^T \mathbf C^{-1} \boldsymbol\epsilon$, with the
+  normals from the generator `rng`
+
+`precondition(r)`, optional
+: an approximation of $\mathbf A^{-1} \mathbf r$ for each row of `r`
+
+`solve(b, tolerance, max_iterations)`, optional
+: $\mathbf A^{-1} \mathbf b$ for each row of `b`, its own way, e.g. on the GPU; returns the
+  solutions, the iterations and the final residual
+
+The sampler solves for the mean and the draws by preconditioned conjugate gradients, all the
+chains at once (or with the model's `solve`), and stops when the largest
+$\sqrt{\mathbf r^T \mathbf z / \mathbf r_0^T \mathbf z_0}$, $\mathbf z$ the preconditioned
+residual, drops below `tolerance`. The memory and the work then grow with the cost of applying
+$\mathbf A$, not with the square and the cube of the number of parameters. The matrix-free path
+has no bounds and no evidence, which would need $\log|\mathbf A|$.
+
+With `solver = auto`, the sampler takes the model's operator if it has one, and its dense system
+otherwise. With `operator`, it also solves the dense system of a model without an operator
+matrix-free, to check one path against the other; `dense` ignores the operator. The
+{doc}`gnss slip model <GnssSlip>`, with $10^5$ parameters and more, is sampled this way.
+
 (samplers)=
 ## Samplers
 
