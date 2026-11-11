@@ -156,6 +156,8 @@ CASES = {
                             *uniform(TIGHT)], TIGHTLY),
     "perturbation-tight-physical": (["--controller=altar.bayesian.perturbation", "--job.steps=20",
                                      *uniform(TIGHT, reparameterize=False)], TIGHTLY),
+    "perturbation-operator": (["--controller=altar.bayesian.perturbation",
+                               "--controller.sampler.solver=operator"], GAUSSIAN),
     "catmip-perturbation": (["--controller=altar.bayesian.catmip", "--job.steps=1",
                              "--controller.sampler=altar.bayesian.samplers.perturbation"], GAUSSIAN),
 }

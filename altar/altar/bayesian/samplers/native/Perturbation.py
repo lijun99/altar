@@ -157,6 +157,115 @@ class Posterior:
                         low=self.low[walls], high=self.high[walls], draws=draws)
 
 
+def pcg(apply: typing.Callable, precondition: typing.Callable | None, rhs: numpy.ndarray,
+        tolerance: float, max_iterations: int) -> tuple[numpy.ndarray, int, float]:
+    """
+    Solve A x = b for every row b of {rhs}, (k x n), by preconditioned conjugate gradients, all rows
+    at once: {apply} and {precondition} map (k x n) to (k x n). Stop when the largest
+    preconditioned residual sqrt(r^T z / r0^T z0), which doesn't depend on the coordinates, is
+    below {tolerance}; return the solutions, the iterations and that residual
+    """
+    precondition = precondition or (lambda r: r)
+    x = numpy.zeros_like(rhs)
+    r = numpy.array(rhs, dtype=float, copy=True)
+    z = precondition(r)
+    p = z.copy()
+    rz = numpy.einsum("ij,ij->i", r, z)
+    rz0 = numpy.where(rz > 0, rz, 1.0)
+    residual = float(numpy.sqrt(numpy.abs(rz / rz0)).max()) if rz.size else 0.0
+    iterations = 0
+    while residual >= tolerance and iterations < max_iterations:
+        Ap = apply(p)
+        alpha = rz / numpy.einsum("ij,ij->i", p, Ap)
+        x += alpha[:, None] * p
+        r -= alpha[:, None] * Ap
+        z = precondition(r)
+        rz_new = numpy.einsum("ij,ij->i", r, z)
+        residual = float(numpy.sqrt(numpy.abs(rz_new / rz0)).max())
+        p = z + (rz_new / numpy.where(rz != 0, rz, 1.0))[:, None] * p
+        rz = rz_new
+        iterations += 1
+    return x, iterations, residual
+
+
+class DenseOperator:
+    """
+    The {LinearOperator} of a model that provides its dense whitened linear system and its gaussian
+    prior: the matrix-free path on a problem small enough to also sample densely, to check one
+    against the other. Unbounded only
+    """
+
+    def __init__(self, Gw: numpy.ndarray, dw: numpy.ndarray, mu: numpy.ndarray,
+                 precision: numpy.ndarray, beta: float) -> None:
+        self.Gw, self.beta, self.precision = Gw, beta, precision
+        self.size = mu.size
+        self.b = precision @ mu + beta * (Gw.T @ dw)
+        self.constrained = numpy.flatnonzero(numpy.diag(precision) > 0)
+        block = precision[numpy.ix_(self.constrained, self.constrained)]
+        self.prior_factor = numpy.linalg.cholesky(block) if self.constrained.size else None
+        # jacobi
+        self.diagonal = numpy.diag(precision) + beta * (Gw * Gw).sum(axis=0)
+        return
+
+    def apply(self, x: numpy.ndarray) -> numpy.ndarray:
+        return x @ self.precision + self.beta * ((x @ self.Gw.T) @ self.Gw)
+
+    def rhs(self) -> numpy.ndarray:
+        return self.b
+
+    def perturb(self, rows: int, rng: numpy.random.Generator) -> numpy.ndarray:
+        out = math.sqrt(self.beta) * rng.standard_normal((rows, self.Gw.shape[0])) @ self.Gw
+        if self.prior_factor is not None:
+            out[:, self.constrained] += (rng.standard_normal((rows, self.constrained.size))
+                                         @ self.prior_factor.T)
+        return out
+
+    def precondition(self, r: numpy.ndarray) -> numpy.ndarray:
+        return r / self.diagonal
+
+
+class OperatorPosterior:
+    """
+    The posterior N(A^-1 b, A^-1) of a linear-gaussian model given as a {LinearOperator}, for
+    problems too large to factor A: the mean and the perturbation draws are solves with A, by the
+    operator's own {solve} if it has one, else by {pcg} with its {apply} and {precondition}. No
+    bounds, and no evidence
+    """
+
+    bounded = False
+
+    def __init__(self, operator: typing.Any, tolerance: float, max_iterations: int,
+                 info: typing.Any) -> None:
+        self.operator, self.tolerance, self.max_iterations, self.info = (
+            operator, tolerance, max_iterations, info)
+        if getattr(operator, "bounded", False):
+            raise ValueError("the matrix-free path doesn't sample priors with bounds")
+        self.mean = self.solve(numpy.atleast_2d(operator.rhs()), "mean")[0]
+        return
+
+    def solve(self, rhs: numpy.ndarray, what: str) -> numpy.ndarray:
+        op = self.operator
+        if hasattr(op, "solve"):
+            x, iterations, residual = op.solve(rhs, self.tolerance, self.max_iterations)
+        else:
+            x, iterations, residual = pcg(op.apply, getattr(op, "precondition", None), rhs,
+                                          self.tolerance, self.max_iterations)
+        self.info.log(f"perturbation: {what}, {rhs.shape[0]} solves, {iterations} iterations, "
+                      f"residual {residual:.2g}")
+        if residual >= self.tolerance:
+            raise ValueError(f"the solves didn't converge in {self.max_iterations} iterations "
+                             f"(residual {residual:.2g})")
+        return x
+
+    def perturbation(self, rows: int, rng: numpy.random.Generator) -> numpy.ndarray:
+        """
+        {rows} draws of N(0, A^-1): A x = the operator's perturbation of the prior and the data
+        """
+        return self.solve(self.operator.perturb(rows, rng), "draws")
+
+    log_density = None
+
+
 class Perturbation:
     """
     The cpu implementation of the perturbation sampler of linear-gaussian posteriors, see
@@ -217,8 +326,40 @@ class Perturbation:
 
     def posterior(self, model: typing.Any, beta: float) -> Posterior:
         """
-        The posterior of {model} at {beta}, from its whitened linear system and its gaussian prior
+        The posterior of {model} at {beta}: from its whitened linear system and its gaussian prior,
+        or, on the matrix-free path ({solver}), from its {linear_operator}
         """
+        if self.solver != "dense":
+            try:
+                operator = model.linear_operator(beta=beta)
+            except (AttributeError, NotImplementedError):
+                operator = None
+            if operator is None and self.solver == "operator":
+                # the dense system of the model, solved matrix-free: for the checks
+                try:
+                    Gw, dw, _ = model.linear_system()
+                    mu, precision, low, high = model.gaussian_prior()
+                except NotImplementedError as error:
+                    self.error.log(f"perturbation: {error}")
+                    raise SystemExit(1)
+                if numpy.isfinite(low).any() or numpy.isfinite(high).any():
+                    self.error.log("perturbation: the matrix-free path doesn't sample priors "
+                                   "with bounds")
+                    raise SystemExit(1)
+                operator = DenseOperator(Gw=Gw, dw=dw, mu=mu, precision=precision, beta=beta)
+            if operator is not None:
+                try:
+                    posterior = OperatorPosterior(operator=operator, tolerance=self.tolerance,
+                                                  max_iterations=self.max_iterations,
+                                                  info=self.info)
+                except ValueError as error:
+                    self.error.log(f"perturbation: {error}")
+                    raise SystemExit(1)
+                if self.walks == 0:
+                    self.info.log(f"perturbation: {operator.size} parameters, matrix-free "
+                                  f"({type(operator).__name__})")
+                self.walks += 1
+                return posterior
         try:
             Gw, dw, _ = model.linear_system()
             mu, precision, low, high = model.gaussian_prior()
@@ -241,6 +382,9 @@ class Perturbation:
         log p(d) = log p(θ) + log p(d|θ) - log p(θ|d) at each sample, exact for a gaussian on a
         box, its mass by GHK; the spread over the samples checks that the model is one
         """
+        if posterior.log_density is None:
+            self.info.log("perturbation: no log evidence on the matrix-free path")
+            return
         if posterior.bounded and self.evidence_draws == 0:
             return
         prior, data = (numpy.asarray(likelihood, dtype=float) for likelihood in self.host_likelihoods(step))
@@ -291,6 +435,9 @@ class Perturbation:
     trajectory_time: float
     max_bounces: int
     evidence_draws: int
+    solver: str
+    tolerance: float
+    max_iterations: int
     walks: int = 0
     info: journal.info
     warning: journal.warning

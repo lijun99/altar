@@ -36,6 +36,14 @@ class Perturbation(altar.component, family="altar.samplers.perturbation", implem
     per walk. At β = 1, the log evidence follows from the samples, exactly without bounds, and
     with the mass of the box estimated by GHK with them.
 
+    Matrix-free, for models too large to factor A ({solver}): the model provides instead a
+    {linear_operator} at β, an object with {size}, {apply}(x) = A x and {rhs}() = P μ + β G^T C^-1 d,
+    {perturb}(rows, rng), rows of ζ + √β ε with ζ ~ N(0, P) and ε ~ N(0, G^T C^-1 G), and
+    optionally {precondition}(r) ≈ A^-1 r or its own {solve}(rhs, tolerance, max_iterations),
+    all on (rows x size) arrays. The mean and the draws are then solves with A, by conjugate
+    gradients; the samples are exact to the {tolerance} of the solves. Unbounded priors only,
+    and no log evidence.
+
     My implementation lives in a same-named class in {altar.bayesian.samplers.native} or
     {altar.bayesian.samplers.cuda}.
     """
@@ -58,6 +66,20 @@ class Perturbation(altar.component, family="altar.samplers.perturbation", implem
     evidence_draws.doc = "the draws of the GHK estimate of the mass of the box, for the log " \
                          "evidence with bounds; 0 skips the evidence with bounds"
 
+    solver = altar.properties.str(default="auto")
+    solver.validators = altar.constraints.isMember("auto", "dense", "operator")
+    solver.doc = "'dense': factor A; 'operator': solve with A matrix-free, from the model's " \
+                 "{linear_operator}, or from its dense system when it has none (for checks); " \
+                 "'auto': the operator when the model has one"
+
+    tolerance = altar.properties.float(default=1e-7)
+    tolerance.validators = altar.constraints.isGreater(value=0)
+    tolerance.doc = "matrix-free: the preconditioned residual sqrt(r^T z / r0^T z0) of the solves"
+
+    max_iterations = altar.properties.int(default=5000)
+    max_iterations.validators = altar.constraints.isGreaterEqual(value=1)
+    max_iterations.doc = "matrix-free: the most conjugate-gradient iterations of a solve"
+
 
     # protocol obligations
     @altar.export
@@ -68,7 +90,8 @@ class Perturbation(altar.component, family="altar.samplers.perturbation", implem
         backend = "cuda" if altar.backends.active() == "cuda" else "native"
         module = import_module(f"altar.bayesian.samplers.{backend}.Perturbation")
         self._impl = module.Perturbation()
-        for trait in ("stepcounter", "trajectory_time", "max_bounces", "evidence_draws"):
+        for trait in ("stepcounter", "trajectory_time", "max_bounces", "evidence_draws", "solver",
+                      "tolerance", "max_iterations"):
             setattr(self._impl, trait, getattr(self, trait))
         self._impl.initialize(application=application)
         return self

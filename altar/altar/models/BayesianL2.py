@@ -528,6 +528,15 @@ class BayesianL2(Bayesian, family="altar.models.bayesianl2"):
         raise NotImplementedError(f"'{type(self).__name__}' is not a linear model")
 
 
+    def linear_operator(self, beta: float = 1.0) -> typing.Any:
+        """
+        My posterior precision at {beta} as an operator, for the matrix-free path of the
+        perturbation sampler (see {altar.bayesian.samplers.Perturbation}); models too large for
+        {linear_system} provide it
+        """
+        raise NotImplementedError(f"'{type(self).__name__}' has no linear operator")
+
+
     # private data
     observations: int
     device: typing.Any = None
