@@ -1,0 +1,21 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; the spatially pooled sparsity prior on the transient group of the synthetic case, instead of
+; the gaussian of trajectory.pfg; load after it:
+;     altar-gnss --config=trajectory.pfg --config=pooled.pfg --config=gnss_hmc.pfg
+
+gnss.model.psets.transient:
+    prior = altar.models.gnss.pooled
+    prior:
+        design_file = trajectory.h5
+        shape = laplace
+        scale = 0.5
+        epsilon = 0.05
+        length = 30
+        radius = 75
+        pooling = horizontal
+
+; end of file

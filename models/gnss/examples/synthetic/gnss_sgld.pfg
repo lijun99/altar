@@ -1,0 +1,30 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; SGLD on the synthetic case; on a gpu with --job.gpus=1
+;     altar-gnss --config=gnss_sgld.pfg
+
+gnss:
+    controller = altar.bayesian.langevin
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver.output_dir = results_sgld
+        ; outer steps, and gradient sweeps per epsilon_t
+        tsteps = 400
+        tsteps_report = 100
+        sweeps = 50
+        scheduler = altar.bayesian.powerdecay
+        scheduler:
+            a = 1.0e-4
+            b = 1
+            gamma = 0.55
+
+    job.tasks = 1
+    job.gpus = 0
+    job.gpuprecision = float64
+    job.chains = 2**6
+    job.steps = 1
+
+; end of file

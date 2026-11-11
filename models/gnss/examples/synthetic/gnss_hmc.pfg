@@ -1,0 +1,24 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; HMC at beta = 1 on the synthetic case; on a gpu with --job.gpus=1
+;     altar-gnss --config=gnss_hmc.pfg
+
+gnss:
+    controller = altar.bayesian.hmc
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver.output_dir = results_hmc
+        sampler:
+            leapfrog_steps = 50
+            step_size = 0.004
+
+    job.tasks = 1
+    job.gpus = 0
+    job.gpuprecision = float64
+    job.chains = 2**8
+    job.steps = 400
+
+; end of file

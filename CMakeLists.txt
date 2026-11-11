@@ -114,5 +114,6 @@ add_subdirectory(models/reverso)
 add_subdirectory(models/linear)
 add_subdirectory(models/seismic)
 add_subdirectory(models/regression)
+add_subdirectory(models/gnss)
 
 # end of file

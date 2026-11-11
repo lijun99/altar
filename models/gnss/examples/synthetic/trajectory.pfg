@@ -1,0 +1,53 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; the synthetic case of make_case.py: the model, its parameter sets and gaussian priors, shared
+; by the sgld and hmc runs (gnss_sgld.pfg, gnss_hmc.pfg); counts printed by make_case.py
+
+gnss:
+    model = altar.models.gnss.trajectory
+    model:
+        case = .
+        design_file = trajectory.h5
+        ; the whitened observations of the case file
+        dataobs:
+            observations = 1800
+            data_file = trajectory.h5
+            datafile_dataset = data
+            mask_dataset = mask
+            cd_std = 1.0
+        ; a parameter set per group of the case, B x (columns) each
+        psets_list = [secular, seasonal, transient, steps]
+        psets:
+            secular = contiguous
+            seasonal = contiguous
+            transient = contiguous
+            steps = contiguous
+            secular:
+                count = 18
+                prep = gaussian
+                prep.sigma = 10
+                prior = gaussian
+                prior.sigma = 10
+            seasonal:
+                count = 18
+                prep = gaussian
+                prep.sigma = 3
+                prior = gaussian
+                prior.sigma = 3
+            transient:
+                count = 972
+                prep = gaussian
+                prep.sigma = 1
+                prior = gaussian
+                prior.sigma = 1
+            steps:
+                count = 9
+                prep = gaussian
+                prep.sigma = 10
+                prior = gaussian
+                prior.sigma = 10
+
+; end of file
