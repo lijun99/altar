@@ -1,0 +1,55 @@
+;
+; (c) 2013-present parasim inc
+; (c) 2010-present california institute of technology
+; all rights reserved
+;
+; the synthetic afterslip case of make_case.py, sampled exactly by perturbation, matrix-free:
+;     python make_case.py; altar-gnss --config=afterslip.pfg; python compare.py
+; strike slip is the main rake here: rho = 3 gives it 3 times the prior sd of the dip slip
+
+gnss:
+    model = altar.models.gnss.slip
+    model:
+        case = .
+        design_file = trajectory.h5
+        greens_file = greens.h5
+        noise_file = noise.json
+        ; the temporal basis of the slip: every I-spline group of the case (the default)
+        slip_groups = []
+        ; the nuisance groups and their gaussian prior sd: mm, mm/yr, mm, mm (the coseismic step)
+        nuisance:
+            offset = 100
+            trend = 10
+            seasonal = 5
+            steps = 2000
+        sigma0 = 5
+        scale_ref = 16
+        scale_power = 0.5
+        length = 10
+        rho = 3
+        ; the observations of the case file, for their count; the model reads them itself
+        dataobs:
+            observations = 54750
+            data_file = trajectory.h5
+            datafile_dataset = data
+            mask_dataset = mask
+            cd_std = 1.0
+        ; 2 rakes x 150 patches x 184 basis functions, as make_case.py prints
+        psets_list = [slip]
+        psets:
+            slip = contiguous
+            slip:
+                count = 55200
+                prep = gaussian
+                prep.sigma = 1
+                prior = gaussian
+                prior.sigma = 5
+    controller = altar.bayesian.perturbation
+    controller:
+        archiver = altar.bayesian.h5recorder
+        archiver.output_dir = results
+    job.tasks = 1
+    job.gpus = 0
+    job.chains = 256
+
+; end of file
