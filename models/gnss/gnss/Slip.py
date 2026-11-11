@@ -18,7 +18,7 @@ import altar
 from altar.models.BayesianL2 import BayesianL2
 # the case and the numerics
 from . import design as designs
-from . import slip as slips
+from . import tdslip as slips
 
 if typing.TYPE_CHECKING:
     from altar.bayesian.controllers.Annealer import Annealer
@@ -47,7 +47,7 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
     The prior of X is gaussian and separable: exp(-d / {length}) between the patch centroids,
     dip slip with sd sigma_j and strike slip {rho} times it, sigma_j = {sigma0}
     (s_j / {scale_ref})^{scale_power} for a column of scale s_j. The prior of Xi is matrix
-    normal; see {altar.models.gnss.slip}, which holds the numerics, independent of AlTar.
+    normal; see {altar.models.gnss.tdslip}, which holds the numerics, independent of AlTar.
 
     My parameter sets: "slip", 2 N J parameters, X row major; and, with {spatial_file},
     "noise", B J, Xi row major. Their {prior} components are replaced by the structured prior
@@ -212,7 +212,7 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
     # the samplers of linear-gaussian posteriors
     def linear_operator(self, beta: float = 1.0) -> typing.Any:
         """
-        My posterior precision at {beta}, matrix-free; see {altar.models.gnss.slip.Operator}
+        My posterior precision at {beta}, matrix-free; see {altar.models.gnss.tdslip.Operator}
         """
         return self.numerics.operator(beta)
 
@@ -268,7 +268,7 @@ class Slip(BayesianL2, family="altar.models.gnss.slip"):
 
     # private data
     design = None # the case, {altar.models.gnss.design.Design}
-    numerics = None # the posterior, {altar.models.gnss.slip.Slip}
+    numerics = None # the posterior, {altar.models.gnss.tdslip.Slip}
 
 
 # end of file
