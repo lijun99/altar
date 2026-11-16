@@ -773,6 +773,11 @@ data and $C_\chi$, and reports the difference of their mean $\log L$. Two runs t
 same posterior have the same distribution of $\log L$; a run whose samples fit worse and spread
 less than another's has likely not converged.
 
+The mean model runs as one more row of the same call as the samples, so a one-row `theta`, e.g. an
+optimizer's best point, costs a single batch. Under MPI, e.g. `--shell=mpi.shells.mpirun
+--job.tasks=4`, each process runs its share of these rows, on its own GPU, and the first collects
+them, measures the fit and writes the output, the same as one process would.
+
 For an {doc}`ensemble of models <Kinematic>`, it reports each model separately. Its settings go in
 a `forward` section of the configuration:
 
@@ -789,13 +794,18 @@ a `forward` section of the configuration:
 `reference`
 : another posterior to compare with, in the same forms as `theta`; none by default.
 
+`states`
+: also save the histories the model integrates, for models that report them, e.g. the slip and
+  slip rate of {doc}`SEAS <Seas>`; `no` by default. Other models refuse it.
+
 `output`
 : the HDF5 file for the results; default `forward.h5`. It holds `theta/mean` and `theta/std`;
   the observed data, their uncertainties with and without $C_p$, and the residual of the mean
   model and its whitened form, $L^T \mathbf r$ with $C_\chi^{-1} = L L^T$, in `data/`; for each
   quantity the model predicts, e.g. `data`, its value for the mean model and its mean and standard
   deviation over the samples; and in `fit/`, the measures above, and $\chi^2$ and $\log L$ of each
-  sample. The measures of the reference go in `reference/fit/`.
+  sample. The measures of the reference go in `reference/fit/`. With `states`, each history, e.g.
+  `slip`, has the same three, and `samples`, its value for each sample.
 
 ```none
 slipmodel:

@@ -1,0 +1,1168 @@
+# -*- python -*-
+# -*- coding: utf-8 -*-
+#
+# author(s): Tobias Köhne
+
+# general imports
+import io
+import os
+from time import perf_counter
+from copy import copy, deepcopy
+from contextlib import redirect_stdout
+import numpy as np
+
+# import altar
+import altar
+import altar.cuda
+from altar.models.BayesianL2 import BayesianL2
+from altar.models.seas.ext import cudaseas as libcudaseas
+
+# import the earthquake cycle simulator
+from seqeas.subduction3d import (
+    RateStateSteadyLogarithmic2D,
+    Fault3D,
+    SubductionSimulation3D,
+    get_surface_displacements,
+)
+
+
+class SEAS3D(BayesianL2, family="altar.models.seas.seas3d"):
+    """
+    Wrapper around the subduction simulation class provided by
+    ``seqeas.subduction3d.SubductionSimulation3D``; runs on the gpu only
+    """
+
+    # configurable properties
+    config_file = altar.properties.str()
+    cuda_batch_size = altar.properties.int(default=None)
+    cuda_batch_size.doc = (
+        "max system/sample size to be processed by "
+        "cuda in a batch, as limited by gpu memory"
+    )
+    cuda_threads = altar.properties.int(default=0)
+    cuda_threads.doc = (
+        "threads per block for the integrator; 0 picks them from the number of "
+        "patches; either way, capped by what the integrator's registers allow"
+    )
+    integrator = altar.properties.str(default="dopri5")
+    integrator.validators = altar.constraints.isMember("dopri5", "radau5")
+    integrator.doc = (
+        "the ode integrator: dopri5 (explicit Runge-Kutta 5(4)), or radau5 "
+        "(implicit Radau IIA, for stiff systems)"
+    )
+    gradient_step = altar.properties.float(default=1e-4)
+    gradient_step.doc = (
+        "the step of the central differences of the data likelihood gradient, "
+        "in the units of the parameters"
+    )
+    verbose = altar.properties.int(default=0)
+    verbose.doc = (
+        "verbosity level (0: minimal, 1: outputs from seqeas, 2: integrator progress)"
+    )
+    forward_ode = altar.properties.str(default="ratedependent")
+    forward_ode.validators = altar.constraints.isMember(
+        "ratedependent", "tractiondependent"
+    )
+    forward_ode.doc = (
+        "which forward ODE to use, the simpler 'ratedependent' tracking logarithmic "
+        "velocity or the 'tractiondependent' one which tracks the elastic traction"
+    )
+    spinup_anderson = altar.properties.int(default=0)
+    spinup_anderson.doc = (
+        "accelerate the spin-up with anderson mixing of this many of its last cycles, "
+        "at most 8; 0, the default, iterates the cycles plainly"
+    )
+    spinup_anderson_damping = altar.properties.float(default=1.0)
+    spinup_anderson_damping.doc = (
+        "the damping of each anderson step: 1, the default, takes it whole, less moves only "
+        "part of the way, for spin-ups whose steps overshoot"
+    )
+    warm_start = altar.properties.str(default="mean")
+    warm_start.validators = altar.constraints.isMember(
+        "mean", "nearest", "slot", "cold"
+    )
+    warm_start.doc = (
+        "where the spin-up of each forward call starts: 'mean', the default and the most "
+        "accurate, from a spin-up of the batch's mean sample alone, itself started from the "
+        "state the previous batch left; 'nearest', from the state of the previous batch's "
+        "sample nearest to each one, at no extra cost; 'slot', from the state of the sample "
+        "the gpu slot ran last, which stalls batches while the proposals are wide; 'cold', "
+        "from v_init"
+    )
+    warm_up = altar.properties.bool(default=True)
+    warm_up.doc = (
+        "with {warm_start} 'nearest' or 'slot', spin up the mean sample of the first batch "
+        "alone, from v_init, and start every slot from its state: the long cold spin-up then "
+        "runs on one system rather than on the whole batch"
+    )
+    mean_until = altar.properties.float(default=None)
+    mean_until.doc = (
+        "with {warm_start} 'mean', start from the mean sample only while the annealing "
+        "temperature is below this, and from the nearest sample after; unset, the default, "
+        "throughout"
+    )
+    mean_batch = altar.properties.int(default=64)
+    mean_batch.doc = (
+        "with {warm_start} 'mean', the smallest batch whose mean sample spins up alone first; "
+        "a smaller batch, e.g. of the optimizers or of a single sample, runs in about the time "
+        "of that extra spin-up, and starts every sample from the state of the previous batch's "
+        "sample nearest to its mean instead"
+    )
+    spinup_file = altar.properties.path(default=None)
+    spinup_file.doc = (
+        "a step file of an earlier run on the same mesh, e.g. its step_final.h5, whose recorded "
+        "mean model the spin-ups start from; only its spin-up state is used, not its samples; "
+        "a restart starts from its own step's, if it recorded one"
+    )
+    record_mean = altar.properties.bool(default=True)
+    record_mean.doc = (
+        "in each step file the archiver writes, run the mean model of the population and record, "
+        "in its SEAS group, its parameters, its slip rates at t = 0, which restarts and reruns "
+        "can spin up from, its predicted data and its data log-likelihood"
+    )
+    record_posterior = altar.properties.int(default=0)
+    record_posterior.doc = (
+        "at the end of the run, run this many samples drawn without replacement from the final "
+        "population, and write their parameters, data log-likelihoods, predicted data, and slip "
+        "and slip rate histories at the observation times to posterior_runs.h5 in the "
+        "archiver's output directory"
+    )
+    ref_station_indices = altar.properties.list(default=None)
+    velocity_reference_index = altar.properties.int(default=-1)
+    estimate_row_indices = altar.properties.list(
+        default=None, schema=altar.properties.int()
+    )
+    estimate_column_indices = altar.properties.list(
+        default=None, schema=altar.properties.int()
+    )
+
+    # helper function to time
+    def sync_and_time(self):
+        altar.cuda.synchronize()
+        return perf_counter()
+
+    @altar.export
+    def initialize(self, application):
+        """
+        Initialize the state of the model
+        """
+
+        # the integrators are cuda only
+        if altar.backends.active() != "cuda":
+            application.error.log("seas3d runs on the gpu only; set job.gpus = 1")
+            raise SystemExit(1)
+
+        # call the super class initialization
+        # super class method loads and initializes dataobs and the parameter sets
+        super().initialize(application=application)
+
+        # additional preparations
+        self.gpuprec = self.precision
+        self.device = altar.cuda.get_current_device()
+        channel = self.info
+        # if the cuda_batch_size is not given, use the total number of systems
+        # alternatively, use a memory estimate to compute
+        if self.cuda_batch_size is None:
+            self.cuda_batch_size = self.samples
+
+        # parse configuration
+        ticks = []
+        ticks.append(self.sync_and_time())
+        self.rheo_dict, self.fault_dict, self.sim_dict = (
+            SubductionSimulation3D.read_config_file(self.config_file)
+        )
+
+        # create reference simulation
+        ticks.append(self.sync_and_time())
+        with redirect_stdout(io.StringIO()) as init_output:
+            self.rheo = RateStateSteadyLogarithmic2D(**self.rheo_dict)
+            self.fault = Fault3D(**self.fault_dict)
+            self.sim = SubductionSimulation3D(
+                **self.sim_dict,
+                rheo=self.rheo,
+                fault=self.fault,
+                calculate_tapered_slip=False,
+            )
+        if self.verbose:
+            channel.log(
+                f"Device {self.device.id}: Simulation object defined in "
+                f"{self.config_file} printed:\n"
+                f"{init_output.getvalue()}"
+            )
+
+        # create deep copies of sim that can later be easily modified for the forward runs
+        self.sims_storage = [copy(self.sim) for _ in range(self.cuda_batch_size)]
+
+        # read number of rows/columns of alpha_h
+        self.alpha_h_mat_rows = self.rheo.num_bases_depth
+        self.alpha_h_mat_cols = self.rheo.num_bases_horiz
+
+        # get maximum integration velocity
+        self.v_ratio_max = (
+            0 if self.sim.v_max is None else self.sim.v_max / self.rheo.v_0
+        )
+        # the traction integrator needs rho
+        if (self.forward_ode == "tractiondependent") and (self.sim.rho is None):
+            self.error.log(
+                "the traction-dependent integrator needs rho; "
+                "set it in the simulation configuration"
+            )
+            raise SystemExit(1)
+
+        # get index subset of values to estimate
+        if self.estimate_row_indices is None:
+            self.ix_estim_row = list(range(self.alpha_h_mat_rows))
+        else:
+            assert all(
+                [i < self.alpha_h_mat_rows for i in self.estimate_row_indices]
+            ), (
+                "'estimate_row_indices' contains indices larger than the number of "
+                f"rows: {self.estimate_row_indices} >= {self.alpha_h_mat_rows}"
+            )
+            self.ix_estim_row = self.estimate_row_indices
+        if self.estimate_column_indices is None:
+            self.ix_estim_col = list(range(self.alpha_h_mat_cols))
+        else:
+            assert all(
+                [i < self.alpha_h_mat_cols for i in self.estimate_column_indices]
+            ), (
+                "'estimate_column_indices' contains indices larger than the number of "
+                f"columns: {self.estimate_column_indices} >= {self.alpha_h_mat_cols}"
+            )
+            self.ix_estim_col = self.estimate_column_indices
+        self.theta_subset_indices = np.ix_(self.ix_estim_row, self.ix_estim_col)
+        self.n_estim_row = len(self.ix_estim_row)
+        self.n_estim_col = len(self.ix_estim_col)
+        self.ordered_psets_list = [
+            f"log10_alpha_h_{i}" for i in range(self.n_estim_row)
+        ]
+
+        # get number of unique earthquakes
+        num_orig_eq = self.sim.delta_tau_bounded_compressed.shape[0]
+        self.num_eq = num_orig_eq
+        if self.sim.delta_tau_bounded_nonuni is not None:
+            num_final_eq = self.sim.delta_tau_unbounded_nonuni.shape[0]
+            self.num_eq += num_final_eq
+
+        # get euler pole kernel and rescale to match range of thetas;
+        # it needs a utm zone, so only if the euler pole is estimated
+        if "euler_pole" in self.psets_list:
+            self.G_ep = self.sim.get_euler_pole_kernel() / 1e9
+        # get time vector
+        self.dt = self.sim.t_obs - self.sim.t_obs[0]
+
+        # allocate memory
+        ticks.append(self.sync_and_time())
+        patches = self.fault.inner_num_patches
+        SEC_PER_YEAR = 86400 * 365.25
+        self.t_obs_sec = altar.cuda.vector(
+            source=(self.sim.t_obs * SEC_PER_YEAR).astype(
+                self.gpuprec, order="C", copy=False
+            )
+        )
+        ievents = (
+            [self.sim.ix_break_joint[-2]]
+            + [i for i in self.sim.ix_eq_joint if i > self.sim.ix_break_joint[-2]]
+            + [self.sim.ix_break_joint[-1]]
+        )
+        tevents = self.sim.t_eval_joint[ievents] - self.sim.t_eval_joint[ievents[0]]
+        self.t_events = altar.cuda.vector(
+            source=(tevents * SEC_PER_YEAR).astype(self.gpuprec, order="C", copy=False)
+        )
+        self.i_slips_obs = altar.cuda.vector(
+            source=np.array([0] + self.sim.i_slips_obs).astype("int32")
+        )
+        self.K_inner_inner_onfault = altar.cuda.vector(
+            source=np.ascontiguousarray(
+                self.fault.K_inner_inner[:, :2, :, :2], dtype=self.gpuprec
+            ).ravel()
+        )
+        K_inner_asperities_v_plate = self.sim.K_inner_asperities_v_plate.T.ravel()
+        self.K_inner_asperities_v_plate = altar.cuda.vector(
+            source=np.ascontiguousarray(K_inner_asperities_v_plate, dtype=self.gpuprec)
+        )
+        v_plate_ddcs_proj_eff_inner = self.sim.v_plate_ddcs_proj_eff[
+            self.fault.s_inner, :
+        ].T.ravel()
+        self.v_plate_ddcs_proj_eff_inner = altar.cuda.vector(
+            source=np.ascontiguousarray(v_plate_ddcs_proj_eff_inner, dtype=self.gpuprec)
+        )
+
+        # several copies of the initial state, one per system; after each batch, the forward
+        # model leaves in it the slip rates of each system at t = 0, the logarithmic ones for
+        # the rate-dependent model, for the next batch to start from (see {warm_start})
+        state_init_arr = np.concatenate(
+            [np.zeros(2 * patches), np.log(self.sim.v_init / self.rheo.v_0).T.ravel()]
+        )
+        self.state_init_cold = np.tile(
+            state_init_arr, (self.cuda_batch_size, 1)
+        ).astype(self.gpuprec)
+        self.state_init = altar.cuda.matrix(source=self.state_init_cold.copy())
+        # a restart spins up from the state its step recorded, if it did
+        self.load_spin_up(application=application)
+
+        # record the mean model with the steps
+        if self.record_mean:
+            archiver = getattr(
+                getattr(application, "controller", None), "archiver", None
+            )
+            if archiver is not None:
+                archiver.register(self)
+
+        G_surf = (
+            self.sim.G_surf[:, :, self.sim.fault.s_inner, :]
+            .transpose(3, 2, 1, 0)
+            .reshape(2 * patches, 3 * self.sim.n_observers)
+        )
+        self.G_surf = altar.cuda.matrix(
+            source=np.ascontiguousarray(G_surf, dtype=self.gpuprec)
+        )
+
+        # simulate state - yeval in ode
+        self.sim_state = altar.cuda.vector(
+            shape=self.cuda_batch_size * self.sim.t_obs.size * patches * 4,
+            dtype=self.gpuprec,
+        )
+
+        # copy the observation mask onto the GPU, as bytes
+        mask = self.dataobs.mask
+        if mask is None:
+            self.obs_mask = altar.cuda.vector(
+                source=np.ones(
+                    self.sim.t_obs.size * 3 * self.sim.n_observers, dtype="uint8"
+                )
+            )
+            channel.log(f"Device {self.device.id}: Assuming no masked values")
+        else:
+            self.obs_mask = altar.cuda.vector(source=mask.astype("uint8"))
+            channel.log(
+                f"Device {self.device.id}: Loaded mask with "
+                f"{(~mask).sum()} masked values"
+            )
+
+        # load reference stations, if present
+        if self.ref_station_indices is not None:
+            self.i_stat_ref = altar.cuda.vector(
+                source=np.asarray(self.ref_station_indices, dtype="int32")
+            )
+            self.n_stat_ref = len(self.ref_station_indices)
+            channel.log(
+                f"Device {self.device.id}: Found {self.n_stat_ref} reference stations"
+            )
+        else:
+            self.i_stat_ref = altar.cuda.vector(source=np.asarray([], dtype="int32"))
+            self.n_stat_ref = 0
+            channel.log(f"Device {self.device.id}: No reference stations used")
+
+        # predicted observations, and their likelihoods
+        self.obs_disp = altar.cuda.matrix(
+            shape=(
+                self.cuda_batch_size,
+                self.sim.t_obs.size * 3 * self.sim.n_observers,
+            ),
+            dtype=self.gpuprec,
+        )
+        self.likelihood_batch = altar.cuda.vector(
+            shape=self.cuda_batch_size, dtype=self.gpuprec
+        )
+
+        # the per-batch inputs of the forward model
+        self.alpha_h = altar.cuda.vector(
+            shape=self.cuda_batch_size * patches, dtype=self.gpuprec
+        )
+        self.delta_tau_div_alpha_h = altar.cuda.vector(
+            shape=self.cuda_batch_size * self.num_eq * patches * 2, dtype=self.gpuprec
+        )
+        self.obs_ref = altar.cuda.matrix(
+            shape=(self.cuda_batch_size, self.sim.t_obs.size * 3), dtype=self.gpuprec
+        )
+        self.obs_ep = altar.cuda.vector(
+            shape=self.cuda_batch_size * self.sim.n_observers * 2 * self.dt.size,
+            dtype=self.gpuprec,
+        )
+
+        # create CUDA model for all samples (need to reduce to batch size)
+        ticks.append(self.sync_and_time())
+        precision = {"float64": "double", "float32": "float"}[self.gpuprec]
+        method = "" if self.integrator == "dopri5" else f"_{self.integrator}"
+        self.cmodel = getattr(
+            getattr(libcudaseas, self.forward_ode), f"model_{precision}{method}"
+        )()
+        channel.log(
+            f"Device {self.device.id}: Running {self.forward_ode} model with {self.integrator} "
+            f"in {self.gpuprec} precision"
+        )
+        # the arguments the two integrators share
+        args = dict(
+            cuda_batch_size=self.cuda_batch_size,
+            max_cycles=self.sim.n_cycles_max,
+            num_t_obs=self.sim.t_obs.size,
+            t_obs_sec=self.t_obs_sec.grid,
+            num_ix_eq=self.sim.n_slips,
+            num_eq=self.num_eq,
+            t_events=self.t_events.grid,
+            i_slips_obs=self.i_slips_obs.grid,
+            n_slips_obs=self.sim.n_slips_obs + 1,
+            v_0=self.rheo.v_0,
+            mu_over_2vs=self.fault.mu_over_2vs,
+            num_inner_patches=patches,
+            K_inner_inner_onfault=self.K_inner_inner_onfault.grid,
+            K_inner_asperities_v_plate=self.K_inner_asperities_v_plate.grid,
+            v_plate_ddcs_proj_eff_inner=self.v_plate_ddcs_proj_eff_inner.grid,
+            sim_state=self.sim_state.grid,
+            atol=self.sim.atol,
+            rtol=self.sim.rtol,
+            spinup_atol=self.sim.spinup_atol,
+            spinup_rtol=self.sim.spinup_rtol,
+            num_stations=self.sim.n_observers,
+            obs_mask=self.obs_mask.grid,
+            i_stat_ref=self.i_stat_ref.grid,
+            n_stat_ref=self.n_stat_ref,
+            ref_vel_index=self.velocity_reference_index,
+        )
+        if self.forward_ode == "ratedependent":
+            self.cmodel.initialize(**args, state_init=self.state_init.grid)
+        else:  # self.forward_ode == "tractiondependent"
+            self.cmodel.initialize(**args, rho=self.sim.rho)
+        # the acceleration of the spin-up
+        self.cmodel.set_anderson(
+            depth=self.spinup_anderson, beta=self.spinup_anderson_damping
+        )
+
+        # remove precomputed farfield effects on observations
+        ticks.append(self.sync_and_time())
+        if np.any(self.sim.T_rec_logsigma) or (not self.sim.enforce_v_plate):
+            raise NotImplementedError
+        surf_disps_outer = get_surface_displacements(
+            self.sim.outer_creep_slip, self.sim.G_surf[:, :, self.fault.s_outer, :]
+        )
+        surf_disps_lower = get_surface_displacements(
+            self.sim.lower_creep_slip, self.sim.G_surf[:, :, self.fault.s_lower, :]
+        )
+        obs_farfield = (
+            surf_disps_outer + surf_disps_lower
+        ).T  # to change into CUDA ordering
+        self.obs_farfield = altar.cuda.vector(
+            source=obs_farfield.ravel().astype(dtype=self.gpuprec, order="C")
+        )
+
+        # initialize forward model variables on GPU
+        ticks.append(self.sync_and_time())
+        self.delta_tau_bounded_indices = altar.cuda.vector(
+            source=self.sim.delta_tau_bounded_indices.astype("int32")
+        )
+        if self.sim.delta_tau_bounded_nonuni is None:
+            self.delta_tau_bounded_indices_final = self.delta_tau_bounded_indices
+        else:
+            delta_tau_bounded_indices_final = self.sim.delta_tau_bounded_indices.copy()
+            delta_tau_bounded_indices_final[-num_final_eq:] = np.arange(
+                num_orig_eq, self.num_eq
+            )
+            self.delta_tau_bounded_indices_final = altar.cuda.vector(
+                source=delta_tau_bounded_indices_final.astype("int32")
+            )
+
+        # print timings
+        ticks.append(self.sync_and_time())
+        channel.log(
+            f"Device {self.device.id}: "
+            f"Initialized SEAS3D in {ticks[-1] - ticks[0]:.1f}s"
+        )
+
+        # done
+        return self
+
+    def parse_theta(self, theta_arr):
+        """
+        Create a new Rheology object from a NumPy theta array and optionally
+        return the rotation vector if contained in the parameter set.
+        """
+        # loop over theta entries
+        rotvec = None
+        rheo_kw_args = deepcopy(self.rheo_dict)
+        if self.psets_list == ["log10_alpha_h_mat"]:  # single pset for entire matrix
+            rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = (
+                10 ** theta_arr.reshape(self.n_estim_row, -1)
+            )
+        else:  # parse individual rows of theta
+            psets_list_alphah = [
+                p for p in self.psets_list if p.startswith("log10_alpha_h_")
+            ]
+            n_theta_rows = len(psets_list_alphah)
+            n_theta_cols = list(
+                set([self.psets[name].count for name in psets_list_alphah])
+            )
+            assert len(n_theta_cols) == 1, "Different lengths of psets."
+            n_theta_cols = n_theta_cols[0]
+            assert (
+                (n_theta_rows, n_theta_cols) == (self.n_estim_row, self.n_estim_col)
+            ) or ((n_theta_rows, n_theta_cols) == (self.n_estim_row, 1)), (
+                f"Expected theta of shape {(self.n_estim_row, self.n_estim_col)} (or "
+                f"columns broadcastable), got shape {(n_theta_rows, n_theta_cols)}."
+            )
+            theta_out = np.full((n_theta_rows, n_theta_cols), np.nan)
+            j = 0
+            for name in self.psets_list:
+                if name.startswith("log10_alpha_h_"):
+                    irow = int(name[14:])
+                    theta_out[irow, :] = theta_arr[j : j + n_theta_cols]
+                elif name == "euler_pole":
+                    rotvec = theta_arr[j : j + 3]
+                j += self.psets[name].count
+            rheo_kw_args["alpha_h_mat"][self.theta_subset_indices] = 10**theta_out
+        # return new object instance
+        return RateStateSteadyLogarithmic2D(**rheo_kw_args), rotvec
+
+    def forward_model_batched(self, theta, prediction, batch=None):
+        """
+        SEAS forward model for the first {batch} samples
+
+        :param theta: array (batch, parameters), physical parameters, on the host
+        :param prediction: matrix (cuda_batch_size, observations), filled with the
+                           predicted data of the first {batch} rows
+        :param batch: integer, the number of samples to be computed,
+                      batch<=cuda_batch_size
+        :return: prediction as predicted data
+        """
+
+        # print info
+        channel = self.info
+        batch_size_run = theta.shape[0] if batch is None else batch
+        patches = self.fault.inner_num_patches
+
+        # create new rheology instances
+        ticks = []
+        ticks.append(self.sync_and_time())
+        parsed_thetas = [
+            self.parse_theta(np.array(theta[i], dtype=float))
+            for i in range(batch_size_run)
+        ]
+        rheos = [pt[0] for pt in parsed_thetas]
+
+        # create new simulation instances, modifying copied objects
+        ticks.append(self.sync_and_time())
+        sims = self.sims_storage[:batch_size_run]
+        for i, sim in enumerate(sims):
+            sim.update_rheo(rheos[i])
+
+        # create stacked versions of alpha_h and delta_tau_div_alpha
+        ticks.append(self.sync_and_time())
+        alpha_h_vec_stacked = np.stack([s.alpha_h_vec.squeeze() for s in sims])
+        np.asarray(self.alpha_h)[
+            : batch_size_run * patches
+        ] = alpha_h_vec_stacked.ravel()
+        if self.sim.delta_tau_bounded_nonuni is None:
+            dtau_bound_comp_list = [s.delta_tau_bounded_compressed for s in sims]
+        else:
+            dtau_bound_comp_list = [
+                np.concatenate(
+                    [s.delta_tau_bounded_compressed, s.delta_tau_bounded_nonuni], axis=0
+                )
+                for s in sims
+            ]
+        delta_tau_bounded_compressed_stacked = np.stack(dtau_bound_comp_list)
+        # the traction integrator takes the stress changes as they are
+        if self.forward_ode == "ratedependent":
+            delta_tau_bound_comp_div_alpha = (
+                delta_tau_bounded_compressed_stacked
+                / alpha_h_vec_stacked[:, None, :, None]
+            )
+        else:  # self.forward_ode == "tractiondependent"
+            delta_tau_bound_comp_div_alpha = delta_tau_bounded_compressed_stacked
+        delta_tau_bound_comp_div_alpha = np.concatenate(
+            [
+                delta_tau_bound_comp_div_alpha[:, :, :, 0],
+                delta_tau_bound_comp_div_alpha[:, :, :, 1],
+            ],
+            axis=2,
+        )
+        np.asarray(self.delta_tau_div_alpha_h)[
+            : delta_tau_bound_comp_div_alpha.size
+        ] = delta_tau_bound_comp_div_alpha.ravel()
+
+        # calculate euler pole motion
+        if "euler_pole" in self.psets_list:
+            obs_ep_np = (
+                np.stack(
+                    [
+                        self.G_ep.reshape(-1, 3) @ (pt[1][:, None] * self.dt[None, :])
+                        for pt in parsed_thetas
+                    ],
+                    axis=0,
+                )
+                .reshape(batch_size_run, self.sim.n_observers, 2, self.dt.size)
+                .transpose(0, 3, 2, 1)
+            )
+        else:
+            obs_ep_np = np.zeros(
+                (batch_size_run, self.dt.size, 2, self.sim.n_observers)
+            )
+        np.asarray(self.obs_ep)[: obs_ep_np.size] = obs_ep_np.ravel()
+
+        # the inputs both integrators share
+        args = dict(
+            alpha_h_vec=self.alpha_h.grid,
+            delta_tau_div_alpha_h=self.delta_tau_div_alpha_h.grid,
+            delta_tau_bounded_indices=self.delta_tau_bounded_indices.grid,
+            delta_tau_bounded_indices_final=self.delta_tau_bounded_indices_final.grid,
+            G_surf=self.G_surf.grid,
+            obs_disp=prediction.grid,
+            ref_obs=self.obs_ref.grid,
+            obs_farfield=self.obs_farfield.grid,
+            obs_ep=self.obs_ep.grid,
+            batches=batch_size_run,
+            v_ratio_max=self.v_ratio_max,
+            num_threads=self.cuda_threads,
+            verbose=self.verbose > 1,
+        )
+
+        if self.forward_ode == "ratedependent":
+
+            # without a warm start, every batch starts from v_init
+            if self.warm_start == "cold":
+                np.asarray(self.state_init)[...] = self.state_init_cold
+            # call CUDA forward model
+            ticks.append(self.sync_and_time())
+            self.cmodel.forward_model_batch(**args)
+
+        else:  # self.forward_ode == "tractiondependent"
+
+            # create state_init if integrating traction
+            # initial patch state, (cuda_batch_size, 4 * num_inner_patches) [m|m|Pa|Pa]
+            # tau_0 + alpha_h_vec * np.log(v / v_0) + mu_over_2vs * v
+
+            # the slip rates to start from, [batch_size_run, patches, 2]: those each slot
+            # reached at t = 0 in the previous batch, else v_init
+            state_init = np.asarray(self.state_init)
+            if self.warm_start != "cold" and self._warm:
+                v = (
+                    state_init[:batch_size_run, 2 * patches :]
+                    .reshape(batch_size_run, 2, patches)
+                    .transpose(0, 2, 1)
+                )
+            else:
+                v = np.broadcast_to(self.sim.v_init, (batch_size_run, patches, 2))
+            v_norm = np.linalg.norm(v, axis=2)  # is [batch_size_run, patches]
+            # the traction for those slip rates, with this batch's alpha_h, which
+            # alpha_h_vec_stacked has as [batch_size_run, patches]
+            tau_init_norm = (
+                self.sim.rho + np.log(v_norm / self.rheo.v_0)
+            ) * alpha_h_vec_stacked + self.fault.mu_over_2vs * v_norm
+            tau_init = v * (tau_init_norm / v_norm)[:, :, None]
+
+            # zero slip, and the traction, for each system in the batch
+            state_init[:batch_size_run, : 2 * patches] = 0
+            state_init[:batch_size_run, 2 * patches :] = tau_init.transpose(
+                0, 2, 1
+            ).reshape(batch_size_run, -1)
+
+            # call CUDA forward model
+            ticks.append(self.sync_and_time())
+            self.cmodel.forward_model_batch(state_init=self.state_init.grid, **args)
+
+        # the next batch can start from the slip rates this one reached, except in the slots of
+        # systems that failed, which start cold
+        self._warm = True
+        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[
+            :batch_size_run
+        ]
+        if failed.any():
+            slots = failed[np.arange(self.cuda_batch_size) % batch_size_run]
+            self.cool(slots=slots)
+        # the samples whose states the slots hold, for a nearest start
+        self._previous = (np.array(theta[:batch_size_run], dtype=float), ~failed)
+
+        # log timings
+        ticks.append(self.sync_and_time())
+        infostr = (
+            f"Device {self.device.id}: Ran forward_model_batched for {batch_size_run} "
+            f"samples in {ticks[-1] - ticks[0]:.1f}s ("
+        )
+        infostr += (
+            f"Rheology instances = {ticks[1] - ticks[0]:.1f}s, "
+            f"Simulation instances = {ticks[2] - ticks[1]:.1f}s, "
+            f"Stacked parameters = {ticks[3] - ticks[2]:.1f}s, "
+        )
+        infostr += f"CUDA forward model = {ticks[4] - ticks[3]:.1f}s)"
+        channel.log(infostr)
+        # the integrator's step statistics, summed over the batch
+        if self.verbose:
+            stats = {k: np.asarray(v) for k, v in self.cmodel.step_statistics().items()}
+            channel.log(
+                f"Device {self.device.id}: steps accepted {stats['accepted'].sum()}, "
+                f"rejected {stats['rejected'].sum()}, "
+                f"stability limited {stats['stiff'].sum()}; "
+                f"spin-up cycles {stats['cycles'].min()}-{stats['cycles'].max()}; "
+                f"smallest step {stats['hmin'].min():.3g}s"
+            )
+
+        # all done
+        return prediction
+
+    def eval_data_likelihood(self, theta, likelihood, batch=None):
+        """
+        Compute the likelihood from my forward problem, in batches of {cuda_batch_size}
+
+        :param theta: physical parameters, matrix of (samples, parameters)
+        :param likelihood: computed likelihood, vector of (samples)
+        :param batch: number of samples to be computed
+        """
+        batch = theta.shape[0] if batch is None else batch
+        # theta and the likelihood live in managed memory, so the host can see them
+        theta = np.asarray(theta)
+        llk = np.asarray(likelihood)
+
+        # the data storage for data prediction and its likelihood
+        predictions = self.obs_disp
+        llk_batch = self.likelihood_batch
+
+        # iterate over batches
+        cuda_batch_size = self.cuda_batch_size
+        for system_start in range(0, batch, cuda_batch_size):
+            # get the actual batch size
+            batch_size_run = min(cuda_batch_size, batch - system_start)
+            # start its slots from the spin-up of its mean sample
+            self.warm(theta=theta[system_start : system_start + batch_size_run])
+            # call forward model to calculate the data prediction
+            self.forward_model_batched(
+                theta=theta[system_start : system_start + batch_size_run],
+                prediction=predictions,
+                batch=batch_size_run,
+            )
+            # the l2 norm of its residual, applying the data covariance to it
+            self.dataobs.eval_likelihood(
+                prediction=predictions,
+                likelihood=llk_batch,
+                residual=False,
+                whitened=False,
+                batch=batch_size_run,
+            )
+            # copy likelihood to global
+            llk[system_start : system_start + batch_size_run] = np.asarray(llk_batch)[
+                :batch_size_run
+            ]
+            # the samples whose integration failed are as unlikely as can be
+            self.reject_failed(llk[system_start : system_start + batch_size_run])
+
+        # all done
+        return self
+
+    @altar.export
+    def forward_problem(self, application, theta):
+        """
+        The data predicted by each row of {theta}, in batches of {cuda_batch_size}, for the
+        actions; the rows whose integration failed are not a number
+        """
+        return self.forward_runs(theta=theta, states=False)
+
+    def forward_states(self, application, theta):
+        """
+        As {forward_problem}, with the slip [m] and slip rate [m/s] histories of each row at the
+        observation times, [rows, t_obs, components, patches], for the forward action's {states}
+        """
+        return self.forward_runs(theta=theta, states=True)
+
+    def forward_runs(self, theta, states):
+        """
+        Run the rows of {theta} in batches of {cuda_batch_size}: their predicted data and, with
+        {states}, their slip and slip rate histories; not a number where the integration failed
+        """
+        theta = np.atleast_2d(np.asarray(theta, dtype=float))
+        rows = theta.shape[0]
+        predicted = np.full((rows, self.dataobs.observations), np.nan)
+        if states:
+            shape = (rows, self.sim.t_obs.size, 2, self.fault.inner_num_patches)
+            slip, slip_rate = np.full(shape, np.nan), np.full(shape, np.nan)
+        for start in range(0, rows, self.cuda_batch_size):
+            batch = min(self.cuda_batch_size, rows - start)
+            # start its slots from the spin-up of its mean sample, as the sampling does
+            self.warm(theta=theta[start : start + batch])
+            self.forward_model_batched(
+                theta=theta[start : start + batch],
+                prediction=self.obs_disp,
+                batch=batch,
+            )
+            block = np.asarray(self.obs_disp)[:batch].astype(float)
+            failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[
+                :batch
+            ]
+            block[failed] = np.nan
+            predicted[start : start + batch] = block
+            if states:
+                s, r = self.histories(batch=batch)
+                s[failed], r[failed] = np.nan, np.nan
+                slip[start : start + batch], slip_rate[start : start + batch] = s, r
+        if states:
+            return {"data": predicted, "slip": slip, "slip_rate": slip_rate}
+        return {"data": predicted}
+
+    def histories(self, batch):
+        """
+        The slip and slip rate histories of the first {batch} slots after a forward call,
+        [batch, t_obs, components, patches]
+        """
+        patches, steps = self.fault.inner_num_patches, self.sim.t_obs.size
+        # [systems, steps, slip or slip rate, components, patches], the slip rates linear
+        state = np.asarray(self.sim_state)[: batch * steps * 4 * patches].reshape(
+            batch, steps, 2, 2, patches
+        )
+        return state[:, :, 0].astype(float), state[:, :, 1].astype(float)
+
+    @altar.export
+    def gradient(self, controller, step, batch=None):
+        """
+        Fill {step.prior_gradient} and {step.data_gradient} with the gradients of the log prior
+        and of the data log likelihood w.r.t. the physical parameters, the latter by central
+        differences of the forward model, all samples and perturbations batched together
+        """
+        # the differences need the likelihood to many more digits than float32 keeps
+        if self.precision != "float64":
+            self.error.log(
+                "the seas3d gradient needs double precision: job.precision = float64, "
+                "and job.gpuprecision unset or float64"
+            )
+            raise SystemExit(1)
+        # in an ensemble, the ensemble owns the parameter sets and their priors
+        if not self.embedded and not self.checked_unbounded_priors:
+            self.verify_unbounded_priors()
+
+        theta = self.restrict(theta=step.theta)
+        batch = theta.shape[0] if batch is None else batch
+        grad_prior = self.restrict(theta=step.prior_gradient)
+        for name in [] if self.embedded else self.psets_list:
+            self.psets[name].prior_gradient(
+                theta=theta, gradient=grad_prior, batch=batch
+            )
+
+        # each sample, shifted by +h and -h along each parameter
+        x = np.array(np.asarray(theta)[:batch], dtype=float)
+        parameters = x.shape[1]
+        h = self.gradient_step
+        shifted = np.repeat(x[:, None, :], 2 * parameters, axis=1)
+        for j in range(parameters):
+            shifted[:, 2 * j, j] += h
+            shifted[:, 2 * j + 1, j] -= h
+        n = batch * 2 * parameters
+        theta_fd = altar.cuda.matrix(
+            source=shifted.reshape(n, parameters), dtype=self.precision
+        )
+        llk_fd = altar.cuda.vector(shape=n, dtype=self.precision)
+        self.eval_data_likelihood(theta=theta_fd, likelihood=llk_fd, batch=n)
+
+        # the central differences; a sample with a failed integration gets no gradient
+        llk = np.asarray(llk_fd).reshape(batch, parameters, 2)
+        grad = (llk[:, :, 0] - llk[:, :, 1]) / (2 * h)
+        grad[(llk == np.finfo(llk.dtype).min).any(axis=(1, 2))] = 0
+        np.asarray(self.restrict(theta=step.data_gradient))[:batch] = grad
+        # all done
+        return self
+
+    @altar.export
+    def bottom(self, annealer):
+        """
+        At the end of a beta step, keep the population, whose mean model the archiver records
+        if it writes this step
+        """
+        super().bottom(annealer=annealer)
+        if self.record_mean:
+            self._population = annealer.worker.step.theta
+        return self
+
+    @altar.export
+    def posterior(self, application):
+        """
+        Sample my posterior distribution; then run a subsample of it, if asked
+        """
+        status = super().posterior(application=application)
+        # the final population is on the manager, which runs the subsample
+        worker = self.controller.worker
+        if self.record_posterior > 0 and getattr(worker, "rank", 0) == getattr(
+            worker, "manager", 0
+        ):
+            output = self.controller.archiver.output_dir
+            self.run_posterior(
+                theta=np.array(worker.step.theta, dtype=float),
+                path=os.path.join(
+                    str(getattr(output, "path", output)), "posterior_runs.h5"
+                ),
+            )
+        return status
+
+    def cool(self, slots):
+        """
+        Start the systems in {slots}, a mask over the batch, from v_init again
+        """
+        patches = self.fault.inner_num_patches
+        state = np.asarray(self.state_init)
+        if self.forward_ode == "ratedependent":
+            state[slots] = self.state_init_cold[slots]
+        else:
+            # the traction model keeps the slip rates themselves
+            state[slots, 2 * patches :] = self.sim.v_init.T.ravel().astype(self.gpuprec)
+        return self
+
+    def warm(self, theta):
+        """
+        Set the states the slots start from for the samples {theta}, as {warm_start} says: a
+        spin-up of their mean alone, whose state the forward model leaves in every slot, before
+        every batch for 'mean' and before the first with {warm_up}; otherwise, for 'nearest'
+        and for 'mean' past {mean_until}, the state of the previous sample nearest to each; a
+        'mean' batch smaller than {mean_batch} starts every slot from the state of the previous
+        sample nearest to its mean
+        """
+        mode = self.warm_start
+        if mode == "cold":
+            return self
+        first = not self._warm
+        mean = mode == "mean" and self.mean_now()
+        theta = np.atleast_2d(np.asarray(theta, dtype=float))
+        if mean and theta.shape[0] < self.mean_batch:
+            # one common start, as from the mean's spin-up, for the optimizers' differences
+            center = theta.mean(axis=0, keepdims=True)
+            self.nearest(theta=np.repeat(center, theta.shape[0], axis=0))
+            return self
+        if not (mean or (first and self.warm_up)):
+            if mode in ("mean", "nearest") and not first:
+                self.nearest(theta=theta)
+            return self
+        start = perf_counter()
+        self.forward_model_batched(
+            theta=np.asarray(theta).mean(axis=0, keepdims=True),
+            prediction=self.obs_disp,
+            batch=1,
+        )
+        cycles = int(np.asarray(self.cmodel.step_statistics()["cycles"])[0])
+        self.info.log(
+            f"Device {self.device.id}: warmed up on the mean sample in "
+            f"{perf_counter() - start:.1f}s, {cycles} spin-up cycles"
+        )
+        return self
+
+    def mean_now(self):
+        """
+        Whether a 'mean' warm start still uses the mean at the current temperature: always
+        without {mean_until}, or outside an annealing
+        """
+        if self.mean_until is None:
+            return True
+        # under mpi, the local worker holds the step, with the temperature broadcast to it
+        worker = getattr(getattr(self, "controller", None), "worker", None)
+        worker = getattr(worker, "worker", worker)
+        beta = getattr(getattr(worker, "step", None), "beta", None)
+        return beta is None or float(beta) < self.mean_until
+
+    def nearest(self, theta):
+        """
+        Start the slot of each row of {theta} from the state of the sample of the previous
+        batch nearest to it, in units of that batch's spread; samples that failed don't count
+        """
+        if self._previous is None:
+            return self
+        previous, usable = self._previous
+        if not usable.any():
+            return self
+        theta = np.asarray(theta, dtype=float)
+        candidates, slots = previous[usable], np.flatnonzero(usable)
+        spread = candidates.std(axis=0)
+        spread[spread == 0] = 1
+        distance = (((theta[:, None, :] - candidates[None, :, :]) / spread) ** 2).sum(
+            axis=2
+        )
+        source = slots[distance.argmin(axis=1)]
+        # the checked half of the state, the slip rates or their logarithm
+        patches = self.fault.inner_num_patches
+        state = np.asarray(self.state_init)
+        state[: theta.shape[0], 2 * patches :] = state[source, 2 * patches :]
+        return self
+
+    def run_mean(self, theta):
+        """
+        Run the mean of the samples {theta}, and keep its slip rates at t = 0, its predicted
+        data and its data log-likelihood; every slot then starts from its state
+        """
+        patches = self.fault.inner_num_patches
+        mean = theta.mean(axis=0, keepdims=True).astype(float)
+        self.forward_model_batched(theta=mean, prediction=self.obs_disp, batch=1)
+        # the prediction, before the likelihood subtracts the data from it in place
+        prediction = np.asarray(self.obs_disp)[0].astype(float)
+        self.dataobs.eval_likelihood(
+            prediction=self.obs_disp,
+            likelihood=self.likelihood_batch,
+            residual=False,
+            whitened=False,
+            batch=1,
+        )
+        # the slip rates the forward model left in the first slot, logarithmic for the
+        # rate-dependent model
+        v = np.asarray(self.state_init)[0, 2 * patches :].astype(float)
+        if self.forward_ode == "ratedependent":
+            v = self.rheo.v_0 * np.exp(v)
+        self._mean = {
+            "theta_mean": mean[0],
+            "v_t0": v,
+            "prediction": prediction,
+            "likelihood": float(np.asarray(self.likelihood_batch)[0]),
+        }
+        return self
+
+    def record(self, archiver):
+        """
+        Run the mean model of the last beta step and record it via {archiver}, which calls me
+        for the steps it writes
+        """
+        population = self._population
+        # a restart that takes no step, e.g. from a step at beta 1, has only the one it loaded
+        if population is None:
+            population = self.controller.worker.step.theta
+        self.run_mean(theta=np.asarray(population))
+        archiver.write("SEAS/theta_mean", self._mean["theta_mean"])
+        archiver.write(
+            "SEAS/v_t0",
+            self._mean["v_t0"],
+            {
+                "description": "slip rates of the mean model at t = 0 [m/s], [2, patches]",
+                "forward_ode": self.forward_ode,
+            },
+        )
+        archiver.write("SEAS/prediction", self._mean["prediction"])
+        archiver.write("SEAS/likelihood", self._mean["likelihood"])
+        return self
+
+    def run_posterior(self, theta, path):
+        """
+        Run {record_posterior} samples drawn without replacement from the population {theta}, so
+        that they keep its distribution, and write them to the hdf5 file {path}
+        """
+        import h5py
+
+        n = min(self.record_posterior, theta.shape[0])
+        rng = getattr(getattr(self, "rng", None), "rng", None)
+        rng = rng if isinstance(rng, np.random.Generator) else np.random.default_rng()
+        rows = np.sort(rng.choice(theta.shape[0], size=n, replace=False))
+        start = perf_counter()
+        runs = {
+            "likelihood": [],
+            "prediction": [],
+            "slip": [],
+            "slip_rate": [],
+            "failed": [],
+        }
+        for first in range(0, n, self.cuda_batch_size):
+            batch = min(self.cuda_batch_size, n - first)
+            self.warm(theta=theta[rows[first : first + batch]])
+            self.forward_model_batched(
+                theta=theta[rows[first : first + batch]],
+                prediction=self.obs_disp,
+                batch=batch,
+            )
+            # the predictions, before the likelihood subtracts the data from them in place
+            runs["prediction"].append(np.asarray(self.obs_disp)[:batch].astype(float))
+            self.dataobs.eval_likelihood(
+                prediction=self.obs_disp,
+                likelihood=self.likelihood_batch,
+                residual=False,
+                whitened=False,
+                batch=batch,
+            )
+            runs["likelihood"].append(
+                np.asarray(self.likelihood_batch)[:batch].astype(float)
+            )
+            slip, slip_rate = self.histories(batch=batch)
+            runs["slip"].append(slip)
+            runs["slip_rate"].append(slip_rate)
+            runs["failed"].append(
+                np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[:batch]
+            )
+        with h5py.File(path, "w") as f:
+            f.attrs["forward_ode"] = self.forward_ode
+            f.attrs["description"] = (
+                "forward runs of samples drawn without replacement from the final population: "
+                "slip [m] and slip_rate [m/s] are [samples, t_obs, components, patches]"
+            )
+            f["theta"] = theta[rows]
+            f["rows"] = rows
+            f["t_obs"] = self.sim.t_obs
+            f["ix_estim_row"] = self.ix_estim_row
+            f["ix_estim_col"] = self.ix_estim_col
+            f["psets_list"] = self.psets_list
+            f["mask"] = self.dataobs.mask
+            for key, values in runs.items():
+                f[key] = np.concatenate(values)
+        self.info.log(
+            f"Device {self.device.id}: ran {n} posterior samples in "
+            f"{perf_counter() - start:.1f}s, written to {path}"
+        )
+        return self
+
+    def load_spin_up(self, application):
+        """
+        Start every slot from the slip rates of the mean model recorded in {spinup_file}, else in
+        a restart's step; a {spinup_file} that can't be used is an error, a restart's step that
+        can't is just a cold start
+        """
+        given = self.spinup_file is not None
+        path = (
+            self.spinup_file
+            if given
+            else getattr(getattr(application, "controller", None), "restart", None)
+        )
+        if path is None:
+            return self
+
+        def unusable(reason):
+            message = f"{path}: {reason}"
+            if given:
+                self.error.log(message)
+                raise SystemExit(1)
+            self.info.log(f"Device {self.device.id}: {message}; spinning up cold")
+            return self
+
+        if self.warm_start == "cold":
+            return unusable("spin-up states need a warm_start") if given else self
+        import h5py
+
+        with h5py.File(str(path), "r") as f:
+            if "SEAS/v_t0" not in f:
+                return unusable(
+                    "no recorded spin-up state; runs record it with record_mean"
+                )
+            v = np.asarray(f["SEAS/v_t0"], dtype=float)
+        patches = self.fault.inner_num_patches
+        if v.size != 2 * patches:
+            return unusable(
+                f"a spin-up state of {v.size // 2} patches, the model has {patches}"
+            )
+        state = np.log(v / self.rheo.v_0) if self.forward_ode == "ratedependent" else v
+        np.asarray(self.state_init)[:, 2 * patches :] = state.astype(self.gpuprec)
+        self._warm = True
+        self.info.log(
+            f"Device {self.device.id}: spinning up from the mean model of {path}"
+        )
+        return self
+
+    def reject_failed(self, llk):
+        """
+        Give the samples of the last batch whose integration failed the lowest
+        likelihood, finite so that the annealing weights stay well defined
+        """
+        failed = np.asarray(self.cmodel.step_statistics()["failed"], dtype=bool)[
+            : llk.size
+        ]
+        if failed.any():
+            llk[failed] = np.finfo(llk.dtype).min
+            self.info.log(
+                f"Device {self.device.id}: {failed.sum()} of {failed.size} samples "
+                f"failed to integrate, and are rejected"
+            )
+        return self
+
+    # private data
+    _warm = (
+        False  # whether {state_init} holds the slip rates of a batch, for a warm start
+    )
+    _mean = None  # the mean model of the last beta step, for the archiver
+    _population = None  # the samples of the last beta step, for their mean model
+    _previous = None  # the samples of the last batch and which of them didn't fail
+
+
+# end of file

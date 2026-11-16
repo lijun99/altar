@@ -1,0 +1,67 @@
+;
+; (c) 2022-present california institute of technology
+; all rights reserved
+;
+
+; a creeping fault with linear viscous rheology, on the gpu; sample with
+;        seas --config=linearviscous.pfg
+
+; the application
+seas:
+
+    ; the model
+    model = altar.models.seas.linearviscous
+    model:
+
+        ; the path of input files
+        case = linearviscous_strike
+
+        ; model parameters
+        patches = 32 ; creeping zone patches
+        stations = 20 ; # of surface observation stations
+        t_eval_points = 20 ; # of t_eval points
+
+        ; input files
+        t_eval_file = t_eval.txt ; # time points to be evaluated
+        t_coseismic_file = t_coseismic.txt ; the start/end time of a cycle, with an event at the start
+        stress_kernel_file = stresskernel.txt ; K (patches, patches)
+        stressrate_ext_file = stressrate_ext.txt ; stress rate from locked patches (patches)
+        displacement_kernel_file = displacementkernel.txt ; G (patches, stations)
+        coseismic_file = coseismic.txt ; coseismic change to (slip, stress) 2*patches
+        use_spin_up_data = True
+        spin_up_data_file = spin_up_data.txt
+
+        ; data observations (times x stations)
+        dataobs:
+             observations = {seas.model.t_eval_points}*{seas.model.stations}
+             data_file = displacements.txt ; (t_eval_points, stations) flattened
+             cd_std = 1e-2 ; or cd_file
+
+        ; parameters to be simulated
+        ; provide a list at first, serving as their orders in theta
+        psets_list = [viscous_coef]
+
+        ; define each parameterset
+        psets:
+            viscous_coef = contiguous
+
+            ; variables
+            viscous_coef:
+                count = 1 ; same for all patches
+                prep = uniform
+                prep.support = (0.1, 0.6)
+                prior = uniform
+                prior.support = (0.1, 0.6)
+
+    ; run configuration
+    job.tasks = 1 ; number of tasks per host
+    job.gpus = 1  ; the seas models run on the gpu only
+    job.gpuprecision = float64
+    job.chains = 2**10 ; number of chains per task
+    job.steps = 100 ; the length of each chain
+
+    ; anneal with catmip, and keep its output
+    controller = altar.bayesian.catmip
+    controller.archiver.output_dir = results
+
+; end of file

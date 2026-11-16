@@ -11,4 +11,5 @@ Static
 StaticCp
 Kinematic
 Volcano
+Seas
 ```
