@@ -211,6 +211,27 @@ def evaluate(folder, run):
     return 0
 
 
+def density(folder):
+    """
+    The marginal log likelihood of the fronts, the slips integrated out, at the samples of each
+    run and at the truth; the priors of the fronts are uniform, so these rank the posterior density
+    """
+    model = application(folder / "gs").model
+    truth = numpy.load(folder / "truth.npz")
+    rows = {"truth": truth["front"][None]}
+    for run in RUNS:
+        if (folder / f"{run}.npz").exists():
+            rows[run] = numpy.load(folder / f"{run}.npz")["front"]
+    print(f"{'':8s}{'samples':>8s}{'median':>10s}{'max':>10s}{'10%':>10s}{'90%':>10s}")
+    for name, front in rows.items():
+        θ = numpy.column_stack([front, numpy.zeros(front.shape[0])])
+        L = numpy.zeros(θ.shape[0])
+        model.eval_data_likelihood(theta=θ, likelihood=L)
+        print(f"{name:8s}{L.size:8d}{numpy.median(L):10.2f}{L.max():10.2f}"
+              f"{numpy.percentile(L, 10):10.2f}{numpy.percentile(L, 90):10.2f}")
+    return 0
+
+
 def report(folder):
     """
     The runs side by side
@@ -254,7 +275,7 @@ if __name__ == "__main__":
     command, folder = sys.argv[1], pathlib.Path(sys.argv[2]).resolve()
     if command == "evaluate":
         sys.exit(evaluate(folder, sys.argv[3]))
-    sys.exit({"setup": setup, "report": report}[command](folder))
+    sys.exit({"setup": setup, "report": report, "density": density}[command](folder))
 
 
 # end of file
