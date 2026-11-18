@@ -7,9 +7,10 @@
 #
 
 # the source time functions of the kinematic model on triangles, a triangle peaking early and a
-# raised cosine, on a small planar fault with random green's functions: the gradient against
-# central differences of the likelihood, on the cpu, and with --gpu also on cuda, whose slip
-# histories must agree with the cpu's; each backend runs in a process of its own
+# raised cosine, sampled, and integrated over intervals longer than the rise times, step and bin,
+# on a small planar fault with random green's functions: the gradient against central
+# differences of the likelihood, on the cpu, and with --gpu also on cuda, whose slip histories
+# must agree with the cpu's; each backend runs in a process of its own
 import os
 import pathlib
 import subprocess
@@ -22,7 +23,10 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "trimesh"))
 
 OBS, NT, SIGMA, CHAINS = 120, 40, 1e-2, 6
-CASES = [("triangle", 0.25), ("cosine", 0.5)]
+# the source time function, its peak, the integration over the intervals, and their length
+CASES = [("triangle", 0.25, "sample", 1.0), ("cosine", 0.5, "sample", 1.0),
+         ("triangle", 0.25, "step", 8.0), ("cosine", 0.5, "step", 8.0),
+         ("triangle", 0.5, "bin", 8.0), ("cosine", 0.5, "bin", 8.0)]
 CONFIG = """
 slipmodel:
     model = altar.models.seismic.kinematicmesh
@@ -37,9 +41,10 @@ slipmodel:
             data_file = kinematicG.data.h5
             cd_std = {sigma}
         Nt = {nt}
-        dt = 1.0
+        dt = {dt}
         stf = {stf}
         peak = {peak}
+        integration = {integration}
         psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
         psets:
             strikeslip = contiguous
@@ -77,16 +82,18 @@ slipmodel:
 """
 
 
-def worker(scratch, stf, peak, gpu):
+def worker(scratch, stf, peak, integration, dt, gpu):
     """
     The slip histories, the gradient and its central differences of one backend, into a file
     """
     os.chdir(scratch)
     from kinematic_mesh import fault
     Np = len(fault("planar")[2])
-    config = f"{stf}-{peak}-{'gpu' if gpu else 'cpu'}.pfg"
-    (scratch / config).write_text(CONFIG.format(patches=Np, obs=OBS, sigma=SIGMA, nt=NT, stf=stf, peak=peak,
-                                                gpus=int(gpu), chains=CHAINS))
+    name = f"{stf}-{peak}-{integration}-{'gpu' if gpu else 'cpu'}"
+    config = f"{name}.pfg"
+    (scratch / config).write_text(CONFIG.format(patches=Np, obs=OBS, sigma=SIGMA, nt=NT, dt=dt, stf=stf,
+                                                peak=peak, integration=integration, gpus=int(gpu),
+                                                chains=CHAINS))
     sys.argv = [sys.argv[0], f"--config={config}"]
     import altar
     import altar.models.seismic
@@ -114,7 +121,7 @@ def worker(scratch, stf, peak, gpu):
         gradient = step.grad_data
     h = 1e-6
     fd = numpy.column_stack([(loglike(θ + e) - loglike(θ - e)) / (2 * h) for e in numpy.identity(θ.shape[1]) * h])
-    numpy.savez(scratch / f"{stf}-{peak}-{'gpu' if gpu else 'cpu'}.npz", Mb=out["Mb"], gradient=gradient, fd=fd)
+    numpy.savez(scratch / f"{name}.npz", Mb=out["Mb"], gradient=gradient, fd=fd)
 
 
 def main():
@@ -145,20 +152,22 @@ def main():
         failures += not ok
         print(f"  {label}: {error:.2e} (tolerance {tolerance:.0e}) {'ok' if ok else 'FAILED'}")
 
-    for stf, peak in CASES:
+    for stf, peak, integration, dt in CASES:
         results = {}
+        label = f"{stf} {peak:g}, {integration}, dt {dt:g}"
         for backend in ["cpu"] + (["gpu"] if gpu else []):
-            command = [sys.executable, __file__, "--worker", str(scratch), stf, str(peak)] + (["--gpu"] if backend == "gpu" else [])
+            command = [sys.executable, __file__, "--worker", str(scratch), stf, str(peak), integration, str(dt)]
+            command += ["--gpu"] if backend == "gpu" else []
             done = subprocess.run(command, capture_output=True, text=True)
             if done.returncode:
                 print(done.stdout[-2000:], done.stderr[-2000:])
                 failures += 1
                 continue
-            results[backend] = numpy.load(scratch / f"{stf}-{peak}-{backend}.npz")
+            results[backend] = numpy.load(scratch / f"{stf}-{peak}-{integration}-{backend}.npz")
             r = results[backend]
-            check(f"{stf} {peak:g}, {backend}: gradient", numpy.abs(r["gradient"] - r["fd"]).max() / numpy.abs(r["fd"]).max(), 1e-6)
+            check(f"{label}, {backend}: gradient", numpy.abs(r["gradient"] - r["fd"]).max() / numpy.abs(r["fd"]).max(), 1e-6)
         if len(results) == 2:
-            check(f"{stf} {peak:g}: slips, cuda against cpu",
+            check(f"{label}: slips, cuda against cpu",
                   numpy.abs(results["gpu"]["Mb"] - results["cpu"]["Mb"]).max() / numpy.abs(results["cpu"]["Mb"]).max(), 1e-12)
 
     print("source time functions:", "passed" if failures == 0 else f"{failures} FAILED")
@@ -168,7 +177,8 @@ def main():
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         i = sys.argv.index("--worker")
-        worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2], float(sys.argv[i + 3]), "--gpu" in sys.argv)
+        worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2], float(sys.argv[i + 3]), sys.argv[i + 4],
+               float(sys.argv[i + 5]), "--gpu" in sys.argv)
         sys.exit(0)
     sys.exit(main())
 
