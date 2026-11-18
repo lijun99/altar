@@ -197,7 +197,7 @@ def evaluate(folder, run):
     truth = numpy.load(folder / "truth.npz")
     Np = truth["slip"].size // 2
     out = {"evidence": evidence}
-    if run == "gs":
+    if run.startswith("gs"):
         out["front"] = θ[:, :Np + 3]
         out["slip"] = model.draw_slips(θ, numpy.random.default_rng(1))[:, 0, :]
     else:
@@ -219,9 +219,9 @@ def density(folder):
     model = application(folder / "gs").model
     truth = numpy.load(folder / "truth.npz")
     rows = {"truth": truth["front"][None]}
-    for run in RUNS:
-        if (folder / f"{run}.npz").exists():
-            rows[run] = numpy.load(folder / f"{run}.npz")["front"]
+    for path in sorted(folder.glob("*.npz")):
+        if path.stem != "truth":
+            rows[path.stem] = numpy.load(path)["front"]
     print(f"{'':8s}{'samples':>8s}{'median':>10s}{'max':>10s}{'10%':>10s}{'90%':>10s}")
     for name, front in rows.items():
         θ = numpy.column_stack([front, numpy.zeros(front.shape[0])])
@@ -238,7 +238,9 @@ def report(folder):
     """
     truth = numpy.load(folder / "truth.npz")
     Np = truth["slip"].size // 2
-    runs = {run: numpy.load(folder / f"{run}.npz") for run in RUNS if (folder / f"{run}.npz").exists()}
+    names = [run for run in RUNS if (folder / f"{run}.npz").exists()]
+    names += sorted(p.stem for p in folder.glob("gs-*.npz"))
+    runs = {run: numpy.load(folder / f"{run}.npz") for run in names}
     times = {}
     for run in runs:
         log = folder / run / "time.txt"
