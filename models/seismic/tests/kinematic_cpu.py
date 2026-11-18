@@ -12,8 +12,10 @@
 # method: the gradient of r.Mb against central differences; single precision against double; the
 # meshes against the numpy prototype in trimesh/; the model's own likelihood gradient against
 # central differences of its likelihood, the covariance merged into the data and not; and, with
-# --gpu, the cpu models against the cuda ones. Makes its own faults and green's functions:
-#     python kinematic_cpu.py [--gpu]
+# --gpu, the cpu models against the cuda ones; with --integration=step or bin, the source time
+# functions integrated over the time intervals, and no prototype. Makes its own faults and green's
+# functions:
+#     python kinematic_cpu.py [--gpu] [--integration=sample|step|bin]
 import os
 import pathlib
 import shutil
@@ -118,6 +120,7 @@ def setup(scratch, problem, rng):
 
 def main():
     gpu = "--gpu" in sys.argv
+    integration = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--integration=")), "sample")
     rng = numpy.random.default_rng(5)
     scratch = pathlib.Path(tempfile.mkdtemp(prefix="altar-kinematic-cpu-"))
     failures = 0
@@ -130,19 +133,20 @@ def main():
             for backend, precision in runs:
                 label = f"{backend}-{precision}"
                 status = subprocess.run([sys.executable, str(HERE / "kinematic_cpu.py"), "--run", backend,
-                                         precision, problem], cwd=folder, capture_output=True, text=True)
+                                         precision, problem, integration], cwd=folder, capture_output=True,
+                                        text=True)
                 if status.returncode != 0:
                     print(status.stdout + status.stderr)
                     return 1
                 print("\n".join(l for l in status.stdout.splitlines() if l.startswith(problem)))
                 results[label] = numpy.load(folder / f"{label}.npz", allow_pickle=True)
-            failures += compare(problem, folder, Np, results, gpu)
+            failures += compare(problem, folder, Np, results, gpu, integration)
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
     return 1 if failures else 0
 
 
-def compare(problem, folder, Np, results, gpu):
+def compare(problem, folder, Np, results, gpu, integration):
     """
     The checks of {problem}; the number that failed
     """
@@ -155,7 +159,7 @@ def compare(problem, folder, Np, results, gpu):
         ("Mb, single against double precision", rel(c32["Mb"], c64["Mb"]), 1e-5),
         ("gradient, single against double precision", rel(c32["grad"], c64["grad"]), 1e-3),
     ]
-    if problem != "rectangle":
+    if problem != "rectangle" and integration == "sample":
         # the prototype, on the same mesh
         from altar.models.seismic import mesh as meshes
         from mesh import Mesh
@@ -183,7 +187,7 @@ def compare(problem, folder, Np, results, gpu):
     return failures
 
 
-def run(backend, precision, problem):
+def run(backend, precision, problem, integration):
     """
     Mb, the gradient of r.Mb for the saved r, and, on the cpu in double precision, its worst
     relative difference from central differences and the likelihood check; "merged", that check
@@ -193,7 +197,8 @@ def run(backend, precision, problem):
     label = f"{backend}-{precision}"
     merged = precision == "merged"
     precision = "float64" if merged else precision
-    sys.argv = [sys.argv[0], "--config=slipmodel.pfg", f"--job.precision={precision}", f"--job.gpus={gpus}"]
+    sys.argv = [sys.argv[0], "--config=slipmodel.pfg", f"--job.precision={precision}", f"--job.gpus={gpus}",
+                f"--model.integration={integration}"]
     if merged:
         sys.argv.append("--model.dataobs.merge_cd_with_data=True")
     import altar, altar.models.seismic
@@ -225,7 +230,7 @@ def run(backend, precision, problem):
         elif precision == "float64":
             fd = differences(model, θ, dMb, grad)
             e2e = likelihood_gradient(model, θ)
-    print(f"{problem}: {label}, {count} samples, {model.NGbparameters} slip windows")
+    print(f"{problem}: {label}, {integration}, {count} samples, {model.NGbparameters} slip windows")
     numpy.savez(f"{label}.npz", Mb=Mb, grad=grad, fd=numpy.array(fd, dtype=object),
                 e2e=numpy.array(e2e, dtype=object))
     return 0
@@ -277,7 +282,7 @@ def likelihood_gradient(model, θ):
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--run":
-        sys.exit(run(sys.argv[2], sys.argv[3], sys.argv[4]))
+        sys.exit(run(*sys.argv[2:6]))
     sys.exit(main())
 
 
