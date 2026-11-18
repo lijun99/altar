@@ -52,6 +52,16 @@ def kinematicmesh():
     return kinematicmesh
 
 
+@altar.foundry(implements=altar.models.model, tip="kinematic model on a triangulated fault, its gaussian slips integrated out, cpu")
+def kinematicgaussianslip():
+    # grab the factory
+    from .KinematicGaussianSlip import KinematicGaussianSlip as kinematicgaussianslip
+    # attach its docstring
+    __doc__ = kinematicgaussianslip.__doc__
+    # and return it
+    return kinematicgaussianslip
+
+
 @altar.foundry(implements=altar.models.model, tip="the arrival times of a phase from the hypocenter on a triangulated fault")
 def arrivals():
     # grab the factory
