@@ -114,6 +114,9 @@ checks it against the data (see {ref}`below <static-forward>`). Without `--confi
   - `cd_dtype`: the precision for factoring the covariance, if it should differ from
     `job.gpuprecision`, e.g. `float64` for a large or ill-conditioned covariance.
 
+  With `dataobs = altar.data.datakron`, a covariance separable in space and time, for GNSS time
+  series; see {ref}`kinematic-datakron`.
+
 `psets_list`, `psets`
 : the parameter sets, in the order of the columns of the Green's functions (see
   {ref}`below <static-parameter-sets>`).

@@ -609,6 +609,43 @@ the slips were as good as with the true standard deviations. The evidence favore
 the stated covariances by 117, and the true covariances over the scales by 23, the price of two
 more parameters.
 
+(kinematic-datakron)=
+### Data correlated in space and time
+
+Binned GNSS time series have noise correlated between stations and between bins: a common level,
+a random walk from the reference before the event, an exponentially correlated term. With
+`dataobs = altar.data.datakron`, the covariance is separable per component $c$ (east, north, up),
+
+$$
+\mathrm{Cov}(x_{c,s,i},\, x_{c,s',j}) = S_c[s, s']\, R_c[i, j],
+\qquad C_d = \mathrm{blockdiag}_c\,(S_c \otimes R_c),
+$$
+
+$S_c$ the covariance of the stations and $R_c$ that of the bins, with no correlation between
+components. The data are whitened with the Cholesky factors of $S_c$ and $R_c$, $L_S^{-1} X_c
+L_R^{-T}$ for the stations x bins $X_c$ of each component, and the static and kinematic models
+whiten their Green's functions with them once, at the start; $C_d$ itself is never formed. For a
+window of 108 stations and 24 bins, 7776 observations, whitening the big G of 317 patches and 30
+time steps takes about 3 s on a laptop, against 24 s with the dense factor, which takes 0.5 GB.
+
+```none
+dataobs = altar.data.datakron
+dataobs:
+    observations = 7776            # components x stations x bins
+    data_file = data.h5
+    noise_file = noise.h5          # S, (components, stations, stations); R, (components, bins, bins)
+```
+
+The observations, and the columns of the Green's functions, are ordered by component, then
+station, then bin, the bin fastest. `spatial_dataset` and `temporal_dataset` name the datasets
+of $S$ and $R$ in `noise_file`, `S` and `R` by default. `fit_separable` in sse_toolkit fits them
+to quiet windows of the records, binned as the data; its `NoiseModel` holds them as `S` and `R`.
+
+`datakron` takes no mask: fill the missing bins, e.g. by interpolation in time, or leave out the
+stations with long gaps first. Nor does it take a model uncertainty $C_p$, or the time shifts of
+the stations, which need a constant covariance. `merge_cd_with_data` works as with `datal2`; on
+cuda the data are always merged.
+
 ## The check against the data
 
 ```bash
