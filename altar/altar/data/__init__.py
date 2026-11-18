@@ -25,4 +25,14 @@ def datal2():
     return datal2
 
 
+@altar.foundry(implements=data, tip="the data with L2 norm and a covariance separable in space and time")
+def datakron():
+    # grab the factory
+    from .DataKron import DataKron as datakron
+    # attach its docstring
+    __doc__ = datakron.__doc__
+    # and return it
+    return datakron
+
+
 # end of file
