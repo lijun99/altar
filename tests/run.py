@@ -88,7 +88,7 @@ def cpu():
     tests += scripts(MODELS / "cdm/tests", ["sanity.py", "libcdm.py"])
     tests += scripts(MODELS / "linear/tests", ["config.py", "noconfig.py"])
     tests += scripts(MODELS / "seismic/tests", ["kinematic_cpu.py", "polar.py", "arrivals.py", "timeshift.py", "stf.py",
-                                                "history.py", "noise.py"])
+                                                "history.py", "noise.py", "integration.py", "datakron.py"])
     tests += scripts(MODELS / "seismic/tests/perturbation", ["bounded.py", "adaptive.py"])
     tests.append(Test(name="models:seismic:tests:arrivals:table", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "arrivals.py", "--table"]))
@@ -147,6 +147,10 @@ def gpu():
                       command=[sys.executable, "timeshift.py", "--gpu"]))
     tests.append(Test(name="models:seismic:tests:stf:gpu", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "stf.py", "--gpu"]))
+    tests.append(Test(name="models:seismic:tests:kinematic_cpu:gpu:bin", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "kinematic_cpu.py", "--gpu", "--integration=bin"]))
+    tests.append(Test(name="models:seismic:tests:datakron:gpu", cwd=MODELS / "seismic/tests",
+                      command=[sys.executable, "datakron.py", "--gpu"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),
