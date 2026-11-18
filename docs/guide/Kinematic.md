@@ -646,6 +646,78 @@ stations with long gaps first. Nor does it take a model uncertainty $C_p$, or th
 the stations, which need a constant covariance. `merge_cd_with_data` works as with `datal2`; on
 cuda the data are always merged.
 
+(kinematic-gaussian-slip)=
+## Gaussian slip integrated out
+
+For static displacements binned in time, e.g. GNSS during a slow slip event, the data are linear
+in the slips once the rupture fronts are fixed, $\mathbf d = A(\theta)\, \mathbf m$: the static
+Green's functions of each patch, times the slip it has released by each bin. With a gaussian
+prior on the slips, $\mathbf m \sim N(0, \sigma^2 C_0)$, and gaussian noise, the slips integrate
+out in closed form, and `altar.models.seismic.kinematicgaussianslip` samples the fronts alone, a
+handful of parameters, by their marginal likelihood
+
+$$
+\log p(\mathbf d \mid \theta) = -\tfrac12 \big(\mathbf d^T C_d^{-1} \mathbf d
+- \mathbf b^T P^{-1} \mathbf b + \log|P| + \log|\sigma^2 C_0| + \log|C_d| + n \log 2\pi\big),
+\qquad P = (\sigma^2 C_0)^{-1} + A^T C_d^{-1} A, \quad \mathbf b = A^T C_d^{-1} \mathbf d,
+$$
+
+computed per component from the factors of $S_c$ and $R_c$ (see {ref}`above <kinematic-datakron>`),
+without forming $A$. The slips given the data and a front are $N(P^{-1}\mathbf b, P^{-1})$, drawn
+exactly after the run. The annealing also gives the evidence, for choosing between numbers of
+nucleation points, of rise times, or noise models.
+
+```{caution}
+The slips integrate out only under a **gaussian prior of mean zero**. Bounds, positive slip, the
+magnitude and rake of polar slips, or a moment prior have no closed form: sample the slips with
+`kinematicmesh` for those. A zero-mean prior also lets patches slip backward, which cancels part
+of the forward moment: in sse_toolkit's tests on 51 synthetic slow slip events, the net moment
+of the slips came out at 0.67 of the truth, while their forward part was 0.99 of it. Check
+moments on synthetics like the event before trusting them.
+```
+
+The fronts start from one or more nucleation points, each with its hypocenter, origin time and
+rupture velocity; each patch slips once, at the earliest of its arrivals, over its rise time,
+with the source time function of the kinematic models, averaged over each bin
+(`integration = bin`, the default, for binned data) or at its end (`step`). The arrival times
+are those of the fast iterative method on the mesh, `Nmesh` as for `kinematicmesh`.
+
+```none
+model = altar.models.seismic.kinematicgaussianslip
+model:
+    mesh = mesh.h5                 # the patches and their source points, as for kinematicmesh
+    green = static.gf.h5           # (2 patches, components x stations): strike slips, then dip slips
+    components = 3
+    bins = 24
+    dt = 2.0                       # the length of a bin, in the units of the times
+    slip_sigma = 0.02              # sigma, unless sampled, see slip_scale
+    dataobs = altar.data.datakron  # or altar.data.datal2 with a constant cd_std
+    psets_list = [risetime, rupturevelocity, hypocenter, origin]
+```
+
+Its parameter sets, by name:
+
+`risetime`
+: one, the same for all the patches; one per patch; or one per group of patches, numbered from
+  0 in the dataset `rise_groups` of the mesh.
+
+`rupturevelocity`, `origin`
+: one per nucleation point; the origin times in the time of the bins, the first starting at 0.
+
+`hypocenter`
+: two per nucleation point, along strike and down dip in the surface coordinates of the mesh.
+
+With `slip_scale` naming a parameter set of one parameter, $\log_{10}\sigma$ is sampled too;
+`cm_file` gives $C_0$, (2 patches x 2 patches), e.g. correlated slips, the identity by default.
+Samples whose origins are out of order, the nucleation points being interchangeable, or with a
+hypocenter off the mesh are rejected. A nucleation point whose front starts after the window,
+or repeats another, gives the likelihood of the model without it, exactly.
+
+After a run, `model.draw_slips(theta, rng, count)` draws the slips of the samples given the data,
+and `forward_problem` gives the mean slips, their data and the slip fractions of the patches.
+The model runs on the cpu, with CATMIP; it has no gradient, for HMC or MALA. The
+noise is that of `datakron`, or a constant `cd_std`, without a mask.
+
 ## The check against the data
 
 ```bash
