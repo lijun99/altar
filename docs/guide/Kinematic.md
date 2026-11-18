@@ -703,6 +703,9 @@ Its parameter sets, by name:
 
 `rupturevelocity`, `origin`
 : one per nucleation point; the origin times in the time of the bins, the first starting at 0.
+  With one nucleation point at a known time, leave `origin` out of `psets_list` and set the
+  model's `origin` instead: a parameter pinned by a narrow prior makes almost every proposal of
+  CATMIP fall outside it, and the chains stall.
 
 `hypocenter`
 : two per nucleation point, along strike and down dip in the surface coordinates of the mesh.
@@ -712,6 +715,11 @@ With `slip_scale` naming a parameter set of one parameter, $\log_{10}\sigma$ is 
 Samples whose origins are out of order, the nucleation points being interchangeable, or with a
 hypocenter off the mesh are rejected. A nucleation point whose front starts after the window,
 or repeats another, gives the likelihood of the model without it, exactly.
+
+On a synthetic of 24 patches, each with its rise time, the posterior of the front and of the
+slips, and the evidence, matched those of `kinematicmesh`, which samples the 48 slips with the
+front, with CATMIP and with CATMIP-HMC: the means of the slips within 0.05 of their standard
+deviations, the evidences within 2 nats.
 
 After a run, `model.draw_slips(theta, rng, count)` draws the slips of the samples given the data,
 and `forward_problem` gives the mean slips, their data and the slip fractions of the patches.
