@@ -152,7 +152,13 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         G = numpy.asarray(self.GF, dtype=float)
         if self.dataobs.merge_cd_with_data:
             cd_inv = self.dataobs.cd_inv
-            G = G * cd_inv if isinstance(cd_inv, float) else G @ numpy.asarray(cd_inv, dtype=float)
+            if isinstance(cd_inv, float):
+                G = G * cd_inv
+            elif hasattr(cd_inv, "whiten"):
+                # a structured covariance whitens the rows itself
+                G = cd_inv.whiten(G)
+            else:
+                G = G @ numpy.asarray(cd_inv, dtype=float)
         self._G = numpy.ascontiguousarray(G, dtype=self.precision)
         return self
 
@@ -184,6 +190,10 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         # a constant variance: U is the scalar cd_inv; a one-off scaling
         if isinstance(cd_inv, float):
             numpy.asarray(self.gGF)[:, :] *= cd_inv
+            return self
+        # a structured covariance whitens the rows of G^T itself, on the host
+        if hasattr(cd_inv, "whiten"):
+            numpy.asarray(self.gGF)[:, :] = cd_inv.whiten(numpy.asarray(self.GF, dtype=float))
             return self
         cublas = altar.cuda.cublas
         obs = self.observations

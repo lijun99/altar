@@ -74,6 +74,10 @@ class Linear:
             if self._dataobs.mask is not None:
                 G[~self._dataobs.mask, :] = 0
             return self
+        # a structured covariance whitens the columns of G itself, on the host
+        if hasattr(cd_inv, "whiten"):
+            numpy.asarray(self.G)[:, :] = cd_inv.whiten(self.G_host.T).T
+            return self
         cublas = altar.cuda.cublas
         handle = altar.cuda.cublas_handle()
         obs, par = self.observations, self.parameters
