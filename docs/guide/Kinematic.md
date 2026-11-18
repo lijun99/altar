@@ -212,10 +212,11 @@ For each sample, the model computes $\mathbf M_b$ in four steps.
    \mathbf M_b(p, i) = \mathbf D_p\, c_i,
    $$
 
-   with the source time function $S$ of unit area sampled at the start of the interval (see
-   {ref}`below <kinematic-stf>`). $c_i$ is the share of the slip in the interval,
-   $\sum_i c_i \approx 1$, and $\mathbf M_b(p, i)$ the slip of the patch in it, in m, as Green's
-   functions of 1 m of slip in each interval, such as CSI's, expect.
+   with the source time function $S$ of unit area sampled at the start of the interval, by
+   default, or integrated over it (see `integration` {ref}`below <kinematic-stf>`). $c_i$ is the
+   share of the slip in the interval, $\sum_i c_i \approx 1$, and $\mathbf M_b(p, i)$ the slip of
+   the patch in it, in m, as Green's functions of 1 m of slip in each interval, such as CSI's,
+   expect.
 
    ```{note}
    Until November 2026, $\mathbf M_b$ held the slip rates, without the factor $dt$: with
@@ -280,12 +281,12 @@ With $L$ the size of a patch, $V_r$ the rupture velocity, $T_{r,min}$ the shorte
 prior, and $f_{max}$ the highest frequency of the data, for both models:
 
 `dt`
-: no longer than about $T_{r,min}/2$: the source time functions are sampled at the start of each
-  interval, not averaged over it, and an interval as long as the rise time misses the shape of
-  the function and its area. With Green's functions of a source time function $2\,dt$ long, as
-  CSI's, $dt \approx 1/(4 f_{max})$ keeps the band of the data; shorter adds columns to
-  $\mathcal G_b$, but no information. It must be a multiple of the sampling of the Green's
-  functions.
+: no longer than about $T_{r,min}/2$ with `integration = sample`, the default: the source time
+  functions are sampled at the start of each interval, and an interval as long as the rise time
+  misses the shape of the function and its area; `step` or `bin` keep the area at any $dt$. With
+  Green's functions of a source time function $2\,dt$ long, as CSI's, $dt \approx 1/(4 f_{max})$
+  keeps the band of the data; shorter adds columns to $\mathcal G_b$, but no information. It must
+  be a multiple of the sampling of the Green's functions.
 
 `Nt`
 : enough for $N_t\, dt$ to cover the latest rupture time, the longest rise time and the start
@@ -311,7 +312,7 @@ prior, and $f_{max}$ the highest frequency of the data, for both models:
 ### The source time function
 
 Both kinematic models release the slip of each source point over its rise time $T_r$ with a source
-time function of unit area, sampled at the start of each time interval:
+time function of unit area:
 
 `stf`
 : `triangle`, the default, or `cosine`, a raised cosine, $(1 - \cos 2\pi s/T_r)/T_r$, smooth.
@@ -319,6 +320,26 @@ time function of unit area, sampled at the start of each time interval:
 `peak`
 : where the triangle peaks, as a fraction of the rise time: 0.5, the default, for a symmetric
   triangle; less for a fast rise and a slow decay, closer to the slip rates of dynamic ruptures.
+
+`integration`
+: how each time interval gets it, with $V(s)$ the slip of a source point by $s$ after its onset,
+  a fraction of its slip, and $c_i$ the mean over the source points:
+  - `sample`, the default: the slip rate at the start of the interval, times $dt$. In all, a source
+    point releases from 0 to $2\,dt/T_r$ times its slip for $T_r \le dt$, by when its front
+    arrives in the interval; for longer rise times the error shrinks, but is exact only at some
+    ratios, e.g. the symmetric triangle at $T_r = 2\,dt$: $\pm 11\,\%$ at $3\,dt$, $\pm 4\,\%$ at
+    $5\,dt$. The source points of a patch average some of it out.
+  - `step`: the slip released in the interval, exactly, $V(t_{i+1} - T_q) - V(t_i - T_q)$, for any
+    rise time and at about the same cost. With Green's functions of a step in slip, as for static
+    displacements, where the slip of interval $i$ moves the data of interval $i$ on, the data of
+    interval $i$ are then the displacements at its end.
+  - `bin`: for such Green's functions and data averaged over each interval, e.g. GNSS positions
+    binned over $dt$: the change of the average of $V$ over the interval from that over the one
+    before, $\bar V_i - \bar V_{i-1}$, so that the data of interval $i$ are the average over it;
+    with `step`, they would be half an interval late. In single precision it loses accuracy for
+    rise times much longer than $dt$, about $10^{-5}$ of the slip at $T_r = 30\,dt$.
+
+  Slip before the start time of a patch, $t_{0,p}$, is left out in all three.
 
 With waveforms bandpassed at periods longer than the rise times, the data constrain the time of
 each patch's slip better than its shape; the shape matters with broadband records.
@@ -412,7 +433,7 @@ as CSI's `TriangularPatchesKin.castbigM`. It runs the compiled model on the cpu:
 from altar.models.seismic.history import SlipHistory
 
 history = SlipHistory(vertices, faces, uv, sources, patches, Nt=85, dt=1.0, Nmesh=10,
-                      stf="triangle", peak=0.5)
+                      stf="triangle", peak=0.5, integration="sample")
 Mb = history(slip, risetime, velocity, hypocenter)        # Nt x 2 x patches
 onsets, times = history.arrivals(velocity, hypocenter)    # at the source points, at the vertices
 ```
