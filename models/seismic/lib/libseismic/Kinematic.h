@@ -32,8 +32,9 @@ template <typename TYPE>
 class altar::models::seismic::Kinematic
 {
 public:
-    /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
-    void setSTF(int kind, TYPE peak) { _stf_kind = kind; _stf_peak = peak; }
+    /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised
+    /// cosine; and {mode}, how the time intervals get it, see {Integration} in stf.h
+    void setSTF(int kind, TYPE peak, int mode = 0) { _stf_kind = kind; _stf_peak = peak; _stf_mode = mode; }
     /// Mb <- the slips of each patch over time, for each row of {theta}
     void calculateBigM(const TYPE * theta, TYPE * Mb, std::size_t parameters, std::size_t batch) const;
     /// grad <- d(log L)/d(theta) on my columns, from dMb = d(log L)/d(Mb)
@@ -61,6 +62,7 @@ private:
     TYPE _dsp, _dt, _h;
     int _stf_kind = 0; ///< the source time function, see {setSTF}
     TYPE _stf_peak = 0.5;
+    int _stf_mode = 0; ///< how the intervals get the slips, see {Integration} in stf.h
     std::vector<TYPE> _t0s;
     std::vector<std::size_t> _idx;
     const TYPE _cap = 1.e6; ///< the largest arrival time

@@ -88,6 +88,12 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
     peak.doc = "where the triangle peaks, as a fraction of the rise time; 0.5, the default, for a " \
                "symmetric one, less for a fast rise and a slow decay"
 
+    integration = altar.properties.str(default="sample")
+    integration.doc = "how each time interval gets the source time function: sample, the default, its " \
+                      "rate at the start of the interval, times dt, exact only for rise times of 2 dt " \
+                      "or more; step, the slip released in the interval, exactly; bin, for data " \
+                      "averaged over the intervals, the average cumulative slip over each, exactly"
+
     # protocol obligations
     @altar.export
     def initialize(self, application):
@@ -199,10 +205,14 @@ class Kinematic(BayesianL2, family="altar.models.seismic.kinematic"):
         Hand my source time function to my compiled model
         """
         kinds = {"triangle": 0, "cosine": 1}
+        modes = {"sample": 0, "step": 1, "bin": 2}
         if self.stf not in kinds or not 0 < self.peak < 1:
             application.error.log(f"stf: triangle or cosine, and a peak in (0, 1); got '{self.stf}', {self.peak}")
             raise SystemExit(1)
-        self.cmodel.set_stf(kind=kinds[self.stf], peak=float(self.peak))
+        if self.integration not in modes:
+            application.error.log(f"integration: sample, step or bin; got '{self.integration}'")
+            raise SystemExit(1)
+        self.cmodel.set_stf(kind=kinds[self.stf], peak=float(self.peak), mode=modes[self.integration])
         return self
 
 

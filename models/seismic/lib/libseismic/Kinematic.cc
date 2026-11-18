@@ -227,7 +227,7 @@ _interpolate(const TYPE * T, TYPE * TI0) const
 
 
 // the slips of each patch over time: the source time functions of the rise time from the arrival
-// time at each of its source points, sampled at the start of each time interval
+// time at each of its source points, over each time interval, by {_stf_mode}
 template <typename TYPE>
 void
 altar::models::seismic::Kinematic<TYPE>::
@@ -243,9 +243,10 @@ _cast(const TYPE * M, const TYPE * TI0, TYPE * Mb) const
             TYPE c = 0.0;
             for (int idx_ti = idx*Npt; idx_ti < (idx+1)*Npt; ++idx_ti) {
                 for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
-                    TYPE v, dv_ds, dv_dTr;
-                    altar::models::seismic::stf(t0 - TI0[idx_ti + idy_ti*(Ndd*Npt)], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                    c += v*_dt/(Npt*Npt);
+                    TYPE f, df_ds, df_dTr;
+                    altar::models::seismic::stf_interval(t0 - TI0[idx_ti + idy_ti*(Ndd*Npt)], _dt, Tr,
+                                                         _stf_kind, _stf_peak, _stf_mode, f, df_ds, df_dTr);
+                    c += f/(Npt*Npt);
                 }
             }
             Mb[i*(2*Npatch) + patch] = c*ss;
@@ -282,12 +283,13 @@ _castAdjoint(const TYPE * M, const TYPE * TI0, const TYPE * dMb, TYPE * grad, TY
             for (int idx_ti = idx*Npt; idx_ti < (idx+1)*Npt; ++idx_ti) {
                 for (int idy_ti = idy*Npt; idy_ti < (idy+1)*Npt; ++idy_ti) {
                     int k = idx_ti + idy_ti*(Ndd*Npt);
-                    // v(t - TI0; Tr)/n2: d/dTI0 = -dv/ds
-                    TYPE v, dv_ds, dv_dTr;
-                    altar::models::seismic::stf(t0 - TI0[k], Tr, _stf_kind, _stf_peak, v, dv_ds, dv_dTr);
-                    c += v*_dt/n2;
-                    dTI0[k] -= gc*dv_ds*_dt/n2;
-                    gTr += gc*dv_dTr*_dt/n2;
+                    // f(t - TI0; Tr)/n2: d/dTI0 = -df/ds
+                    TYPE f, df_ds, df_dTr;
+                    altar::models::seismic::stf_interval(t0 - TI0[k], _dt, Tr, _stf_kind, _stf_peak,
+                                                         _stf_mode, f, df_ds, df_dTr);
+                    c += f/n2;
+                    dTI0[k] -= gc*df_ds/n2;
+                    gTr += gc*df_dTr/n2;
                 }
             }
             gss += dss*c;

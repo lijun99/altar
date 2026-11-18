@@ -140,11 +140,12 @@ namespace {
         }
 
     public:
-        // the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine
-        auto set_stf(int kind, double peak) -> void
+        // the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine;
+        // {mode}, how the time intervals get it, see {Integration} in stf.h
+        auto set_stf(int kind, double peak, int mode) -> void
         {
-            if (_double) _double->setSTF(kind, peak);
-            if (_float) _float->setSTF(kind, static_cast<float>(peak));
+            if (_double) _double->setSTF(kind, peak, mode);
+            if (_float) _float->setSTF(kind, static_cast<float>(peak), mode);
         }
 
     private:
@@ -187,8 +188,9 @@ altar::models::seismic::extensions::kinematicmesh::__init__(py::module & m) -> v
         .def("forward_batched", &KinematicMesh::forward_batched,
              "theta"_a, "green"_a, "prediction"_a, "batch"_a, "residual"_a,
              "prediction <- Gb Mb(theta), or Gb Mb(theta) - prediction when {residual}")
-        .def("set_stf", &KinematicMesh::set_stf, "kind"_a, "peak"_a,
-             "the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine")
+        .def("set_stf", &KinematicMesh::set_stf, "kind"_a, "peak"_a, "mode"_a = 0,
+             "the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised cosine; "
+             "and how the time intervals get it: 0, sampled at their start; 1, exactly; 2, bin averages")
         .def("cast_mb", &KinematicMesh::cast_mb, "theta"_a, "mb"_a, "batch"_a,
              "mb <- the slips of each patch over time, from {theta}")
         .def("gradient", &KinematicMesh::gradient, "theta"_a, "dmb"_a, "gradient"_a, "batch"_a,

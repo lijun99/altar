@@ -22,7 +22,8 @@ class SlipHistory:
     coordinates {uv} of the vertices, the source points of each patch, {sources} in surface
     coordinates and their {patches}, stored patch by patch; {Nt} time steps of {dt} seconds; the
     rupture times on the patches cut {Nmesh} x {Nmesh} times; the source time function {stf},
-    a triangle peaking at {peak} of the rise time, or a raised cosine
+    a triangle peaking at {peak} of the rise time, or a raised cosine; {integration}, how each
+    time interval gets it, sample, step or bin, as the model's {integration}
 
     The data are then big G @ Mb, with the big G of the model, one column per time step, rake
     and patch, the patch fastest
@@ -30,11 +31,14 @@ class SlipHistory:
 
 
     def __init__(self, vertices, faces, uv, sources, patches, Nt, dt, Nmesh=10, stf="triangle",
-                 peak=0.5):
+                 peak=0.5, integration="sample"):
         from .ext import seismic
         kinds = {"triangle": 0, "cosine": 1}
+        modes = {"sample": 0, "step": 1, "bin": 2}
         if stf not in kinds or not 0 < peak < 1:
             raise ValueError(f"stf: triangle or cosine, and a peak in (0, 1); got '{stf}', {peak}")
+        if integration not in modes:
+            raise ValueError(f"integration: sample, step or bin; got '{integration}'")
         faces = numpy.asarray(faces, dtype=int)
         patches = numpy.asarray(patches, dtype=int)
         Np = faces.shape[0]
@@ -49,7 +53,7 @@ class SlipHistory:
         self.model = seismic.KinematicMesh(
             Np=Np, Nt=self.Nt, dt=float(dt), t0s=numpy.zeros(Np), Nsp=int(counts[0]),
             idx_map=numpy.arange(4 * Np + 2, dtype="int64"), precision="float64", **grid)
-        self.model.set_stf(kind=kinds[stf], peak=float(peak))
+        self.model.set_stf(kind=kinds[stf], peak=float(peak), mode=modes[integration])
         return
 
 

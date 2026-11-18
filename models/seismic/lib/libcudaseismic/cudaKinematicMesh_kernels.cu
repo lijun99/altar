@@ -235,12 +235,13 @@ interpolate_batched(const TYPE * gT, int V, const int * gCorners, const TYPE * g
 
 
 // the slips of each patch over time, Mb[samples][Nt][2][Np]: the source time functions of its
-// {Nsp} source points, contiguous, sampled at the start of each time interval
+// {Nsp} source points, contiguous, over each time interval, by {mode}
 template <typename TYPE>
 __global__ void
 cudaKinematicMesh_kernels::
 castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE * gTI0,
-    const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch, int kind, TYPE peak, TYPE * gMb)
+    const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch, int kind, TYPE peak, int mode,
+    TYPE * gMb)
 {
     size_t sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y*blockDim.y;
@@ -254,9 +255,9 @@ castBigM_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE
         TYPE t0 = gt0s[patch] + dt*i;
         TYPE c = 0;
         for (int q = 0; q < Nsp; ++q) {
-            TYPE v, dv_ds, dv_dTr;
-            altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
-            c += v*dt/Nsp;
+            TYPE f, df_ds, df_dTr;
+            altar::models::seismic::stf_interval(t0 - TI0[q], dt, Tr, kind, peak, mode, f, df_ds, df_dTr);
+            c += f/Nsp;
         }
         Mb[i*2*Np + patch] = c*ss;
         Mb[i*2*Np + Np + patch] = c*sd;
@@ -270,7 +271,7 @@ __global__ void
 cudaKinematicMesh_kernels::
 castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, const TYPE * gTI0,
     const TYPE * gdMb, const TYPE * gt0s, TYPE dt, int Nt, int Np, int Nsp, size_t batch,
-    int kind, TYPE peak, TYPE * gGrad, TYPE * gdTI0)
+    int kind, TYPE peak, int mode, TYPE * gGrad, TYPE * gdTI0)
 {
     size_t sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y*blockDim.y;
@@ -289,12 +290,12 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE * gM, size_t Nparam, co
         TYPE gc = dss*ss + dsd*sd;
         TYPE c = 0;
         for (int q = 0; q < Nsp; ++q) {
-            // v(t - TI0; Tr)/Nsp: d/dTI0 = -dv/ds
-            TYPE v, dv_ds, dv_dTr;
-            altar::models::seismic::stf(t0 - TI0[q], Tr, kind, peak, v, dv_ds, dv_dTr);
-            c += v*dt/Nsp;
-            dTI0[q] -= gc*dv_ds*dt/Nsp;
-            gTr += gc*dv_dTr*dt/Nsp;
+            // f(t - TI0; Tr)/Nsp: d/dTI0 = -df/ds
+            TYPE f, df_ds, df_dTr;
+            altar::models::seismic::stf_interval(t0 - TI0[q], dt, Tr, kind, peak, mode, f, df_ds, df_dTr);
+            c += f/Nsp;
+            dTI0[q] -= gc*df_ds/Nsp;
+            gTr += gc*df_dTr/Nsp;
         }
         gss += dss*c;
         gsd += dsd*c;

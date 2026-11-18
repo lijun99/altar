@@ -368,7 +368,7 @@ __global__ void
 cudaKinematic_kernels::
 castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0, TYPE *const gMb, const TYPE *const gt0s,
     const TYPE dt, const size_t Nparam, const size_t Nt, const size_t Nas, const size_t Ndd, const size_t Npt_gi,
-    const int kind, const TYPE peak)
+    const int kind, const TYPE peak, const int mode)
 {
     int sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y * blockDim.y;
@@ -409,10 +409,10 @@ castBigM_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gT
         {
             for (idy_ti=idy*Npt_gi; idy_ti<(idy+1)*Npt_gi; idy_ti++)
             {
-                TYPE v, dv_ds, dv_dTr;
-                altar::models::seismic::stf(t0 - gTI0_sample[idx_ti + idy_ti*(Ndd*Npt_gi)], Tr, kind, peak,
-                                            v, dv_ds, dv_dTr);
-                c += v*sdt/(Npt_gi*Npt_gi);
+                TYPE f, df_ds, df_dTr;
+                altar::models::seismic::stf_interval(t0 - gTI0_sample[idx_ti + idy_ti*(Ndd*Npt_gi)], sdt, Tr,
+                                                     kind, peak, mode, f, df_ds, df_dTr);
+                c += f/(Npt_gi*Npt_gi);
             }
         }
         gMb_sample[i*(2*Npatch)+patch] = c*ss;
@@ -431,7 +431,8 @@ __global__ void
 cudaKinematic_kernels::
 castBigM_adjoint_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *const gTI0, const TYPE *const gdMb,
     const TYPE *const gt0s, const TYPE dt, const size_t Nparam, const size_t Nt, const size_t Nas, const size_t Ndd,
-    const size_t Npt_gi, const int kind, const TYPE peak, TYPE *const gGrad, TYPE *const gdTI0)
+    const size_t Npt_gi, const int kind, const TYPE peak, const int mode, TYPE *const gGrad,
+    TYPE *const gdTI0)
 {
     int sample = blockIdx.x;
     int patch = threadIdx.y + blockIdx.y * blockDim.y;
@@ -468,12 +469,13 @@ castBigM_adjoint_batched(const size_t * gIdx, const TYPE *const gM, const TYPE *
         for (int idx_ti=idx*Npt_gi; idx_ti<(idx+1)*Npt_gi; idx_ti++) {
             for (int idy_ti=idy*Npt_gi; idy_ti<(idy+1)*Npt_gi; idy_ti++) {
                 int k = idx_ti + idy_ti*(Ndd*Npt_gi);
-                // v(t - TI0; Tr)/n2: d/dTI0 = -dv/ds
-                TYPE v, dv_ds, dv_dTr;
-                altar::models::seismic::stf(t0 - gTI0_sample[k], Tr, kind, peak, v, dv_ds, dv_dTr);
-                c += v*dt/n2;
-                gdTI0_sample[k] -= gc*dv_ds*dt/n2;
-                ghTr += gc*dv_dTr*dt/n2;
+                // f(t - TI0; Tr)/n2: d/dTI0 = -df/ds
+                TYPE f, df_ds, df_dTr;
+                altar::models::seismic::stf_interval(t0 - gTI0_sample[k], dt, Tr, kind, peak, mode, f, df_ds,
+                                                     df_dTr);
+                c += f/n2;
+                gdTI0_sample[k] -= gc*df_ds/n2;
+                ghTr += gc*df_dTr/n2;
             }
         }
         gss += dss*c;
