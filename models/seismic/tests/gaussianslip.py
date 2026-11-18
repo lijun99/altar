@@ -84,6 +84,7 @@ RUNS = {
     "two": (2, "patches", "datakron", "bin", False),
     "std": (1, 1, "datal2", "step", False),
     "scale": (1, "patches", "datakron", "bin", True),
+    "fixed": (1, "patches", "datakron", "bin", False),
 }
 
 
@@ -94,12 +95,17 @@ def worker(case, name):
     fronts, rises, data, integration, scaled = RUNS[name]
     Np = int(numpy.load(case / "patches.npy"))
     rises = Np if rises == "patches" else rises
-    psets = ["risetime", "rupturevelocity", "hypocenter", "origin"] + (["log_sigma"] if scaled else [])
+    psets = ["risetime", "rupturevelocity", "hypocenter"] + ([] if name == "fixed" else ["origin"])
+    psets += ["log_sigma"] if scaled else []
+    front = numpy.load(case / "front.npy")
+    extra = "slip_scale = log_sigma" if scaled else ""
+    # without origins, the first chain's, fixed
+    extra = f"origin = {float(front[0, Np + 3])!r}" if name == "fixed" else extra
     folder = case / name
     folder.mkdir()
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
         nmesh=NMESH, components=COMPONENTS, bins=BINS, dt=DT, integration=integration, sigma=0.7,
-        extra="slip_scale = log_sigma" if scaled else "", data=f"altar.data.{data}", obs=OBS,
+        extra=extra, data=f"altar.data.{data}", obs=OBS,
         covariance="noise_file = noise.h5" if data == "datakron" else "cd_std = 0.8",
         psets=", ".join(psets), rises=rises, fronts=fronts, hypocenters=2 * fronts, chains=CHAINS))
     os.chdir(folder)
@@ -108,10 +114,11 @@ def worker(case, name):
     import altar.models.seismic
     app = altar.shells.altar(name="slipmodel").initialize()
     model = app.model
-    front = numpy.load(case / "front.npy")
     Tr, vr, hypo, origin = front[:, :Np], front[:, Np], front[:, Np + 1:Np + 3], front[:, Np + 3]
     rise = Tr if rises == Np else Tr[:, :1]
-    if fronts == 1:
+    if name == "fixed":
+        θ = numpy.column_stack([rise, vr, hypo])
+    elif fronts == 1:
         θ = numpy.column_stack([rise, vr, hypo, origin])
     else:
         # a second nucleation point after the window, then the same as the first
@@ -196,7 +203,7 @@ def main():
         print(f"  {label}: {error:.2e} (tolerance {tolerance:.0e}) {'ok' if ok else 'FAILED'}")
 
     rel = lambda a, b: numpy.abs(a - b).max() / numpy.abs(b).max()
-    one, two, std, scale = (results[k] for k in RUNS)
+    one, two, std, scale, fixed = (results[k] for k in RUNS)
 
     # the onsets against the compiled arrival times plus the origin, the fractions of the model
     # against them, and the fractions against the compiled model's Mb, at origin 0
@@ -231,6 +238,7 @@ def main():
     check("a second nucleation point after the window, against one", rel(two["likelihood"][:CHAINS], one["likelihood"]), 1e-13)
     check("a second nucleation point the same as the first, against one", rel(two["likelihood"][CHAINS:], one["likelihood"]), 1e-13)
     check("a sampled slip scale against a fixed one", rel(scale["likelihood"], one["likelihood"]), 1e-13)
+    check("a fixed origin against the same sampled", abs(fixed["likelihood"][0] - one["likelihood"][0]) / abs(one["likelihood"][0]), 1e-13)
 
     # the mean slips and their data
     F2 = numpy.concatenate([one["F"], one["F"]], axis=1)

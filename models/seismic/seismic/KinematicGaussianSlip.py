@@ -31,9 +31,10 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     The noise: altar.data.datakron, or a constant cd_std, without a mask. On the cpu.
 
     My parameter sets, by name: risetime, one, one per patch, or one per group of {rise_groups};
-    rupturevelocity and origin, one per nucleation point; hypocenter, two per nucleation point,
-    along strike and down dip in the surface coordinates of the mesh; and, with {slip_scale}, that
-    set, one parameter, log10 sigma
+    rupturevelocity, one per nucleation point; hypocenter, two per nucleation point, along strike
+    and down dip in the surface coordinates of the mesh; origin, one per nucleation point, or none
+    for one nucleation point at the time {origin}; and, with {slip_scale}, that set, one
+    parameter, log10 sigma
     """
 
 
@@ -70,6 +71,9 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     rise_groups = altar.properties.str(default=None)
     rise_groups.doc = "the dataset of {mesh} with the rise time group of each patch, for as many " \
                       "rise times as groups"
+
+    origin = altar.properties.float(default=0.0)
+    origin.doc = "the origin time of the one nucleation point, without an origin parameter set"
 
     slip_sigma = altar.properties.float(default=1.0)
     slip_sigma.doc = "sigma, the standard deviation of the prior of the slips, unless sampled"
@@ -117,19 +121,23 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         self.patches, self.points = Np, int(counts[0])
 
         # my parameters
-        names = ["risetime", "rupturevelocity", "hypocenter", "origin"]
+        names = ["risetime", "rupturevelocity", "hypocenter"]
         names += [] if self.slip_scale is None else [self.slip_scale]
         missing = [name for name in names if name not in self.psets_list]
         if missing:
             error.log(f"kinematicgaussianslip: no parameter sets {missing}")
             raise SystemExit(1)
         column = lambda name: self.psets[name].offset + numpy.arange(self.psets[name].count)
-        self._origin, self._velocity = column("origin"), column("rupturevelocity")
+        self._velocity = column("rupturevelocity")
         self._hypocenter, self._rise = column("hypocenter"), column("risetime")
-        self.fronts = self._origin.size
-        if self._velocity.size != self.fronts or self._hypocenter.size != 2 * self.fronts:
+        # without origins, one nucleation point at a known time
+        self._origin = column("origin") if "origin" in self.psets_list else None
+        self.fronts = self._velocity.size
+        origins = self.fronts if self._origin is None else self._origin.size
+        if (self._origin is None and self.fronts > 1) or origins != self.fronts \
+                or self._hypocenter.size != 2 * self.fronts:
             error.log(f"kinematicgaussianslip: for {self.fronts} nucleation points, as many origins and "
-                      f"rupture velocities and twice as many hypocenter coordinates")
+                      f"rupture velocities and twice as many hypocenter coordinates; without origins, one")
             raise SystemExit(1)
         rises = self._rise.size
         if groups is None:
@@ -206,7 +214,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         n = θ.shape[0] if batch is None else batch
         θ = θ[:n]
         bad = numpy.zeros(n, dtype=bool)
-        if self.fronts > 1:
+        if self._origin is not None and self.fronts > 1:
             bad |= numpy.any(numpy.diff(θ[:, self._origin], axis=1) < 0, axis=1)
         for k in range(self.fronts):
             bad |= ~self.on_mesh(θ[:, self._hypocenter[2 * k:2 * k + 2]])
@@ -281,7 +289,8 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
             rows[:, 3 * Np:4 * Np] = θ[:, self._velocity[k]][:, None]
             rows[:, 4 * Np:] = θ[:, self._hypocenter[2 * k:2 * k + 2]]
             T = numpy.asarray(self.cmodel.arrivals(theta=numpy.ascontiguousarray(rows), batch=n)).reshape(n, -1)
-            times = (self._weights * T[:, self._corners]).sum(-1) + θ[:, self._origin[k]][:, None]
+            origin = self.origin if self._origin is None else θ[:, self._origin[k]][:, None]
+            times = (self._weights * T[:, self._corners]).sum(-1) + origin
             onsets = times if onsets is None else numpy.minimum(onsets, times)
         return onsets.reshape(n, Np, self.points)
 
