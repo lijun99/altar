@@ -37,10 +37,8 @@ class Linear:
         """
         # load my Green functions
         self.G = model.io.load(filename=model.green, shape=(model.observations, model.parameters))
-        # the data the residuals are measured against
-        self.data = model.dataobs.dataobs
-        # all done
-        return self
+        # the data the residuals are measured against, and the green's functions that go with them
+        return self.covariance_updated(model=model)
 
 
     def forward_model_batched(self, model: Model, theta: numpy.ndarray, prediction: numpy.ndarray,
@@ -49,7 +47,7 @@ class Linear:
         Fill {prediction}, shape (samples x observations), with the residual G·θ - d for
         each sample in {theta}
         """
-        prediction[...] = theta @ self.G.T - self.data
+        prediction[...] = theta @ self.Gw.T - self.data
         # all done
         return self
 
@@ -73,9 +71,21 @@ class Linear:
 
     def covariance_updated(self, model: Model) -> typing.Self:
         """
-        The observed data may have changed with the covariance; refresh them
+        The observed data may have changed with the covariance; refresh them, and whiten my
+        green's functions as they are, x -> L^T x for Cd^-1 = L L^T, if they are
         """
-        self.data = model.dataobs.dataobs
+        data = model.dataobs
+        self.data = data.dataobs
+        self.Gw = self.G
+        if data.merge_cd_with_data:
+            cd_inv = data.cd_inv
+            if isinstance(cd_inv, float):
+                self.Gw = self.G * cd_inv
+            elif hasattr(cd_inv, "whiten"):
+                # a structured covariance whitens the columns itself
+                self.Gw = cd_inv.whiten(self.G.T).T
+            else:
+                self.Gw = numpy.asarray(cd_inv, dtype=float).T @ self.G
         return self
 
 
@@ -112,8 +122,16 @@ class Linear:
 
         # the data likelihood gradient: for r = Gθ - d and Cd^{-1} = L L^T, with L the lower
         # Cholesky factor in {dataobs.cd_inv}, grad = -G^T Cd^{-1} r, one row per sample
-        r = θ @ self.G.T - self.data
+        r = θ @ self.Gw.T - self.data
         Cd_inv = model.dataobs.cd_inv
+        if model.dataobs.merge_cd_with_data:
+            # whitened already: grad = -Gw^T rw
+            wt = r
+            mask = model.dataobs.mask
+            if mask is not None:
+                wt[:, ~mask] = 0
+            grad_data[...] = -wt @ self.Gw
+            return self
         if isinstance(Cd_inv, float):
             # a constant covariance, {Cd_inv} = 1/sigma, over the valid observations only
             wt = r * (Cd_inv * Cd_inv)
@@ -130,6 +148,7 @@ class Linear:
 
     # private data
     G: numpy.ndarray     # the Green functions, (observations x parameters)
+    Gw: numpy.ndarray    # the same, whitened if the data are
     data: numpy.ndarray  # the observed data the residuals are measured against
 
 
