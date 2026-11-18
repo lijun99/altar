@@ -58,16 +58,11 @@ slipmodel:
         bins = {bins}
         dt = {dt}
         slip_sigma = {sigma}""" + DATA + """
-        psets_list = [risetime, rupturevelocity, hypocenter, origin]
+        psets_list = [risetime, rupturevelocity, hypocenter]
         psets:
             risetime = contiguous
             rupturevelocity = contiguous
-            hypocenter = contiguous
-            origin = contiguous""" + FRONT + """
-            origin:
-                count = 1
-                prior = uniform
-                prior.support = (-0.001, 0.001)
+            hypocenter = contiguous""" + FRONT + """
     controller = altar.bayesian.catmip
     controller.archiver = altar.bayesian.h5recorder
     controller.archiver.output_dir = results
@@ -160,13 +155,13 @@ def setup(folder):
     # the data of the truth, by kinematicgaussianslip
     model = application(folder / "gs").model
     from altar.data.Kronecker import Kronecker
-    front = numpy.concatenate([numpy.full(Np, RISE), [VELOCITY], HYPOCENTER, [0.0]])
+    front = numpy.concatenate([numpy.full(Np, RISE), [VELOCITY], HYPOCENTER])
     slip = rng.normal(0, SIGMA, 2 * Np)
     signal = model.marginal.predict(model.fractions(front[None]), slip[None])[0]
     d = signal + Kronecker(S, R).draw(rng)
     with h5py.File(folder / "data.h5", "w") as h5:
         h5["data"] = d
-    numpy.savez(folder / "truth.npz", front=front[:-1], slip=slip, signal=signal)
+    numpy.savez(folder / "truth.npz", front=front, slip=slip, signal=signal)
     print(f"setup: {Np} patches, {obs} data, signal rms {numpy.sqrt((signal ** 2).mean()):.2f}")
     return 0
 
@@ -224,7 +219,7 @@ def density(folder):
             rows[path.stem] = numpy.load(path)["front"]
     print(f"{'':8s}{'samples':>8s}{'median':>10s}{'max':>10s}{'10%':>10s}{'90%':>10s}")
     for name, front in rows.items():
-        θ = numpy.column_stack([front, numpy.zeros(front.shape[0])])
+        θ = front
         L = numpy.zeros(θ.shape[0])
         model.eval_data_likelihood(theta=θ, likelihood=L)
         print(f"{name:8s}{L.size:8d}{numpy.median(L):10.2f}{L.max():10.2f}"
