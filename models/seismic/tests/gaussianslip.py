@@ -85,6 +85,7 @@ RUNS = {
     "std": (1, 1, "datal2", "step", False),
     "scale": (1, "patches", "datakron", "bin", True),
     "fixed": (1, "patches", "datakron", "bin", False),
+    "positive": (1, "patches", "datakron", "bin", False),
 }
 
 
@@ -101,6 +102,7 @@ def worker(case, name):
     extra = "slip_scale = log_sigma" if scaled else ""
     # without origins, the first chain's, fixed
     extra = f"origin = {float(front[0, Np + 3])!r}" if name == "fixed" else extra
+    extra = "positive = dip\n        ghk_paths = 4096" if name == "positive" else extra
     folder = case / name
     folder.mkdir()
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
@@ -203,7 +205,7 @@ def main():
         print(f"  {label}: {error:.2e} (tolerance {tolerance:.0e}) {'ok' if ok else 'FAILED'}")
 
     rel = lambda a, b: numpy.abs(a - b).max() / numpy.abs(b).max()
-    one, two, std, scale, fixed = (results[k] for k in RUNS)
+    one, two, std, scale, fixed, positive = (results[k] for k in RUNS)
 
     # the onsets against the compiled arrival times plus the origin, the fractions of the model
     # against them, and the fractions against the compiled model's Mb, at origin 0
@@ -239,6 +241,22 @@ def main():
     check("a second nucleation point the same as the first, against one", rel(two["likelihood"][CHAINS:], one["likelihood"]), 1e-13)
     check("a sampled slip scale against a fixed one", rel(scale["likelihood"], one["likelihood"]), 1e-13)
     check("a fixed origin against the same sampled", abs(fixed["likelihood"][0] - one["likelihood"][0]) / abs(one["likelihood"][0]), 1e-13)
+
+    # positive dip slips: the likelihood gains log Pr(dip slips >= 0 | d) - log Pr(dip slips >= 0),
+    # the first against genz's integration, the second 2^-patches; and the mean dip slips positive
+    import math
+    from scipy.stats import multivariate_normal
+    from altar.models.seismic.marginal import GaussianSlip
+    marginal = GaussianSlip(G, d, K)
+    worst = 0.0
+    for k in range(2):
+        mean, L = marginal.posterior(one["F"][k:k + 1], 0.7)
+        cov = numpy.linalg.inv(L[0] @ L[0].T)[Np:, Np:]
+        box = math.log(multivariate_normal(mean=-mean[0, Np:], cov=cov, abseps=1e-9, releps=1e-6,
+                                           maxpts=10 ** 7).cdf(numpy.zeros(Np)))
+        worst = max(worst, abs(positive["likelihood"][k] - one["likelihood"][k] - box - Np * math.log(2)))
+    check("positive dip slips: the likelihood's box probabilities against genz, nats", worst, 2e-2)
+    check("positive dip slips: the mean dip slips non-negative", float((positive["slip"][:, Np:] < 0).sum()), 0)
 
     # the mean slips and their data
     F2 = numpy.concatenate([one["F"], one["F"]], axis=1)

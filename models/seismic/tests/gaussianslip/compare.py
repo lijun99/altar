@@ -57,7 +57,8 @@ slipmodel:
         components = {components}
         bins = {bins}
         dt = {dt}
-        slip_sigma = {sigma}""" + DATA + """
+        slip_sigma = {sigma}
+        {positive}""" + DATA + """
         psets_list = [risetime, rupturevelocity, hypocenter]
         psets:
             risetime = contiguous
@@ -97,9 +98,7 @@ slipmodel:
                 prior = gaussian
                 prior.sigma = {sigma}
             dipslip:
-                count = {patches}
-                prior = gaussian
-                prior.sigma = {sigma}""" + FRONT + """
+                count = {patches}{dipslip}""" + FRONT + """
     controller = altar.bayesian.{controller}
     controller.archiver = altar.bayesian.h5recorder
     controller.archiver.output_dir = results
@@ -116,9 +115,22 @@ RUNS = {"gs": (GS, "catmip", 2048, 50, False), "km": (KM, "catmip", 4096, 100, F
         "kmhmc": (KM, "catmip_hmc", 1024, 20, True)}
 
 
-def setup(folder):
+# the prior of the dip slips of kinematicmesh: gaussian, or truncated to positive slips
+DIPSLIP = {
+    "gaussian": """
+                prior = gaussian
+                prior.sigma = {sigma}""",
+    "positive": """
+                prior = tgaussian
+                prior.sigma = {sigma}
+                prior.support = (0, 100)
+                prior.reparameterize = {reparameterize}"""}
+
+
+def setup(folder, prior="gaussian"):
     """
-    The inputs, the truth and the configurations of the runs, in {folder}
+    The inputs, the truth and the configurations of the runs, in {folder}; with {prior}
+    "positive", the dip slips bounded below by 0 in the truth and the priors
     """
     import h5py
     from kinematic_mesh import fault
@@ -149,14 +161,18 @@ def setup(folder):
         h5["data"] = numpy.zeros(obs)
     for run, (template, controller, chains, steps, reparameterize) in RUNS.items():
         (folder / run).mkdir(exist_ok=True)
+        dipslip = DIPSLIP[prior].format(sigma=SIGMA, reparameterize=reparameterize)
         (folder / run / "slipmodel.pfg").write_text(template.format(
             nmesh=NMESH, components=COMPONENTS, bins=BINS, dt=DT, sigma=SIGMA, obs=obs, patches=Np,
-            controller=controller, chains=chains, steps=steps, reparameterize=reparameterize))
+            controller=controller, chains=chains, steps=steps, reparameterize=reparameterize,
+            positive="positive = dip" if prior == "positive" else "", dipslip=dipslip))
     # the data of the truth, by kinematicgaussianslip
     model = application(folder / "gs").model
     from altar.data.Kronecker import Kronecker
     front = numpy.concatenate([numpy.full(Np, RISE), [VELOCITY], HYPOCENTER])
     slip = rng.normal(0, SIGMA, 2 * Np)
+    if prior == "positive":
+        slip[Np:] = numpy.abs(slip[Np:])
     signal = model.marginal.predict(model.fractions(front[None]), slip[None])[0]
     d = signal + Kronecker(S, R).draw(rng)
     with h5py.File(folder / "data.h5", "w") as h5:
@@ -272,6 +288,8 @@ if __name__ == "__main__":
     command, folder = sys.argv[1], pathlib.Path(sys.argv[2]).resolve()
     if command == "evaluate":
         sys.exit(evaluate(folder, sys.argv[3]))
+    if command == "setup":
+        sys.exit(setup(folder, *sys.argv[3:4]))
     sys.exit({"setup": setup, "report": report, "density": density}[command](folder))
 
 
