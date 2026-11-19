@@ -74,9 +74,10 @@ slipmodel:
                 prior.support = (-2, 2)
     job:
         tasks = 1
-        gpus = 0
+        gpus = {gpus}
         chains = {chains}
         precision = float64
+        gpuprecision = float64
 """
 # name: fronts, rise times, data, integration, sampled scale
 RUNS = {
@@ -89,9 +90,10 @@ RUNS = {
 }
 
 
-def worker(case, name):
+def worker(case, name, gpu=False):
     """
-    The likelihoods, fractions, mean slips and verdicts of the run {name}, into a file
+    The likelihoods, fractions, mean slips and verdicts of the run {name}, into a file; with
+    {gpu}, the likelihoods and verdicts on cuda
     """
     fronts, rises, data, integration, scaled = RUNS[name]
     Np = int(numpy.load(case / "patches.npy"))
@@ -103,13 +105,14 @@ def worker(case, name):
     # without origins, the first chain's, fixed
     extra = f"origin = {float(front[0, Np + 3])!r}" if name == "fixed" else extra
     extra = "positive = dip\n        ghk_paths = 4096" if name == "positive" else extra
-    folder = case / name
+    folder = case / (name + ("-gpu" if gpu else ""))
     folder.mkdir()
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
         nmesh=NMESH, components=COMPONENTS, bins=BINS, dt=DT, integration=integration, sigma=0.7,
         extra=extra, data=f"altar.data.{data}", obs=OBS,
         covariance="noise_file = noise.h5" if data == "datakron" else "cd_std = 0.8",
-        psets=", ".join(psets), rises=rises, fronts=fronts, hypocenters=2 * fronts, chains=CHAINS))
+        psets=", ".join(psets), rises=rises, fronts=fronts, hypocenters=2 * fronts, chains=2 * CHAINS,
+        gpus=int(gpu)))
     os.chdir(folder)
     sys.argv = [sys.argv[0]]
     import altar
@@ -129,31 +132,39 @@ def worker(case, name):
         θ = numpy.concatenate([late, same])
     if scaled:
         θ = numpy.column_stack([θ, numpy.full(θ.shape[0], numpy.log10(0.7))])
-    likelihood = numpy.zeros(θ.shape[0])
-    model.eval_data_likelihood(theta=θ, likelihood=likelihood)
+    if gpu:
+        import altar.cuda
+        array = lambda x: altar.cuda.matrix(source=x, dtype="float64") if numpy.ndim(x) == 2 \
+            else altar.cuda.vector(source=x, dtype="float64")
+    else:
+        array = lambda x: numpy.array(x, dtype=float)
+
+    def verify(theta):
+        mask = array(numpy.zeros(theta.shape[0]))
+        model.verify_theta(theta=array(theta), mask=mask)
+        return numpy.array(mask)
+
+    likelihood = array(numpy.zeros(θ.shape[0]))
+    model.eval_data_likelihood(theta=array(θ), likelihood=likelihood)
+    likelihood = numpy.array(likelihood)
     out = model.forward_problem(application=app, theta=θ)
     # the samples to reject: origins out of order, a hypocenter off the mesh
-    mask = numpy.zeros(θ.shape[0])
-    model.verify_theta(theta=θ, mask=mask)
-    rejected = {"none": mask.copy()}
+    rejected = {"none": verify(θ)}
     if fronts == 2:
         bad = θ.copy()
         bad[:, model._origin] = bad[:, model._origin][:, ::-1] + [[1.0, 0.0]]
-        mask = numpy.zeros(bad.shape[0])
-        model.verify_theta(theta=bad, mask=mask)
-        rejected["order"] = mask
+        rejected["order"] = verify(bad)
     off = θ.copy()
     off[:, model._hypocenter[0]] = 39.9
     off[:, model._hypocenter[1]] = 39.9
-    mask = numpy.zeros(off.shape[0])
-    model.verify_theta(theta=off, mask=mask)
-    rejected["off"] = mask
-    numpy.savez(case / f"{name}.npz", likelihood=likelihood, F=out["F"], slip=out["slip"], data=out["data"],
+    rejected["off"] = verify(off)
+    numpy.savez(case / f"{name}{'-gpu' if gpu else ''}.npz", likelihood=likelihood, F=out["F"], slip=out["slip"], data=out["data"],
                 onsets=model.onsets(θ), **{f"rejected_{k}": v for k, v in rejected.items()})
     return 0
 
 
 def main():
+    gpu = "--gpu" in sys.argv
     import h5py
     from kinematic_mesh import fault
     from altar.data.Kronecker import Kronecker
@@ -194,6 +205,15 @@ def main():
             failures += 1
             continue
         results[name] = numpy.load(case / f"{name}.npz")
+    gpus = {}
+    for name in RUNS if gpu else []:
+        done = subprocess.run([sys.executable, __file__, "--worker", str(case), name, "--gpu"], capture_output=True,
+                              text=True)
+        if done.returncode:
+            print(done.stdout[-3000:], done.stderr[-3000:])
+            failures += 1
+            continue
+        gpus[name] = numpy.load(case / f"{name}-gpu.npz")
     if failures:
         print("gaussian slip:", f"{failures} FAILED")
         return 1
@@ -268,6 +288,13 @@ def main():
         worst = max(worst, rel(one["slip"][k], mean), rel(one["data"][k], A @ mean))
     check("mean slips and their data against the dense solution", worst, 1e-10)
 
+    # cuda against the cpu, the same sobol points for the bounded slips
+    for name, r in gpus.items():
+        cpu = results[name]
+        check(f"cuda, {name}: likelihood against the cpu", rel(r["likelihood"], cpu["likelihood"]), 1e-10)
+        same = all(numpy.array_equal(r[k] != 0, cpu[k] != 0) for k in cpu.files if k.startswith("rejected"))
+        check(f"cuda, {name}: the samples rejected, as on the cpu", 0 if same else 1, 0)
+
     # the samples rejected
     check("valid samples kept", sum(r["rejected_none"].sum() for r in results.values()), 0)
     check("origins out of order rejected", float((two["rejected_order"] == 0).sum()), 0)
@@ -279,7 +306,7 @@ def main():
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         i = sys.argv.index("--worker")
-        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2]))
+        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2], "--gpu" in sys.argv))
     sys.exit(main())
 
 
