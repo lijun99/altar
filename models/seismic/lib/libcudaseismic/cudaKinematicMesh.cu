@@ -141,6 +141,18 @@ _arrivalTimes(const TYPE * theta, size_t parameters, size_t batch, cudaStream_t 
 }
 
 
+// the arrival times at the source points
+template <typename TYPE>
+void
+altar::models::seismic::cudaKinematicMesh<TYPE>::
+sourceArrivals(const TYPE * theta, size_t parameters, size_t batch, TYPE * out,
+    cudaStream_t stream) const
+{
+    _arrivalTimes(theta, parameters, batch, stream);
+    cudaSafeCall(cudaMemcpyAsync(out, _gpu_TI0, batch*_P*sizeof(TYPE), cudaMemcpyDeviceToDevice, stream));
+}
+
+
 // the slips of each patch over time
 template <typename TYPE>
 void

@@ -30,7 +30,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     slips along one rake or both, {positive}, whose box probabilities are estimated by GHK; the
     magnitude and rake of polar slips, other bounds, or a moment prior have no closed form: sample
     the slips with kinematicmesh then. The noise: altar.data.datakron, or a constant cd_std,
-    without a mask. On the cpu.
+    without a mask. On the cpu, or on cuda in double precision, job.gpuprecision = float64.
 
     My parameter sets, by name: risetime, one, one per patch, or one per group of {rise_groups};
     rupturevelocity, one per nucleation point; hypocenter, two per nucleation point, along strike
@@ -99,7 +99,11 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     ghk_seed.doc = "the seed of the scrambling of the sobol points of GHK"
 
     chunk = altar.properties.int(default=64)
-    chunk.doc = "the samples whose likelihoods are computed at once"
+    chunk.doc = "the samples whose likelihoods are computed at once, on the cpu"
+
+    gpu_chunk = altar.properties.int(default=256)
+    gpu_chunk.doc = "the samples whose likelihoods are computed at once on cuda, each with a " \
+                    "(2 patches)^2 system"
 
 
     # protocol obligations
@@ -108,10 +112,14 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         """
         Load the mesh, the green's functions, the data and their noise; lay out my parameters
         """
-        if altar.backends.active() == "cuda":
-            application.error.log("kinematicgaussianslip: on the cpu only, so far; job.gpus = 0")
+        cuda = altar.backends.active() == "cuda"
+        if cuda and application.job.gpuprecision != "float64":
+            application.error.log("kinematicgaussianslip: on cuda in double precision, job.gpuprecision = float64")
             raise SystemExit(1)
         super().initialize(application=application)
+        if cuda and self.embedded:
+            application.error.log("kinematicgaussianslip: not in an ensemble on cuda")
+            raise SystemExit(1)
         import h5py
         from . import mesh as meshes
         from .marginal import GaussianSlip
@@ -218,6 +226,8 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         U = uv[faces]
         self._triangle_origin = U[:, 0]
         self._triangle_inverse = numpy.linalg.inv(numpy.stack([U[:, 1] - U[:, 0], U[:, 2] - U[:, 0]], axis=2))
+        if cuda:
+            self._cuda(grid)
         application.info.log(
             f"kinematic gaussian slip: {Np} patches, {self.points} source points each, {self.fronts} "
             f"nucleation points, {rises} rise times; {self.components} x {stations} x {self.bins} data")
@@ -230,7 +240,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         order, the nucleation points being interchangeable, or a hypocenter off the mesh
         """
         super().verify_theta(theta=theta, mask=mask, batch=batch)
-        θ = numpy.asarray(self.restrict(theta=theta), dtype=float)
+        θ = numpy.asarray(theta if self._gpu is not None else self.restrict(theta=theta), dtype=float)
         n = θ.shape[0] if batch is None else batch
         θ = θ[:n]
         bad = numpy.zeros(n, dtype=bool)
@@ -238,7 +248,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
             bad |= numpy.any(numpy.diff(θ[:, self._origin], axis=1) < 0, axis=1)
         for k in range(self.fronts):
             bad |= ~self.on_mesh(θ[:, self._hypocenter[2 * k:2 * k + 2]])
-        mask[:n] += bad
+        numpy.asarray(mask)[:n] += bad
         return mask
 
 
@@ -246,6 +256,13 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         """
         The marginal log likelihood of the data of each sample, the slips integrated out
         """
+        if self._gpu is not None:
+            n = theta.shape[0] if batch is None else batch
+            for k, mesh in enumerate(self._meshes):
+                mesh.source_arrivals(theta=theta.grid, out=self._TI.grid, batch=n, offset=k * self._stride)
+            self._gpu.loglikelihood(theta=theta.grid, TI=self._TI.grid, stride=self._stride,
+                                    out=likelihood.grid, batch=n)
+            return self
         θ = numpy.asarray(self.restrict(theta=theta), dtype=float)
         n = θ.shape[0] if batch is None else batch
         out = numpy.empty(n)
@@ -278,6 +295,42 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
 
 
     # implementation details
+    def _cuda(self, grid):
+        """
+        The marginal likelihood on the device: the arrival times of each nucleation point, by a
+        cuda kinematic model reading its velocity and hypocenter from my columns, then the rest
+        """
+        import math
+        import altar.cuda
+        from altar.models.seismic.ext import cudaseismic
+        Np, m = self.patches, self.marginal
+        self._t0s = altar.cuda.vector(source=numpy.zeros(Np), dtype="float64")
+        self._meshes, self._maps = [], []
+        for k in range(self.fronts):
+            idx = numpy.zeros(4 * Np + 2, dtype="int64")
+            idx[3 * Np:4 * Np] = self._velocity[k]
+            idx[4 * Np:] = self._hypocenter[2 * k:2 * k + 2]
+            self._maps.append(altar.cuda.vector(source=idx))
+            self._meshes.append(cudaseismic.cudaKinematicMesh(
+                Np=Np, Nt=1, dt=1.0, t0s=self._t0s.grid, Nsp=self.points, samples=self.samples,
+                parameters=self.parameters, observations=1, idx_map=self._maps[-1].grid, **grid))
+        self._stride = self.samples * Np * self.points
+        self._TI = altar.cuda.matrix(shape=(self.fronts * self.samples, Np * self.points), dtype="float64")
+        constant = -0.5 * (m.quadratic + m.logdetC0 + m.noise.logdet + m.observations * math.log(2 * math.pi)) - m.logZ0
+        uniforms = m.uniforms if m.bounded else numpy.zeros(0)
+        self._gpu = cudaseismic.cudaGaussianSlip(
+            Np=Np, Nsp=self.points, bins=self.bins, components=self.components, dt=self.dt,
+            kind={"triangle": 0, "cosine": 1}[self.stf], peak=self.peak,
+            mode={"step": 1, "bin": 2}[self.integration],
+            origin_columns=numpy.array([-1] if self._origin is None else self._origin, dtype="int64"),
+            origin=self.origin, rise_columns=self._rise[self._groups].astype("int64"),
+            scale_column=-1 if self._scale is None else int(self._scale[0]), sigma=self.slip_sigma,
+            GG=numpy.array(m.GG), GSD=numpy.array(m.GSD), Rinv=numpy.array(m.Rinv), C0inv=m.C0inv,
+            order=m.order.astype("int32"), bounded=m.bounded, uniforms=uniforms, constant=constant,
+            chunk=min(self.gpu_chunk, self.samples))
+        return self
+
+
     def sigma(self, θ):
         """
         The standard deviation of the prior of the slips of each row of {θ}
@@ -326,6 +379,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
 
     # private data
     marginal = None # the likelihood of the fronts, the slips integrated out
+    _gpu = None # its twin on cuda
     cmodel = None # the compiled model, for the arrival times
     fronts = None # the nucleation points
     patches = None

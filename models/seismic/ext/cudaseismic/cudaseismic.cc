@@ -12,6 +12,7 @@
 #include "kinematic.h"
 #include "kinematicmesh.h"
 #include "timeshift.h"
+#include "gaussianslip.h"
 
 
 PYBIND11_MODULE(cudaseismic, m)
@@ -26,6 +27,8 @@ PYBIND11_MODULE(cudaseismic, m)
     // the kinematic slip model on a triangulated fault
     altar::models::seismic::extensions::kinematicmesh::__init__(m);
     altar::models::seismic::extensions::timeshift::__init__(m);
+    // the marginal likelihood of kinematicgaussianslip
+    altar::models::seismic::extensions::gaussianslip::__init__(m);
 }
 
 // end of file

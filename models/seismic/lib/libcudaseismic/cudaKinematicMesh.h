@@ -59,6 +59,9 @@ public:
 
     /// the arrival times on the mesh, of the last forward model
     const TYPE * arrivals() const { return _gpu_T; }
+    /// the arrival times at the source points, (batch, points), into {out}
+    void sourceArrivals(const TYPE * theta, size_t parameters, size_t batch, TYPE * out,
+        cudaStream_t stream=0) const;
     /// the source time function: 0, a triangle peaking at {peak} of the rise time; 1, a raised
     /// cosine; and {mode}, how the time intervals get it, see {Integration} in stf.h
     void setSTF(int kind, TYPE peak, int mode = 0) { _stf_kind = kind; _stf_peak = peak; _stf_mode = mode; }

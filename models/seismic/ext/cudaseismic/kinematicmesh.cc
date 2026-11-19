@@ -133,6 +133,19 @@ namespace {
             done("cudaKinematicMesh.gradient");
         }
 
+        // out[offset:] <- the arrival times at the source points, (batch, points), from {theta}
+        auto source_arrivals(grid_t & theta, grid_t & out, std::size_t batch, std::size_t offset) -> void
+        {
+            check(theta, out, out);
+            auto parameters = theta.shape()[1];
+            if (_cell == 'd') {
+                _double->sourceArrivals(ptr<double>(theta), parameters, batch, ptr<double>(out) + offset);
+            } else {
+                _float->sourceArrivals(ptr<float>(theta), parameters, batch, ptr<float>(out) + offset);
+            }
+            done("cudaKinematicMesh.source_arrivals");
+        }
+
         // the most passes of the eikonal over the last {batch} samples
         auto iterations(std::size_t batch) -> int
         {
@@ -198,6 +211,8 @@ altar::models::seismic::extensions::kinematicmesh::__init__(py::module & m) -> v
         .def("linear_gm", &KinematicMesh::linear_gm,
              "green"_a, "mb"_a, "prediction"_a, "batch"_a, "residual"_a,
              "prediction <- Gb mb, or Gb mb - prediction when {residual}")
+        .def("source_arrivals", &KinematicMesh::source_arrivals, "theta"_a, "out"_a, "batch"_a, "offset"_a = 0,
+             "out[offset:] <- the arrival times at the source points, (batch, points), from {theta}")
         .def("iterations", &KinematicMesh::iterations, "batch"_a,
              "the most passes of the eikonal over the last {batch} samples");
 }

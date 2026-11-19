@@ -104,7 +104,7 @@ function(altar_seismic_cuda_buildLibrary)
   # add the dependencies
   target_link_libraries(
     libcudaseismic PRIVATE
-    ${PYRE_LIBRARIES} cublas
+    ${PYRE_LIBRARIES} cublas cusolver
     )
   # kernels index pyre grids directly; see {altar_cuda_buildLibrary}
   target_compile_definitions(libcudaseismic PRIVATE WITH_CUDA)
@@ -118,6 +118,7 @@ function(altar_seismic_cuda_buildLibrary)
     lib/libcudaseismic/cudaKinematicMesh.cu
     lib/libcudaseismic/cudaMoment.cu
     lib/libcudaseismic/cudaTimeShift.cu
+    lib/libcudaseismic/cudaGaussianSlip.cu
     lib/libcudaseismic/version.cc
     )
 
@@ -162,7 +163,7 @@ function(altar_seismic_cuda_buildModule)
   # set the libraries to link against
   target_link_libraries(
     cudaseismicmodule PRIVATE
-    libcudaseismic pybind11::module cudart cublas ${PYRE_LIBRARIES}
+    libcudaseismic pybind11::module cudart cublas cusolver ${PYRE_LIBRARIES}
     )
   # add the sources
   target_sources(cudaseismicmodule PRIVATE
@@ -171,6 +172,7 @@ function(altar_seismic_cuda_buildModule)
     ext/cudaseismic/kinematic.cc
     ext/cudaseismic/kinematicmesh.cc
     ext/cudaseismic/timeshift.cc
+    ext/cudaseismic/gaussianslip.cc
     )
 
   # install the seismic extension
