@@ -47,3 +47,26 @@ Slips against gs: median |mean difference| / sd 0.05 (km), 0.03 (kmhmc); sd rati
 rise times 0.08 and 0.04, sd ratios 0.97 and 1.00. Slips within 2 sd of the truth 94-96 % in all.
 Marginal likelihood at the samples, median: gs -1013.55, km -1012.97, kmhmc -1013.47, truth
 -1013.10. gs ran on 16 cpu threads beside the 200-step run; km on one RTX PRO 6000.
+
+## Positive dip slips (`compare.py setup <folder> positive`), 2026-11-19, cairo
+
+The synthetic above with the dip slips of the truth |N(0, 0.7^2)|; gs with `positive = dip`, its
+likelihood times the GHK ratio of the box probabilities (256 sobol paths, or 4096); km and kmhmc
+with the dip slips under `tgaussian`, support (0, 100). Same data model to 5.0e-16
+(`~/scripts/altar/kinematic/compare_positive.sh`).
+
+| | truth | gs | gs, 4096 paths | km, catmip, gpu | km, catmip_hmc, gpu |
+|---|---|---|---|---|---|
+| velocity | 5.00 | 6.30 ± 1.01 | 6.23 ± 1.00 | 6.22 ± 0.98 | 6.21 ± 0.99 |
+| hypocenter u | 10.0 | 6.82 ± 3.15 | 7.06 ± 3.20 | 7.15 ± 3.11 | 7.01 ± 3.27 |
+| hypocenter v | 15.0 | 16.56 ± 3.28 | 16.82 ± 3.20 | 16.45 ± 3.25 | 16.72 ± 3.31 |
+| mean rise | 3.00 | 4.39 ± 0.51 | 4.37 ± 0.51 | 4.28 ± 0.48 | 4.34 ± 0.49 |
+| log evidence | | -1026.02 | -1025.65 | -1024.28 | -1025.63 |
+| samples | | 2048 | 2048 | 4096 | 1024 |
+| time | | 501 s | 5508 s | 53 s | 220 s |
+
+Slips (gs drawn by SIR over the GHK paths) against gs: median |mean difference| / sd 0.10 (km),
+0.03 (kmhmc), 0.02 (4096 paths); sd ratios 0.97-1.01; all within 2 sd of the truth, correlation
+0.97. The evidence of 256 paths is 0.37 nats under that of 4096, the bias of the log of the GHK
+average; 4096 paths agree with kmhmc to 0.02. gs and gs-4096 ran on 16 threads each, side by side,
+12 beta steps each; km and kmhmc one after the other on one RTX PRO 6000.

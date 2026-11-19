@@ -668,9 +668,10 @@ exactly after the run. The annealing also gives the evidence, for choosing betwe
 nucleation points, of rise times, or noise models.
 
 ```{caution}
-The slips integrate out only under a **gaussian prior of mean zero**. Bounds, positive slip, the
-magnitude and rake of polar slips, or a moment prior have no closed form: sample the slips with
-`kinematicmesh` for those. A zero-mean prior also lets patches slip backward, which cancels part
+The slips integrate out only under a **gaussian prior of mean zero**, truncated at most to
+positive slips (`positive`, below). Other bounds, the magnitude and rake of polar slips, or a
+moment prior have no closed form: sample the slips with `kinematicmesh` for those. Without
+`positive`, a zero-mean prior also lets patches slip backward, which cancels part
 of the forward moment: in sse_toolkit's tests on 51 synthetic slow slip events, the net moment
 of the slips came out at 0.67 of the truth, while their forward part was 0.99 of it. Check
 moments on synthetics like the event before trusting them.
@@ -720,6 +721,29 @@ On a synthetic of 24 patches, each with its rise time, the posterior of the fron
 slips, and the evidence, matched those of `kinematicmesh`, which samples the 48 slips with the
 front, with CATMIP and with CATMIP-HMC: the means of the slips within 0.05 of their standard
 deviations, the evidences within 2 nats.
+
+### Positive slips
+
+`positive = strike`, `dip` or `both` bounds those slips below by 0, their gaussian prior truncated.
+The likelihood is then the gaussian one times the ratio of the probabilities of the box, the
+bounded slips non-negative, under the posterior and under the prior,
+
+$$
+p(\mathbf d \mid \theta) = N_{\text{marg}}(\mathbf d \mid \theta)\,
+\frac{\Pr(\mathbf m_+ \ge 0 \mid \mathbf d, \theta)}{\Pr(\mathbf m_+ \ge 0)},
+$$
+
+the posterior's estimated by GHK on the Cholesky factor of $P$, with `ghk_paths` (256) scrambled
+Sobol points fixed by `ghk_seed`, so the likelihood is a smooth, deterministic function of the
+front. Against a 24-dimensional Genz integration, 256 paths are within 0.01 nats. The evidence
+is biased low by a fraction of a nat, from the log of the GHK average: 0.37 nats with 256 paths
+on the synthetic below, 0.02 with 4096. The slips are drawn by resampling the GHK paths, the free
+slips from their gaussian conditional.
+
+On the synthetic above with positive dip slips, the fronts and slips matched those of
+`kinematicmesh` with the dip slips under `tgaussian`, with CATMIP and CATMIP-HMC: the means of the
+slips within 0.1 of their standard deviations, the evidence of 4096 paths within 0.02 nats of
+CATMIP-HMC's.
 
 After a run, `model.draw_slips(theta, rng, count)` draws the slips of the samples given the data,
 and `forward_problem` gives the mean slips, their data and the slip fractions of the patches.
