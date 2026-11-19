@@ -13,6 +13,7 @@
 import math
 import numpy
 import scipy.linalg
+import scipy.special
 
 
 def cumulative(s, Tr, stf="triangle", peak=0.5):
@@ -60,6 +61,38 @@ def fractions(onsets, risetime, dt, bins, stf="triangle", peak=0.5, integration=
     raise ValueError(f"integration: step or bin; got '{integration}'")
 
 
+def box(L, mean, uniforms, paths=False):
+    """
+    log Pr(x_k >= 0 for the last k components), x ~ N({mean}, P^-1), P = L L^T, for each of a
+    batch, by GHK with the {uniforms}, (paths, k): with y = x - mean, L^T y = z standard normal,
+    so from the last row up each z is drawn above the bound its row sets, and each path weighs
+    the product of the probabilities of the bounds; with {paths}, also y and the log weights
+    """
+    B, n = mean.shape
+    count, k = uniforms.shape
+    y = numpy.zeros((B, count, k))
+    logw = numpy.zeros((B, count))
+    for i in range(k - 1, -1, -1):
+        g = n - k + i
+        s = numpy.einsum("bpj,bj->bp", y[:, :, i + 1:], L[:, g + 1:, g])
+        Lgg = L[:, g, g][:, None]
+        # x_g >= 0 when z_g >= s - L_gg mean_g
+        lp = scipy.special.log_ndtr(Lgg * mean[:, g][:, None] - s)
+        logw += lp
+        z = -scipy.special.ndtri_exp(numpy.log1p(-uniforms[None, :, i]) + lp)
+        y[:, :, i] = (z - s) / Lgg
+    log = scipy.special.logsumexp(logw, axis=1) - math.log(count)
+    return (log, y, logw) if paths else log
+
+
+def sobol(count, k, seed):
+    """
+    {count} scrambled sobol points in [0, 1)^k
+    """
+    from scipy.stats import qmc
+    return qmc.Sobol(d=k, scramble=True, seed=seed).random(count)
+
+
 class GaussianSlip:
     """
     The data d, per component c, (stations, bins), linear in the slips m of the patches along two
@@ -73,10 +106,15 @@ class GaussianSlip:
         log p(d) = -(d^T Cd^-1 d - b^T P^-1 b + log|P| + log|sigma^2 C0| + log|Cd| + n log 2 pi) / 2
 
     and m | d ~ N(P^-1 b, P^-1); F tiled over the two rakes
+
+    With {positive}, a mask of the slips, those are bounded below by 0, the prior truncated:
+    log p(d) gains log Pr(m_S >= 0 | d) - log Pr(m_S >= 0), the first by GHK with {paths} fixed
+    sobol points, the same for every sample, so that the likelihood is a smooth function of the
+    fronts; the second exact for C0 the identity, else by GHK with many points
     """
 
 
-    def __init__(self, G, data, noise, C0=None):
+    def __init__(self, G, data, noise, C0=None, positive=None, paths=256, seed=0):
         self.noise = noise
         C, ns, nt = noise.components, noise.stations, noise.bins
         G = numpy.asarray(G, dtype=float)
@@ -111,6 +149,18 @@ class GaussianSlip:
             L0 = numpy.linalg.cholesky(C0)
             self.C0inv = scipy.linalg.cho_solve((L0, True), numpy.eye(self.slips))
             self.logdetC0 = 2 * numpy.log(numpy.diag(L0)).sum()
+        # the bounded slips, last in the order of the system
+        self.positive = numpy.zeros(self.slips, bool) if positive is None else numpy.asarray(positive, bool)
+        self.bounded = int(self.positive.sum())
+        self.order = numpy.concatenate([numpy.flatnonzero(~self.positive), numpy.flatnonzero(self.positive)])
+        self.logZ0 = 0.0
+        if self.bounded:
+            self.uniforms = sobol(paths, self.bounded, seed)
+            if C0 is None:
+                self.logZ0 = -self.bounded * math.log(2)
+            else:
+                L0 = numpy.linalg.cholesky(self.C0inv[numpy.ix_(self.order, self.order)])
+                self.logZ0 = float(box(L0[None], numpy.zeros((1, self.slips)), sobol(2 ** 14, self.bounded, seed))[0])
         return
 
 
@@ -132,18 +182,33 @@ class GaussianSlip:
         return P, b
 
 
+    def factor(self, F, sigma):
+        """
+        L, P = L L^T, z = L^-1 b and the mean P^-1 b, in the order of the system, the bounded
+        slips last
+        """
+        P, b = self.system(F, sigma)
+        if self.bounded:
+            P, b = P[:, self.order][:, :, self.order], b[:, self.order]
+        L = numpy.linalg.cholesky(P)
+        z = numpy.linalg.solve(L, b[..., None])[..., 0]
+        mean = numpy.linalg.solve(numpy.swapaxes(L, 1, 2), z[..., None])[..., 0]
+        return P, L, z, mean
+
+
     def loglikelihood(self, F, sigma):
         """
         The marginal log likelihood of the data, (samples,)
         """
-        P, b = self.system(F, sigma)
-        L = numpy.linalg.cholesky(P)
-        z = numpy.linalg.solve(L, b[..., None])[..., 0]
+        P, L, z, mean = self.factor(F, sigma)
         logdetP = 2 * numpy.log(numpy.diagonal(L, axis1=1, axis2=2)).sum(axis=1)
         sigma = numpy.broadcast_to(numpy.asarray(sigma, dtype=float), (P.shape[0],))
         logdetCm = self.slips * numpy.log(sigma ** 2) + self.logdetC0
-        return -0.5 * (self.quadratic - (z * z).sum(axis=1) + logdetP + logdetCm + self.noise.logdet
-                       + self.observations * math.log(2 * math.pi))
+        log = -0.5 * (self.quadratic - (z * z).sum(axis=1) + logdetP + logdetCm + self.noise.logdet
+                      + self.observations * math.log(2 * math.pi))
+        if self.bounded:
+            log += box(L, mean, self.uniforms) - self.logZ0
+        return log
 
 
     def posterior(self, F, sigma):
@@ -157,15 +222,53 @@ class GaussianSlip:
         return mean, L
 
 
-    def draw(self, F, sigma, rng, count=1):
+    def draw(self, F, sigma, rng, count=1, paths=1024):
         """
-        {count} draws of the slips given the data for each sample, (samples, count, 2 patches)
+        {count} draws of the slips given the data for each sample, (samples, count, 2 patches);
+        with bounded slips, by resampling {paths} GHK paths by their weights, then the others
+        given those
         """
+        if self.bounded:
+            return self._truncated(F, sigma, rng, count, paths)
         mean, L = self.posterior(F, sigma)
         z = rng.standard_normal((mean.shape[0], self.slips, count))
         # m = mean + L^-T z
         x = numpy.stack([scipy.linalg.solve_triangular(l, zi, lower=True, trans="T") for l, zi in zip(L, z)])
         return mean[:, None, :] + numpy.moveaxis(x, 2, 1)
+
+
+    def mean(self, F, sigma, rng, count=256):
+        """
+        The mean of the slips given the data, (samples, 2 patches); with bounded slips, of {count}
+        draws
+        """
+        if not self.bounded:
+            return self.posterior(F, sigma)[0]
+        return self.draw(F, sigma, rng, count).mean(axis=1)
+
+
+    def _truncated(self, F, sigma, rng, count, paths):
+        """
+        Draws of the slips, the bounded ones by sampling-importance-resampling of GHK paths, the
+        free ones from their gaussian given those
+        """
+        P, L, z, mean = self.factor(F, sigma)
+        k, f = self.bounded, self.slips - self.bounded
+        out = numpy.empty((P.shape[0], count, self.slips))
+        for s in range(P.shape[0]):
+            _, y, logw = box(L[s:s + 1], mean[s:s + 1], rng.random((paths, k)), paths=True)
+            w = numpy.exp(logw[0] - logw[0].max())
+            yS = y[0, rng.choice(paths, count, p=w / w.sum())]
+            x = numpy.empty((count, self.slips))
+            x[:, f:] = yS
+            if f:
+                Lff = L[s, :f, :f]
+                shift = scipy.linalg.cho_solve((Lff, True), P[s, :f, f:] @ yS.T)
+                noise = scipy.linalg.solve_triangular(Lff, rng.standard_normal((f, count)), lower=True, trans="T")
+                x[:, :f] = (noise - shift).T
+            x += mean[s]
+            out[s][:, self.order] = x
+        return out
 
 
     def predict(self, F, slip):

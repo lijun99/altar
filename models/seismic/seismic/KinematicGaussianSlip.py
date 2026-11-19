@@ -26,9 +26,11 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     the slips of the patches along the two rakes of the static green's functions, which integrate
     out exactly under their prior N(0, sigma^2 C0); see {altar.models.seismic.marginal}.
 
-    The slip prior must be gaussian with zero mean: bounds, positivity, the magnitude and rake of
-    polar slips, or a moment prior have no closed form; sample the slips with kinematicmesh then.
-    The noise: altar.data.datakron, or a constant cd_std, without a mask. On the cpu.
+    The slip prior must be gaussian with zero mean, or that gaussian truncated to non-negative
+    slips along one rake or both, {positive}, whose box probabilities are estimated by GHK; the
+    magnitude and rake of polar slips, other bounds, or a moment prior have no closed form: sample
+    the slips with kinematicmesh then. The noise: altar.data.datakron, or a constant cd_std,
+    without a mask. On the cpu.
 
     My parameter sets, by name: risetime, one, one per patch, or one per group of {rise_groups};
     rupturevelocity, one per nucleation point; hypocenter, two per nucleation point, along strike
@@ -84,6 +86,17 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     cm_file = altar.properties.path(default=None)
     cm_file.doc = "C0, (2 patches, 2 patches), the covariance of the slips over sigma^2; " \
                   "default the identity"
+
+    positive = altar.properties.str(default=None)
+    positive.doc = "the slips bounded below by 0, their prior truncated: strike, dip or both; " \
+                   "default none"
+
+    ghk_paths = altar.properties.int(default=256)
+    ghk_paths.doc = "the paths of the GHK estimate of the probability of the bounded slips, " \
+                    "the same sobol points for every sample"
+
+    ghk_seed = altar.properties.int(default=0)
+    ghk_seed.doc = "the seed of the scrambling of the sobol points of GHK"
 
     chunk = altar.properties.int(default=64)
     chunk.doc = "the samples whose likelihoods are computed at once"
@@ -185,7 +198,14 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         # the prior of the slips, and the marginal likelihood
         G = self.io.load(filename=self.green, shape=(2 * Np, self.components * stations))
         C0 = None if self.cm_file is None else self.io.load(filename=self.cm_file, shape=(2 * Np, 2 * Np))
-        self.marginal = GaussianSlip(G, data.observed(), noise, C0=C0)
+        sides = {None: [], "strike": [0], "dip": [1], "both": [0, 1]}
+        if self.positive not in sides:
+            error.log(f"kinematicgaussianslip: positive, strike, dip or both; got '{self.positive}'")
+            raise SystemExit(1)
+        mask = numpy.zeros((2, Np), bool)
+        mask[sides[self.positive]] = True
+        self.marginal = GaussianSlip(G, data.observed(), noise, C0=C0, positive=mask.ravel(),
+                                     paths=self.ghk_paths, seed=self.ghk_seed)
 
         # the arrival times
         from altar.models.seismic.ext import seismic
@@ -245,7 +265,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
         """
         θ = numpy.atleast_2d(numpy.asarray(theta, dtype=float))
         F = self.fractions(θ)
-        mean, _ = self.marginal.posterior(F, self.sigma(θ))
+        mean = self.marginal.mean(F, self.sigma(θ), numpy.random.default_rng(self.ghk_seed))
         return {"data": self.marginal.predict(F, mean), "slip": mean, "F": F}
 
 
