@@ -70,3 +70,20 @@ Slips (gs drawn by SIR over the GHK paths) against gs: median |mean difference| 
 0.97. The evidence of 256 paths is 0.37 nats under that of 4096, the bias of the log of the GHK
 average; 4096 paths agree with kmhmc to 0.02. gs and gs-4096 ran on 16 threads each, side by side,
 12 beta steps each; km and kmhmc one after the other on one RTX PRO 6000.
+
+## cuda against the cpu (`benchmark.py`), 2026-11-19
+
+The likelihoods of 1024 samples, one front, a rise time per patch, float64; cuda equals the cpu to
+4e-16 (unit tests on cairo and on a kamb V100). Times, cuda the best of three:
+
+| case | gaussian, cuda | positive dip, cuda | gaussian, cpu | positive dip, cpu |
+|---|---|---|---|---|
+| 24 patches, 3 x 15 x 12 | 0.015 s | 0.017 s | 0.36 s | 0.63 s |
+| 320 patches, 3 x 108 x 24 | 0.33 s | 0.47 s | 2.7 s | 8.7 s |
+
+cuda on a kamb V100 (the cairo RTX PRO 6000 gave 0.36 and 0.45 s at 320 patches; float64 runs go
+to kamb or alexandria). The cpu on cairo: at 24 patches, the code before the threads, OpenBLAS on 64; at 320, 48 threads; the 320-patch cpu numbers are 4 x those of
+256 samples (`~/scripts/altar/kinematic/profile/stages.sh`). Before the samples were split over
+threads, the cpu ran the batched LAPACK calls with OpenBLAS's 64 threads, beside another user's 16
+processes, and the 320-patch case had not finished after 2 h 45 min; at 1 or 16 threads it took
+about 1.4 s per 64 samples, the solves with the Cholesky factor then general LU solves.
