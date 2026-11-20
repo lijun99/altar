@@ -230,11 +230,11 @@ cudaGaussianSlip(size_t Np, size_t Nsp, size_t bins, size_t components, double d
     cudaSafeCall(cudaMalloc(&_mean, chunk*n*sizeof(double)));
     cudaSafeCall(cudaMalloc(&_info, chunk*sizeof(int)));
     // the pointers of the batched factorization and solves
-    std::vector<double *> Ps(chunk), bs(chunk), ms(chunk);
-    for (size_t s = 0; s < chunk; ++s) { Ps[s] = _P + s*n*n; bs[s] = _b + s*n; ms[s] = _mean + s*n; }
-    _Parray = upload(Ps.data(), chunk);
-    _barray = upload(bs.data(), chunk);
-    _marray = upload(ms.data(), chunk);
+    std::vector<double *> Pp(chunk), bp(chunk), mp(chunk);
+    for (size_t s = 0; s < chunk; ++s) { Pp[s] = _P + s*n*n; bp[s] = _b + s*n; mp[s] = _mean + s*n; }
+    _Parray = upload(Pp.data(), chunk);
+    _barray = upload(bp.data(), chunk);
+    _marray = upload(mp.data(), chunk);
     cublasSafeCall(cublasCreate(&_cublas));
     cusolverSafeCall(cusolverDnCreate(&_cusolver), "cusolverDnCreate");
 }
