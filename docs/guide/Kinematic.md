@@ -782,7 +782,9 @@ The static data must be of the slips of the kinematic window only, all done by t
 afterslip, postseismic or interseismic motion of other times, which would be fit by the slips of
 the event. Their ramps have a flat prior: the evidence is then defined up to a constant, fine
 for comparing models with the same ramps. `forward_problem` adds the static data of the mean slips,
-`static`, with the ramps that fit them best, `ramps`.
+`static`, with the ramps that fit them best, `ramps`. With positive slips, the static data narrow
+the posterior, and GHK converges slower: on the tests, 4096 paths were 0.01-0.04 nats off a Genz
+integration, against 0.002 with the kinematic data alone; raise `ghk_paths` for evidences.
 
 After a run, `model.draw_slips(theta, rng, count)` draws the slips of the samples given the data,
 and `forward_problem` gives the mean slips, their data and the slip fractions of the patches.
