@@ -10,10 +10,46 @@
 # binned in time: the cumulative slip fractions of the patches, and the marginal likelihood
 
 # externals
+import concurrent.futures
 import math
+import os
 import numpy
 import scipy.linalg
 import scipy.special
+
+
+def cpu_threads():
+    """
+    The threads of the cpu likelihoods: OMP_NUM_THREADS, or the cpus this process may use
+    """
+    count = os.environ.get("OMP_NUM_THREADS")
+    return max(1, int(count)) if count else len(os.sched_getaffinity(0))
+
+
+def single_blas():
+    """
+    A context with the blas in one thread, if threadpoolctl is there; None otherwise
+    """
+    try:
+        import threadpoolctl
+    except ImportError:
+        return None
+    return threadpoolctl.threadpool_limits(limits=1, user_api="blas")
+
+
+def over_samples(f, n, count):
+    """
+    The rows f(slice) of the slices of range(n) over {count} threads, each with the blas in one
+    thread; in one call, with the blas threaded, without threadpoolctl
+    """
+    count = min(count, n)
+    blas = single_blas() if count > 1 else None
+    if blas is None:
+        return f(slice(0, n))
+    edges = numpy.linspace(0, n, count + 1).astype(int)
+    with blas, concurrent.futures.ThreadPoolExecutor(count) as pool:
+        parts = list(pool.map(lambda i: f(slice(edges[i], edges[i + 1])), range(count)))
+    return numpy.concatenate(parts)
 
 
 def cumulative(s, Tr, stf="triangle", peak=0.5):
@@ -191,14 +227,26 @@ class GaussianSlip:
         if self.bounded:
             P, b = P[:, self.order][:, :, self.order], b[:, self.order]
         L = numpy.linalg.cholesky(P)
-        z = numpy.linalg.solve(L, b[..., None])[..., 0]
-        mean = numpy.linalg.solve(numpy.swapaxes(L, 1, 2), z[..., None])[..., 0]
+        solve = scipy.linalg.solve_triangular
+        z = numpy.stack([solve(l, v, lower=True, check_finite=False) for l, v in zip(L, b)])
+        mean = numpy.stack([solve(l, v, lower=True, trans="T", check_finite=False) for l, v in zip(L, z)])
         return P, L, z, mean
 
 
-    def loglikelihood(self, F, sigma):
+    def loglikelihood(self, F, sigma, threads=None):
         """
-        The marginal log likelihood of the data, (samples,)
+        The marginal log likelihood of the data, (samples,), the samples over {threads}, by
+        default those of {cpu_threads()}
+        """
+        F = numpy.asarray(F, dtype=float)
+        sigma = numpy.broadcast_to(numpy.asarray(sigma, dtype=float), (F.shape[0],))
+        count = cpu_threads() if threads is None else threads
+        return over_samples(lambda rows: self._loglikelihood(F[rows], sigma[rows]), F.shape[0], count)
+
+
+    def _loglikelihood(self, F, sigma):
+        """
+        The marginal log likelihood of the data, (samples,), in this thread
         """
         P, L, z, mean = self.factor(F, sigma)
         logdetP = 2 * numpy.log(numpy.diagonal(L, axis1=1, axis2=2)).sum(axis=1)

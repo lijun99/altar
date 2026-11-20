@@ -98,8 +98,9 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     ghk_seed = altar.properties.int(default=0)
     ghk_seed.doc = "the seed of the scrambling of the sobol points of GHK"
 
-    chunk = altar.properties.int(default=64)
-    chunk.doc = "the samples whose likelihoods are computed at once, on the cpu"
+    chunk = altar.properties.int(default=256)
+    chunk.doc = "the samples whose likelihoods are computed at once on the cpu, split over " \
+        "OMP_NUM_THREADS threads, or all the cpus, if threadpoolctl is there"
 
     gpu_chunk = altar.properties.int(default=256)
     gpu_chunk.doc = "the samples whose likelihoods are computed at once on cuda, each with a " \
