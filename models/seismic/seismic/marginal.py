@@ -210,9 +210,13 @@ class GaussianSlip:
         sigma = numpy.broadcast_to(numpy.asarray(sigma, dtype=float), (n,))
         P = self.C0inv[None] / (sigma ** 2)[:, None, None]
         b = numpy.zeros((n, self.slips))
+        work = numpy.empty((n, Np, Np))
+        blocks = (slice(0, Np), slice(Np, None))
         for GG, GSD, Rinv in zip(self.GG, self.GSD, self.Rinv):
-            FRF = numpy.einsum("spk,kl,sql->spq", F, Rinv, F, optimize=True)
-            P = P + GG[None] * numpy.tile(FRF, (1, 2, 2))
+            FRF = (F @ Rinv) @ numpy.swapaxes(F, 1, 2)
+            for i in blocks:
+                for j in blocks:
+                    P[:, i, j] += numpy.multiply(GG[None, i, j], FRF, out=work)
             b[:, :Np] += numpy.einsum("spk,pk->sp", F, GSD[:Np])
             b[:, Np:] += numpy.einsum("spk,pk->sp", F, GSD[Np:])
         return P, b
