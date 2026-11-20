@@ -28,26 +28,21 @@ def cpu_threads():
 
 def single_blas():
     """
-    A context with the blas in one thread, if threadpoolctl is there; None otherwise
+    Whether the blas runs in one thread: OPENBLAS_NUM_THREADS or MKL_NUM_THREADS set to 1 at launch
     """
-    try:
-        import threadpoolctl
-    except ImportError:
-        return None
-    return threadpoolctl.threadpool_limits(limits=1, user_api="blas")
+    return any(os.environ.get(name) == "1" for name in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS"))
 
 
 def over_samples(f, n, count):
     """
-    The rows f(slice) of the slices of range(n) over {count} threads, each with the blas in one
-    thread; in one call, with the blas threaded, without threadpoolctl
+    The rows f(slice) of the slices of range(n) over {count} threads, if the blas runs in one
+    thread; otherwise in one call, the blas threaded
     """
-    count = min(count, n)
-    blas = single_blas() if count > 1 else None
-    if blas is None:
+    count = min(count, n) if single_blas() else 1
+    if count <= 1:
         return f(slice(0, n))
     edges = numpy.linspace(0, n, count + 1).astype(int)
-    with blas, concurrent.futures.ThreadPoolExecutor(count) as pool:
+    with concurrent.futures.ThreadPoolExecutor(count) as pool:
         parts = list(pool.map(lambda i: f(slice(edges[i], edges[i + 1])), range(count)))
     return numpy.concatenate(parts)
 

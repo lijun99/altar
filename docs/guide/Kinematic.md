@@ -751,10 +751,11 @@ The model has no gradient, for HMC or MALA: sample it with CATMIP. The noise is 
 `datakron`, or a constant `cd_std`, without a mask.
 
 It runs on the GPU (`job.gpus = 1`) in double precision only (`job.gpuprecision = float64`), not
-embedded in a cascade, with the same likelihoods as the cpu to round-off. On the cpu, the samples
-are split over `OMP_NUM_THREADS` threads, or all the cpus, with the BLAS in one thread each,
-if `threadpoolctl` is installed; without it, the BLAS threads itself, which scales poorly on the
-systems of many patches, so set `OMP_NUM_THREADS` to the cores free. The likelihoods of 1024
+embedded in a cascade, with the same likelihoods as the cpu to round-off. On the cpu, launch
+with `OPENBLAS_NUM_THREADS=1` (or `MKL_NUM_THREADS=1`): the samples of each task are then split
+over `OMP_NUM_THREADS` threads, or all its cpus, with `job.tasks` MPI tasks for more; e.g. 4
+tasks of 12 threads on 48 free cores. Otherwise the BLAS threads each small system itself, which
+scales poorly, and stalls on a machine whose cores are busy. The likelihoods of 1024
 samples of 320 patches, 3 x 108 x 24 data, took 0.33 s (gaussian slips) and 0.47 s (positive dip
 slips) on a V100, and 2.7 s and 8.7 s on 48 threads of a 64-core cpu.
 
