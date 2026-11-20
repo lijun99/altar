@@ -9,7 +9,7 @@
 // the marginal likelihood of the rupture fronts of kinematicgaussianslip, the slips integrated out
 // under their gaussian prior, on the gpu, in double precision: the cumulative slip fractions F
 // from the arrival times at the source points, then per component F R^-1 F^T, the system
-// P = C0^-1 / sigma^2 + sum_c GG_c o (F R_c^-1 F^T) and b, its batched cholesky factor, and,
+// P = C0^-1 / sigma^2 + Ps + sum_c GG_c o (F R_c^-1 F^T) and b, its batched cholesky factor, and,
 // with bounded slips, their box probability by GHK; see seismic/marginal.py, its cpu twin
 
 #if !defined(altar_models_seismic_cudaGaussianSlip_h)
@@ -39,14 +39,14 @@ public:
 public:
     // the sizes; the source time function; the columns of theta: the origin of each front, or
     // none and {origin}, the rise time of each patch, the slip scale, or none and {sigma}; the
-    // system, in the order of the bounded slips last, {order} the original index of each; the
-    // sobol points of GHK, (paths, bounded); the constant of the likelihood; the samples at once
+    // system, with Ps and bs the constant parts of P and b, from static data, and {order}, the
+    // original index of each slip in the order of the bounded slips last; the sobol points of GHK, (paths, bounded); the constant of the likelihood; the samples at once
     cudaGaussianSlip(size_t Np, size_t Nsp, size_t bins, size_t components, double dt, int kind,
                      double peak, int mode, size_t fronts, const long * originColumns, double origin,
                      const long * riseColumns, long scaleColumn, double sigma, const double * GG,
-                     const double * GSD, const double * Rinv, const double * C0inv, const int * order,
-                     size_t bounded, const double * uniforms, size_t paths, double constant,
-                     size_t chunk);
+                     const double * GSD, const double * Rinv, const double * C0inv, const double * Ps,
+                     const double * bs, const int * order, size_t bounded, const double * uniforms,
+                     size_t paths, double constant, size_t chunk);
     ~cudaGaussianSlip();
 
 private:
@@ -61,6 +61,7 @@ private:
     long * _originColumns = nullptr, * _riseColumns = nullptr;
     int * _order = nullptr;
     double * _GG = nullptr, * _GSD = nullptr, * _Rinv = nullptr, * _C0inv = nullptr, * _uniforms = nullptr;
+    double * _Ps = nullptr, * _bs = nullptr;
     // work, for a chunk of samples
     double * _F = nullptr, * _FR = nullptr, * _FRF = nullptr, * _P = nullptr, * _b = nullptr;
     double * _mean = nullptr, * _y = nullptr;

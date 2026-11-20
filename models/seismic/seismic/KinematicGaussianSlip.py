@@ -32,6 +32,11 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     the slips with kinematicmesh then. The noise: altar.data.datakron, or a constant cd_std,
     without a mask. On the cpu, or on cuda in double precision, job.gpuprecision = float64.
 
+    With {static_data} and {static_green}, static displacements observed after all the slip, e.g.
+    InSAR or GNSS offsets, of the same slips, as the static model takes them, enter the likelihood
+    exactly, at no cost per sample: the joint inversion of both, the static data's ramps
+    integrated out under a flat prior
+
     My parameter sets, by name: risetime, one, one per patch, or one per group of {rise_groups};
     rupturevelocity, one per nucleation point; hypocenter, two per nucleation point, along strike
     and down dip in the surface coordinates of the mesh; origin, one per nucleation point, or none
@@ -97,6 +102,18 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
 
     ghk_seed = altar.properties.int(default=0)
     ghk_seed.doc = "the seed of the scrambling of the sobol points of GHK"
+
+    static_data = altar.data.data(default=None)
+    static_data.doc = "static displacements after all the slip, e.g. altar.data.datal2 with a cd_file " \
+                      "or a cd_std; none by default"
+
+    static_green = altar.properties.path(default=None)
+    static_green.doc = "their green's functions, (static observations, 2 patches + static_ramps), as " \
+                       "the static model's: the strike slips, the dip slips, then the ramps"
+
+    static_ramps = altar.properties.int(default=0)
+    static_ramps.doc = "the last columns of {static_green}, e.g. InSAR ramps, integrated out under a " \
+                       "flat prior"
 
     chunk = altar.properties.int(default=256)
     chunk.doc = "the samples whose likelihoods are computed at once on the cpu, split over " \
@@ -213,8 +230,9 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
             raise SystemExit(1)
         mask = numpy.zeros((2, Np), bool)
         mask[sides[self.positive]] = True
+        static = self._static(application, Np)
         self.marginal = GaussianSlip(G, data.observed(), noise, C0=C0, positive=mask.ravel(),
-                                     paths=self.ghk_paths, seed=self.ghk_seed)
+                                     paths=self.ghk_paths, seed=self.ghk_seed, static=static)
 
         # the arrival times
         from altar.models.seismic.ext import seismic
@@ -231,7 +249,8 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
             self._cuda(grid)
         application.info.log(
             f"kinematic gaussian slip: {Np} patches, {self.points} source points each, {self.fronts} "
-            f"nucleation points, {rises} rise times; {self.components} x {stations} x {self.bins} data")
+            f"nucleation points, {rises} rise times; {self.components} x {stations} x {self.bins} data"
+            + ("" if static is None else f", {static.observations} static data, {static.ramps} ramps"))
         return self
 
 
@@ -278,13 +297,18 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
     def forward_problem(self, application, theta):
         """
         For each row of {theta}: the data of the mean of the slips given the data, "data"; that
-        mean, "slip", the strike slips of the patches then their dip slips; and the cumulative
-        slip fraction of each patch in each bin, "F"
+        mean, "slip", the strike slips of the patches then their dip slips; the cumulative slip
+        fraction of each patch in each bin, "F"; and, with static data, theirs, "static", with
+        the ramps that fit them best, "ramps"
         """
         θ = numpy.atleast_2d(numpy.asarray(theta, dtype=float))
         F = self.fractions(θ)
         mean = self.marginal.mean(F, self.sigma(θ), numpy.random.default_rng(self.ghk_seed))
-        return {"data": self.marginal.predict(F, mean), "slip": mean, "F": F}
+        out = {"data": self.marginal.predict(F, mean), "slip": mean, "F": F}
+        static = self.marginal.static
+        if static is not None:
+            out.update(static=static.predict(mean), ramps=static.ramp(mean))
+        return out
 
 
     def draw_slips(self, theta, rng, count=1):
@@ -296,6 +320,26 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
 
 
     # implementation details
+    def _static(self, application, Np):
+        """
+        The static data, if any, a {Static}
+        """
+        from .marginal import Static
+        error = application.error
+        if self.static_data is None and self.static_green is None:
+            return None
+        if self.static_data is None or self.static_green is None:
+            error.log("kinematicgaussianslip: static data need both static_data and static_green")
+            raise SystemExit(1)
+        data = self.static_data
+        data.initialize(application=application)
+        if getattr(data, "mask", None) is not None:
+            error.log("kinematicgaussianslip: no mask for the static data; drop the missing ones")
+            raise SystemExit(1)
+        G = self.io.load(filename=self.static_green, shape=(data.observations, 2 * Np + self.static_ramps))
+        return Static(G, data.observed(), data.covariance(), self.static_ramps)
+
+
     def _cuda(self, grid):
         """
         The marginal likelihood on the device: the arrival times of each nucleation point, by a
@@ -317,7 +361,8 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
                 parameters=self.parameters, observations=1, idx_map=self._maps[-1].grid, **grid))
         self._stride = self.samples * Np * self.points
         self._TI = altar.cuda.matrix(shape=(self.fronts * self.samples, Np * self.points), dtype="float64")
-        constant = -0.5 * (m.quadratic + m.logdetC0 + m.noise.logdet + m.observations * math.log(2 * math.pi)) - m.logZ0
+        constant = -0.5 * (m.quadratic + m.logdetC0 + m.noise.logdet + m.observations * math.log(2 * math.pi)
+                           + m.static_terms) - m.logZ0
         uniforms = m.uniforms if m.bounded else numpy.zeros(0)
         self._gpu = cudaseismic.cudaGaussianSlip(
             Np=Np, Nsp=self.points, bins=self.bins, components=self.components, dt=self.dt,
@@ -327,7 +372,7 @@ class KinematicGaussianSlip(BayesianL2, family="altar.models.seismic.kinematicga
             origin=self.origin, rise_columns=self._rise[self._groups].astype("int64"),
             scale_column=-1 if self._scale is None else int(self._scale[0]), sigma=self.slip_sigma,
             GG=numpy.array(m.GG), GSD=numpy.array(m.GSD), Rinv=numpy.array(m.Rinv), C0inv=m.C0inv,
-            order=m.order.astype("int32"), bounded=m.bounded, uniforms=uniforms, constant=constant,
+            Ps=m.Ps, bs=m.bs, order=m.order.astype("int32"), bounded=m.bounded, uniforms=uniforms, constant=constant,
             chunk=min(self.gpu_chunk, self.samples))
         return self
 

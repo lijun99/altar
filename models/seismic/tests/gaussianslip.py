@@ -11,8 +11,9 @@
 # fractions against the compiled kinematic model, step and bin; the marginal likelihood against
 # the dense gaussian of the data, with datakron and with cd_std; a second nucleation point after
 # the window, or the same as the first, against one; a sampled slip scale against a fixed one;
-# the mean slips and their data; and the samples it rejects. Each configuration runs in a process
-# of its own
+# the mean slips and their data; static data with ramps, the joint likelihood and the mean slips
+# against the dense gaussian of both data sets; and the samples it rejects. Each configuration runs
+# in a process of its own
 import os
 import pathlib
 import subprocess
@@ -26,6 +27,15 @@ sys.path.insert(0, str(HERE / "trimesh"))
 
 COMPONENTS, STATIONS, BINS, DT, NMESH, CHAINS = 3, 6, 8, 4.0, 6, 6
 OBS = COMPONENTS * STATIONS * BINS
+# the static data: observations, ramps
+STATIC, RAMPS = 20, 3
+STATIC_CONFIG = """static_green = static_insar.gf.h5
+        static_ramps = {ramps}
+        static_data = altar.data.datal2
+        static_data:
+            observations = {obs}
+            data_file = static.h5
+            cd_file = static.cd.h5""".format(ramps=RAMPS, obs=STATIC)
 CONFIG = """
 slipmodel:
     model = altar.models.seismic.kinematicgaussianslip
@@ -87,6 +97,8 @@ RUNS = {
     "scale": (1, "patches", "datakron", "bin", True),
     "fixed": (1, "patches", "datakron", "bin", False),
     "positive": (1, "patches", "datakron", "bin", False),
+    "static": (1, "patches", "datakron", "bin", True),
+    "staticpos": (1, "patches", "datakron", "bin", False),
 }
 
 
@@ -104,7 +116,8 @@ def worker(case, name, gpu=False):
     extra = "slip_scale = log_sigma" if scaled else ""
     # without origins, the first chain's, fixed
     extra = f"origin = {float(front[0, Np + 3])!r}" if name == "fixed" else extra
-    extra = "positive = dip\n        ghk_paths = 4096" if name == "positive" else extra
+    extra = "positive = dip\n        ghk_paths = 4096" if name in ("positive", "staticpos") else extra
+    extra += "\n        " + STATIC_CONFIG if name.startswith("static") else ""
     folder = case / (name + ("-gpu" if gpu else ""))
     folder.mkdir()
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
@@ -158,8 +171,9 @@ def worker(case, name, gpu=False):
     off[:, model._hypocenter[0]] = 39.9
     off[:, model._hypocenter[1]] = 39.9
     rejected["off"] = verify(off)
+    static = {k: out[k] for k in ("static", "ramps") if k in out}
     numpy.savez(case / f"{name}{'-gpu' if gpu else ''}.npz", likelihood=likelihood, F=out["F"], slip=out["slip"], data=out["data"],
-                onsets=model.onsets(θ), **{f"rejected_{k}": v for k, v in rejected.items()})
+                onsets=model.onsets(θ), **static, **{f"rejected_{k}": v for k, v in rejected.items()})
     return 0
 
 
@@ -195,6 +209,14 @@ def main():
     d = rng.standard_normal(OBS)
     with h5py.File(case / "data.h5", "w") as h5:
         h5["data"] = d
+    # the static data: green's functions of the slips then of the ramps, a dense covariance
+    Gs = rng.standard_normal((STATIC, 2 * Np + RAMPS))
+    X = rng.standard_normal((STATIC, STATIC))
+    Cs = 0.3 * X @ X.T / STATIC + 0.5 * numpy.eye(STATIC)
+    ds = 3 * rng.standard_normal(STATIC)
+    for file, value in (("static_insar.gf.h5", Gs), ("static.cd.h5", Cs), ("static.h5", ds)):
+        with h5py.File(case / file, "w") as h5:
+            h5["data"] = value
 
     results = {}
     failures = 0
@@ -225,7 +247,7 @@ def main():
         print(f"  {label}: {error:.2e} (tolerance {tolerance:.0e}) {'ok' if ok else 'FAILED'}")
 
     rel = lambda a, b: numpy.abs(a - b).max() / numpy.abs(b).max()
-    one, two, std, scale, fixed, positive = (results[k] for k in RUNS)
+    one, two, std, scale, fixed, positive = (results[k] for k in ("one", "two", "std", "scale", "fixed", "positive"))
 
     # the onsets against the compiled arrival times plus the origin, the fractions of the model
     # against them, and the fractions against the compiled model's Mb, at origin 0
@@ -287,6 +309,44 @@ def main():
         mean = numpy.linalg.solve(numpy.eye(2 * Np) / 0.49 + A.T @ Ci @ A, A.T @ Ci @ d)
         worst = max(worst, rel(one["slip"][k], mean), rel(one["data"][k], A @ mean))
     check("mean slips and their data against the dense solution", worst, 1e-10)
+
+    # static data: the joint likelihood and the mean slips against the dense gaussian of both data
+    # sets, the slips integrated out first, then the ramps; the ramps that fit best, and the box
+    # probabilities of positive dip slips against genz's
+    static, staticpos = results["static"], results["staticpos"]
+    y = numpy.concatenate([d, ds])
+    H = numpy.zeros((OBS + STATIC, RAMPS))
+    H[OBS:] = Gs[:, 2 * Np:]
+    Cy0 = numpy.zeros((OBS + STATIC, OBS + STATIC))
+    Cy0[:OBS, :OBS], Cy0[OBS:, OBS:] = K.dense(), Cs
+    worst, slips, joint = 0.0, 0.0, []
+    for k in range(CHAINS):
+        F2 = numpy.concatenate([static["F"][k], static["F"][k]])
+        A = numpy.einsum("jcs,jk->cskj", G.reshape(2 * Np, COMPONENTS, STATIONS), F2).reshape(OBS, 2 * Np)
+        B = numpy.concatenate([A, Gs[:, :2 * Np]])
+        Cy = 0.49 * B @ B.T + Cy0
+        Ci = numpy.linalg.inv(Cy)
+        W = Ci - Ci @ H @ numpy.linalg.solve(H.T @ Ci @ H, H.T @ Ci)
+        log = -0.5 * (y @ W @ y + numpy.linalg.slogdet(Cy)[1] + numpy.linalg.slogdet(H.T @ Ci @ H)[1]
+                      + (OBS + STATIC - RAMPS) * numpy.log(2 * numpy.pi))
+        joint.append(log)
+        worst = max(worst, abs(static["likelihood"][k] - log) / abs(log))
+        slips = max(slips, rel(static["slip"][k], 0.49 * B.T @ W @ y))
+    check("static data: joint likelihood against the dense gaussian", worst, 1e-11)
+    check("static data: mean slips against the dense solution", slips, 1e-10)
+    Csi = numpy.linalg.inv(Cs)
+    residual = ds[None] - static["static"]
+    check("static data: the ramps that fit best, R^T C_s^-1 residual", numpy.abs(residual @ Csi @ Gs[:, 2 * Np:]).max(), 1e-10)
+    from altar.models.seismic.marginal import Static
+    joint_marginal = GaussianSlip(G, d, K, static=Static(Gs, ds, Cs, RAMPS))
+    worst = 0.0
+    for k in range(2):
+        mean, L = joint_marginal.posterior(staticpos["F"][k:k + 1], 0.7)
+        cov = numpy.linalg.inv(L[0] @ L[0].T)[Np:, Np:]
+        box = math.log(multivariate_normal(mean=-mean[0, Np:], cov=cov, abseps=1e-9, releps=1e-6,
+                                           maxpts=10 ** 7).cdf(numpy.zeros(Np)))
+        worst = max(worst, abs(staticpos["likelihood"][k] - joint[k] - box - Np * math.log(2)))
+    check("static data, positive dip slips: box probabilities against genz, nats", worst, 2e-2)
 
     # cuda against the cpu, the same sobol points for the bounded slips
     for name, r in gpus.items():

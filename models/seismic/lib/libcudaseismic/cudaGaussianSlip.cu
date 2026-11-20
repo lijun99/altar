@@ -90,10 +90,10 @@ namespace {
         }
     }
 
-    // P[s] = C0^-1 / sigma^2 + sum_c GG_c o FRF_c, in the order of the bounded slips last
+    // P[s] = C0^-1 / sigma^2 + Ps + sum_c GG_c o FRF_c, in the order of the bounded slips last
     __global__ void assemble(const double * theta, size_t parameters, size_t start, size_t batch, int n,
-        int Np, int C, const int * order, const double * C0inv, const double * GG, const double * FRF,
-        long scaleColumn, double sigma, double * P)
+        int Np, int C, const int * order, const double * C0inv, const double * Ps, const double * GG,
+        const double * FRF, long scaleColumn, double sigma, double * P)
     {
         size_t id = threadIdx.x + size_t(blockIdx.x)*blockDim.x;
         size_t nn = size_t(n)*n;
@@ -102,23 +102,23 @@ namespace {
         int i = (id % nn) / n, j = id % n;
         int oi = order[i], oj = order[j];
         double sd = scale(theta, parameters, start + s, scaleColumn, sigma);
-        double v = C0inv[size_t(oi)*n + oj]/(sd*sd);
+        double v = C0inv[size_t(oi)*n + oj]/(sd*sd) + Ps[size_t(oi)*n + oj];
         for (int c = 0; c < C; ++c) {
             v += GG[c*nn + size_t(oi)*n + oj]*FRF[(c*batch + s)*size_t(Np)*Np + (oi % Np)*Np + (oj % Np)];
         }
         P[id] = v;
     }
 
-    // b[s][i] = sum_c sum_k F[s][p(i)][k] GSD_c[i][k], in the order of the bounded slips last
+    // b[s][i] = bs[i] + sum_c sum_k F[s][p(i)][k] GSD_c[i][k], in the order of the bounded slips last
     __global__ void rhs(size_t batch, int n, int Np, int C, int bins, const int * order, const double * F,
-        const double * GSD, double * b)
+        const double * GSD, const double * bs, double * b)
     {
         size_t id = threadIdx.x + size_t(blockIdx.x)*blockDim.x;
         if (id >= batch*n) return;
         size_t s = id / n;
         int oi = order[id % n];
         const double * f = F + (s*Np + oi % Np)*bins;
-        double v = 0;
+        double v = bs[oi];
         for (int c = 0; c < C; ++c) {
             const double * g = GSD + (size_t(c)*n + oi)*bins;
             for (int k = 0; k < bins; ++k) v += f[k]*g[k];
@@ -201,8 +201,9 @@ altar::models::seismic::cudaGaussianSlip::
 cudaGaussianSlip(size_t Np, size_t Nsp, size_t bins, size_t components, double dt, int kind,
                  double peak, int mode, size_t fronts, const long * originColumns, double origin,
                  const long * riseColumns, long scaleColumn, double sigma, const double * GG,
-                 const double * GSD, const double * Rinv, const double * C0inv, const int * order,
-                 size_t bounded, const double * uniforms, size_t paths, double constant, size_t chunk) :
+                 const double * GSD, const double * Rinv, const double * C0inv, const double * Ps,
+                 const double * bs, const int * order, size_t bounded, const double * uniforms,
+                 size_t paths, double constant, size_t chunk) :
     _Np(Np), _Nsp(Nsp), _bins(bins), _C(components), _n(2*Np), _fronts(fronts), _bounded(bounded),
     _paths(paths), _chunk_size(chunk), _dt(dt), _peak(peak), _origin(origin), _sigma(sigma),
     _constant(constant), _kind(kind), _mode(mode), _scale(scaleColumn)
@@ -215,6 +216,8 @@ cudaGaussianSlip(size_t Np, size_t Nsp, size_t bins, size_t components, double d
     _GSD = upload(GSD, C*n*bins);
     _Rinv = upload(Rinv, C*bins*bins);
     _C0inv = upload(C0inv, n*n);
+    _Ps = upload(Ps, n*n);
+    _bs = upload(bs, n);
     if (bounded) {
         _uniforms = upload(uniforms, paths*bounded);
         cudaSafeCall(cudaMalloc(&_y, chunk*bounded*paths*sizeof(double)));
@@ -242,7 +245,7 @@ altar::models::seismic::cudaGaussianSlip::
 ~cudaGaussianSlip()
 {
     for (void * p : {(void *)_originColumns, (void *)_riseColumns, (void *)_order, (void *)_GG,
-                     (void *)_GSD, (void *)_Rinv, (void *)_C0inv, (void *)_uniforms, (void *)_F,
+                     (void *)_GSD, (void *)_Rinv, (void *)_C0inv, (void *)_Ps, (void *)_bs, (void *)_uniforms, (void *)_F,
                      (void *)_FR, (void *)_FRF, (void *)_P, (void *)_b, (void *)_mean, (void *)_y,
                      (void *)_Parray, (void *)_barray, (void *)_marray, (void *)_info}) {
         if (p) cudaFree(p);
@@ -296,9 +299,9 @@ _chunk(const double * theta, size_t parameters, const double * TI, size_t stride
     }
     size_t entries = batch*size_t(n)*n;
     ::assemble<<<IDIVUP(entries, BLOCKDIM), BLOCKDIM>>>
-        (theta, parameters, start, batch, n, Np, int(_C), _order, _C0inv, _GG, _FRF, _scale, _sigma, _P);
+        (theta, parameters, start, batch, n, Np, int(_C), _order, _C0inv, _Ps, _GG, _FRF, _scale, _sigma, _P);
     cudaCheckError("cudaGaussianSlip.assemble");
-    ::rhs<<<IDIVUP(batch*n, BLOCKDIM), BLOCKDIM>>>(batch, n, Np, int(_C), nt, _order, _F, _GSD, _b);
+    ::rhs<<<IDIVUP(batch*n, BLOCKDIM), BLOCKDIM>>>(batch, n, Np, int(_C), nt, _order, _F, _GSD, _bs, _b);
     cudaCheckError("cudaGaussianSlip.rhs");
     // P = L L^T; z = L^-1 b in {b}; the mean L^-T z
     cusolverSafeCall(cusolverDnDpotrfBatched(_cusolver, CUBLAS_FILL_MODE_LOWER, n, _Parray, n, _info,

@@ -34,19 +34,20 @@ namespace {
         GaussianSlip(std::size_t Np, std::size_t Nsp, std::size_t bins, std::size_t components, double dt,
                      int kind, double peak, int mode, longs_t originColumns, double origin,
                      longs_t riseColumns, long scaleColumn, double sigma, doubles_t GG, doubles_t GSD,
-                     doubles_t Rinv, doubles_t C0inv, ints_t order, std::size_t bounded,
-                     doubles_t uniforms, double constant, std::size_t chunk)
+                     doubles_t Rinv, doubles_t C0inv, doubles_t Ps, doubles_t bs, ints_t order,
+                     std::size_t bounded, doubles_t uniforms, double constant, std::size_t chunk)
         {
             std::size_t n = 2*Np;
             if (GG.size() != components*n*n || GSD.size() != components*n*bins
-                || Rinv.size() != components*bins*bins || C0inv.size() != n*n || order.size() != n
+                || Rinv.size() != components*bins*bins || C0inv.size() != n*n || Ps.size() != n*n || bs.size() != n
+                || order.size() != n
                 || riseColumns.size() != Np || (bounded && uniforms.size() % bounded)) {
                 throw py::value_error("cudaGaussianSlip: inconsistent sizes");
             }
             std::size_t paths = bounded ? uniforms.size()/bounded : 0;
             _model = std::make_unique<model_t>(Np, Nsp, bins, components, dt, kind, peak, mode,
                 originColumns.size(), originColumns.data(), origin, riseColumns.data(), scaleColumn,
-                sigma, GG.data(), GSD.data(), Rinv.data(), C0inv.data(), order.data(), bounded,
+                sigma, GG.data(), GSD.data(), Rinv.data(), C0inv.data(), Ps.data(), bs.data(), order.data(), bounded,
                 uniforms.data(), paths, constant, chunk);
         }
 
@@ -81,10 +82,10 @@ altar::models::seismic::extensions::gaussianslip::__init__(py::module & m) -> vo
                              "the marginal likelihood of the rupture fronts, the gaussian slips integrated out")
         .def(py::init<std::size_t, std::size_t, std::size_t, std::size_t, double, int, double, int,
                       longs_t, double, longs_t, long, double, doubles_t, doubles_t, doubles_t,
-                      doubles_t, ints_t, std::size_t, doubles_t, double, std::size_t>(),
+                      doubles_t, doubles_t, doubles_t, ints_t, std::size_t, doubles_t, double, std::size_t>(),
              "Np"_a, "Nsp"_a, "bins"_a, "components"_a, "dt"_a, "kind"_a, "peak"_a, "mode"_a,
              "origin_columns"_a, "origin"_a, "rise_columns"_a, "scale_column"_a, "sigma"_a, "GG"_a,
-             "GSD"_a, "Rinv"_a, "C0inv"_a, "order"_a, "bounded"_a, "uniforms"_a, "constant"_a, "chunk"_a)
+             "GSD"_a, "Rinv"_a, "C0inv"_a, "Ps"_a, "bs"_a, "order"_a, "bounded"_a, "uniforms"_a, "constant"_a, "chunk"_a)
         .def("loglikelihood", &GaussianSlip::loglikelihood, "theta"_a, "TI"_a, "stride"_a, "out"_a, "batch"_a,
              "out <- the marginal log likelihoods of the first {batch} rows of {theta}, from the arrival "
              "times at the source points of each front in {TI}, {stride} apart")

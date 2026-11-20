@@ -124,6 +124,62 @@ def sobol(count, k, seed):
     return qmc.Sobol(d=k, scramble=True, seed=seed).random(count)
 
 
+class Static:
+    """
+    Static displacements after all the slip, d_s = G_s m + R r + e, e ~ N(0, C_s), with the slips
+    m, the ramps r, the last {ramps} columns of {G}, (observations, slips + ramps), and C_s {C}, a
+    variance or a matrix; the ramps integrated out under a flat prior, by projecting them out of
+    the whitened system. Their parts of the marginal likelihood of {GaussianSlip}: P += G^T W G,
+    b += G^T W d, and the terms d^T W d + log|C_s| + log|R^T C_s^-1 R| + (observations - ramps)
+    log 2 pi, with W = C_s^-1 - C_s^-1 R (R^T C_s^-1 R)^-1 R^T C_s^-1
+    """
+
+
+    def __init__(self, G, data, C, ramps=0):
+        G = numpy.asarray(G, dtype=float)
+        d = numpy.asarray(data, dtype=float).ravel()
+        if G.ndim != 2 or G.shape[0] != d.size or G.shape[1] <= ramps:
+            raise ValueError(f"static green's functions ({d.size} observations, slips + {ramps} ramps); got {G.shape}")
+        self.G, self.ramps, self.slips = G, ramps, G.shape[1] - ramps
+        if numpy.ndim(C) == 0:
+            sd = math.sqrt(float(C))
+            whiten = lambda x: x / sd
+            logdet = d.size * math.log(float(C))
+        else:
+            L = numpy.linalg.cholesky(numpy.asarray(C, dtype=float))
+            whiten = lambda x: scipy.linalg.solve_triangular(L, x, lower=True)
+            logdet = 2 * numpy.log(numpy.diag(L)).sum()
+        Gw, dw = whiten(G), whiten(d)
+        Gm, dm = Gw[:, :self.slips], dw
+        if ramps:
+            Q, R = numpy.linalg.qr(Gw[:, self.slips:])
+            Gm, dm = Gm - Q @ (Q.T @ Gm), dm - Q @ (Q.T @ dm)
+            logdet += 2 * numpy.log(numpy.abs(numpy.diag(R))).sum()
+            self._Q, self._R, self._Gw, self._dw = Q, R, Gw[:, :self.slips], dw
+        self.P, self.b = Gm.T @ Gm, Gm.T @ dm
+        self.terms = dm @ dm + logdet + (d.size - ramps) * math.log(2 * math.pi)
+        self.observations = d.size
+
+
+    def ramp(self, slip):
+        """
+        The ramps that fit the data best given the slips {slip}, (..., slips)
+        """
+        slip = numpy.asarray(slip, dtype=float)
+        if not self.ramps:
+            return numpy.zeros(slip.shape[:-1] + (0,))
+        residual = self._dw - slip @ self._Gw.T
+        return numpy.linalg.solve(self._R, (residual @ self._Q)[..., None])[..., 0]
+
+
+    def predict(self, slip):
+        """
+        The static data of the slips {slip}, (..., slips), with the ramps that fit them best
+        """
+        slip = numpy.asarray(slip, dtype=float)
+        return slip @ self.G[:, :self.slips].T + self.ramp(slip) @ self.G[:, self.slips:].T
+
+
 class GaussianSlip:
     """
     The data d, per component c, (stations, bins), linear in the slips m of the patches along two
@@ -142,10 +198,13 @@ class GaussianSlip:
     log p(d) gains log Pr(m_S >= 0 | d) - log Pr(m_S >= 0), the first by GHK with {paths} fixed
     sobol points, the same for every sample, so that the likelihood is a smooth function of the
     fronts; the second exact for C0 the identity, else by GHK with many points
+
+    With {static}, a {Static}, static data of the same slips add constant terms to P, b and
+    log p(d), which is then the likelihood of both data sets
     """
 
 
-    def __init__(self, G, data, noise, C0=None, positive=None, paths=256, seed=0):
+    def __init__(self, G, data, noise, C0=None, positive=None, paths=256, seed=0, static=None):
         self.noise = noise
         C, ns, nt = noise.components, noise.stations, noise.bins
         G = numpy.asarray(G, dtype=float)
@@ -173,6 +232,13 @@ class GaussianSlip:
             self.Rinv.append(LRinv.T @ LRinv)
         self.quadratic = quadratic
         self.observations = C * ns * nt
+        # the static data, constant parts of the system
+        if static is not None and static.slips != self.slips:
+            raise ValueError(f"static data of {static.slips} slips, not {self.slips}")
+        self.static = static
+        self.Ps = numpy.zeros((self.slips, self.slips)) if static is None else static.P
+        self.bs = numpy.zeros(self.slips) if static is None else static.b
+        self.static_terms = 0.0 if static is None else static.terms
         if C0 is None:
             self.C0inv, self.logdetC0 = numpy.eye(self.slips), 0.0
         else:
@@ -203,8 +269,8 @@ class GaussianSlip:
         F = numpy.asarray(F, dtype=float)
         n, Np = F.shape[0], self.patches
         sigma = numpy.broadcast_to(numpy.asarray(sigma, dtype=float), (n,))
-        P = self.C0inv[None] / (sigma ** 2)[:, None, None]
-        b = numpy.zeros((n, self.slips))
+        P = self.C0inv[None] / (sigma ** 2)[:, None, None] + self.Ps[None]
+        b = numpy.repeat(self.bs[None], n, axis=0)
         work = numpy.empty((n, Np, Np))
         blocks = (slice(0, Np), slice(Np, None))
         for GG, GSD, Rinv in zip(self.GG, self.GSD, self.Rinv):
@@ -252,7 +318,7 @@ class GaussianSlip:
         sigma = numpy.broadcast_to(numpy.asarray(sigma, dtype=float), (P.shape[0],))
         logdetCm = self.slips * numpy.log(sigma ** 2) + self.logdetC0
         log = -0.5 * (self.quadratic - (z * z).sum(axis=1) + logdetP + logdetCm + self.noise.logdet
-                      + self.observations * math.log(2 * math.pi))
+                      + self.observations * math.log(2 * math.pi) + self.static_terms)
         if self.bounded:
             log += box(L, mean, self.uniforms) - self.logZ0
         return log
