@@ -87,3 +87,29 @@ to kamb or alexandria). The cpu on cairo: at 24 patches, the code before the thr
 threads, the cpu ran the batched LAPACK calls with OpenBLAS's 64 threads, beside another user's 16
 processes, and the 320-patch case had not finished after 2 h 45 min; at 1 or 16 threads it took
 about 1.4 s per 64 samples, the solves with the Cholesky factor then general LU solves.
+
+## Static data (`compare.py setup <folder> static`), 2026-11-19, kamb
+
+The synthetic above, slips from N(0, 0.7^2), plus 60 static data of the same slips with 3 ramps
+(truth uniform in (-3, 3)) and a dense covariance. gs: `static_data` with the ramps integrated out
+under a flat prior, cpu, 16 threads; kmjoint: an ensemble of the static model (ramps uniform in
+(-20, 20)) and kinematicmesh, annealed together, catmip, a V100 in float64
+(`~/scripts/altar/kinematic/compare_static.sh`). kmjoint's evidence is shown with its ramp prior's
+density, 40^-3, taken out.
+
+| | truth | gs | kmjoint |
+|---|---|---|---|
+| velocity | 5.00 | 7.31 ± 1.14 | 7.06 ± 1.08 |
+| hypocenter u | 10.0 | 5.60 ± 3.04 | 5.90 ± 3.08 |
+| hypocenter v | 15.0 | 19.32 ± 3.32 | 18.97 ± 2.94 |
+| mean rise | 3.00 | 4.11 ± 0.49 | 4.04 ± 0.50 |
+| log evidence | | -1125.02 | -1121.79 |
+| chains x steps | | 2048 x 50 | 4096 x 100 |
+| time | | 383 s | 91 s |
+
+Slips against gs: median |mean difference| / sd 0.03, sd ratio 0.98; rise times 0.12, 0.97;
+correlation with the truth 0.989 in both, 94 % within 2 sd. kmjoint's ramps (-2.66, -2.97, 0.53)
+± (0.12, 0.15, 0.12), truth (-2.75, -2.95, 0.52). Marginal likelihood at the samples, median:
+gs -1101.82, kmjoint -1101.01. kmjoint's catmip evidence is 3.2 nats above gs's exact one; catmip
+on kinematicmesh was above by 1.9 (gaussian) and 1.4 (positive) nats in the runs above, with 3
+fewer parameters.
