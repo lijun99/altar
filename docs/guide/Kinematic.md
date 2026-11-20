@@ -443,6 +443,7 @@ times and rupture velocities one per patch, and the hypocenter in surface coordi
 leading axis on each, it computes a batch of models at once. The data are then the big G times
 `Mb`, raveled.
 
+(kinematic-cascaded)=
 ## The cascaded inversion
 
 The example, `cascaded.pfg`, sets up the ensemble:
@@ -744,6 +745,44 @@ On the synthetic above with positive dip slips, the fronts and slips matched tho
 `kinematicmesh` with the dip slips under `tgaussian`, with CATMIP and CATMIP-HMC: the means of the
 slips within 0.1 of their standard deviations, the evidence of 4096 paths within 0.02 nats of
 CATMIP-HMC's.
+
+### Static data
+
+Static displacements observed after all the slip, e.g. InSAR or GNSS offsets spanning the event,
+see the same slips, $\mathbf d_s = G_s \mathbf m + R\,\mathbf r$, whatever the fronts, with $\mathbf r$
+the ramps of the interferograms, if any. They join the likelihood exactly: they add constants to
+$P$ and $\mathbf b$, and to the log likelihood
+
+$$
+-\tfrac12 \big(\mathbf d_s^T W \mathbf d_s + \log|C_s| + \log|R^T C_s^{-1} R|
++ (n_s - n_r) \log 2\pi\big), \qquad
+W = C_s^{-1} - C_s^{-1} R\,(R^T C_s^{-1} R)^{-1} R^T C_s^{-1},
+$$
+
+the ramps integrated out under a flat prior, with $W$ in place of $C_s^{-1}$ in the constants. This
+is the {ref}`cascaded inversion <kinematic-cascaded>` done exactly: with a gaussian prior, the
+posterior of the slips given the static data is gaussian, the prior of the kinematic data, so
+neither a static run, an ensemble, nor an annealing of the static likelihood is needed, and the
+evidence is that of both data sets. They cost nothing per sample, on the cpu or the GPU.
+
+```none
+model:
+    static_data = altar.data.datal2  # with a cd_file, or a constant cd_std; no mask
+    static_data:
+        observations = 1200
+        data_file = insar.h5
+        cd_file = insar.cd.h5
+    static_green = static.gf.h5      # (observations, 2 patches + ramps), as the static model's
+    static_ramps = 3                 # its last columns, integrated out; 0 by default
+```
+
+`static_green` is laid out as the static model's (see {doc}`Static`): the strike slips of the
+patches, their dip slips, then the ramps, so the files of a static inversion serve as they are.
+The static data must be of the slips of the kinematic window only, all done by their epoch: no
+afterslip, postseismic or interseismic motion of other times, which would be fit by the slips of
+the event. Their ramps have a flat prior: the evidence is then defined up to a constant, fine
+for comparing models with the same ramps. `forward_problem` adds the static data of the mean slips,
+`static`, with the ramps that fit them best, `ramps`.
 
 After a run, `model.draw_slips(theta, rng, count)` draws the slips of the samples given the data,
 and `forward_problem` gives the mean slips, their data and the slip fractions of the patches.

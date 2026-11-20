@@ -8,8 +8,10 @@
 
 # kinematicgaussianslip against kinematicmesh, which samples the slips, on one synthetic: the same
 # fault, data, noise, priors and source time function (bin), so the same posterior; the front,
-# the slips and the evidence of each run, and the cost
-#     python compare.py setup <folder>
+# the slips and the evidence of each run, and the cost; with "static", static data of the slips too,
+# with ramps: kinematicgaussianslip with them against an ensemble of the static model and
+# kinematicmesh, kmjoint, annealed together, the ramps uniform there
+#     python compare.py setup <folder> [gaussian|positive|static]
 #     cd <folder>/<run> && slipmodel --config=slipmodel.pfg     for run in gs, km, kmhmc
 #     python compare.py evaluate <folder> <run>
 #     python compare.py report <folder>
@@ -24,6 +26,16 @@ sys.path.insert(0, str(HERE.parent / "trimesh"))
 
 COMPONENTS, STATIONS, BINS, DT, NMESH, SIGMA = 3, 15, 12, 2.0, 6, 0.7
 RISE, VELOCITY, HYPOCENTER = 3.0, 5.0, (10.0, 15.0)
+# the static data: observations, ramps, the support of the uniform prior of each ramp in kmjoint
+STATIC, RAMPS, RAMP = 60, 3, 20.0
+STATIC_GS = """
+        static_green = static_insar.gf.h5
+        static_ramps = {ramps}
+        static_data = altar.data.datal2
+        static_data:
+            observations = {static}
+            data_file = static.h5
+            cd_file = static.cd.h5"""
 DATA = """
         dataobs = altar.data.datakron
         dataobs:
@@ -58,7 +70,7 @@ slipmodel:
         bins = {bins}
         dt = {dt}
         slip_sigma = {sigma}
-        {positive}""" + DATA + """
+        {positive}{static_gs}""" + DATA + """
         psets_list = [risetime, rupturevelocity, hypocenter]
         psets:
             risetime = contiguous
@@ -110,14 +122,79 @@ slipmodel:
         precision = float64
         gpuprecision = float64
 """
+KMJOINT = """
+slipmodel:
+    model = altar.models.ensemble
+    model:
+        case = ..
+        psets_list = [strikeslip, dipslip, ramp, risetime, rupturevelocity, hypocenter]
+        psets:
+            strikeslip = contiguous
+            dipslip = contiguous
+            ramp = contiguous
+            risetime = contiguous
+            rupturevelocity = contiguous
+            hypocenter = contiguous
+            strikeslip:
+                count = {patches}
+                prior = gaussian
+                prior.sigma = {sigma}
+            dipslip:
+                count = {patches}{dipslip}
+            ramp:
+                count = {ramps}
+                prior = uniform
+                prior.support = (-{ramp}, {ramp})""" + FRONT + """
+        models:
+            static = altar.models.seismic.static
+            kinematic = altar.models.seismic.kinematicmesh
+            static:
+                case = ..
+                psets_list = [strikeslip, dipslip, ramp]
+                green = static_insar.gf.h5
+                dataobs:
+                    observations = {static}
+                    data_file = static.h5
+                    cd_file = static.cd.h5
+            kinematic:
+                case = ..
+                mesh = mesh.h5
+                Nmesh = {nmesh}
+                velocity_groups = groups
+                green = kinematicG.gf.h5
+                Nt = {bins}
+                dt = {dt}
+                integration = bin
+                psets_list = [strikeslip, dipslip, risetime, rupturevelocity, hypocenter]
+                dataobs = altar.data.datakron
+                dataobs:
+                    observations = {obs}
+                    data_file = data.h5
+                    noise_file = noise.h5
+    controller = altar.bayesian.{controller}
+    controller.archiver = altar.bayesian.h5recorder
+    controller.archiver.output_dir = results
+    job:
+        tasks = 1
+        gpus = 1
+        chains = {chains}
+        steps = {steps}
+        precision = float64
+        gpuprecision = float64
+"""
 # run: template, controller, chains, steps, reparameterized
 RUNS = {"gs": (GS, "catmip", 2048, 50, False), "km": (KM, "catmip", 4096, 100, False),
         "kmhmc": (KM, "catmip_hmc", 1024, 20, True)}
+# with static data
+STATIC_RUNS = {"gs": RUNS["gs"], "kmjoint": (KMJOINT, "catmip", 4096, 100, False)}
 
 
 # the prior of the dip slips of kinematicmesh: gaussian, or truncated to positive slips
 DIPSLIP = {
     "gaussian": """
+                prior = gaussian
+                prior.sigma = {sigma}""",
+    "static": """
                 prior = gaussian
                 prior.sigma = {sigma}""",
     "positive": """
@@ -130,7 +207,8 @@ DIPSLIP = {
 def setup(folder, prior="gaussian"):
     """
     The inputs, the truth and the configurations of the runs, in {folder}; with {prior}
-    "positive", the dip slips bounded below by 0 in the truth and the priors
+    "positive", the dip slips bounded below by 0 in the truth and the priors; with "static",
+    static data with ramps too
     """
     import h5py
     from kinematic_mesh import fault
@@ -159,13 +237,23 @@ def setup(folder, prior="gaussian"):
         h5["kinematicG.gf"] = big.reshape(BINS * 2 * Np, obs)
     with h5py.File(folder / "data.h5", "w") as h5:
         h5["data"] = numpy.zeros(obs)
-    for run, (template, controller, chains, steps, reparameterize) in RUNS.items():
+    # the static data: green's functions of the slips then of the ramps, a dense covariance
+    Gs = rng.standard_normal((STATIC, 2 * Np + RAMPS))
+    X = rng.standard_normal((STATIC, STATIC))
+    Cs = 0.2 * X @ X.T / STATIC + 0.3 * numpy.eye(STATIC)
+    for file, value in (("static_insar.gf.h5", Gs), ("static.cd.h5", Cs), ("static.h5", numpy.zeros(STATIC))):
+        with h5py.File(folder / file, "w") as h5:
+            h5["data"] = value
+    runs = STATIC_RUNS if prior == "static" else RUNS
+    for run, (template, controller, chains, steps, reparameterize) in runs.items():
         (folder / run).mkdir(exist_ok=True)
         dipslip = DIPSLIP[prior].format(sigma=SIGMA, reparameterize=reparameterize)
         (folder / run / "slipmodel.pfg").write_text(template.format(
             nmesh=NMESH, components=COMPONENTS, bins=BINS, dt=DT, sigma=SIGMA, obs=obs, patches=Np,
             controller=controller, chains=chains, steps=steps, reparameterize=reparameterize,
-            positive="positive = dip" if prior == "positive" else "", dipslip=dipslip))
+            positive="positive = dip" if prior == "positive" else "", dipslip=dipslip,
+            static_gs=STATIC_GS.format(ramps=RAMPS, static=STATIC) if prior == "static" else "",
+            static=STATIC, ramps=RAMPS, ramp=RAMP))
     # the data of the truth, by kinematicgaussianslip
     model = application(folder / "gs").model
     from altar.data.Kronecker import Kronecker
@@ -177,7 +265,11 @@ def setup(folder, prior="gaussian"):
     d = signal + Kronecker(S, R).draw(rng)
     with h5py.File(folder / "data.h5", "w") as h5:
         h5["data"] = d
-    numpy.savez(folder / "truth.npz", front=front, slip=slip, signal=signal)
+    ramps = rng.uniform(-3, 3, RAMPS)
+    static = Gs @ numpy.concatenate([slip, ramps])
+    with h5py.File(folder / "static.h5", "w") as h5:
+        h5["data"] = static + numpy.linalg.cholesky(Cs) @ rng.standard_normal(STATIC)
+    numpy.savez(folder / "truth.npz", front=front, slip=slip, signal=signal, ramps=ramps, static=static)
     print(f"setup: {Np} patches, {obs} data, signal rms {numpy.sqrt((signal ** 2).mean()):.2f}")
     return 0
 
@@ -211,6 +303,12 @@ def evaluate(folder, run):
     if run.startswith("gs"):
         out["front"] = θ[:, :Np + 3]
         out["slip"] = model.draw_slips(θ, numpy.random.default_rng(1))[:, 0, :]
+    elif run == "kmjoint":
+        # the evidence of flat ramps, as gs's: without the uniform prior's density, (2 RAMP)^-RAMPS
+        out["evidence"] = evidence + RAMPS * numpy.log(2 * RAMP)
+        out["front"] = θ[:, 2 * Np + RAMPS:]
+        out["slip"] = θ[:, :2 * Np]
+        out["ramps"] = θ[:, 2 * Np:2 * Np + RAMPS]
     else:
         out["front"] = θ[:, 2 * Np:]
         out["slip"] = θ[:, :2 * Np]
@@ -249,7 +347,7 @@ def report(folder):
     """
     truth = numpy.load(folder / "truth.npz")
     Np = truth["slip"].size // 2
-    names = [run for run in RUNS if (folder / f"{run}.npz").exists()]
+    names = [run for run in {**RUNS, **STATIC_RUNS} if (folder / f"{run}.npz").exists()]
     names += sorted(p.stem for p in folder.glob("gs-*.npz"))
     runs = {run: numpy.load(folder / f"{run}.npz") for run in names}
     times = {}
@@ -266,6 +364,10 @@ def report(folder):
     cells = "".join(f"{r['front'][:, :Np].mean():12.3f} ± {r['front'][:, :Np].mean(axis=1).std():9.3f}" for r in runs.values())
     print(f"{'mean rise':12s}{RISE:6.2f}{cells}")
     print(f"{'log evidence':18s}" + "".join(f"{float(r['evidence']):24.2f}" for r in runs.values()))
+    if "kmjoint" in runs:
+        print(f"  (kmjoint's with the density of its uniform ramp prior taken out, for flat ramps as gs's)")
+        print(f"ramps {numpy.round(truth['ramps'], 3)}: kmjoint {numpy.round(runs['kmjoint']['ramps'].mean(axis=0), 3)} "
+              f"± {numpy.round(runs['kmjoint']['ramps'].std(axis=0), 3)}")
     print(f"{'samples':18s}" + "".join(f"{r['front'].shape[0]:24d}" for r in runs.values()))
     print(f"{'time':18s}" + "".join(f"{times[run]:>24s}" for run in runs))
     # the slips and the rise times against those of gs
