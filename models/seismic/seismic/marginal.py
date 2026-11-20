@@ -110,7 +110,7 @@ def box(L, mean, uniforms, paths=False):
     logw = numpy.zeros((B, count))
     for i in range(k - 1, -1, -1):
         g = n - k + i
-        s = numpy.einsum("bpj,bj->bp", y[:, :, i + 1:], L[:, g + 1:, g])
+        s = numpy.matmul(y[:, :, i + 1:], L[:, g + 1:, g, None])[..., 0]
         Lgg = L[:, g, g][:, None]
         # x_g >= 0 when z_g >= s - L_gg mean_g
         lp = scipy.special.log_ndtr(Lgg * mean[:, g][:, None] - s)
