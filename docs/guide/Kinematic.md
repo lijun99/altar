@@ -791,9 +791,26 @@ and `forward_problem` gives the mean slips, their data and the slip fractions of
 The model has no gradient, for HMC or MALA: sample it with CATMIP. The noise is that of
 `datakron`, or a constant `cd_std`, without a mask.
 
-It runs on the GPU (`job.gpus = 1`) in double precision only (`job.gpuprecision = float64`), not
-embedded in a cascade, with the same likelihoods as the cpu to round-off. On the cpu, launch
-with `OPENBLAS_NUM_THREADS=1` (or `MKL_NUM_THREADS=1`): the samples of each task are then split
+It runs on the GPU (`job.gpus = 1`), not embedded in a cascade. In double precision
+(`job.gpuprecision = float64`) its likelihoods are the cpu's to round-off. With
+`job.gpuprecision = float32`, the samples, the arrival times and the likelihoods are in single
+precision, and `solve_precision` sets that of the slip fractions, the systems $P$, their Cholesky
+factors and GHK: `float64` (the default) or `float32`. The sums of the likelihood are in double
+either way.
+
+```none
+job.gpuprecision = float32
+model.solve_precision = float64    # or float32, on GPUs with little double precision throughput
+```
+
+On 320 patches, 3 x 108 x 24 data and 1024 samples on an RTX PRO 6000, against the cpu at the
+same samples: with float64 solves, the likelihoods were within 1e-3 nats, the rounding of a
+float32 likelihood of 1.6e4, in 0.14 s; with float32 solves, 3 times faster, the error grows with
+the condition number of $P$: 5e-3 nats at 4e4, and 0.2 nats at 4e6, with smooth Green's
+functions. Use float32 solves only where $P$ is well conditioned, and check against float64 on a
+few samples first.
+
+On the cpu, launch with `OPENBLAS_NUM_THREADS=1` (or `MKL_NUM_THREADS=1`): the samples of each task are then split
 over `OMP_NUM_THREADS` threads, or all its cpus, with `job.tasks` MPI tasks for more; e.g. 4
 tasks of 12 threads on 48 free cores. Otherwise the BLAS threads each small system itself, which
 scales poorly, and stalls on a machine whose cores are busy. The likelihoods of 1024
