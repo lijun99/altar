@@ -9,8 +9,9 @@
 # the time of the likelihoods of kinematicgaussianslip, cpu against cuda, for 1024 samples of one
 # front with a rise time per patch: the 24 patches of the tests with 15 stations x 12 bins, and
 # 320 patches with 108 stations x 24 bins; gaussian slips and positive dip slips; and the cuda
-# likelihoods against the cpu's
-#     python benchmark.py <folder>
+# likelihoods against the cpu's; with --precision=float32, cuda in float32, the linear algebra in
+# float64 and in float32, against the cpu at the samples rounded to float32
+#     python benchmark.py <folder> [--precision=float32]
 import os
 import pathlib
 import subprocess
@@ -38,6 +39,7 @@ slipmodel:
         dt = {dt}
         slip_sigma = 0.7
         {positive}
+        {solve}
         dataobs = altar.data.datakron
         dataobs:
             observations = {obs}
@@ -56,7 +58,7 @@ slipmodel:
         gpus = {gpus}
         chains = {samples}
         precision = float64
-        gpuprecision = float64
+        gpuprecision = {precision}
 """
 
 
@@ -92,21 +94,36 @@ def setup(folder, size):
     return Np, stations, bins
 
 
-def worker(case, positive, gpu):
+def tag(positive, gpu, precision="float64", solve="float64"):
     """
-    The likelihoods of the samples, and the time they took, on cuda the best of three
+    The name of a run: on the cpu in float64, or at the samples rounded to float32; on cuda, in
+    {precision}, the linear algebra in {solve}
+    """
+    name = f"{'positive' if positive else 'gaussian'}-{'gpu' if gpu else 'cpu'}"
+    if precision == "float32":
+        name += f"-{precision}-{solve}" if gpu else "-rounded"
+    return name
+
+
+def worker(case, positive, gpu, precision="float64", solve="float64"):
+    """
+    The likelihoods of the samples, and the time they took, on cuda the best of three; in
+    float32 on the cpu, at the samples rounded to float32
     """
     import h5py
     θ = numpy.load(case / "theta.npy")
+    if precision == "float32":
+        θ = θ.astype(numpy.float32).astype(float)
     Np = θ.shape[1] - 3
     with h5py.File(case / "noise.h5", "r") as h5:
         stations, bins = h5["S"].shape[1], h5["R"].shape[1]
-    name = f"{'positive' if positive else 'gaussian'}-{'gpu' if gpu else 'cpu'}"
+    name = tag(positive, gpu, precision, solve)
     folder = case / name
     folder.mkdir(exist_ok=True)
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
         components=COMPONENTS, bins=bins, dt=DT, positive="positive = dip" if positive else "",
-        obs=COMPONENTS * stations * bins, patches=Np, gpus=int(gpu), samples=SAMPLES))
+        obs=COMPONENTS * stations * bins, patches=Np, gpus=int(gpu), samples=SAMPLES,
+        precision=precision if gpu else "float64", solve=f"solve_precision = {solve}" if gpu else ""))
     os.chdir(folder)
     sys.argv = [sys.argv[0]]
     import altar
@@ -114,17 +131,53 @@ def worker(case, positive, gpu):
     model = altar.shells.altar(name="slipmodel").initialize().model
     if gpu:
         import altar.cuda
-        theta = altar.cuda.matrix(source=θ, dtype="float64")
-        likelihood = altar.cuda.vector(shape=SAMPLES, dtype="float64")
+        theta = altar.cuda.matrix(source=θ, dtype=precision)
+        likelihood = altar.cuda.vector(shape=SAMPLES, dtype=precision)
     else:
         theta, likelihood = θ, numpy.zeros(SAMPLES)
     times = []
     for trial in range(3 if gpu else 1):
         start = time.perf_counter()
         model.eval_data_likelihood(theta=theta, likelihood=likelihood)
-        values = numpy.array(likelihood)
+        values = numpy.array(likelihood, dtype=float)
         times.append(time.perf_counter() - start)
     numpy.savez(case / f"{name}.npz", likelihood=values, time=min(times))
+    return 0
+
+
+def run(folder, size, positive, gpu, precision="float64", solve="float64"):
+    """
+    A worker in a process of its own; its likelihoods and time
+    """
+    done = subprocess.run([sys.executable, __file__, "--worker", str(folder / size), str(int(positive)),
+                           str(int(gpu)), precision, solve], capture_output=True, text=True)
+    if done.returncode:
+        print(done.stdout[-2000:], done.stderr[-2000:])
+        return None
+    return numpy.load(folder / size / f"{tag(positive, gpu, precision, solve)}.npz")
+
+
+def single(folder):
+    """
+    cuda in float32, the linear algebra in float64 and in float32, against the cpu at the
+    samples rounded to float32
+    """
+    for size in SIZES:
+        Np, stations, bins = setup(folder, size)
+        print(f"{size}: {Np} patches, {COMPONENTS} x {stations} x {bins} data, {SAMPLES} samples, float32")
+        for positive in (False, True):
+            cpu = run(folder, size, positive, False, "float32")
+            if cpu is None:
+                return 1
+            for solve in ("float64", "float32"):
+                gpu = run(folder, size, positive, True, "float32", solve)
+                if gpu is None:
+                    return 1
+                error = numpy.abs(gpu["likelihood"] - cpu["likelihood"])
+                print(f"  {'positive dip' if positive else 'gaussian':13s} solve {solve}: cuda {float(gpu['time']):8.3f} s; "
+                      f"against the cpu, nats: max {error.max():.1e}, median {numpy.median(error):.1e}, "
+                      f"relative {error.max() / numpy.abs(cpu['likelihood']).max():.1e}; "
+                      f"finite {numpy.isfinite(gpu['likelihood']).sum()} of {SAMPLES}")
     return 0
 
 
@@ -152,8 +205,10 @@ def main(folder):
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         i = sys.argv.index("--worker")
-        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), bool(int(sys.argv[i + 2])), bool(int(sys.argv[i + 3]))))
-    sys.exit(main(pathlib.Path(sys.argv[1]).resolve()))
+        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), bool(int(sys.argv[i + 2])), bool(int(sys.argv[i + 3])),
+                        *sys.argv[i + 4:i + 6]))
+    folder = pathlib.Path(sys.argv[1]).resolve()
+    sys.exit(single(folder) if "--precision=float32" in sys.argv else main(folder))
 
 
 # end of file

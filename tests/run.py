@@ -152,6 +152,9 @@ def gpu():
                       command=[sys.executable, "kinematic_cpu.py", "--gpu", "--integration=bin"]))
     tests.append(Test(name="models:seismic:tests:datakron:gpu", cwd=MODELS / "seismic/tests",
                       command=[sys.executable, "datakron.py", "--gpu"]))
+    for precision in ["float64", "float32"]:
+        tests.append(Test(name=f"models:seismic:tests:gaussianslip:gpu:{precision}", cwd=MODELS / "seismic/tests",
+                          command=[sys.executable, "gaussianslip.py", "--gpu", f"--precision={precision}"]))
     tests += [
         example("altar-linear", "linear", "linear.pfg", 1),
         example("altar-linear", "linear", "linear_hmc.pfg", 1),

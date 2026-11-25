@@ -13,7 +13,8 @@
 # the window, or the same as the first, against one; a sampled slip scale against a fixed one;
 # the mean slips and their data; static data with ramps, the joint likelihood and the mean slips
 # against the dense gaussian of both data sets; and the samples it rejects. Each configuration runs
-# in a process of its own
+# in a process of its own. With --gpu, the likelihoods on cuda against the cpu's, in float64; with
+# --gpu --precision=float32, in float32, the linear algebra in float64 and in float32
 import os
 import pathlib
 import subprocess
@@ -27,6 +28,8 @@ sys.path.insert(0, str(HERE / "trimesh"))
 
 COMPONENTS, STATIONS, BINS, DT, NMESH, CHAINS = 3, 6, 8, 4.0, 6, 6
 OBS = COMPONENTS * STATIONS * BINS
+# the tolerances of the float32 likelihoods on cuda, in nats, by the precision of the linear algebra
+FLOAT32 = {"float64": 1e-3, "float32": 1e-3}
 # the static data: observations, ramps
 STATIC, RAMPS = 20, 3
 STATIC_CONFIG = """static_green = static_insar.gf.h5
@@ -87,7 +90,7 @@ slipmodel:
         gpus = {gpus}
         chains = {chains}
         precision = float64
-        gpuprecision = float64
+        gpuprecision = {precision}
 """
 # name: fronts, rise times, data, integration, sampled scale
 RUNS = {
@@ -102,10 +105,10 @@ RUNS = {
 }
 
 
-def worker(case, name, gpu=False):
+def worker(case, name, gpu=False, precision="float64", solve="float64"):
     """
     The likelihoods, fractions, mean slips and verdicts of the run {name}, into a file; with
-    {gpu}, the likelihoods and verdicts on cuda
+    {gpu}, the likelihoods and verdicts on cuda, in {precision}, the linear algebra in {solve}
     """
     fronts, rises, data, integration, scaled = RUNS[name]
     Np = int(numpy.load(case / "patches.npy"))
@@ -118,14 +121,16 @@ def worker(case, name, gpu=False):
     extra = f"origin = {float(front[0, Np + 3])!r}" if name == "fixed" else extra
     extra = "positive = dip\n        ghk_paths = 4096" if name in ("positive", "staticpos") else extra
     extra += "\n        " + STATIC_CONFIG if name.startswith("static") else ""
-    folder = case / (name + ("-gpu" if gpu else ""))
+    extra += f"\n        solve_precision = {solve}" if gpu else ""
+    tag = gpu_tag(precision, solve) if gpu else ""
+    folder = case / (name + tag)
     folder.mkdir()
     (folder / "slipmodel.pfg").write_text(CONFIG.format(
         nmesh=NMESH, components=COMPONENTS, bins=BINS, dt=DT, integration=integration, sigma=0.7,
         extra=extra, data=f"altar.data.{data}", obs=OBS,
         covariance="noise_file = noise.h5" if data == "datakron" else "cd_std = 0.8",
         psets=", ".join(psets), rises=rises, fronts=fronts, hypocenters=2 * fronts, chains=2 * CHAINS,
-        gpus=int(gpu)))
+        gpus=int(gpu), precision=precision))
     os.chdir(folder)
     sys.argv = [sys.argv[0]]
     import altar
@@ -147,8 +152,8 @@ def worker(case, name, gpu=False):
         θ = numpy.column_stack([θ, numpy.full(θ.shape[0], numpy.log10(0.7))])
     if gpu:
         import altar.cuda
-        array = lambda x: altar.cuda.matrix(source=x, dtype="float64") if numpy.ndim(x) == 2 \
-            else altar.cuda.vector(source=x, dtype="float64")
+        array = lambda x: altar.cuda.matrix(source=x, dtype=precision) if numpy.ndim(x) == 2 \
+            else altar.cuda.vector(source=x, dtype=precision)
     else:
         array = lambda x: numpy.array(x, dtype=float)
 
@@ -159,7 +164,13 @@ def worker(case, name, gpu=False):
 
     likelihood = array(numpy.zeros(θ.shape[0]))
     model.eval_data_likelihood(theta=array(θ), likelihood=likelihood)
-    likelihood = numpy.array(likelihood)
+    likelihood = numpy.array(likelihood, dtype=float)
+    # on the cpu, also at the samples rounded to float32, those of the float32 runs on cuda
+    rounded = {}
+    if not gpu:
+        θ32 = θ.astype(numpy.float32).astype(float)
+        rounded["likelihood32"] = array(numpy.zeros(θ.shape[0]))
+        model.eval_data_likelihood(theta=array(θ32), likelihood=rounded["likelihood32"])
     out = model.forward_problem(application=app, theta=θ)
     # the samples to reject: origins out of order, a hypocenter off the mesh
     rejected = {"none": verify(θ)}
@@ -172,13 +183,33 @@ def worker(case, name, gpu=False):
     off[:, model._hypocenter[1]] = 39.9
     rejected["off"] = verify(off)
     static = {k: out[k] for k in ("static", "ramps") if k in out}
-    numpy.savez(case / f"{name}{'-gpu' if gpu else ''}.npz", likelihood=likelihood, F=out["F"], slip=out["slip"], data=out["data"],
-                onsets=model.onsets(θ), **static, **{f"rejected_{k}": v for k, v in rejected.items()})
+    numpy.savez(case / f"{name}{tag}.npz", likelihood=likelihood, F=out["F"], slip=out["slip"], data=out["data"],
+                onsets=model.onsets(θ), **static, **rounded, **{f"rejected_{k}": v for k, v in rejected.items()})
     return 0
+
+
+def gpu_tag(precision, solve):
+    """
+    The suffix of the files of a run on cuda
+    """
+    return "-gpu" if precision == solve == "float64" else f"-gpu-{precision}-{solve}"
+
+
+def option(name, default):
+    """
+    The value of --{name}=value on the command line
+    """
+    for arg in sys.argv:
+        if arg.startswith(f"--{name}="):
+            return arg.split("=", 1)[1]
+    return default
 
 
 def main():
     gpu = "--gpu" in sys.argv
+    precision = option("precision", "float64")
+    # the precisions of the runs on cuda: of theta and the likelihoods, of the linear algebra
+    variants = [("float64", "float64")] if precision == "float64" else [("float32", "float64"), ("float32", "float32")]
     import h5py
     from kinematic_mesh import fault
     from altar.data.Kronecker import Kronecker
@@ -228,14 +259,15 @@ def main():
             continue
         results[name] = numpy.load(case / f"{name}.npz")
     gpus = {}
-    for name in RUNS if gpu else []:
-        done = subprocess.run([sys.executable, __file__, "--worker", str(case), name, "--gpu"], capture_output=True,
-                              text=True)
-        if done.returncode:
-            print(done.stdout[-3000:], done.stderr[-3000:])
-            failures += 1
-            continue
-        gpus[name] = numpy.load(case / f"{name}-gpu.npz")
+    for variant in variants if gpu else []:
+        for name in RUNS:
+            done = subprocess.run([sys.executable, __file__, "--worker", str(case), name, "--gpu",
+                                   f"--precision={variant[0]}", f"--solve={variant[1]}"], capture_output=True, text=True)
+            if done.returncode:
+                print(done.stdout[-3000:], done.stderr[-3000:])
+                failures += 1
+                continue
+            gpus[name, variant] = numpy.load(case / f"{name}{gpu_tag(*variant)}.npz")
     if failures:
         print("gaussian slip:", f"{failures} FAILED")
         return 1
@@ -350,12 +382,18 @@ def main():
     # samples; the box of the kinematic data alone would be 0.2-3.7 nats off
     check("static data, positive dip slips: box probabilities against genz, nats", worst, 6e-2)
 
-    # cuda against the cpu, the same sobol points for the bounded slips
-    for name, r in gpus.items():
+    # cuda against the cpu, the same sobol points for the bounded slips; in float32, against the cpu
+    # at the same samples, rounded to float32, in nats
+    for (name, (precision, solve)), r in gpus.items():
         cpu = results[name]
-        check(f"cuda, {name}: likelihood against the cpu", rel(r["likelihood"], cpu["likelihood"]), 1e-10)
+        if precision == "float64":
+            check(f"cuda, {name}: likelihood against the cpu", rel(r["likelihood"], cpu["likelihood"]), 1e-10)
+        else:
+            error = numpy.abs(r["likelihood"] - cpu["likelihood32"]).max()
+            check(f"cuda {precision}, solve {solve}, {name}: likelihood against the cpu, nats", error,
+                  FLOAT32[solve])
         same = all(numpy.array_equal(r[k] != 0, cpu[k] != 0) for k in cpu.files if k.startswith("rejected"))
-        check(f"cuda, {name}: the samples rejected, as on the cpu", 0 if same else 1, 0)
+        check(f"cuda {precision}, solve {solve}, {name}: the samples rejected, as on the cpu", 0 if same else 1, 0)
 
     # the samples rejected
     check("valid samples kept", sum(r["rejected_none"].sum() for r in results.values()), 0)
@@ -368,7 +406,8 @@ def main():
 if __name__ == "__main__":
     if "--worker" in sys.argv:
         i = sys.argv.index("--worker")
-        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2], "--gpu" in sys.argv))
+        sys.exit(worker(pathlib.Path(sys.argv[i + 1]), sys.argv[i + 2], "--gpu" in sys.argv,
+                        option("precision", "float64"), option("solve", "float64")))
     sys.exit(main())
 
 
